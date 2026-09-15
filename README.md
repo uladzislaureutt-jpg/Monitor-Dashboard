@@ -1,72 +1,38 @@
-# Monitor Dashboard — Desktop Core 0.3
+# Monitor Dashboard — 0.4 Workbench
 
-Первый реальный desktop-core для Windows x64.
+Windows x64 desktop-приложение для накопления и анализа Dashboard Data Contract bundle-файлов мониторинга.
 
-## Что уже работает в 0.3
+## Что добавлено в 0.4
 
-- Tauri 2 + React + TypeScript;
-- локальная SQLite с миграциями;
-- native file picker для ZIP;
-- импорт `dashboard_bundle.zip`;
-- импорт ZIP-обёртки, скачанной как GitHub Actions artifact (`dashboard-bundle-social-N.zip`);
-- JSON Schema validation четырёх файлов Dashboard Contract;
-- идемпотентный повторный импорт;
-- разделение `documents` / `monitor_items` / `runs` / `run_items` для перекрывающихся 36-часовых окон;
-- отдельные source geography и event geography;
-- каталог всех источников coverage;
-- список импортированных runs;
-- workflow для сборки Windows NSIS installer.
+- стартовый экран теперь **Dashboard**, а импорт перенесён в раздел **Данные**;
+- глобальная поисковая строка в верхней панели, доступная с любого экрана (`Ctrl+K`);
+- поиск по заголовку, сохранённой выдержке, источнику, категории/подкатегории, региону/населённому пункту события, object/problem и matched terms;
+- **Архив** с периодами 1 / 7 / 30 / 365 дней / всё время, фильтрами по категории, event-region и источнику, сортировкой и пагинацией;
+- **Dashboard** с KPI, динамикой публикаций, темами, event-geography, источниками и последними материалами;
+- **Аналитика** с расширенными графиками на той же SQLite;
+- **Источники**: весь coverage-каталог, а не только источники, попавшие в результат;
+- переход к оригинальной публикации из карточки;
+- выдвижная правая панель **Команда** — UX-каркас будущей общей ленты/доски;
+- локальные заметки в панели «Команда» для тестирования интерфейса;
+- Windows release больше не должен открывать отдельное консольное окно.
 
-## Что сознательно НЕ входит в 0.3
+## Важное ограничение 0.4
 
-Dashboard, архив публикаций, аналитические графики, карта Беларуси и полнотекстовый поиск — это слой 0.4 поверх уже созданной БД. GitHub sync и запуск monitor workflow из desktop также пока не включены.
+«Команда» пока **не синхронизируется между компьютерами**. Локальные заметки хранятся в WebView localStorage только на текущем ПК. Сетевой backend, пользователи, непрочитанные сообщения и обсуждения конкретных публикаций — этап 0.5.
 
-## Быстрый запуск на Windows
+Полный текст статей в SQLite не сохраняется: поиск работает по полям Dashboard Contract — title, excerpt и структурированной классификации.
 
-Требуются Node.js, Rust stable MSVC и Microsoft C++ Build Tools. WebView2 уже присутствует в современных Windows 10/11.
+## Сборка
+
+Через GitHub Actions используйте уже существующий workflow `Build Monitor Dashboard Windows x64`. Он не менялся.
+
+Локально:
 
 ```powershell
 npm install
-npm run tauri dev
-```
-
-Сборка installer:
-
-```powershell
 npm run tauri build -- --bundles nsis
 ```
 
-Installer появится в:
-
-```text
-src-tauri\target\release\bundle\nsis\
-```
-
-## Сборка через GitHub Actions
-
-Можно создать отдельный репозиторий, положить туда этот проект и вручную запустить workflow:
-
-`Build Monitor Dashboard Windows x64`
-
-Он создаст artifact `monitor-dashboard-windows-x64` с `.exe` installer.
-
-## Импорт
-
-Нажать `+ Импортировать bundle` и выбрать один из вариантов:
-
-1. прямой `dashboard_bundle_social_61.zip`;
-2. скачанный GitHub artifact `dashboard-bundle-social-61.zip`, внутри которого лежит прямой bundle.
-
-Приложение само различает эти два формата.
-
 ## Локальная БД
 
-SQLite создаётся в системном `app_data_dir` Tauri под именем:
-
-`monitor-dashboard.sqlite3`
-
-Путь отображается в интерфейсе. Monitor Dashboard не пишет ничего в репозитории мониторинга.
-
-## Contract compatibility
-
-0.3 принимает major-версию `0.x`, проверяя обязательную структуру JSON Schema. Неизвестные дополнительные поля не ломают импорт. Major `1.x` и выше отклоняется до явной миграции desktop-core.
+Существующая `monitor-dashboard.sqlite3` сохраняется. Миграция схемы для 0.4 не требуется: новые представления используют таблицы Desktop Core 0.3.

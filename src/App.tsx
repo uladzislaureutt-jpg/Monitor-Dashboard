@@ -1,51 +1,79 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { desktopApi } from "./api";
-import type { DatabaseStats, ImportResult, RunSummary } from "./types";
+import type { DatabaseStats, DashboardOverview, ImportResult, PeriodDays, RunSummary, ViewKey } from "./types";
+import { SearchOverlay } from "./components/SearchOverlay";
+import { TeamDrawer } from "./components/TeamDrawer";
+import { DashboardView } from "./views/DashboardView";
+import { ArchiveView } from "./views/ArchiveView";
+import { AnalyticsView } from "./views/AnalyticsView";
+import { SourcesView } from "./views/SourcesView";
+import { DataView } from "./views/DataView";
 
-function formatDate(value: string | null) {
-  if (!value) return "—";
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString("ru-RU");
-}
-
-function formatMode(value: boolean | null) {
-  if (value === true) return "dry-run";
-  if (value === false) return "production";
-  return "не определён";
-}
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} Б`;
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} КБ`;
-  return `${(bytes / 1024 ** 2).toFixed(1)} МБ`;
-}
+const nav: Array<{ key: ViewKey; label: string; icon: string }> = [
+  { key: "dashboard", label: "Dashboard", icon: "▦" },
+  { key: "archive", label: "Архив", icon: "▤" },
+  { key: "analytics", label: "Аналитика", icon: "◫" },
+  { key: "sources", label: "Источники", icon: "◎" },
+  { key: "data", label: "Данные", icon: "⇩" },
+];
 
 export default function App() {
+  const [view, setView] = useState<ViewKey>("dashboard");
   const [stats, setStats] = useState<DatabaseStats | null>(null);
   const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [dashboard, setDashboard] = useState<DashboardOverview | null>(null);
+  const [period, setPeriod] = useState<PeriodDays>(30);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string>("");
-  const [error, setError] = useState<string>("");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [globalQuery, setGlobalQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [archiveSeed, setArchiveSeed] = useState("");
+  const [teamOpen, setTeamOpen] = useState(false);
+  const searchRef = useRef<HTMLInputElement | null>(null);
 
-  const refresh = useCallback(async () => {
-    const [nextStats, nextRuns] = await Promise.all([
-      desktopApi.stats(),
-      desktopApi.runs(),
-    ]);
+  const refreshCore = useCallback(async () => {
+    const [nextStats, nextRuns] = await Promise.all([desktopApi.stats(), desktopApi.runs()]);
     setStats(nextStats);
     setRuns(nextRuns);
   }, []);
 
-  useEffect(() => {
-    refresh().catch((reason) => setError(String(reason)));
-  }, [refresh]);
+  const refreshDashboard = useCallback(async (nextPeriod: PeriodDays) => {
+    setDashboardLoading(true);
+    try {
+      setDashboard(await desktopApi.dashboard(nextPeriod));
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setDashboardLoading(false);
+    }
+  }, []);
 
-  const latest = runs[0] ?? null;
-  const productionRuns = useMemo(
-    () => runs.filter((run) => run.dryRun === false).length,
-    [runs],
-  );
+  useEffect(() => {
+    refreshCore().catch((reason) => setError(String(reason)));
+  }, [refreshCore]);
+
+  useEffect(() => {
+    refreshDashboard(period);
+  }, [period, refreshDashboard]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setSearchOpen(true);
+        window.setTimeout(() => searchRef.current?.focus(), 0);
+      }
+      if (event.key === "Escape") {
+        setSearchOpen(false);
+        setTeamOpen(false);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   async function importBundle() {
     setError("");
@@ -61,16 +89,9 @@ export default function App() {
     setBusy(true);
     try {
       const result: ImportResult = await desktopApi.importBundle(selected);
-      const prefix =
-        result.status === "already_imported"
-          ? "Этот запуск уже был импортирован"
-          : result.status === "replaced"
-            ? "Запуск переимпортирован"
-            : "Bundle импортирован";
-      setMessage(
-        `${prefix}: run ${result.runNumber ?? "—"}, ${result.publications} публикаций, ${result.sourcesInCoverage} источников coverage.`,
-      );
-      await refresh();
+      const prefix = result.status === "already_imported" ? "Этот запуск уже был импортирован" : result.status === "replaced" ? "Запуск переимпортирован" : "Bundle импортирован";
+      setMessage(`${prefix}: run ${result.runNumber ?? "—"}, ${result.publications} публикаций, ${result.sourcesInCoverage} источников coverage.`);
+      await Promise.all([refreshCore(), refreshDashboard(period)]);
     } catch (reason) {
       setError(String(reason));
     } finally {
@@ -78,111 +99,71 @@ export default function App() {
     }
   }
 
+  function showArchiveForSearch(query: string) {
+    setArchiveSeed(query);
+    setGlobalQuery(query);
+    setSearchOpen(false);
+    setView("archive");
+  }
+
+  function navigate(next: ViewKey) {
+    setView(next);
+    if (next !== "archive") setArchiveSeed("");
+  }
+
   return (
     <div className="app-shell">
       <header className="topbar">
-        <div>
-          <h1>Monitor Dashboard</h1>
-          <div className="subtitle">Desktop Core 0.3 · Windows x64 · локальная SQLite</div>
+        <button className="brand" onClick={() => navigate("dashboard")}>
+          <span className="brand-mark">M</span>
+          <span><b>Monitor Dashboard</b><small>Соц-экон · Desktop 0.4</small></span>
+        </button>
+        <div className="global-search-wrap">
+          <span className="search-icon">⌕</span>
+          <input
+            ref={searchRef}
+            value={globalQuery}
+            onFocus={() => setSearchOpen(true)}
+            onChange={(event) => { setGlobalQuery(event.target.value); setSearchOpen(true); }}
+            placeholder="Поиск по собранным материалам…"
+            aria-label="Глобальный поиск"
+          />
+          <kbd>Ctrl K</kbd>
         </div>
-        <div className="module-pill">Модуль: Соц-экон</div>
+        <div className="top-actions">
+          <span className="module-pill">Соц-экон</span>
+          <button className={`team-button ${teamOpen ? "active" : ""}`} onClick={() => setTeamOpen((value) => !value)}><span>◌</span> Команда</button>
+        </div>
       </header>
 
       <div className="layout">
         <aside className="sidebar">
           <div className="nav-label">Навигация</div>
-          <button className="nav-item active">Импорт и запуски</button>
-          <button className="nav-item" disabled>Dashboard <span>0.4</span></button>
-          <button className="nav-item" disabled>Архив <span>0.4</span></button>
-          <button className="nav-item" disabled>Аналитика <span>0.4</span></button>
-          <button className="nav-item" disabled>Источники <span>0.4</span></button>
-          <div className="side-note">
-            0.3 отвечает только за устойчивое накопление данных. Визуальная аналитика подключается поверх той же БД на следующем этапе.
+          {nav.map((item) => (
+            <button key={item.key} className={`nav-item ${view === item.key ? "active" : ""}`} onClick={() => navigate(item.key)}>
+              <span className="nav-icon">{item.icon}</span>{item.label}
+            </button>
+          ))}
+          <div className="sidebar-spacer" />
+          <div className="side-status">
+            <span className="status-dot" />
+            <div><b>Локальная база</b><small>{stats ? `${stats.documents} публикаций · ${stats.sources} источников` : "инициализация…"}</small></div>
           </div>
         </aside>
 
         <main className="content">
-          <section className="hero">
-            <div>
-              <div className="eyebrow">DATA FOUNDATION</div>
-              <h2>Локальная база мониторинга</h2>
-              <p>
-                Импортирует стабильный Dashboard Data Contract 0.x, проверяет JSON Schema,
-                устраняет дубли между перекрывающимися 36-часовыми окнами и хранит публикацию один раз.
-              </p>
-            </div>
-            <button className="import-button" onClick={importBundle} disabled={busy}>
-              {busy ? "Импорт…" : "+ Импортировать bundle"}
-            </button>
-          </section>
-
-          {message && <div className="notice success">{message}</div>}
-          {error && <div className="notice error">{error}</div>}
-
-          <section className="kpi-grid">
-            <article className="kpi"><strong>{stats?.runs ?? "—"}</strong><span>импортированных запусков</span></article>
-            <article className="kpi"><strong>{stats?.documents ?? "—"}</strong><span>уникальных публикаций</span></article>
-            <article className="kpi"><strong>{stats?.sources ?? "—"}</strong><span>источников в каталоге</span></article>
-            <article className="kpi"><strong>{productionRuns}</strong><span>production runs</span></article>
-            <article className="kpi"><strong>{latest?.runNumber ?? "—"}</strong><span>последний run</span></article>
-            <article className="kpi"><strong>{stats ? formatBytes(stats.databaseSizeBytes) : "—"}</strong><span>размер SQLite</span></article>
-          </section>
-
-          <section className="grid-two">
-            <article className="panel">
-              <div className="panel-head">
-                <div>
-                  <h3>Импортированные запуски</h3>
-                  <p>Повторный импорт того же bundle идемпотентен.</p>
-                </div>
-                <span className="badge">Contract 0.x</span>
-              </div>
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr><th>Run</th><th>Режим</th><th>Старт</th><th>Публикации</th><th>Источники</th><th>Импорт</th></tr>
-                  </thead>
-                  <tbody>
-                    {runs.length === 0 ? (
-                      <tr><td colSpan={6} className="empty">Пока нет импортированных bundle.</td></tr>
-                    ) : runs.map((run) => (
-                      <tr key={run.id}>
-                        <td><b>#{run.runNumber ?? "—"}</b><small>{run.monitorName}</small></td>
-                        <td><span className={`mode mode-${run.dryRun === true ? "dry" : run.dryRun === false ? "prod" : "unknown"}`}>{formatMode(run.dryRun)}</span></td>
-                        <td>{formatDate(run.startedAt)}</td>
-                        <td>{run.publications}</td>
-                        <td>{run.sourcesInCoverage}</td>
-                        <td>{formatDate(run.importedAt)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </article>
-
-            <article className="panel core-panel">
-              <div className="panel-head">
-                <div>
-                  <h3>Desktop Core</h3>
-                  <p>Текущее состояние слоя данных.</p>
-                </div>
-                <span className="badge ok">готов 0.3</span>
-              </div>
-              <ul className="check-list">
-                <li><span>✓</span><div><b>SQLite + миграции</b><small>База в системной папке данных приложения.</small></div></li>
-                <li><span>✓</span><div><b>ZIP importer</b><small>Принимает direct bundle и ZIP-обёртку GitHub artifact.</small></div></li>
-                <li><span>✓</span><div><b>JSON Schema validation</b><small>Проверка manifest, publications, source_metrics, run_metrics.</small></div></li>
-                <li><span>✓</span><div><b>Idempotent ingest</b><small>document → monitor_item → run observation.</small></div></li>
-                <li><span>✓</span><div><b>Event geography separated</b><small>География события хранится независимо от географии источника.</small></div></li>
-              </ul>
-              <div className="db-path">
-                <span>SQLite</span>
-                <code title={stats?.databasePath}>{stats?.databasePath ?? "инициализация…"}</code>
-              </div>
-            </article>
-          </section>
+          {message && <div className="notice success global-notice">{message}</div>}
+          {error && <div className="notice error global-notice"><span>{error}</span><button onClick={() => setError("")}>×</button></div>}
+          {view === "dashboard" && <DashboardView data={dashboard} period={period} onPeriodChange={setPeriod} loading={dashboardLoading} onOpenArchive={() => navigate("archive")} />}
+          {view === "archive" && <ArchiveView initialQuery={archiveSeed} />}
+          {view === "analytics" && <AnalyticsView data={dashboard} period={period} onPeriodChange={setPeriod} />}
+          {view === "sources" && <SourcesView />}
+          {view === "data" && <DataView stats={stats} runs={runs} busy={busy} onImport={importBundle} />}
         </main>
       </div>
+
+      <SearchOverlay query={globalQuery} open={searchOpen} onClose={() => setSearchOpen(false)} onShowArchive={showArchiveForSearch} />
+      <TeamDrawer open={teamOpen} onClose={() => setTeamOpen(false)} />
     </div>
   );
 }

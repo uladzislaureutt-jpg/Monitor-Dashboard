@@ -144,3 +144,78 @@ pub struct DatabaseStats {
     pub sources: i64,
     pub monitor_items: i64,
 }
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CountPoint {
+    pub label: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicationSummary {
+    pub id: i64,
+    pub title: String,
+    pub url: String,
+    pub published_at: Option<String>,
+    pub source: String,
+    pub category: Option<String>,
+    pub subcategory: Option<String>,
+    pub region: Option<String>,
+    pub locality: Option<String>,
+    pub event_object: Option<String>,
+    pub event_problem: Option<String>,
+    pub excerpt: Option<String>,
+    pub score: Option<f64>,
+    pub official_response: Option<bool>,
+    pub seen_in_runs: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DashboardOverview {
+    pub period_days: Option<i64>,
+    pub publications: i64,
+    pub active_sources: i64,
+    pub regions: i64,
+    pub categories: i64,
+    pub official_responses: i64,
+    pub trend: Vec<CountPoint>,
+    pub category_breakdown: Vec<CountPoint>,
+    pub source_breakdown: Vec<CountPoint>,
+    pub region_breakdown: Vec<CountPoint>,
+    pub recent: Vec<PublicationSummary>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchivePage {
+    pub total: i64,
+    pub items: Vec<PublicationSummary>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchiveFacets {
+    pub categories: Vec<String>,
+    pub regions: Vec<String>,
+    pub sources: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceSummary {
+    pub id: i64,
+    pub name: String,
+    pub domain: Option<String>,
+    pub source_type: Option<String>,
+    pub region: Option<String>,
+    pub locality: Option<String>,
+    pub priority: Option<String>,
+    pub publications: i64,
+    pub total_results: i64,
+    pub last_seen_at: Option<String>,
+    pub access_status: Option<String>,
+    pub admission_status: Option<String>,
+}
