@@ -1,6 +1,7 @@
 mod db;
 mod importer;
 mod models;
+mod sync;
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -87,6 +88,15 @@ fn list_sources(
 }
 
 #[tauri::command]
+fn sync_github_artifacts(
+    repository: String,
+    token: String,
+    state: State<'_, AppState>,
+) -> Result<sync::SyncResult, String> {
+    sync::sync_github(&state.db_path, &repository, &token)
+}
+
+#[tauri::command]
 fn open_external_url(url: String) -> Result<(), String> {
     let parsed = url.trim();
     if !(parsed.starts_with("https://") || parsed.starts_with("http://")) {
@@ -129,6 +139,7 @@ pub fn run() {
             list_publications,
             get_archive_facets,
             list_sources,
+            sync_github_artifacts,
             open_external_url
         ])
         .run(tauri::generate_context!())

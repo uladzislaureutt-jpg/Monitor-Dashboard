@@ -20,6 +20,31 @@ const PUBLICATION_SCHEMA: &str = include_str!("../schemas/publication-0.1.schema
 const SOURCE_METRICS_SCHEMA: &str = include_str!("../schemas/source-metrics-0.1.schema.json");
 const RUN_METRICS_SCHEMA: &str = include_str!("../schemas/run-metrics-0.1.schema.json");
 
+
+#[derive(Debug)]
+pub struct BundleInspection {
+    pub monitor_key: String,
+    pub run_number: Option<i64>,
+    pub dry_run: Option<bool>,
+}
+
+pub fn inspect_bundle(input_path: &Path) -> Result<BundleInspection, String> {
+    let metadata = fs::metadata(input_path)
+        .map_err(|e| format!("Не удалось открыть ZIP: {e}"))?;
+    if metadata.len() > MAX_INPUT_BYTES {
+        return Err(format!("ZIP слишком велик: {} МБ (лимит 64 МБ)", metadata.len() / 1024 / 1024));
+    }
+    let input_bytes = fs::read(input_path)
+        .map_err(|e| format!("Не удалось прочитать ZIP: {e}"))?;
+    let parsed = parse_bundle(input_bytes)?;
+    ensure_supported_contract(&parsed.manifest.dashboard_contract_version)?;
+    Ok(BundleInspection {
+        monitor_key: parsed.manifest.monitor.key.clone(),
+        run_number: parsed.manifest.run.run_number,
+        dry_run: parsed.manifest.run.dry_run,
+    })
+}
+
 struct ParsedBundle {
     input_kind: String,
     bundle_sha256: String,

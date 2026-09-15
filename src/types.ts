@@ -117,11 +117,27 @@ export type SourceSummary = {
   admissionStatus: string | null;
 };
 
-export type TeamLocalItem = {
+export type WorkroomLocalItem = {
   id: string;
   kind: "note" | "announcement";
   author: string;
   text: string;
   createdAt: string;
   pinned?: boolean;
+};
+
+export type SyncSettings = {
+  repository: string;
+  token: string;
+  autoSync: boolean;
+  intervalMinutes: number;
+};
+
+export type SyncResult = {
+  checkedArtifacts: number;
+  latestAvailableRun: number | null;
+  importedRuns: number[];
+  skippedDryRuns: number[];
+  alreadyPresent: number;
+  errors: string[];
 };

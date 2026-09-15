@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
@@ -9,6 +10,7 @@ use crate::models::{
 };
 
 const MIGRATION_0001: &str = include_str!("../migrations/0001_init.sql");
+const MIGRATION_0002: &str = include_str!("../migrations/0002_sync.sql");
 
 pub fn open_database(path: &Path) -> Result<Connection, String> {
     let conn = Connection::open(path).map_err(|e| format!("Не удалось открыть SQLite: {e}"))?;
@@ -48,6 +50,18 @@ pub fn initialize_database(path: &Path) -> Result<(), String> {
             .map_err(|e| format!("Не удалось записать версию миграции: {e}"))?;
         tx.commit()
             .map_err(|e| format!("Не удалось завершить миграцию: {e}"))?;
+    }
+
+    if current < 2 {
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("Не удалось начать миграцию 0002: {e}"))?;
+        tx.execute_batch(MIGRATION_0002)
+            .map_err(|e| format!("Миграция 0002 завершилась ошибкой: {e}"))?;
+        tx.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (2)", [])
+            .map_err(|e| format!("Не удалось записать версию миграции 0002: {e}"))?;
+        tx.commit()
+            .map_err(|e| format!("Не удалось завершить миграцию 0002: {e}"))?;
     }
     Ok(())
 }
@@ -439,4 +453,32 @@ pub fn list_sources(path: &Path, monitor_key: &str) -> Result<Vec<SourceSummary>
         })
     }).map_err(|e| format!("Не удалось получить каталог источников: {e}"))?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| format!("Не удалось прочитать источник: {e}"))
+}
+
+
+pub fn sync_skipped_run_numbers(path: &Path, monitor_key: &str) -> Result<HashSet<i64>, String> {
+    let conn = open_database(path)?;
+    let mut stmt = conn
+        .prepare("SELECT run_number FROM sync_run_status WHERE monitor_key=?1 AND status='dry_run'")
+        .map_err(|e| format!("Не удалось подготовить sync status: {e}"))?;
+    let rows = stmt
+        .query_map(params![monitor_key], |row| row.get::<_, i64>(0))
+        .map_err(|e| format!("Не удалось прочитать sync status: {e}"))?;
+    rows.collect::<Result<HashSet<_>, _>>()
+        .map_err(|e| format!("Не удалось собрать sync status: {e}"))
+}
+
+pub fn mark_sync_dry_run(path: &Path, monitor_key: &str, run_number: i64, artifact_id: u64) -> Result<(), String> {
+    let conn = open_database(path)?;
+    conn.execute(
+        r#"
+        INSERT INTO sync_run_status(monitor_key, run_number, status, artifact_id, updated_at)
+        VALUES (?1,?2,'dry_run',?3,CURRENT_TIMESTAMP)
+        ON CONFLICT(monitor_key, run_number) DO UPDATE SET
+            status='dry_run', artifact_id=excluded.artifact_id, updated_at=CURRENT_TIMESTAMP
+        "#,
+        params![monitor_key, run_number, artifact_id as i64],
+    )
+    .map_err(|e| format!("Не удалось сохранить dry-run sync status: {e}"))?;
+    Ok(())
 }

@@ -8,6 +8,7 @@ import type {
   ImportResult,
   RunSummary,
   SourceSummary,
+  SyncResult,
 } from "./types";
 
 const MONITOR_KEY = "social_economic";
@@ -50,5 +51,7 @@ export const desktopApi = {
     }),
   sources: () =>
     invoke<SourceSummary[]>("list_sources", { monitorKey: MONITOR_KEY }),
+  syncGithub: (repository: string, token: string) =>
+    invoke<SyncResult>("sync_github_artifacts", { repository, token }),
   openUrl: (url: string) => invoke<void>("open_external_url", { url }),
 };

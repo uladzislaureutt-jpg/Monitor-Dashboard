@@ -1,14 +1,33 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { desktopApi } from "./api";
-import type { DatabaseStats, DashboardOverview, ImportResult, PeriodDays, RunSummary, ViewKey } from "./types";
+import type { DatabaseStats, DashboardOverview, ImportResult, PeriodDays, RunSummary, SyncSettings, ViewKey } from "./types";
 import { SearchOverlay } from "./components/SearchOverlay";
-import { TeamDrawer } from "./components/TeamDrawer";
+import { WorkroomDrawer } from "./components/WorkroomDrawer";
 import { DashboardView } from "./views/DashboardView";
 import { ArchiveView } from "./views/ArchiveView";
 import { AnalyticsView } from "./views/AnalyticsView";
 import { SourcesView } from "./views/SourcesView";
 import { DataView } from "./views/DataView";
+
+const SYNC_STORAGE_KEY = "monitor-dashboard-github-sync-v1";
+const DEFAULT_SYNC: SyncSettings = { repository: "", token: "", autoSync: false, intervalMinutes: 30 };
+
+function loadSyncSettings(): SyncSettings {
+  try {
+    const raw = localStorage.getItem(SYNC_STORAGE_KEY);
+    if (!raw) return DEFAULT_SYNC;
+    const parsed = JSON.parse(raw) as Partial<SyncSettings>;
+    return {
+      repository: typeof parsed.repository === "string" ? parsed.repository : "",
+      token: typeof parsed.token === "string" ? parsed.token : "",
+      autoSync: parsed.autoSync === true,
+      intervalMinutes: [15, 30, 60].includes(Number(parsed.intervalMinutes)) ? Number(parsed.intervalMinutes) : 30,
+    };
+  } catch {
+    return DEFAULT_SYNC;
+  }
+}
 
 const nav: Array<{ key: ViewKey; label: string; icon: string }> = [
   { key: "dashboard", label: "Dashboard", icon: "▦" },
@@ -31,7 +50,11 @@ export default function App() {
   const [globalQuery, setGlobalQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [archiveSeed, setArchiveSeed] = useState("");
-  const [teamOpen, setTeamOpen] = useState(false);
+  const [workroomOpen, setWorkroomOpen] = useState(false);
+  const [syncSettings, setSyncSettings] = useState<SyncSettings>(loadSyncSettings);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncStatus, setSyncStatus] = useState("");
+  const syncBusyRef = useRef(false);
   const searchRef = useRef<HTMLInputElement | null>(null);
 
   const refreshCore = useCallback(async () => {
@@ -51,6 +74,38 @@ export default function App() {
     }
   }, []);
 
+  const performSync = useCallback(async (settings: SyncSettings, silent = false) => {
+    if (!settings.repository.trim() || syncBusyRef.current) {
+      if (!settings.repository.trim()) setSyncStatus("не настроено");
+      return;
+    }
+    syncBusyRef.current = true;
+    setSyncBusy(true);
+    if (!silent) setError("");
+    try {
+      const result = await desktopApi.syncGithub(settings.repository.trim(), settings.token);
+      const latest = result.latestAvailableRun;
+      if (result.errors.length) {
+        setSyncStatus(`частично · ${result.errors.length} ошибок`);
+        if (!silent) setError(result.errors.join("\n"));
+      } else if (latest != null) {
+        setSyncStatus(`актуально · run ${latest}`);
+      } else {
+        setSyncStatus("артефакты не найдены");
+      }
+      if (result.importedRuns.length) {
+        setMessage(`Auto Sync: добавлены run ${result.importedRuns.join(", ")}.`);
+        await Promise.all([refreshCore(), refreshDashboard(period)]);
+      }
+    } catch (reason) {
+      setSyncStatus("ошибка синхронизации");
+      if (!silent) setError(String(reason));
+    } finally {
+      syncBusyRef.current = false;
+      setSyncBusy(false);
+    }
+  }, [period, refreshCore, refreshDashboard]);
+
   useEffect(() => {
     refreshCore().catch((reason) => setError(String(reason)));
   }, [refreshCore]);
@@ -58,6 +113,13 @@ export default function App() {
   useEffect(() => {
     refreshDashboard(period);
   }, [period, refreshDashboard]);
+
+  useEffect(() => {
+    if (!syncSettings.autoSync || !syncSettings.repository.trim()) return;
+    const start = window.setTimeout(() => performSync(syncSettings, true), 900);
+    const interval = window.setInterval(() => performSync(syncSettings, true), syncSettings.intervalMinutes * 60_000);
+    return () => { window.clearTimeout(start); window.clearInterval(interval); };
+  }, [syncSettings, performSync]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -68,7 +130,7 @@ export default function App() {
       }
       if (event.key === "Escape") {
         setSearchOpen(false);
-        setTeamOpen(false);
+        setWorkroomOpen(false);
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -99,6 +161,14 @@ export default function App() {
     }
   }
 
+  function saveSyncSettings(next: SyncSettings) {
+    const normalized = { ...next, repository: next.repository.trim(), intervalMinutes: [15, 30, 60].includes(next.intervalMinutes) ? next.intervalMinutes : 30 };
+    localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(normalized));
+    setSyncSettings(normalized);
+    setSyncStatus(normalized.repository ? "настроено" : "не настроено");
+    setMessage("Настройки Auto Sync сохранены локально.");
+  }
+
   function showArchiveForSearch(query: string) {
     setArchiveSeed(query);
     setGlobalQuery(query);
@@ -111,12 +181,14 @@ export default function App() {
     if (next !== "archive") setArchiveSeed("");
   }
 
+  const latestProduction = runs.find((run) => run.dryRun === false) ?? runs[0] ?? null;
+
   return (
     <div className="app-shell">
       <header className="topbar">
         <button className="brand" onClick={() => navigate("dashboard")}>
           <span className="brand-mark">M</span>
-          <span><b>Monitor Dashboard</b><small>Соц-экон · Desktop 0.4</small></span>
+          <span><b>Monitor Dashboard</b><small>SEP-Monitor · Desktop 0.4.1</small></span>
         </button>
         <div className="global-search-wrap">
           <span className="search-icon">⌕</span>
@@ -131,39 +203,45 @@ export default function App() {
           <kbd>Ctrl K</kbd>
         </div>
         <div className="top-actions">
-          <span className="module-pill">Соц-экон</span>
-          <button className={`team-button ${teamOpen ? "active" : ""}`} onClick={() => setTeamOpen((value) => !value)}><span>◌</span> Команда</button>
+          <span className="module-pill">SEP-Monitor</span>
+          {latestProduction?.runNumber != null && <span className="run-pill">run {latestProduction.runNumber}</span>}
         </div>
       </header>
 
       <div className="layout">
         <aside className="sidebar">
           <div className="nav-label">Навигация</div>
-          {nav.map((item) => (
+          {nav.slice(0, 4).map((item) => (
+            <button key={item.key} className={`nav-item ${view === item.key ? "active" : ""}`} onClick={() => navigate(item.key)}>
+              <span className="nav-icon">{item.icon}</span>{item.label}
+            </button>
+          ))}
+          <button className={`nav-item workroom-nav ${workroomOpen ? "active" : ""}`} onClick={() => setWorkroomOpen((value) => !value)}><span className="nav-icon">◌</span>Рабочая комната</button>
+          {nav.slice(4).map((item) => (
             <button key={item.key} className={`nav-item ${view === item.key ? "active" : ""}`} onClick={() => navigate(item.key)}>
               <span className="nav-icon">{item.icon}</span>{item.label}
             </button>
           ))}
           <div className="sidebar-spacer" />
-          <div className="side-status">
-            <span className="status-dot" />
-            <div><b>Локальная база</b><small>{stats ? `${stats.documents} публикаций · ${stats.sources} источников` : "инициализация…"}</small></div>
-          </div>
+          <button className="side-status side-status-button" onClick={() => navigate("data")} title="Открыть синхронизацию">
+            <span className={`status-dot ${syncBusy ? "pulse" : ""}`} />
+            <div><b>{syncSettings.autoSync ? "Auto Sync" : "Локальная база"}</b><small>{syncSettings.autoSync && syncSettings.repository ? (syncStatus || "готово к проверке") : stats ? `${stats.documents} публикаций · ${stats.sources} источников` : "инициализация…"}</small></div>
+          </button>
         </aside>
 
         <main className="content">
-          {message && <div className="notice success global-notice">{message}</div>}
+          {message && <div className="notice success global-notice"><span>{message}</span><button onClick={() => setMessage("")}>×</button></div>}
           {error && <div className="notice error global-notice"><span>{error}</span><button onClick={() => setError("")}>×</button></div>}
           {view === "dashboard" && <DashboardView data={dashboard} period={period} onPeriodChange={setPeriod} loading={dashboardLoading} onOpenArchive={() => navigate("archive")} />}
           {view === "archive" && <ArchiveView initialQuery={archiveSeed} />}
           {view === "analytics" && <AnalyticsView data={dashboard} period={period} onPeriodChange={setPeriod} />}
           {view === "sources" && <SourcesView />}
-          {view === "data" && <DataView stats={stats} runs={runs} busy={busy} onImport={importBundle} />}
+          {view === "data" && <DataView stats={stats} runs={runs} busy={busy} onImport={importBundle} syncSettings={syncSettings} onSaveSyncSettings={saveSyncSettings} onSyncNow={(value) => performSync(value)} syncBusy={syncBusy} syncStatus={syncStatus} />}
         </main>
       </div>
 
       <SearchOverlay query={globalQuery} open={searchOpen} onClose={() => setSearchOpen(false)} onShowArchive={showArchiveForSearch} />
-      <TeamDrawer open={teamOpen} onClose={() => setTeamOpen(false)} />
+      <WorkroomDrawer open={workroomOpen} onClose={() => setWorkroomOpen(false)} />
     </div>
   );
 }
