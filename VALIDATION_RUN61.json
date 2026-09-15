@@ -1,0 +1,32 @@
+{
+  "status": "PASS",
+  "input": "dashboard-bundle-social-61.zip",
+  "input_kind": "github_artifact_wrapper",
+  "bundle_sha256": "0f7f5b30fe7778f0695ac567d65c5401d9c089ab1205d89f2358b901cd010980",
+  "contract": "0.1",
+  "run_number": 61,
+  "dry_run": null,
+  "publications": 24,
+  "sources_in_coverage": 56,
+  "first_import": "imported",
+  "second_import": "already_imported",
+  "counts_after_first": {
+    "monitors": 1,
+    "runs": 1,
+    "sources": 56,
+    "documents": 24,
+    "monitor_items": 24,
+    "run_items": 24,
+    "source_run_metrics": 56
+  },
+  "counts_after_second": {
+    "monitors": 1,
+    "runs": 1,
+    "sources": 56,
+    "documents": 24,
+    "monitor_items": 24,
+    "run_items": 24,
+    "source_run_metrics": 56
+  },
+  "schema_version": 1
+}

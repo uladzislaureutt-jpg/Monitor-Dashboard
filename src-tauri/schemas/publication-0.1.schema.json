@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Monitor Dashboard Publication 0.x",
+  "type": "object",
+  "required": ["schema_version", "monitor_key", "document_id", "monitor_item_id", "source", "publication", "classification", "event"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^0\\.[0-9]+$" },
+    "monitor_key": { "type": "string", "minLength": 1 },
+    "document_id": { "type": "string", "minLength": 1 },
+    "monitor_item_id": { "type": "string", "minLength": 1 },
+    "source": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "type": { "type": ["string", "null"] },
+        "priority": { "type": ["string", "null"] },
+        "language": { "type": ["string", "null"] },
+        "configured_region": { "type": ["string", "null"] },
+        "configured_locality": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "publication": {
+      "type": "object",
+      "required": ["title", "url", "normalized_url"],
+      "properties": {
+        "published_at": { "type": ["string", "null"] },
+        "title": { "type": "string", "minLength": 1 },
+        "title_generated": { "type": "boolean" },
+        "excerpt": { "type": ["string", "null"] },
+        "url": { "type": "string", "minLength": 1 },
+        "normalized_url": { "type": "string", "minLength": 1 },
+        "text_length": { "type": ["integer", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "classification": { "type": "object", "additionalProperties": true },
+    "event": { "type": "object", "additionalProperties": true },
+    "provenance": { "type": ["object", "null"], "additionalProperties": true }
+  },
+  "additionalProperties": true
+}

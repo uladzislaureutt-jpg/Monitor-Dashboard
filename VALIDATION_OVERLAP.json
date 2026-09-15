@@ -1,0 +1,15 @@
+{
+  "status": "PASS",
+  "scenario": "same 24 publications observed in two overlapping runs",
+  "first_import": "imported",
+  "second_run_import": "imported",
+  "counts": {
+    "runs": 2,
+    "documents": 24,
+    "monitor_items": 24,
+    "run_items": 48,
+    "sources": 56,
+    "source_run_metrics": 112
+  },
+  "expected": "documents stay 24 while run_items become 48"
+}

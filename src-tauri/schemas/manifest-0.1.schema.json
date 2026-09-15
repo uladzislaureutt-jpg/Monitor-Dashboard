@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Monitor Dashboard Manifest 0.x",
+  "type": "object",
+  "required": ["dashboard_contract_version", "monitor", "run", "files", "capabilities"],
+  "properties": {
+    "dashboard_contract_version": { "type": "string", "pattern": "^0\\.[0-9]+$" },
+    "monitor": {
+      "type": "object",
+      "required": ["key", "display_name"],
+      "properties": {
+        "key": { "type": "string", "minLength": 1 },
+        "display_name": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "run": {
+      "type": "object",
+      "required": ["run_number"],
+      "properties": {
+        "run_number": { "type": ["integer", "null"] },
+        "github_run_id": { "type": ["string", "null"] },
+        "github_sha": { "type": ["string", "null"] },
+        "started_at": { "type": ["string", "null"] },
+        "lookback_hours": { "type": ["integer", "null"] },
+        "dry_run": { "type": ["boolean", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "files": {
+      "type": "object",
+      "required": ["publications", "source_metrics", "run_metrics"],
+      "properties": {
+        "publications": { "type": "string", "minLength": 1 },
+        "source_metrics": { "type": "string", "minLength": 1 },
+        "run_metrics": { "type": "string", "minLength": 1 },
+        "entities": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "capabilities": { "type": "object" }
+  },
+  "additionalProperties": true
+}

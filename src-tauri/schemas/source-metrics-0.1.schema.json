@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Monitor Dashboard Source Metrics 0.x",
+  "type": "object",
+  "required": ["schema_version", "monitor_key", "source"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^0\\.[0-9]+$" },
+    "monitor_key": { "type": "string", "minLength": 1 },
+    "source": { "type": "string", "minLength": 1 },
+    "domain": { "type": ["string", "null"] },
+    "priority": { "type": ["string", "null"] },
+    "source_region": { "type": ["string", "null"] },
+    "source_locality": { "type": ["string", "null"] },
+    "results": { "type": ["integer", "null"] }
+  },
+  "additionalProperties": true
+}
