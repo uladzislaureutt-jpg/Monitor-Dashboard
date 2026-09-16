@@ -1,6 +1,6 @@
 [package]
 name = "monitor-dashboard"
-version = "0.4.1"
+version = "0.4.2"
 description = "Local desktop dashboard for media monitoring bundles"
 authors = ["Monitor Dashboard"]
 edition = "2024"

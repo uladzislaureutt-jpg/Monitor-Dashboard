@@ -1,23 +1,20 @@
 import type { PeriodDays } from "../types";
+import { useI18n } from "../i18n";
 
-const options: Array<{ label: string; value: PeriodDays }> = [
-  { label: "1 день", value: 1 },
-  { label: "7 дней", value: 7 },
-  { label: "30 дней", value: 30 },
-  { label: "365 дней", value: 365 },
-  { label: "Всё время", value: null },
-];
+const values: PeriodDays[] = [1, 7, 30, 365, null];
 
-export function PeriodSelector({ value, onChange }: { value: PeriodDays; onChange: (value: PeriodDays) => void }) {
+export function PeriodSelector({ value, onChange, compact = false }: { value: PeriodDays; onChange: (value: PeriodDays) => void; compact?: boolean }) {
+  const { t } = useI18n();
+  const labelFor = (option: PeriodDays) => option === null ? t("period.all") : t(`period.${option}` as "period.1" | "period.7" | "period.30" | "period.365");
   return (
-    <div className="period-selector" role="group" aria-label="Период">
-      {options.map((option) => (
+    <div className={`period-selector ${compact ? "compact" : ""}`} role="group" aria-label={t("period.aria")}>
+      {values.map((option) => (
         <button
-          key={option.label}
-          className={value === option.value ? "active" : ""}
-          onClick={() => onChange(option.value)}
+          key={option ?? "all"}
+          className={value === option ? "active" : ""}
+          onClick={() => onChange(option)}
         >
-          {option.label}
+          {labelFor(option)}
         </button>
       ))}
     </div>

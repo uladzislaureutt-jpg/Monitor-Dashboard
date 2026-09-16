@@ -279,3 +279,27 @@ td small { display: block; margin-top: 3px; color: #81909b; max-width: 230px; ov
   .workroom-drawer { left: 180px; width: 360px; }
   .sync-form { grid-template-columns: 1fr 1fr; }
 }
+
+/* 0.4.2: bilingual UI, per-panel periods, geography treemap */
+body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
+.content { background: linear-gradient(180deg, #f6f0e6 0%, #ede5d8 100%); }
+.language-switch { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border-radius: 9px; border: 1px solid #ffffff28; background: #ffffff0c; }
+.language-switch button { border: 0; background: transparent; color: #bcd0dc; border-radius: 6px; padding: 6px 8px; font-size: 9px; font-weight: 800; }
+.language-switch button.active { color: #173147; background: #f5f7f8; }
+.period-selector.compact { padding: 2px; border-radius: 8px; box-shadow: none; }
+.period-selector.compact button { padding: 5px 7px; font-size: 8px; border-radius: 6px; white-space: nowrap; }
+.panel-control-stack { display: grid; justify-items: end; gap: 6px; flex: 0 0 auto; }
+.chart-head-with-mode { align-items: flex-start; }
+.geo-treemap-wrap { min-height: 270px; display: grid; gap: 9px; align-content: center; }
+.geo-treemap { position: relative; width: min(100%, 430px); aspect-ratio: 1 / 1; margin: 0 auto; overflow: hidden; border: 1px solid #d7c9bd; border-radius: 8px; background: #fff6f3; box-shadow: inset 0 0 0 2px #fff9f5; }
+.geo-tile { position: absolute; overflow: hidden; border: 2px solid #fff8f2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px; color: #5e1717; text-align: center; transition: filter .15s ease, transform .15s ease; }
+.geo-tile:hover { filter: saturate(1.12) brightness(.96); z-index: 2; }
+.geo-tile span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: clamp(7px, 1vw, 11px); font-weight: 700; line-height: 1.1; text-shadow: 0 1px #ffffffaa; }
+.geo-tile b { font-size: clamp(10px, 1.35vw, 18px); line-height: 1; }
+.map-scale { background: #ae2222; }
+@media (max-width: 1220px) {
+  .language-switch { order: 2; }
+  .run-pill { display: none; }
+  .panel-control-stack { justify-items: start; }
+  .chart-head-with-mode { flex-direction: column; }
+}

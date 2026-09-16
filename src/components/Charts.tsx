@@ -1,11 +1,13 @@
 import type { CountPoint } from "../types";
+import { useI18n } from "../i18n";
 
-function compact(value: number) {
-  return new Intl.NumberFormat("ru-RU", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+function compact(value: number, locale: string) {
+  return new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 }).format(value);
 }
 
 export function TrendColumns({ data }: { data: CountPoint[] }) {
-  if (!data.length) return <div className="chart-empty">Недостаточно данных для графика.</div>;
+  const { t, formatLocale } = useI18n();
+  if (!data.length) return <div className="chart-empty">{t("common.notEnough")}</div>;
   const width = 760;
   const height = 245;
   const padX = 40;
@@ -21,142 +23,120 @@ export function TrendColumns({ data }: { data: CountPoint[] }) {
   const avgY = y(average);
 
   return (
-    <div className="trend-chart" aria-label="Динамика публикаций">
-      <div className="trend-summary"><span>Среднее за период</span><b>{average.toFixed(1)}</b></div>
+    <div className="trend-chart" aria-label={t("dashboard.trend")}>
+      <div className="trend-summary"><span>{t("chart.average")}</span><b>{average.toFixed(1)}</b></div>
       <svg viewBox={`0 0 ${width} ${height}`} role="img">
         {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
           const yy = padTop + ratio * plotHeight;
           const label = Math.round(max * (1 - ratio));
-          return (
-            <g key={ratio}>
-              <line x1={padX} y1={yy} x2={width - padX} y2={yy} className="chart-grid" />
-              <text x={5} y={yy + 4} className="chart-axis">{compact(label)}</text>
-            </g>
-          );
+          return <g key={ratio}><line x1={padX} y1={yy} x2={width - padX} y2={yy} className="chart-grid" /><text x={5} y={yy + 4} className="chart-axis">{compact(label, formatLocale)}</text></g>;
         })}
         {data.map((point, index) => {
           const x = padX + index * band + (band - barWidth) / 2;
           const top = y(point.count);
           const h = padTop + plotHeight - top;
-          return (
-            <g key={`${point.label}-${index}`}>
-              <rect x={x} y={top} width={barWidth} height={Math.max(1, h)} rx={Math.min(4, barWidth / 4)} className="trend-bar">
-                <title>{`${point.label}: ${point.count}`}</title>
-              </rect>
-              {(index % every === 0 || index === data.length - 1) && (
-                <text x={x + barWidth / 2} y={height - 8} textAnchor="middle" className="chart-axis chart-x-label">
-                  {point.label.length > 7 ? point.label.slice(5) : point.label}
-                </text>
-              )}
-            </g>
-          );
+          return <g key={`${point.label}-${index}`}>
+            <rect x={x} y={top} width={barWidth} height={Math.max(1, h)} rx={Math.min(4, barWidth / 4)} className="trend-bar"><title>{`${point.label}: ${point.count}`}</title></rect>
+            {(index % every === 0 || index === data.length - 1) && <text x={x + barWidth / 2} y={height - 8} textAnchor="middle" className="chart-axis chart-x-label">{point.label.length > 7 ? point.label.slice(5) : point.label}</text>}
+          </g>;
         })}
         <line x1={padX} y1={avgY} x2={width - padX} y2={avgY} className="average-line" />
-        <text x={width - padX - 4} y={Math.max(13, avgY - 6)} textAnchor="end" className="average-label">среднее {average.toFixed(1)}</text>
+        <text x={width - padX - 4} y={Math.max(13, avgY - 6)} textAnchor="end" className="average-label">{t("chart.averageShort", { value: average.toFixed(1) })}</text>
       </svg>
     </div>
   );
 }
 
 export function RankBars({ data, maxItems = 8 }: { data: CountPoint[]; maxItems?: number }) {
+  const { t } = useI18n();
   const sliced = data.slice(0, maxItems);
   const max = Math.max(1, ...sliced.map((item) => item.count));
-  if (!sliced.length) return <div className="chart-empty">Нет данных.</div>;
-  return (
-    <div className="rank-bars">
-      {sliced.map((item, index) => (
-        <div className="rank-row" key={`${item.label}-${index}`}>
-          <div className="rank-label" title={item.label}>{item.label}</div>
-          <div className="rank-track"><div className="rank-fill" style={{ width: `${Math.max(3, (item.count / max) * 100)}%` }} /></div>
-          <div className="rank-value">{item.count}</div>
-        </div>
-      ))}
-    </div>
-  );
+  if (!sliced.length) return <div className="chart-empty">{t("common.none")}</div>;
+  return <div className="rank-bars">{sliced.map((item, index) => <div className="rank-row" key={`${item.label}-${index}`}><div className="rank-label" title={item.label}>{item.label}</div><div className="rank-track"><div className="rank-fill" style={{ width: `${Math.max(3, (item.count / max) * 100)}%` }} /></div><div className="rank-value">{item.count}</div></div>)}</div>;
 }
 
 const PIE_COLORS = ["#2f6f98", "#5c92b2", "#8bb3c8", "#d29a55", "#9b7b67", "#6f9b83", "#a6a55e", "#8c7fa7"];
 
-function pieData(data: CountPoint[], maxItems: number): CountPoint[] {
+function pieData(data: CountPoint[], maxItems: number, otherLabel: string): CountPoint[] {
   if (data.length <= maxItems) return data;
   const head = data.slice(0, maxItems - 1);
   const other = data.slice(maxItems - 1).reduce((sum, item) => sum + item.count, 0);
-  return [...head, { label: "Остальные", count: other }];
+  return [...head, { label: otherLabel, count: other }];
 }
-
-function polar(cx: number, cy: number, radius: number, angle: number) {
-  const radians = (angle - 90) * Math.PI / 180;
-  return { x: cx + radius * Math.cos(radians), y: cy + radius * Math.sin(radians) };
-}
-
-function sectorPath(cx: number, cy: number, radius: number, start: number, end: number) {
-  const startPoint = polar(cx, cy, radius, end);
-  const endPoint = polar(cx, cy, radius, start);
-  const largeArc = end - start <= 180 ? 0 : 1;
-  return [`M ${cx} ${cy}`, `L ${startPoint.x} ${startPoint.y}`, `A ${radius} ${radius} 0 ${largeArc} 0 ${endPoint.x} ${endPoint.y}`, "Z"].join(" ");
-}
+function polar(cx: number, cy: number, radius: number, angle: number) { const radians = (angle - 90) * Math.PI / 180; return { x: cx + radius * Math.cos(radians), y: cy + radius * Math.sin(radians) }; }
+function sectorPath(cx: number, cy: number, radius: number, start: number, end: number) { const startPoint = polar(cx, cy, radius, end); const endPoint = polar(cx, cy, radius, start); const largeArc = end - start <= 180 ? 0 : 1; return [`M ${cx} ${cy}`, `L ${startPoint.x} ${startPoint.y}`, `A ${radius} ${radius} 0 ${largeArc} 0 ${endPoint.x} ${endPoint.y}`, "Z"].join(" "); }
 
 export function PieChart({ data, maxItems = 8 }: { data: CountPoint[]; maxItems?: number }) {
-  const items = pieData(data.filter((item) => item.count > 0), maxItems);
+  const { t } = useI18n();
+  const items = pieData(data.filter((item) => item.count > 0), maxItems, t("chart.others"));
   const total = items.reduce((sum, item) => sum + item.count, 0);
-  if (!items.length || total === 0) return <div className="chart-empty">Нет данных.</div>;
+  if (!items.length || total === 0) return <div className="chart-empty">{t("common.none")}</div>;
   let cursor = 0;
-  return (
-    <div className="pie-layout">
-      <svg viewBox="0 0 240 220" className="pie-svg" role="img" aria-label="Секторальная диаграмма">
-        {items.map((item, index) => {
-          const sweep = item.count / total * 360;
-          const start = cursor;
-          const end = cursor + sweep;
-          cursor = end;
-          return <path key={`${item.label}-${index}`} d={sectorPath(120, 108, 82, start, end)} fill={PIE_COLORS[index % PIE_COLORS.length]} className="pie-sector"><title>{`${item.label}: ${item.count} (${Math.round(item.count / total * 100)}%)`}</title></path>;
-        })}
-        <circle cx="120" cy="108" r="41" className="pie-hole" />
-        <text x="120" y="104" textAnchor="middle" className="pie-total">{total}</text>
-        <text x="120" y="121" textAnchor="middle" className="pie-total-label">публикаций</text>
-      </svg>
-      <div className="pie-legend">
-        {items.map((item, index) => <div className="pie-legend-row" key={`${item.label}-${index}`}><span className="legend-dot" style={{ background: PIE_COLORS[index % PIE_COLORS.length] }} /><span title={item.label}>{item.label}</span><b>{item.count}</b></div>)}
-      </div>
-    </div>
-  );
+  return <div className="pie-layout"><svg viewBox="0 0 240 220" className="pie-svg" role="img" aria-label={t("chart.sectors")}>
+    {items.map((item, index) => { const sweep = item.count / total * 360; const start = cursor; const end = cursor + sweep; cursor = end; return <path key={`${item.label}-${index}`} d={sectorPath(120, 108, 82, start, end)} fill={PIE_COLORS[index % PIE_COLORS.length]} className="pie-sector"><title>{`${item.label}: ${item.count} (${Math.round(item.count / total * 100)}%)`}</title></path>; })}
+    <circle cx="120" cy="108" r="41" className="pie-hole" /><text x="120" y="104" textAnchor="middle" className="pie-total">{total}</text><text x="120" y="121" textAnchor="middle" className="pie-total-label">{t("chart.publications")}</text>
+  </svg><div className="pie-legend">{items.map((item, index) => <div className="pie-legend-row" key={`${item.label}-${index}`}><span className="legend-dot" style={{ background: PIE_COLORS[index % PIE_COLORS.length] }} /><span title={item.label}>{item.label}</span><b>{item.count}</b></div>)}</div></div>;
 }
 
-type MapRegion = { key: string; label: string; aliases: string[]; points: string; labelX: number; labelY: number };
-const MAP_REGIONS: MapRegion[] = [
-  { key: "grodno", label: "Гродненская", aliases: ["гродненская область"], points: "72,108 190,68 284,112 276,207 164,232 78,190", labelX: 168, labelY: 151 },
-  { key: "brest", label: "Брестская", aliases: ["брестская область"], points: "78,190 164,232 276,207 300,330 203,383 72,333 48,252", labelX: 165, labelY: 292 },
-  { key: "vitebsk", label: "Витебская", aliases: ["витебская область"], points: "284,112 302,78 450,44 610,101 590,190 450,220 342,181", labelX: 453, labelY: 125 },
-  { key: "minsk", label: "Минская", aliases: ["минская область"], points: "284,112 342,181 450,220 430,310 300,330 276,207", labelX: 356, labelY: 245 },
-  { key: "mogilev", label: "Могилёвская", aliases: ["могилёвская область", "могилевская область"], points: "450,220 590,190 642,260 560,332 430,310", labelX: 535, labelY: 267 },
-  { key: "gomel", label: "Гомельская", aliases: ["гомельская область"], points: "300,330 430,310 560,332 622,391 470,421 340,390", labelX: 466, labelY: 365 },
-];
+type GeoItem = { key: string; label: string; aliases: string[]; count: number };
+type Rect = { x: number; y: number; w: number; h: number };
+type Tile = GeoItem & Rect;
 
 function normalizedLabel(value: string) { return value.trim().toLocaleLowerCase("ru-RU"); }
 
-export function BelarusRegionMap({ data }: { data: CountPoint[] }) {
-  const values = new Map(data.map((item) => [normalizedLabel(item.label), item.count]));
-  const counts = MAP_REGIONS.map((region) => region.aliases.reduce((best, alias) => Math.max(best, values.get(alias) ?? 0), 0));
-  const minskCity = Math.max(values.get("минск") ?? 0, values.get("г. минск") ?? 0);
-  const max = Math.max(1, minskCity, ...counts);
-  const unknown = data.find((item) => normalizedLabel(item.label).startsWith("не определ"))?.count ?? 0;
-  const opacityFor = (count: number) => count === 0 ? 0.12 : 0.30 + (count / max) * 0.65;
+function binaryTreemap(items: GeoItem[], rect: Rect): Tile[] {
+  if (!items.length) return [];
+  if (items.length === 1) return [{ ...items[0], ...rect }];
+  const weights = items.map((item) => Math.max(item.count, 0.18));
+  const total = weights.reduce((sum, value) => sum + value, 0);
+  let acc = 0;
+  let split = 1;
+  let best = Infinity;
+  for (let i = 1; i < items.length; i += 1) {
+    acc += weights[i - 1];
+    const diff = Math.abs(total / 2 - acc);
+    if (diff < best) { best = diff; split = i; }
+  }
+  const first = items.slice(0, split);
+  const second = items.slice(split);
+  const firstWeight = weights.slice(0, split).reduce((sum, value) => sum + value, 0);
+  const ratio = firstWeight / total;
+  if (rect.w >= rect.h) {
+    const w1 = rect.w * ratio;
+    return [...binaryTreemap(first, { x: rect.x, y: rect.y, w: w1, h: rect.h }), ...binaryTreemap(second, { x: rect.x + w1, y: rect.y, w: rect.w - w1, h: rect.h })];
+  }
+  const h1 = rect.h * ratio;
+  return [...binaryTreemap(first, { x: rect.x, y: rect.y, w: rect.w, h: h1 }), ...binaryTreemap(second, { x: rect.x, y: rect.y + h1, w: rect.w, h: rect.h - h1 })];
+}
 
-  return (
-    <div className="belarus-map-wrap">
-      <svg viewBox="0 0 690 455" className="belarus-map" role="img" aria-label="Карта-схема Беларуси по регионам событий">
-        {MAP_REGIONS.map((region, index) => {
-          const count = counts[index];
-          return <g key={region.key}>
-            <polygon points={region.points} className="map-region" style={{ fillOpacity: opacityFor(count) }}><title>{`${region.label} область: ${count}`}</title></polygon>
-            <text x={region.labelX} y={region.labelY} textAnchor="middle" className="map-label">{region.label}</text>
-            <text x={region.labelX} y={region.labelY + 17} textAnchor="middle" className="map-value">{count}</text>
-          </g>;
-        })}
-        <circle cx="365" cy="247" r={minskCity > 0 ? 13 : 8} className="minsk-city" style={{ fillOpacity: opacityFor(minskCity) }}><title>{`Минск: ${minskCity}`}</title></circle>
-        <text x="365" y="276" textAnchor="middle" className="map-city-label">Минск · {minskCity}</text>
-      </svg>
-      <div className="map-footer"><span><i className="map-scale low" />меньше</span><span><i className="map-scale high" />больше</span>{unknown > 0 && <b>Не определено: {unknown}</b>}</div>
+export function BelarusRegionTreemap({ data }: { data: CountPoint[] }) {
+  const { t } = useI18n();
+  const values = new Map(data.map((item) => [normalizedLabel(item.label), item.count]));
+  const find = (aliases: string[]) => aliases.reduce((best, alias) => Math.max(best, values.get(normalizedLabel(alias)) ?? 0), 0);
+  const allBelarus = data.filter((item) => {
+    const value = normalizedLabel(item.label);
+    return value.startsWith("не определ") || value.startsWith("не вызнач") || value === normalizedLabel(t("geo.allBelarus"));
+  }).reduce((sum, item) => sum + item.count, 0);
+  const items: GeoItem[] = [
+    { key: "grodno", label: t("geo.grodno"), aliases: ["Гродненская область", "Гродзенская вобласць"], count: 0 },
+    { key: "brest", label: t("geo.brest"), aliases: ["Брестская область", "Брэсцкая вобласць"], count: 0 },
+    { key: "vitebsk", label: t("geo.vitebsk"), aliases: ["Витебская область", "Віцебская вобласць"], count: 0 },
+    { key: "minsk-region", label: t("geo.minskRegion"), aliases: ["Минская область", "Мінская вобласць"], count: 0 },
+    { key: "mogilev", label: t("geo.mogilev"), aliases: ["Могилёвская область", "Могилевская область", "Магілёўская вобласць"], count: 0 },
+    { key: "gomel", label: t("geo.gomel"), aliases: ["Гомельская область", "Гомельская вобласць"], count: 0 },
+    { key: "minsk", label: t("geo.minsk"), aliases: ["Минск", "г. Минск", "Мінск", "г. Мінск"], count: 0 },
+    { key: "all", label: t("geo.allBelarus"), aliases: [], count: allBelarus },
+  ].map((item) => ({ ...item, count: item.key === "all" ? allBelarus : find(item.aliases) }));
+  const sorted = [...items].sort((a, b) => b.count - a.count);
+  const max = Math.max(1, ...items.map((item) => item.count));
+  const tiles = binaryTreemap(sorted, { x: 0, y: 0, w: 100, h: 100 });
+  const opacity = (count: number) => 0.13 + (count / max) * 0.77;
+  return <div className="geo-treemap-wrap">
+    <div className="geo-treemap" role="img" aria-label={t("dashboard.geography")}>
+      {tiles.map((tile) => <div key={tile.key} className="geo-tile" style={{ left: `${tile.x}%`, top: `${tile.y}%`, width: `${tile.w}%`, height: `${tile.h}%`, background: `rgba(174, 34, 34, ${opacity(tile.count)})` }} title={`${tile.label}: ${tile.count}`}>
+        <span>{tile.label}</span><b>{tile.count}</b>
+      </div>)}
     </div>
-  );
+    <div className="map-footer"><span><i className="map-scale low" />{t("geo.less")}</span><span><i className="map-scale high" />{t("geo.more")}</span></div>
+  </div>;
 }

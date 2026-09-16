@@ -1,29 +1,28 @@
 {
-  "package": "Monitor-Dashboard-0.4.1-Presentation-AutoSync",
-  "stage": "0.4.1",
-  "version": "0.4.1",
-  "created_on": "2026-09-15",
-  "base": "Monitor-Dashboard-0.4.0",
+  "package": "Monitor-0.4.2-Bilingual-Analytics-UI",
+  "stage": "0.4.2",
+  "version": "0.4.2",
+  "created_on": "2026-09-16",
+  "base": "Monitor-Dashboard-0.4.1",
   "production_monitor_workflows_modified": false,
-  "database_schema_changed": true,
+  "database_schema_changed": false,
   "database_schema_version": 2,
   "features": [
-    "SEP-Monitor module naming",
-    "light beige work canvas",
-    "column trend chart with average line",
-    "bar/pie toggle for topics and sources",
-    "bar/pie/map toggle for Belarus event geography",
-    "left-side Workroom drawer replacing Team wording",
-    "GitHub Actions artifact auto sync",
-    "automatic dry-run skipping",
-    "persistent dry-run sync status",
-    "manual import remains available"
+    "top-left product name Monitor/Манітор without Dashboard",
+    "full RU/BE interface switch persisted locally",
+    "independent period selectors for trend/topics/geography/sources",
+    "Belarus geography treemap with area proportional to publication counts",
+    "red intensity scale for geography treemap",
+    "unknown geography displayed as All Belarus / Уся Беларусь",
+    "existing Auto Sync and local SQLite preserved"
   ],
-  "security_note": "GitHub token is stored locally in WebView localStorage in 0.4.1; planned backend will remove end-user token distribution.",
   "validation": {
-    "typescript_tsx_syntax": "PASS",
-    "sqlite_migration_0001_to_0002": "PASS",
-    "full_npm_build": "NOT_RUN_LOCAL_DEPENDENCIES_UNAVAILABLE",
+    "typescript_tsx_parse": "PASS",
+    "stubbed_strict_typescript": "PASS",
+    "i18n_ru_be_key_parity": "PASS_179_KEYS",
+    "run61_reference_ingest": "PASS",
+    "dashboard_sql_queries": "PASS",
+    "full_npm_build": "TO_BE_CONFIRMED_BY_GITHUB_ACTIONS",
     "rust_compile": "NOT_RUN_LOCAL_ENV_NO_RUST_TOOLCHAIN"
   }
 }
