@@ -45,6 +45,7 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [archiveSeed, setArchiveSeed] = useState("");
   const [workroomOpen, setWorkroomOpen] = useState(false);
+  const [workroomUnread, setWorkroomUnread] = useState(0);
   const [syncSettings, setSyncSettings] = useState<SyncSettings>(loadSyncSettings);
   const [syncBusy, setSyncBusy] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncUiStatus>({ kind: "none" });
@@ -99,7 +100,10 @@ export default function App() {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") { event.preventDefault(); setSearchOpen(true); window.setTimeout(() => searchRef.current?.focus(), 0); }
       if (event.key === "Escape") { setSearchOpen(false); setWorkroomOpen(false); }
     }
-    window.addEventListener("keydown", onKeyDown); return () => window.removeEventListener("keydown", onKeyDown);
+    function onWorkroomCompose() { setWorkroomOpen(true); }
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("monitor:workroom-compose", onWorkroomCompose);
+    return () => { window.removeEventListener("keydown", onKeyDown); window.removeEventListener("monitor:workroom-compose", onWorkroomCompose); };
   }, []);
 
   async function importBundle() {
@@ -144,9 +148,9 @@ export default function App() {
         <span className="module-pill">{t("module.name")}</span>{latestProduction?.runNumber != null && <span className="run-pill">{t("run.label")} {latestProduction.runNumber}</span>}
       </div>
     </header>
-    <div className="layout"><aside className="sidebar"><div className="nav-label">{t("nav.label")}</div>{nav.slice(0, 4).map((item) => <button key={item.key} className={`nav-item ${view === item.key ? "active" : ""}`} onClick={() => navigate(item.key)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}<button className={`nav-item workroom-nav ${workroomOpen ? "active" : ""}`} onClick={() => setWorkroomOpen((value) => !value)}><span className="nav-icon">◌</span>{t("nav.workroom")}</button>{nav.slice(4).map((item) => <button key={item.key} className={`nav-item ${view === item.key ? "active" : ""}`} onClick={() => navigate(item.key)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}<div className="sidebar-spacer" /><button className="side-status side-status-button" onClick={() => navigate("data")} title={t("data.syncNow")}><span className={`status-dot ${syncBusy ? "pulse" : ""}`} /><div><b>{syncSettings.autoSync ? t("sync.autoLabel") : t("status.localDb")}</b><small>{syncSettings.autoSync && syncSettings.repository ? (syncStatusText || t("status.ready")) : stats ? t("status.stats", { docs: stats.documents, sources: stats.sources }) : t("status.initializing")}</small></div></button></aside>
+    <div className="layout"><aside className="sidebar"><div className="nav-label">{t("nav.label")}</div>{nav.slice(0, 4).map((item) => <button key={item.key} className={`nav-item ${view === item.key ? "active" : ""}`} onClick={() => navigate(item.key)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}<button className={`nav-item workroom-nav ${workroomOpen ? "active" : ""}`} onClick={() => setWorkroomOpen((value) => !value)}><span className="nav-icon">◌</span><span className="workroom-nav-label">{t("nav.workroom")}</span>{workroomUnread > 0 && <span className="workroom-unread">{workroomUnread > 99 ? "99+" : workroomUnread}</span>}</button>{nav.slice(4).map((item) => <button key={item.key} className={`nav-item ${view === item.key ? "active" : ""}`} onClick={() => navigate(item.key)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}<div className="sidebar-spacer" /><button className="side-status side-status-button" onClick={() => navigate("data")} title={t("data.syncNow")}><span className={`status-dot ${syncBusy ? "pulse" : ""}`} /><div><b>{syncSettings.autoSync ? t("sync.autoLabel") : t("status.localDb")}</b><small>{syncSettings.autoSync && syncSettings.repository ? (syncStatusText || t("status.ready")) : stats ? t("status.stats", { docs: stats.documents, sources: stats.sources }) : t("status.initializing")}</small></div></button></aside>
       <main className="content">{message && <div className="notice success global-notice"><span>{message}</span><button onClick={() => setMessage("")}>×</button></div>}{error && <div className="notice error global-notice"><span>{error}</span><button onClick={() => setError("")}>×</button></div>}{view === "dashboard" && <DashboardView data={dashboard} period={period} onPeriodChange={setPeriod} loading={dashboardLoading} onOpenArchive={() => navigate("archive")} />}{view === "archive" && <ArchiveView initialQuery={archiveSeed} />}{view === "analytics" && <AnalyticsView data={dashboard} period={period} onPeriodChange={setPeriod} />}{view === "sources" && <SourcesView />}{view === "data" && <DataView stats={stats} runs={runs} busy={busy} onImport={importBundle} syncSettings={syncSettings} onSaveSyncSettings={saveSyncSettings} onSyncNow={(value) => performSync(value)} syncBusy={syncBusy} syncStatus={syncStatusText} />}</main>
     </div>
-    <SearchOverlay query={globalQuery} open={searchOpen} onClose={() => setSearchOpen(false)} onShowArchive={showArchiveForSearch} /><WorkroomDrawer open={workroomOpen} onClose={() => setWorkroomOpen(false)} />
+    <SearchOverlay query={globalQuery} open={searchOpen} onClose={() => setSearchOpen(false)} onShowArchive={showArchiveForSearch} /><WorkroomDrawer open={workroomOpen} onClose={() => setWorkroomOpen(false)} onUnreadChange={setWorkroomUnread} />
   </div>;
 }

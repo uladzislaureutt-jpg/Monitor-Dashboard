@@ -1,0 +1,28 @@
+{
+  "package": "Monitor-0.5.0-update",
+  "base": "Monitor-0.4.2",
+  "replace_or_add": [
+    "INSTALL_0.5_BROWSER.md",
+    "README.md",
+    "MANIFEST.json",
+    "VALIDATION_0.5.json",
+    "VALIDATION_0.5.md",
+    "backend/supabase/workroom.sql",
+    "docs/STAGE_0.5.md",
+    "docs/WORKROOM_SETUP_0.5.md",
+    "package.json",
+    "src/App.tsx",
+    "src/components/Charts.tsx",
+    "src/components/PublicationCard.tsx",
+    "src/components/WorkroomDrawer.tsx",
+    "src/i18n.tsx",
+    "src/styles.css",
+    "src/types.ts",
+    "src/workroom.ts",
+    "src-tauri/Cargo.toml",
+    "src-tauri/tauri.conf.json"
+  ],
+  "github_workflow_changed": false,
+  "local_sqlite_migration_required": false,
+  "external_backend_setup_required_for_network_workroom": true
+}

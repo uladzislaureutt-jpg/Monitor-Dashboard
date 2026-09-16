@@ -1,27 +1,35 @@
 {
-  "package": "Monitor-0.4.2-Bilingual-Analytics-UI",
-  "stage": "0.4.2",
-  "version": "0.4.2",
+  "package": "Monitor-0.5.0-Network-Workroom",
+  "stage": "0.5",
+  "version": "0.5.0",
   "created_on": "2026-09-16",
-  "base": "Monitor-Dashboard-0.4.1",
+  "base": "Monitor-0.4.2",
   "production_monitor_workflows_modified": false,
-  "database_schema_changed": false,
-  "database_schema_version": 2,
+  "local_database_schema_changed": false,
+  "local_database_schema_version": 2,
+  "network_backend": "Supabase Auth + Postgres/PostgREST",
   "features": [
-    "top-left product name Monitor/Манітор without Dashboard",
-    "full RU/BE interface switch persisted locally",
-    "independent period selectors for trend/topics/geography/sources",
-    "Belarus geography treemap with area proportional to publication counts",
-    "red intensity scale for geography treemap",
-    "unknown geography displayed as All Belarus / Уся Беларусь",
-    "existing Auto Sync and local SQLite preserved"
+    "network workroom for 5-7 users",
+    "email/password authentication",
+    "RLS-protected shared notes and announcements",
+    "pinned announcements",
+    "20-second feed polling with local cache",
+    "unread badge in left navigation",
+    "Discuss action from publication cards with title+URL context",
+    "local 0.4.x note migration one item at a time",
+    "RU/BE network workroom interface",
+    "adaptive geography treemap labels without white shadow"
   ],
+  "privacy_boundary": {
+    "server_receives": ["messages", "author identity", "optional publication title", "optional publication URL"],
+    "server_does_not_receive": ["monitor SQLite", "publication archive", "excerpts", "analytics", "dashboard bundles"]
+  },
   "validation": {
+    "workroom_service_strict_typescript": "PASS",
+    "workroom_mock_auth_list_post_delete": "PASS",
     "typescript_tsx_parse": "PASS",
-    "stubbed_strict_typescript": "PASS",
-    "i18n_ru_be_key_parity": "PASS_179_KEYS",
-    "run61_reference_ingest": "PASS",
-    "dashboard_sql_queries": "PASS",
+    "i18n_ru_be_key_parity": "PASS_205_KEYS",
+    "supabase_sql_static_checks": "PASS",
     "full_npm_build": "TO_BE_CONFIRMED_BY_GITHUB_ACTIONS",
     "rust_compile": "NOT_RUN_LOCAL_ENV_NO_RUST_TOOLCHAIN"
   }

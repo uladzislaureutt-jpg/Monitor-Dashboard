@@ -1,0 +1,23 @@
+{
+  "status": "PASS",
+  "checks": {
+    "i18n_key_count_ru": 205,
+    "i18n_key_count_be": 205,
+    "i18n_parity": true,
+    "sql_rls_profiles": true,
+    "sql_rls_messages": true,
+    "sql_auth_uid_trigger": true,
+    "sql_delete_admin": true,
+    "no_service_role_in_client": true,
+    "treemap_white_shadow_removed": true,
+    "treemap_dark_shadow": true
+  },
+  "workroom_mock_test": {
+    "status": "PASS",
+    "calls": 5,
+    "cached_messages": 1
+  },
+  "notes": [
+    "Full npm/Tauri build remains for GitHub Actions because package registry/Rust toolchain are unavailable locally."
+  ]
+}

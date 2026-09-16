@@ -133,9 +133,12 @@ export function BelarusRegionTreemap({ data }: { data: CountPoint[] }) {
   const opacity = (count: number) => 0.13 + (count / max) * 0.77;
   return <div className="geo-treemap-wrap">
     <div className="geo-treemap" role="img" aria-label={t("dashboard.geography")}>
-      {tiles.map((tile) => <div key={tile.key} className="geo-tile" style={{ left: `${tile.x}%`, top: `${tile.y}%`, width: `${tile.w}%`, height: `${tile.h}%`, background: `rgba(174, 34, 34, ${opacity(tile.count)})` }} title={`${tile.label}: ${tile.count}`}>
-        <span>{tile.label}</span><b>{tile.count}</b>
-      </div>)}
+      {tiles.map((tile) => {
+        const strength = tile.count / max;
+        return <div key={tile.key} className={`geo-tile ${strength >= 0.48 ? "dense" : "light"}`} style={{ left: `${tile.x}%`, top: `${tile.y}%`, width: `${tile.w}%`, height: `${tile.h}%`, background: `rgba(174, 34, 34, ${opacity(tile.count)})` }} title={`${tile.label}: ${tile.count}`}>
+          <span>{tile.label}</span><b>{tile.count}</b>
+        </div>;
+      })}
     </div>
     <div className="map-footer"><span><i className="map-scale low" />{t("geo.less")}</span><span><i className="map-scale high" />{t("geo.more")}</span></div>
   </div>;

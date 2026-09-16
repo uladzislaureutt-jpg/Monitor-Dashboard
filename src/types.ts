@@ -126,6 +126,45 @@ export type WorkroomLocalItem = {
   pinned?: boolean;
 };
 
+export type WorkroomConfig = {
+  url: string;
+  anonKey: string;
+  roomKey: string;
+};
+
+export type WorkroomSession = {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+  userId: string;
+  email: string;
+};
+
+export type WorkroomProfile = {
+  id: string;
+  displayName: string;
+  isAdmin: boolean;
+};
+
+export type WorkroomMessage = {
+  id: string;
+  roomKey: string;
+  kind: "note" | "announcement";
+  authorId: string;
+  authorName: string;
+  text: string;
+  publicationTitle: string | null;
+  publicationUrl: string | null;
+  pinned: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PublicationLink = {
+  title: string;
+  url: string;
+};
+
 export type SyncSettings = {
   repository: string;
   token: string;

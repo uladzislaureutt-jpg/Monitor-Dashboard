@@ -1,19 +1,210 @@
-import { useEffect, useMemo, useState } from "react";
-import type { WorkroomLocalItem } from "../types";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type {
+  PublicationLink,
+  WorkroomConfig,
+  WorkroomLocalItem,
+  WorkroomMessage,
+  WorkroomProfile,
+  WorkroomSession,
+} from "../types";
 import { useI18n } from "../i18n";
+import {
+  clearWorkroomConfig,
+  clearWorkroomSession,
+  createWorkroomMessage,
+  deleteWorkroomMessage,
+  getWorkroomProfile,
+  listWorkroomMessages,
+  loadCachedMessages,
+  loadLastRead,
+  loadWorkroomConfig,
+  loadWorkroomSession,
+  markWorkroomRead,
+  saveWorkroomConfig,
+  saveWorkroomSession,
+  signInWorkroom,
+} from "../workroom";
+import { desktopApi } from "../api";
 
-const STORAGE_KEY = "monitor-dashboard-workroom-local-notes-v1";
-const LEGACY_STORAGE_KEY = "monitor-dashboard-team-local-notes-v1";
-function loadItems(): WorkroomLocalItem[] { try { const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY); return raw ? JSON.parse(raw) as WorkroomLocalItem[] : []; } catch { return []; } }
+const LEGACY_STORAGE_KEY = "monitor-dashboard-workroom-local-notes-v1";
 
-export function WorkroomDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+function loadLegacyItems(): WorkroomLocalItem[] {
+  try { const raw = localStorage.getItem(LEGACY_STORAGE_KEY); return raw ? JSON.parse(raw) as WorkroomLocalItem[] : []; }
+  catch { return []; }
+}
+function saveLegacyItems(items: WorkroomLocalItem[]) {
+  localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(items));
+}
+function isConfigured(config: WorkroomConfig) { return Boolean(config.url.trim() && config.anonKey.trim()); }
+
+export function WorkroomDrawer({
+  open,
+  onClose,
+  onUnreadChange,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onUnreadChange?: (count: number) => void;
+}) {
   const { t, formatLocale } = useI18n();
-  const [items, setItems] = useState<WorkroomLocalItem[]>(loadItems);
+  const [config, setConfig] = useState<WorkroomConfig>(loadWorkroomConfig);
+  const [session, setSession] = useState<WorkroomSession | null>(loadWorkroomSession);
+  const [profile, setProfile] = useState<WorkroomProfile | null>(null);
+  const [messages, setMessages] = useState<WorkroomMessage[]>(() => isConfigured(loadWorkroomConfig()) ? loadCachedMessages(loadWorkroomConfig()) : []);
+  const [legacyItems, setLegacyItems] = useState<WorkroomLocalItem[]>(loadLegacyItems);
   const [text, setText] = useState("");
   const [kind, setKind] = useState<"note" | "announcement">("note");
-  useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); }, [items]);
-  const sorted = useMemo(() => [...items].sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.createdAt.localeCompare(a.createdAt)), [items]);
-  function addItem() { const value = text.trim(); if (!value) return; setItems((current) => [{ id: crypto.randomUUID(), kind, author: t("workroom.you"), text: value, createdAt: new Date().toISOString(), pinned: kind === "announcement" }, ...current]); setText(""); }
+  const [linkedPublication, setLinkedPublication] = useState<PublicationLink | null>(null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [feedBusy, setFeedBusy] = useState(false);
+  const [status, setStatus] = useState<"idle" | "online" | "offline">("idle");
+  const [error, setError] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
+  const [draftConfig, setDraftConfig] = useState<WorkroomConfig>(config);
+
+  const markRead = useCallback((items: WorkroomMessage[]) => {
+    if (!items.length || !isConfigured(config)) { onUnreadChange?.(0); return; }
+    const newest = items.reduce((best, item) => item.createdAt > best ? item.createdAt : best, "");
+    if (newest) markWorkroomRead(config, newest);
+    onUnreadChange?.(0);
+  }, [config, onUnreadChange]);
+
+  const calculateUnread = useCallback((items: WorkroomMessage[], activeSession: WorkroomSession | null) => {
+    if (!isConfigured(config) || !activeSession) return 0;
+    const lastRead = loadLastRead(config);
+    return items.filter((item) => item.authorId !== activeSession.userId && (!lastRead || item.createdAt > lastRead)).length;
+  }, [config]);
+
+  const refresh = useCallback(async (silent = false) => {
+    if (!isConfigured(config) || !session) return;
+    if (!silent) setFeedBusy(true);
+    try {
+      const result = await listWorkroomMessages(config, session);
+      setSession(result.session); saveWorkroomSession(result.session);
+      setMessages(result.messages); setStatus("online"); setError("");
+      if (open) markRead(result.messages);
+      else onUnreadChange?.(calculateUnread(result.messages, result.session));
+    } catch (reason) {
+      const message = String(reason);
+      if (message.includes("AUTH_REQUIRED")) { setSession(null); setProfile(null); }
+      setStatus("offline");
+      if (!silent) setError(message);
+    } finally { if (!silent) setFeedBusy(false); }
+  }, [calculateUnread, config, markRead, onUnreadChange, open, session]);
+
+  useEffect(() => {
+    function onCompose(event: Event) {
+      const detail = (event as CustomEvent<PublicationLink>).detail;
+      if (detail?.url) setLinkedPublication(detail);
+    }
+    window.addEventListener("monitor:workroom-compose", onCompose);
+    return () => window.removeEventListener("monitor:workroom-compose", onCompose);
+  }, []);
+
+  useEffect(() => {
+    if (!isConfigured(config) || !session) return;
+    refresh(true);
+    const interval = window.setInterval(() => refresh(true), 20_000);
+    return () => window.clearInterval(interval);
+  }, [config, session, refresh]);
+
+  useEffect(() => {
+    if (open && messages.length) markRead(messages);
+  }, [open, messages, markRead]);
+
+  useEffect(() => {
+    if (!isConfigured(config) || !session || profile?.id === session.userId) return;
+    getWorkroomProfile(config, session).then(({ profile: next, session: active }) => {
+      setProfile(next); setSession(active); saveWorkroomSession(active);
+    }).catch(() => undefined);
+  }, [config, session, profile?.id]);
+
+  const sorted = useMemo(() => [...messages].sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.createdAt.localeCompare(a.createdAt)), [messages]);
+
+  async function login() {
+    if (!email.trim() || !password) return;
+    setBusy(true); setError("");
+    try {
+      const next = await signInWorkroom(config, email.trim(), password);
+      setSession(next); setPassword("");
+      const identity = await getWorkroomProfile(config, next);
+      setProfile(identity.profile); setSession(identity.session); saveWorkroomSession(identity.session);
+      setStatus("online");
+    } catch (reason) { setError(String(reason)); }
+    finally { setBusy(false); }
+  }
+
+  function logout() {
+    clearWorkroomSession(); setSession(null); setProfile(null); setMessages([]); setStatus("idle"); onUnreadChange?.(0);
+  }
+
+  function applySettings() {
+    const saved = saveWorkroomConfig(draftConfig);
+    clearWorkroomSession();
+    setConfig(saved); setDraftConfig(saved); setSession(null); setProfile(null); setMessages(loadCachedMessages(saved)); setShowSettings(false); setError(""); setStatus("idle"); onUnreadChange?.(0);
+  }
+
+  function removeSettings() {
+    clearWorkroomConfig();
+    const empty = { url: "", anonKey: "", roomKey: "sep-monitor" };
+    setConfig(empty); setDraftConfig(empty); setSession(null); setProfile(null); setMessages([]); setShowSettings(false); setStatus("idle"); onUnreadChange?.(0);
+  }
+
+  async function postMessage(input?: WorkroomLocalItem) {
+    const value = (input?.text ?? text).trim();
+    if (!value || !session) return;
+    setBusy(true); setError("");
+    try {
+      const result = await createWorkroomMessage(config, session, {
+        kind: input?.kind ?? kind,
+        text: value,
+        publicationTitle: input ? null : linkedPublication?.title ?? null,
+        publicationUrl: input ? null : linkedPublication?.url ?? null,
+      });
+      setSession(result.session); saveWorkroomSession(result.session);
+      if (!input) { setText(""); setLinkedPublication(null); }
+      else {
+        const nextLegacy = legacyItems.filter((item) => item.id !== input.id);
+        setLegacyItems(nextLegacy); saveLegacyItems(nextLegacy);
+      }
+      await refresh(true);
+    } catch (reason) { setError(String(reason)); }
+    finally { setBusy(false); }
+  }
+
+  async function removeMessage(message: WorkroomMessage) {
+    if (!session) return;
+    setBusy(true); setError("");
+    try {
+      const active = await deleteWorkroomMessage(config, session, message.id);
+      setSession(active); saveWorkroomSession(active); await refresh(true);
+    } catch (reason) { setError(String(reason)); }
+    finally { setBusy(false); }
+  }
+
+  async function openLinked(url: string) {
+    try { await desktopApi.openUrl(url); } catch (reason) { setError(String(reason)); }
+  }
+
   if (!open) return null;
-  return <><div className="drawer-backdrop" onMouseDown={onClose} /><aside className="workroom-drawer"><div className="workroom-head"><div><span className="eyebrow">{t("workroom.eyebrow")}</span><h3>{t("workroom.title")}</h3></div><button className="icon-button" onClick={onClose}>×</button></div><div className="workroom-stage-banner"><b>{t("workroom.local")}</b><p>{t("workroom.localHelp")}</p></div><div className="workroom-compose"><div className="segmented compact-segmented"><button className={kind === "note" ? "active" : ""} onClick={() => setKind("note")}>{t("workroom.note")}</button><button className={kind === "announcement" ? "active" : ""} onClick={() => setKind("announcement")}>{t("workroom.announcement")}</button></div><textarea value={text} onChange={(event) => setText(event.target.value)} placeholder={t("workroom.placeholder")} /><button className="primary-button" onClick={addItem}>{t("workroom.save")}</button></div><div className="workroom-feed">{sorted.length === 0 ? <div className="empty-state">{t("workroom.empty")}</div> : sorted.map((item) => <article className={`workroom-item ${item.kind}`} key={item.id}><div className="workroom-item-meta"><b>{item.kind === "announcement" ? t("workroom.announcement") : item.author}</b><span>{new Date(item.createdAt).toLocaleString(formatLocale)}</span></div><p>{item.text}</p><button className="text-danger" onClick={() => setItems((current) => current.filter((candidate) => candidate.id !== item.id))}>{t("workroom.delete")}</button></article>)}</div></aside></>;
+  const configured = isConfigured(config);
+  const canDelete = (message: WorkroomMessage) => Boolean(session && (message.authorId === session.userId || profile?.isAdmin));
+
+  return <><div className="drawer-backdrop" onMouseDown={onClose} /><aside className="workroom-drawer network-workroom">
+    <div className="workroom-head"><div><span className="eyebrow">{t("workroom.eyebrow")}</span><h3>{t("workroom.title")}</h3></div><div className="workroom-head-actions">{configured && <span className={`connection-dot ${status}`} title={status === "online" ? t("workroom.online") : status === "offline" ? t("workroom.offline") : t("workroom.connecting")} />}{configured && <button className="icon-button small" onClick={() => setShowSettings((value) => !value)} title={t("workroom.settings")}>⚙</button>}<button className="icon-button" onClick={onClose}>×</button></div></div>
+
+    {(!configured || showSettings) && <div className="workroom-setup"><b>{t("workroom.setupTitle")}</b><p>{t("workroom.setupHelp")}</p><label>{t("workroom.projectUrl")}<input value={draftConfig.url} onChange={(event) => setDraftConfig({ ...draftConfig, url: event.target.value })} placeholder="https://xxxx.supabase.co" /></label><label>{t("workroom.publicKey")}<input type="password" value={draftConfig.anonKey} onChange={(event) => setDraftConfig({ ...draftConfig, anonKey: event.target.value })} placeholder="sb_publishable_… / anon key" /></label><label>{t("workroom.roomKey")}<input value={draftConfig.roomKey} onChange={(event) => setDraftConfig({ ...draftConfig, roomKey: event.target.value })} /></label><div className="workroom-setup-actions"><button className="primary-button" onClick={applySettings}>{t("workroom.saveSettings")}</button>{configured && <button className="ghost-button" onClick={() => { setDraftConfig(config); setShowSettings(false); }}>{t("common.cancel")}</button>}{configured && <button className="text-danger" onClick={removeSettings}>{t("workroom.clearSettings")}</button>}</div></div>}
+
+    {configured && !showSettings && !session && <div className="workroom-login"><b>{t("workroom.loginTitle")}</b><p>{t("workroom.loginHelp")}</p><label>{t("workroom.email")}<input value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" /></label><label>{t("workroom.password")}<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" onKeyDown={(event) => { if (event.key === "Enter") login(); }} /></label><button className="primary-button" disabled={busy} onClick={login}>{busy ? t("workroom.connecting") : t("workroom.login")}</button></div>}
+
+    {configured && !showSettings && session && <>
+      <div className="workroom-session"><div><b>{profile?.displayName || session.email}</b><span>{status === "online" ? t("workroom.online") : status === "offline" ? t("workroom.offlineCached") : t("workroom.connecting")}</span></div><div><button className="ghost-button small-button" disabled={feedBusy} onClick={() => refresh(false)}>{feedBusy ? "…" : t("workroom.refresh")}</button><button className="ghost-button small-button" onClick={logout}>{t("workroom.logout")}</button></div></div>
+      <div className="workroom-compose"><div className="segmented compact-segmented"><button className={kind === "note" ? "active" : ""} onClick={() => setKind("note")}>{t("workroom.note")}</button><button className={kind === "announcement" ? "active" : ""} onClick={() => setKind("announcement")}>{t("workroom.announcement")}</button></div>{linkedPublication && <div className="linked-publication"><div><span>{t("workroom.linkedPublication")}</span><b title={linkedPublication.title}>{linkedPublication.title}</b></div><button className="icon-button small" onClick={() => setLinkedPublication(null)}>×</button></div>}<textarea value={text} onChange={(event) => setText(event.target.value)} placeholder={t("workroom.placeholder")} /><button className="primary-button" disabled={busy || !text.trim()} onClick={() => postMessage()}>{busy ? t("workroom.sending") : t("workroom.send")}</button></div>
+      {legacyItems.length > 0 && <div className="legacy-note-block"><b>{t("workroom.localDrafts", { count: legacyItems.length })}</b><p>{t("workroom.localDraftsHelp")}</p>{legacyItems.slice(0, 5).map((item) => <div className="legacy-note-row" key={item.id}><span>{item.text}</span><button className="link-button" disabled={busy} onClick={() => postMessage(item)}>{t("workroom.publish")}</button></div>)}</div>}
+      {error && <div className="workroom-error">{error}</div>}
+      <div className="workroom-feed">{sorted.length === 0 ? <div className="empty-state">{t("workroom.emptyNetwork")}</div> : sorted.map((item) => <article className={`workroom-item ${item.kind} ${item.pinned ? "pinned" : ""}`} key={item.id}><div className="workroom-item-meta"><div><b>{item.authorName || t("workroom.user")}</b>{item.kind === "announcement" && <span className="announcement-badge">{t("workroom.announcement")}</span>}</div><span>{new Date(item.createdAt).toLocaleString(formatLocale)}</span></div><p>{item.text}</p>{item.publicationUrl && <button className="workroom-publication-link" onClick={() => openLinked(item.publicationUrl!)}><span>{t("workroom.material")}</span><b>{item.publicationTitle || item.publicationUrl}</b></button>}<div className="workroom-item-actions">{item.pinned && <span className="pin-label">{t("workroom.pinned")}</span>}{canDelete(item) && <button className="text-danger" disabled={busy} onClick={() => removeMessage(item)}>{t("workroom.delete")}</button>}</div></article>)}</div>
+    </>}
+  </aside></>;
 }

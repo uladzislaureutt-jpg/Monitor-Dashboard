@@ -294,7 +294,7 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 .geo-treemap { position: relative; width: min(100%, 430px); aspect-ratio: 1 / 1; margin: 0 auto; overflow: hidden; border: 1px solid #d7c9bd; border-radius: 8px; background: #fff6f3; box-shadow: inset 0 0 0 2px #fff9f5; }
 .geo-tile { position: absolute; overflow: hidden; border: 2px solid #fff8f2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px; color: #5e1717; text-align: center; transition: filter .15s ease, transform .15s ease; }
 .geo-tile:hover { filter: saturate(1.12) brightness(.96); z-index: 2; }
-.geo-tile span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: clamp(7px, 1vw, 11px); font-weight: 700; line-height: 1.1; text-shadow: 0 1px #ffffffaa; }
+.geo-tile span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: clamp(7px, 1vw, 11px); font-weight: 700; line-height: 1.1; text-shadow: none; }
 .geo-tile b { font-size: clamp(10px, 1.35vw, 18px); line-height: 1; }
 .map-scale { background: #ae2222; }
 @media (max-width: 1220px) {
@@ -302,4 +302,61 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
   .run-pill { display: none; }
   .panel-control-stack { justify-items: start; }
   .chart-head-with-mode { flex-direction: column; }
+}
+
+/* 0.5.0: network workroom + clearer geography labels */
+.workroom-nav { position: relative; }
+.workroom-nav-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.workroom-unread { margin-left: auto; min-width: 19px; height: 19px; padding: 0 5px; display: grid; place-items: center; border-radius: 999px; background: #f1a35f; color: #43240d; font-size: 8px; font-weight: 900; box-shadow: 0 0 0 2px #172b3c; }
+.geo-tile span { text-shadow: none; }
+.geo-tile.light { color: #5d1717; }
+.geo-tile.dense { color: #fff8f5; text-shadow: 0 1px 2px rgba(70, 8, 8, .52); }
+.geo-tile.dense span, .geo-tile.dense b { color: inherit; }
+.geo-tile.light span, .geo-tile.light b { color: inherit; }
+
+.network-workroom { width: 430px; }
+.workroom-head-actions { display: flex; align-items: center; gap: 6px; }
+.icon-button.small { width: 25px; height: 25px; font-size: 12px; }
+.connection-dot { width: 9px; height: 9px; border-radius: 50%; background: #a3a9ad; box-shadow: 0 0 0 3px #7c858b18; }
+.connection-dot.online { background: #53aa70; box-shadow: 0 0 0 3px #53aa7026; }
+.connection-dot.offline { background: #c96b5a; box-shadow: 0 0 0 3px #c96b5a25; }
+.workroom-setup, .workroom-login { display: grid; gap: 9px; padding: 14px; margin: 12px; border: 1px solid #e1d4c7; border-radius: 12px; background: #fffaf4; }
+.workroom-setup > b, .workroom-login > b { color: #53473e; font-size: 11px; }
+.workroom-setup > p, .workroom-login > p { margin: -3px 0 2px; color: #817266; font-size: 9px; line-height: 1.5; }
+.workroom-setup label, .workroom-login label { display: grid; gap: 4px; color: #76685e; font-size: 8.5px; font-weight: 700; }
+.workroom-setup input, .workroom-login input { width: 100%; border: 1px solid #ddd2c6; border-radius: 8px; background: #fff; color: #38434a; padding: 8px 9px; outline: 0; font-size: 9.5px; }
+.workroom-setup input:focus, .workroom-login input:focus, .workroom-compose textarea:focus { border-color: #9bb8ca; box-shadow: 0 0 0 3px #6aa0bf1d; }
+.workroom-setup-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.workroom-session { margin: 10px 12px; padding: 9px 10px; border-radius: 10px; background: #efe8de; display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+.workroom-session > div:first-child { min-width: 0; }
+.workroom-session b, .workroom-session span { display: block; }
+.workroom-session b { color: #564b43; font-size: 9.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workroom-session span { color: #8b7c70; font-size: 8px; margin-top: 2px; }
+.workroom-session > div:last-child { display: flex; gap: 5px; flex: 0 0 auto; }
+.small-button { padding: 5px 7px; font-size: 8px; }
+.linked-publication { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 8px 9px; border-radius: 9px; border: 1px solid #d8dfe3; background: #eef5f8; }
+.linked-publication > div { min-width: 0; }
+.linked-publication span, .linked-publication b { display: block; }
+.linked-publication span { color: #738593; font-size: 7.5px; text-transform: uppercase; letter-spacing: .04em; }
+.linked-publication b { margin-top: 2px; color: #36556a; font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.legacy-note-block { margin: 0 12px 10px; padding: 9px; border: 1px dashed #d9b98e; border-radius: 10px; background: #fff8ed; }
+.legacy-note-block > b { color: #745936; font-size: 8.5px; }
+.legacy-note-block > p { margin: 4px 0 7px; color: #8c775f; font-size: 8px; line-height: 1.45; }
+.legacy-note-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 0; border-top: 1px solid #eadcc8; }
+.legacy-note-row span { min-width: 0; color: #665d54; font-size: 8.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workroom-error { margin: 0 12px 9px; padding: 8px; border: 1px solid #edc9c5; border-radius: 9px; background: #fff2f0; color: #8f4641; font-size: 8.5px; white-space: pre-wrap; }
+.workroom-feed { flex: 1 1 auto; }
+.workroom-item.pinned { box-shadow: inset 0 0 0 1px #e0be86; }
+.workroom-item-meta > div { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.announcement-badge { display: inline-block; border-radius: 999px; padding: 2px 5px; background: #f1dfc0; color: #7c5c28; font-size: 7px; font-weight: 800; }
+.workroom-publication-link { width: 100%; border: 1px solid #d9e3e8; border-radius: 9px; background: #f0f6f8; color: #385b70; padding: 7px 8px; text-align: left; }
+.workroom-publication-link span, .workroom-publication-link b { display: block; }
+.workroom-publication-link span { color: #788b96; font-size: 7px; text-transform: uppercase; }
+.workroom-publication-link b { margin-top: 2px; font-size: 8.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workroom-item-actions { min-height: 16px; margin-top: 7px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pin-label { color: #a17339; font-size: 7.5px; font-weight: 700; }
+.discuss-link { color: #9a642f; }
+
+@media (max-width: 1050px) {
+  .network-workroom { width: 390px; }
 }
