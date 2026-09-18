@@ -9,7 +9,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use crate::models::{
     ArchiveFacets, ArchivePage, CountPoint, DashboardOverview, DatabaseStats,
-    PublicationSummary, RunSummary, SourceSummary, TopicTrendPoint,
+    PublicationSummary, RunSummary, SourceSummary, TopicTrendPoint, SourceDiversitySummary, CoverageHealthSummary,
 };
 
 const MIGRATION_0001: &str = include_str!("../migrations/0001_init.sql");
@@ -247,9 +247,167 @@ fn count_points(
 
 
 fn topic_trend_points(conn:&Connection,base:&str,monitor_key:&str,period_days:Option<i64>,trend_bucket:&str,categories:&[CountPoint])->Result<Vec<TopicTrendPoint>,String>{let mut result=Vec::new();for category in categories.iter().filter(|i|!i.label.eq_ignore_ascii_case("Без категории")).take(4){let sql=format!("SELECT {trend_bucket} AS bucket, COUNT(DISTINCT mi.id) AS count {base} AND d.published_at IS NOT NULL AND mi.category=?3 GROUP BY bucket ORDER BY bucket");let mut stmt=conn.prepare(&sql).map_err(|e|format!("Не удалось подготовить динамику темы: {e}"))?;let rows=stmt.query_map(params![monitor_key,period_days,category.label.as_str()],|row|Ok(TopicTrendPoint{bucket:row.get(0)?,category:category.label.clone(),count:row.get(1)?})).map_err(|e|format!("Не удалось рассчитать динамику темы: {e}"))?;result.extend(rows.collect::<Result<Vec<_>,_>>().map_err(|e|format!("Не удалось прочитать динамику темы: {e}"))?);}Ok(result)}
-fn person_regex()->&'static Regex{static PERSON_RE:OnceLock<Regex>=OnceLock::new();PERSON_RE.get_or_init(||Regex::new(r"(?u)\b([А-ЯЁІЎ][а-яёіў'’-]{2,})\s+([А-ЯЁІЎ][а-яёіў'’-]{2,})(?:\s+([А-ЯЁІЎ][а-яёіў'’-]{2,}))?\b").expect("valid person regex"))}
-fn plausible_person(candidate:&str)->bool{let lower=candidate.to_lowercase();let blocked=["область","обласць","вобласць","район","раён","улица","вуліца","проспект","совет","савет","комитет","камітэт","министерство","міністэрства","суд","больница","бальніца","поликлиника","паліклініка","беларусь","минск","мінск","жители","жыхары","власти","улады","красный крест","чырвоны крыж","белая русь"];if blocked.iter().any(|word|lower.contains(word)){return false;}let first=lower.split_whitespace().next().unwrap_or("");let endings=["ский","ская","ское","ской","ские","цкі","цкая","цкае","скія","ая","ый","ий"];!endings.iter().any(|ending|first.ends_with(ending))}
-fn person_breakdown(conn:&Connection,base:&str,monitor_key:&str,period_days:Option<i64>)->Result<Vec<CountPoint>,String>{let sql=format!("SELECT mi.id, d.title, COALESCE(d.excerpt,'') {base}");let mut stmt=conn.prepare(&sql).map_err(|e|format!("Не удалось подготовить извлечение персоналий: {e}"))?;let rows=stmt.query_map(params![monitor_key,period_days],|row|Ok((row.get::<_,i64>(0)?,row.get::<_,String>(1)?,row.get::<_,String>(2)?))).map_err(|e|format!("Не удалось прочитать тексты для персоналий: {e}"))?;let mut counts:HashMap<String,i64>=HashMap::new();for row in rows{let(_,title,excerpt)=row.map_err(|e|format!("Не удалось прочитать строку для персоналий: {e}"))?;let text=format!("{title}. {excerpt}");let mut seen=HashSet::new();for caps in person_regex().captures_iter(&text){let c=caps.get(0).map(|m|m.as_str().trim()).unwrap_or("");if !c.is_empty()&&plausible_person(c){seen.insert(c.to_string());}}for c in seen{*counts.entry(c).or_insert(0)+=1;}}let mut items:Vec<CountPoint>=counts.into_iter().filter(|(_,count)|*count>=2).map(|(label,count)|CountPoint{label,count}).collect();items.sort_by(|a,b|b.count.cmp(&a.count).then_with(||a.label.cmp(&b.label)));items.truncate(8);Ok(items)}
+fn person_regex()->&'static Regex{
+    static PERSON_RE:OnceLock<Regex>=OnceLock::new();
+    PERSON_RE.get_or_init(||Regex::new(r"(?u)\b([А-ЯЁІЎ][а-яёіў'’-]{2,})\s+([А-ЯЁІЎ][а-яёіў'’-]{2,})(?:\s+([А-ЯЁІЎ][а-яёіў'’-]{2,}))?\b").expect("valid person regex"))
+}
+
+fn normalize_entity_key(value:&str)->String{
+    let mut out=String::new();
+    let mut last_space=false;
+    for ch in value.to_lowercase().chars(){
+        if ch.is_alphanumeric() || matches!(ch,'ё'|'і'|'ў'){
+            out.push(ch); last_space=false;
+        }else if !last_space{
+            out.push(' '); last_space=true;
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn person_blocked_terms()->&'static [&'static str]{
+    &[
+        "новости","навины","навіны","вести","весці","газета","радио","радыё","телеканал","канал",
+        "редакция","рэдакцыя","пресс служба","прэс служба","министерство","міністэрства","комитет","камітэт",
+        "совет","савет","администрация","адміністрацыя","управление","упраўленне","департамент","дэпартамент",
+        "предприятие","прадпрыемства","организация","арганізацыя","центр","цэнтр","больница","бальніца",
+        "поликлиника","паліклініка","школа","гимназия","гімназія","университет","універсітэт","суд",
+        "прокуратура","мчс","мвд","мус","минздрав","мінздароўя","минобразования","мінадукацыі","белстат",
+        "банк","почта","пошта","белпочта","белпошта","водоканал","водаканал","теплосети","цепласеткі","жкх",
+        "облисполком","аблвыканкам","горисполком","гарвыканкам","райисполком","райвыканкам","областной суд",
+        "городской совет","гарадскі савет","районный совет","раённы савет","белая русь","красный крест","чырвоны крыж"
+    ]
+}
+
+fn common_given_names()->&'static [&'static str]{
+    &[
+        "александр","аляксандр","алексей","аляксей","андрей","андрэй","антон","артем","артём","арцем","вадим","вадзім",
+        "валерий","валерый","виктор","віктар","виталий","віталь","владимир","уладзімір","владислав","уладзіслаў",
+        "вячеслав","вячаслаў","геннадий","генадзь","георгий","георгій","григорий","рыгор","денис","дзяніс","дмитрий","дзмітрый",
+        "евгений","яўген","егор","ягор","иван","іван","игорь","ігар","илья","ілля","кирилл","кірыл","константин","канстанцін",
+        "леонид","леанід","максим","максім","михаил","міхаіл","николай","мікалай","олег","алег","павел","паўлаў","пётр","петр",
+        "роман","руслан","сергей","сяргей","станислав","станіслаў","степан","сцяпан","юрий","юрый","ярослав","яраслаў",
+        "александра","аляксандра","алина","аліна","алла","ала","анна","ганна","валентина","валянціна","вера","виктория","вікторыя",
+        "дарья","дар'я","елена","алена","екатерина","кацярына","инна","іна","ирина","ірына","кристина","крысціна","людмила","людміла",
+        "марина","марына","мария","марыя","наталья","наталля","надежда","надзея","ольга","волга","светлана","святлана","татьяна","таццяна",
+        "юлия","юлія","яна"
+    ]
+}
+
+fn entity_blocklist(conn:&Connection,monitor_key:&str)->Result<HashSet<String>,String>{
+    let mut blocked=HashSet::new();
+    let mut stmt=conn.prepare(r#"
+        SELECT canonical_name, configured_region, configured_locality FROM sources
+        UNION ALL
+        SELECT event_region, event_locality, NULL FROM events e
+        JOIN monitors m ON m.id=e.monitor_id WHERE m.monitor_key=?1
+    "#).map_err(|e|format!("Не удалось подготовить справочник исключений персоналий: {e}"))?;
+    let rows=stmt.query_map(params![monitor_key],|row|Ok((row.get::<_,Option<String>>(0)?,row.get::<_,Option<String>>(1)?,row.get::<_,Option<String>>(2)?)))
+        .map_err(|e|format!("Не удалось прочитать справочник исключений персоналий: {e}"))?;
+    for row in rows{
+        let(a,b,c)=row.map_err(|e|format!("Не удалось прочитать строку справочника персоналий: {e}"))?;
+        for value in [a,b,c].into_iter().flatten(){
+            for part in value.split(';'){
+                let key=normalize_entity_key(part);
+                if key.len()>=3{blocked.insert(key);}
+            }
+        }
+    }
+    Ok(blocked)
+}
+
+fn plausible_person(candidate:&str,blocked:&HashSet<String>)->bool{
+    let key=normalize_entity_key(candidate);
+    if key.is_empty() || blocked.contains(&key){return false;}
+    if person_blocked_terms().iter().any(|term|key.contains(term)){return false;}
+    let words:Vec<&str>=key.split_whitespace().collect();
+    if !(2..=3).contains(&words.len()) || words.iter().any(|word|word.len()<3){return false;}
+    if words.iter().any(|word|word.chars().any(|ch|ch.is_ascii_digit())){return false;}
+    let has_given_name=words.iter().any(|word|common_given_names().contains(word));
+    let has_patronymic=words.iter().any(|word|word.ends_with("ович")||word.ends_with("евич")||word.ends_with("ич")||word.ends_with("овна")||word.ends_with("евна")||word.ends_with("аўна")||word.ends_with("еўна"));
+    has_given_name || has_patronymic
+}
+
+fn person_breakdown(conn:&Connection,base:&str,monitor_key:&str,period_days:Option<i64>)->Result<Vec<CountPoint>,String>{
+    let blocked=entity_blocklist(conn,monitor_key)?;
+    let sql=format!("SELECT mi.id, d.title, COALESCE(d.excerpt,'') {base}");
+    let mut stmt=conn.prepare(&sql).map_err(|e|format!("Не удалось подготовить извлечение персоналий: {e}"))?;
+    let rows=stmt.query_map(params![monitor_key,period_days],|row|Ok((row.get::<_,i64>(0)?,row.get::<_,String>(1)?,row.get::<_,String>(2)?)))
+        .map_err(|e|format!("Не удалось прочитать тексты для персоналий: {e}"))?;
+    let mut counts:HashMap<String,i64>=HashMap::new();
+    for row in rows{
+        let(_,title,excerpt)=row.map_err(|e|format!("Не удалось прочитать строку для персоналий: {e}"))?;
+        let text=format!("{title}. {excerpt}");
+        let mut seen=HashSet::new();
+        for caps in person_regex().captures_iter(&text){
+            let candidate=caps.get(0).map(|m|m.as_str().trim()).unwrap_or("");
+            if !candidate.is_empty()&&plausible_person(candidate,&blocked){seen.insert(candidate.to_string());}
+        }
+        for candidate in seen{*counts.entry(candidate).or_insert(0)+=1;}
+    }
+    let mut items:Vec<CountPoint>=counts.into_iter().filter(|(_,count)|*count>=2).map(|(label,count)|CountPoint{label,count}).collect();
+    items.sort_by(|a,b|b.count.cmp(&a.count).then_with(||a.label.cmp(&b.label)));
+    items.truncate(8);
+    Ok(items)
+}
+
+fn source_diversity_summary(conn:&Connection,base:&str,monitor_key:&str,period_days:Option<i64>)->Result<SourceDiversitySummary,String>{
+    let sql=format!("SELECT COALESCE(NULLIF(TRIM(s.canonical_name),''),'Неизвестный источник') AS label, COUNT(DISTINCT mi.id) AS count {base} GROUP BY label ORDER BY count DESC, label");
+    let mut stmt=conn.prepare(&sql).map_err(|e|format!("Не удалось подготовить расчёт разнообразия источников: {e}"))?;
+    let rows=stmt.query_map(params![monitor_key,period_days],|row|Ok((row.get::<_,String>(0)?,row.get::<_,i64>(1)?)))
+        .map_err(|e|format!("Не удалось рассчитать разнообразие источников: {e}"))?;
+    let mut counts=Vec::new();
+    for row in rows{counts.push(row.map_err(|e|format!("Не удалось прочитать доли источников: {e}"))?);}
+    let total:i64=counts.iter().map(|(_,count)|*count).sum();
+    if total<=0{return Ok(SourceDiversitySummary{active_sources:0,top_source:None,top_source_share:0.0,top_five_share:0.0,diversity_index:0.0,effective_sources:0.0});}
+    let total_f=total as f64;
+    let shares:Vec<f64>=counts.iter().map(|(_,count)|*count as f64/total_f).collect();
+    let hhi: f64=shares.iter().map(|share|share*share).sum();
+    let top_source_share=shares.first().copied().unwrap_or(0.0)*100.0;
+    let top_five_share=shares.iter().take(5).sum::<f64>()*100.0;
+    let diversity_index=(1.0-hhi).clamp(0.0,1.0)*100.0;
+    let effective_sources=if hhi>0.0{1.0/hhi}else{0.0};
+    Ok(SourceDiversitySummary{
+        active_sources:counts.len() as i64,
+        top_source:counts.first().map(|(name,_)|name.clone()),
+        top_source_share,
+        top_five_share,
+        diversity_index,
+        effective_sources,
+    })
+}
+
+fn coverage_health_summary(conn:&Connection,monitor_key:&str)->Result<CoverageHealthSummary,String>{
+    let latest=conn.query_row(r#"
+        SELECT r.id, r.run_number FROM runs r
+        JOIN monitors m ON m.id=r.monitor_id
+        WHERE m.monitor_key=?1 AND r.dry_run=0
+        ORDER BY COALESCE(datetime(r.started_at),datetime(r.imported_at)) DESC, r.id DESC LIMIT 1
+    "#,params![monitor_key],|row|Ok((row.get::<_,i64>(0)?,row.get::<_,Option<i64>>(1)?))).optional()
+        .map_err(|e|format!("Не удалось определить последний production-запуск: {e}"))?;
+    let Some((run_id,run_number))=latest else{return Ok(CoverageHealthSummary{run_number:None,total_sources:0,stable_sources:0,recovery_sources:0,limited_sources:0,attention_sources:0});};
+    let mut stmt=conn.prepare(r#"
+        SELECT access_status, admission_status, blind_zone_status, endpoint_total, endpoint_ok, endpoint_failed, error
+        FROM source_run_metrics WHERE run_id=?1
+    "#).map_err(|e|format!("Не удалось подготовить сводку здоровья источников: {e}"))?;
+    let rows=stmt.query_map(params![run_id],|row|Ok((
+        row.get::<_,Option<String>>(0)?,row.get::<_,Option<String>>(1)?,row.get::<_,Option<String>>(2)?,
+        row.get::<_,Option<i64>>(3)?,row.get::<_,Option<i64>>(4)?,row.get::<_,Option<i64>>(5)?,row.get::<_,Option<String>>(6)?
+    ))).map_err(|e|format!("Не удалось прочитать сводку здоровья источников: {e}"))?;
+    let(mut total,mut stable,mut recovery,mut limited,mut attention)=(0,0,0,0,0);
+    for row in rows{
+        let(access,admission,blind,total_ep,ok_ep,failed_ep,error)=row.map_err(|e|format!("Не удалось прочитать источник в health summary: {e}"))?;
+        total+=1;
+        let access=access.unwrap_or_default(); let admission=admission.unwrap_or_default(); let blind=blind.unwrap_or_default();
+        let has_error=error.as_deref().map(str::trim).is_some_and(|v|!v.is_empty());
+        let endpoints_bad=failed_ep.unwrap_or(0)>0 && ok_ep.unwrap_or(0)==0 && total_ep.unwrap_or(0)>0;
+        if has_error || endpoints_bad || (!access.is_empty() && access!="healthy_active" && access!="protected_recovery") {attention+=1;}
+        else if matches!(admission.as_str(),"soft_admission_limited"|"source_clipped") || blind=="source_clipped" {limited+=1;}
+        else if access=="protected_recovery" {recovery+=1;}
+        else {stable+=1;}
+    }
+    Ok(CoverageHealthSummary{run_number,total_sources:total,stable_sources:stable,recovery_sources:recovery,limited_sources:limited,attention_sources:attention})
+}
 
 pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i64>) -> Result<DashboardOverview, String> {
     let conn = open_database(path)?;
@@ -297,6 +455,8 @@ pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i6
     let concept_sql = format!("SELECT COALESCE(NULLIF(TRIM(e.event_object),''), NULLIF(TRIM(mi.subcategory),'')) AS label, COUNT(DISTINCT mi.id) AS count {base} AND COALESCE(NULLIF(TRIM(e.event_object),''), NULLIF(TRIM(mi.subcategory),'')) IS NOT NULL GROUP BY label ORDER BY count DESC, label LIMIT 12");
     let concept_breakdown = count_points(&conn, &concept_sql, monitor_key, period_days)?;
     let person_breakdown = person_breakdown(&conn, &base, monitor_key, period_days)?;
+    let source_diversity = source_diversity_summary(&conn, &base, monitor_key, period_days)?;
+    let coverage_health = coverage_health_summary(&conn, monitor_key)?;
 
     let visuals_sql = format!(
         "{} WHERE m.monitor_key=?1 AND {} AND NULLIF(TRIM(d.preview_image_url),'') IS NOT NULL ORDER BY COALESCE(datetime(d.published_at), datetime(d.last_seen_at), datetime(d.first_seen_at)) DESC, mi.id DESC LIMIT 4",
@@ -330,6 +490,8 @@ pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i6
         region_breakdown,
         concept_breakdown,
         person_breakdown,
+        source_diversity,
+        coverage_health,
         visuals,
         recent,
     })

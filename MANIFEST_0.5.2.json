@@ -1,0 +1,14 @@
+{
+  "package": "Monitor-0.5.2",
+  "base": "Monitor-0.5.1",
+  "purpose": "source diversity, coverage health, stricter person entity filtering",
+  "sqlite_schema_version": 3,
+  "preserves_existing_sqlite": true,
+  "changes_workflows": false,
+  "changed_areas": [
+    "source concentration and diversity analytics",
+    "latest production coverage health summary",
+    "strict person false-positive filtering",
+    "RU/BE analytics labels and tooltips"
+  ]
+}

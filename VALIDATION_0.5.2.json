@@ -1,0 +1,27 @@
+{
+  "status": "PASS",
+  "run_number": 61,
+  "publications": 24,
+  "coverage_sources": 56,
+  "diversity": {
+    "active_sources": 18,
+    "top_source": "Sputnik Беларусь",
+    "top_source_share": 12.5,
+    "top_five_share": 45.83,
+    "diversity_index": 93.4,
+    "effective_sources": 15.16
+  },
+  "health": {
+    "stable": 31,
+    "recovery": 4,
+    "limited": 21,
+    "attention": 0
+  },
+  "person_corrective": {
+    "Новости Могилева": false,
+    "Александр Лукашенко": true,
+    "Белая Русь": false,
+    "Николай Карпенков": true
+  },
+  "i18n_keys_each": 264
+}

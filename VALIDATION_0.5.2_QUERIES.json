@@ -1,0 +1,43 @@
+{
+  "status": "PASS",
+  "run_number": 61,
+  "publications_30d": 23,
+  "publications_all_time": 24,
+  "active_sources_30d": 17,
+  "regions_30d": 6,
+  "categories_30d": 7,
+  "catalog_sources": 56,
+  "source_query_rows": 56,
+  "search_query": "вод",
+  "search_results_all_time": 14,
+  "region_breakdown": [
+    {
+      "label": "Не определён",
+      "count": 9
+    },
+    {
+      "label": "Минск",
+      "count": 5
+    },
+    {
+      "label": "Витебская область",
+      "count": 3
+    },
+    {
+      "label": "Минская область",
+      "count": 2
+    },
+    {
+      "label": "Гродненская область",
+      "count": 2
+    },
+    {
+      "label": "Гомельская область",
+      "count": 1
+    },
+    {
+      "label": "Брестская область",
+      "count": 1
+    }
+  ]
+}

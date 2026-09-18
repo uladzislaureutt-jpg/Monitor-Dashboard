@@ -1,6 +1,6 @@
 [package]
 name = "monitor-dashboard"
-version = "0.5.1"
+version = "0.5.2"
 description = "Desktop media monitor with local analytics and shared workroom"
 authors = ["Monitor Dashboard"]
 edition = "2024"

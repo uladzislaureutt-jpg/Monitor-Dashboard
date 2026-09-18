@@ -161,6 +161,29 @@ pub struct TopicTrendPoint {
     pub count: i64,
 }
 
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceDiversitySummary {
+    pub active_sources: i64,
+    pub top_source: Option<String>,
+    pub top_source_share: f64,
+    pub top_five_share: f64,
+    pub diversity_index: f64,
+    pub effective_sources: f64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoverageHealthSummary {
+    pub run_number: Option<i64>,
+    pub total_sources: i64,
+    pub stable_sources: i64,
+    pub recovery_sources: i64,
+    pub limited_sources: i64,
+    pub attention_sources: i64,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicationSummary {
@@ -198,6 +221,8 @@ pub struct DashboardOverview {
     pub region_breakdown: Vec<CountPoint>,
     pub concept_breakdown: Vec<CountPoint>,
     pub person_breakdown: Vec<CountPoint>,
+    pub source_diversity: SourceDiversitySummary,
+    pub coverage_health: CoverageHealthSummary,
     pub visuals: Vec<PublicationSummary>,
     pub recent: Vec<PublicationSummary>,
 }

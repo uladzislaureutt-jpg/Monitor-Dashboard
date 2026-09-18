@@ -53,6 +53,25 @@ export type TopicTrendPoint = {
   count: number;
 };
 
+
+export type SourceDiversitySummary = {
+  activeSources: number;
+  topSource: string | null;
+  topSourceShare: number;
+  topFiveShare: number;
+  diversityIndex: number;
+  effectiveSources: number;
+};
+
+export type CoverageHealthSummary = {
+  runNumber: number | null;
+  totalSources: number;
+  stableSources: number;
+  recoverySources: number;
+  limitedSources: number;
+  attentionSources: number;
+};
+
 export type PublicationSummary = {
   id: number;
   title: string;
@@ -86,6 +105,8 @@ export type DashboardOverview = {
   regionBreakdown: CountPoint[];
   conceptBreakdown: CountPoint[];
   personBreakdown: CountPoint[];
+  sourceDiversity: SourceDiversitySummary;
+  coverageHealth: CoverageHealthSummary;
   visuals: PublicationSummary[];
   recent: PublicationSummary[];
 };
