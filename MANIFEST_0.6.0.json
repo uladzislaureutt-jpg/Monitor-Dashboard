@@ -1,0 +1,31 @@
+{
+  "package": "Monitor 0.6.0 — Dashboard Contract 0.2 foundation",
+  "version": "0.6.0",
+  "base": "0.5.3",
+  "sqlite_schema": 5,
+  "files": [
+    "README.md",
+    "package.json",
+    "src/api.ts",
+    "src/i18n.tsx",
+    "src/types.ts",
+    "src-tauri/Cargo.toml",
+    "src-tauri/tauri.conf.json",
+    "src-tauri/migrations/0005_editorial_sources.sql",
+    "src-tauri/schemas/manifest-0.1.schema.json",
+    "src-tauri/src/db.rs",
+    "src-tauri/src/importer.rs",
+    "src-tauri/src/lib.rs",
+    "src-tauri/src/models.rs",
+    "scripts/validate_stage060.py",
+    "INSTALL_0.6.0_BROWSER.md",
+    "VALIDATION_0.6.0.md"
+  ],
+  "features": [
+    "Contract 0.2 full_texts import",
+    "entities import",
+    "structured person analytics",
+    "editorial source backend API",
+    "0.1 backward compatibility"
+  ]
+}

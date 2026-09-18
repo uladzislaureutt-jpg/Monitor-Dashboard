@@ -1,4 +1,4 @@
-# Monitor — 0.5.3
+# Monitor — 0.6.0
 
 Windows x64 desktop-приложение SEP-Monitor: локальный архив SQLite, поиск, аналитика, GitHub Auto Sync и общая сетевая «Рабочая комната».
 
@@ -32,3 +32,11 @@ Windows x64 desktop-приложение SEP-Monitor: локальный арх�
 ## Следующий этап дорожной карты
 
 После этого узкого corrective: полноценный `entities.jsonl` из самого мониторинга и затем подготовка второго модуля приложения поверх общего Desktop Core.
+
+## 0.6.0 — Dashboard Contract 0.2
+
+- импорт `full_texts.jsonl`: полный очищенный текст итоговых публикаций хранится локально в SQLite и готов для Report Workspace;
+- импорт `entities.jsonl`: персоналии больше не извлекаются regex-эвристикой Desktop;
+- старые Contract 0.1 bundle полностью совместимы;
+- SQLite schema 5; существующая база мигрирует без удаления данных;
+- добавлен backend endpoint `get_editorial_source` для следующего этапа автоматической редакционной сборки.

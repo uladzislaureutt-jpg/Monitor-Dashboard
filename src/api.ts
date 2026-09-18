@@ -5,6 +5,7 @@ import type {
   ArchiveQuery,
   DatabaseStats,
   DashboardOverview,
+  EditorialSource,
   ImportResult,
   RunSummary,
   SourceSummary,
@@ -52,6 +53,8 @@ export const desktopApi = {
     }),
   sources: () =>
     invoke<SourceSummary[]>("list_sources", { monitorKey: MONITOR_KEY }),
+  editorialSource: (documentUid: string) =>
+    invoke<EditorialSource | null>("get_editorial_source", { monitorKey: MONITOR_KEY, documentUid }),
   syncGithub: (repository: string, token: string) =>
     invoke<SyncResult>("sync_github_artifacts", { repository, token }),
   replaceModerationSnapshot: (snapshot: PublicationModerationSnapshot) =>

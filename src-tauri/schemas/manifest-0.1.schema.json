@@ -34,7 +34,8 @@
         "publications": { "type": "string", "minLength": 1 },
         "source_metrics": { "type": "string", "minLength": 1 },
         "run_metrics": { "type": "string", "minLength": 1 },
-        "entities": { "type": ["string", "null"] }
+        "entities": { "type": ["string", "null"] },
+        "full_texts": { "type": ["string", "null"] }
       },
       "additionalProperties": true
     },

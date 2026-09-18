@@ -1,7 +1,4 @@
-use std::collections::{HashMap, HashSet};
-use std::sync::OnceLock;
-
-use regex::Regex;
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
@@ -10,13 +7,14 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 use crate::models::{
     ArchiveFacets, ArchivePage, CountPoint, DashboardOverview, DatabaseStats,
     PublicationSummary, RunSummary, SourceSummary, TopicTrendPoint, SourceDiversitySummary, CoverageHealthSummary,
-    ModerationFlagInput, ModerationExclusionInput,
+    ModerationFlagInput, ModerationExclusionInput, EditorialSource, EditorialEntity,
 };
 
 const MIGRATION_0001: &str = include_str!("../migrations/0001_init.sql");
 const MIGRATION_0002: &str = include_str!("../migrations/0002_sync.sql");
 const MIGRATION_0003: &str = include_str!("../migrations/0003_preview_images.sql");
 const MIGRATION_0004: &str = include_str!("../migrations/0004_moderation.sql");
+const MIGRATION_0005: &str = include_str!("../migrations/0005_editorial_sources.sql");
 
 pub fn open_database(path: &Path) -> Result<Connection, String> {
     let conn = Connection::open(path).map_err(|e| format!("Не удалось открыть SQLite: {e}"))?;
@@ -81,6 +79,12 @@ pub fn initialize_database(path: &Path) -> Result<(), String> {
         tx.execute_batch(MIGRATION_0004).map_err(|e| format!("Миграция 0004 завершилась ошибкой: {e}"))?;
         tx.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (4)", []).map_err(|e| format!("Не удалось записать версию миграции 0004: {e}"))?;
         tx.commit().map_err(|e| format!("Не удалось завершить миграцию 0004: {e}"))?;
+    }
+    if current < 5 {
+        let tx = conn.unchecked_transaction().map_err(|e| format!("Не удалось начать миграцию 0005: {e}"))?;
+        tx.execute_batch(MIGRATION_0005).map_err(|e| format!("Миграция 0005 завершилась ошибкой: {e}"))?;
+        tx.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (5)", []).map_err(|e| format!("Не удалось записать версию миграции 0005: {e}"))?;
+        tx.commit().map_err(|e| format!("Не удалось завершить миграцию 0005: {e}"))?;
     }
     Ok(())
 }
@@ -207,7 +211,8 @@ fn publication_row(row: &Row<'_>) -> rusqlite::Result<PublicationSummary> {
         official_response: official.map(|value| value != 0),
         score: row.get(14)?,
         preview_image_url: row.get(15)?,
-        seen_in_runs: row.get(16)?,
+        has_full_text: row.get::<_, i64>(16)? != 0,
+        seen_in_runs: row.get(17)?,
     })
 }
 
@@ -230,6 +235,7 @@ fn publication_select() -> &'static str {
             mi.official_response,
             mi.score,
             d.preview_image_url,
+            CASE WHEN NULLIF(TRIM(d.full_text),'') IS NOT NULL THEN 1 ELSE 0 END AS has_full_text,
             (SELECT COUNT(*) FROM run_items ri2 WHERE ri2.monitor_item_id = mi.id) AS seen_in_runs
         FROM monitor_items mi
         JOIN monitors m ON m.id = mi.monitor_id
@@ -257,108 +263,16 @@ fn count_points(
 
 
 fn topic_trend_points(conn:&Connection,base:&str,monitor_key:&str,period_days:Option<i64>,trend_bucket:&str,categories:&[CountPoint])->Result<Vec<TopicTrendPoint>,String>{let mut result=Vec::new();for category in categories.iter().filter(|i|!i.label.eq_ignore_ascii_case("Без категории")).take(4){let sql=format!("SELECT {trend_bucket} AS bucket, COUNT(DISTINCT mi.id) AS count {base} AND d.published_at IS NOT NULL AND mi.category=?3 GROUP BY bucket ORDER BY bucket");let mut stmt=conn.prepare(&sql).map_err(|e|format!("Не удалось подготовить динамику темы: {e}"))?;let rows=stmt.query_map(params![monitor_key,period_days,category.label.as_str()],|row|Ok(TopicTrendPoint{bucket:row.get(0)?,category:category.label.clone(),count:row.get(1)?})).map_err(|e|format!("Не удалось рассчитать динамику темы: {e}"))?;result.extend(rows.collect::<Result<Vec<_>,_>>().map_err(|e|format!("Не удалось прочитать динамику темы: {e}"))?);}Ok(result)}
-fn person_regex()->&'static Regex{
-    static PERSON_RE:OnceLock<Regex>=OnceLock::new();
-    PERSON_RE.get_or_init(||Regex::new(r"(?u)\b([А-ЯЁІЎ][а-яёіў'’-]{2,})\s+([А-ЯЁІЎ][а-яёіў'’-]{2,})(?:\s+([А-ЯЁІЎ][а-яёіў'’-]{2,}))?\b").expect("valid person regex"))
-}
-
-fn normalize_entity_key(value:&str)->String{
-    let mut out=String::new();
-    let mut last_space=false;
-    for ch in value.to_lowercase().chars(){
-        if ch.is_alphanumeric() || matches!(ch,'ё'|'і'|'ў'){
-            out.push(ch); last_space=false;
-        }else if !last_space{
-            out.push(' '); last_space=true;
-        }
-    }
-    out.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-fn person_blocked_terms()->&'static [&'static str]{
-    &[
-        "новости","навины","навіны","вести","весці","газета","радио","радыё","телеканал","канал",
-        "редакция","рэдакцыя","пресс служба","прэс служба","министерство","міністэрства","комитет","камітэт",
-        "совет","савет","администрация","адміністрацыя","управление","упраўленне","департамент","дэпартамент",
-        "предприятие","прадпрыемства","организация","арганізацыя","центр","цэнтр","больница","бальніца",
-        "поликлиника","паліклініка","школа","гимназия","гімназія","университет","універсітэт","суд",
-        "прокуратура","мчс","мвд","мус","минздрав","мінздароўя","минобразования","мінадукацыі","белстат",
-        "банк","почта","пошта","белпочта","белпошта","водоканал","водаканал","теплосети","цепласеткі","жкх",
-        "облисполком","аблвыканкам","горисполком","гарвыканкам","райисполком","райвыканкам","областной суд",
-        "городской совет","гарадскі савет","районный совет","раённы савет","белая русь","красный крест","чырвоны крыж"
-    ]
-}
-
-fn common_given_names()->&'static [&'static str]{
-    &[
-        "александр","аляксандр","алексей","аляксей","андрей","андрэй","антон","артем","артём","арцем","вадим","вадзім",
-        "валерий","валерый","виктор","віктар","виталий","віталь","владимир","уладзімір","владислав","уладзіслаў",
-        "вячеслав","вячаслаў","геннадий","генадзь","георгий","георгій","григорий","рыгор","денис","дзяніс","дмитрий","дзмітрый",
-        "евгений","яўген","егор","ягор","иван","іван","игорь","ігар","илья","ілля","кирилл","кірыл","константин","канстанцін",
-        "леонид","леанід","максим","максім","михаил","міхаіл","николай","мікалай","олег","алег","павел","паўлаў","пётр","петр",
-        "роман","руслан","сергей","сяргей","станислав","станіслаў","степан","сцяпан","юрий","юрый","ярослав","яраслаў",
-        "александра","аляксандра","алина","аліна","алла","ала","анна","ганна","валентина","валянціна","вера","виктория","вікторыя",
-        "дарья","дар'я","елена","алена","екатерина","кацярына","инна","іна","ирина","ірына","кристина","крысціна","людмила","людміла",
-        "марина","марына","мария","марыя","наталья","наталля","надежда","надзея","ольга","волга","светлана","святлана","татьяна","таццяна",
-        "юлия","юлія","яна"
-    ]
-}
-
-fn entity_blocklist(conn:&Connection,monitor_key:&str)->Result<HashSet<String>,String>{
-    let mut blocked=HashSet::new();
-    let mut stmt=conn.prepare(r#"
-        SELECT canonical_name, configured_region, configured_locality FROM sources
-        UNION ALL
-        SELECT event_region, event_locality, NULL FROM events e
-        JOIN monitors m ON m.id=e.monitor_id WHERE m.monitor_key=?1
-    "#).map_err(|e|format!("Не удалось подготовить справочник исключений персоналий: {e}"))?;
-    let rows=stmt.query_map(params![monitor_key],|row|Ok((row.get::<_,Option<String>>(0)?,row.get::<_,Option<String>>(1)?,row.get::<_,Option<String>>(2)?)))
-        .map_err(|e|format!("Не удалось прочитать справочник исключений персоналий: {e}"))?;
-    for row in rows{
-        let(a,b,c)=row.map_err(|e|format!("Не удалось прочитать строку справочника персоналий: {e}"))?;
-        for value in [a,b,c].into_iter().flatten(){
-            for part in value.split(';'){
-                let key=normalize_entity_key(part);
-                if key.len()>=3{blocked.insert(key);}
-            }
-        }
-    }
-    Ok(blocked)
-}
-
-fn plausible_person(candidate:&str,blocked:&HashSet<String>)->bool{
-    let key=normalize_entity_key(candidate);
-    if key.is_empty() || blocked.contains(&key){return false;}
-    if person_blocked_terms().iter().any(|term|key.contains(term)){return false;}
-    let words:Vec<&str>=key.split_whitespace().collect();
-    if !(2..=3).contains(&words.len()) || words.iter().any(|word|word.len()<3){return false;}
-    if words.iter().any(|word|word.chars().any(|ch|ch.is_ascii_digit())){return false;}
-    let has_given_name=words.iter().any(|word|common_given_names().contains(word));
-    let has_patronymic=words.iter().any(|word|word.ends_with("ович")||word.ends_with("евич")||word.ends_with("ич")||word.ends_with("овна")||word.ends_with("евна")||word.ends_with("аўна")||word.ends_with("еўна"));
-    has_given_name || has_patronymic
-}
-
 fn person_breakdown(conn:&Connection,base:&str,monitor_key:&str,period_days:Option<i64>)->Result<Vec<CountPoint>,String>{
-    let blocked=entity_blocklist(conn,monitor_key)?;
-    let sql=format!("SELECT mi.id, d.title, COALESCE(d.excerpt,'') {base}");
-    let mut stmt=conn.prepare(&sql).map_err(|e|format!("Не удалось подготовить извлечение персоналий: {e}"))?;
-    let rows=stmt.query_map(params![monitor_key,period_days],|row|Ok((row.get::<_,i64>(0)?,row.get::<_,String>(1)?,row.get::<_,String>(2)?)))
-        .map_err(|e|format!("Не удалось прочитать тексты для персоналий: {e}"))?;
-    let mut counts:HashMap<String,i64>=HashMap::new();
-    for row in rows{
-        let(_,title,excerpt)=row.map_err(|e|format!("Не удалось прочитать строку для персоналий: {e}"))?;
-        let text=format!("{title}. {excerpt}");
-        let mut seen=HashSet::new();
-        for caps in person_regex().captures_iter(&text){
-            let candidate=caps.get(0).map(|m|m.as_str().trim()).unwrap_or("");
-            if !candidate.is_empty()&&plausible_person(candidate,&blocked){seen.insert(candidate.to_string());}
-        }
-        for candidate in seen{*counts.entry(candidate).or_insert(0)+=1;}
-    }
-    let mut items:Vec<CountPoint>=counts.into_iter().filter(|(_,count)|*count>=2).map(|(label,count)|CountPoint{label,count}).collect();
-    items.sort_by(|a,b|b.count.cmp(&a.count).then_with(||a.label.cmp(&b.label)));
-    items.truncate(8);
-    Ok(items)
+    let entity_base=base.replacen(
+        " WHERE ",
+        " JOIN document_entities de ON de.document_id=d.id JOIN entities ent ON ent.id=de.entity_id WHERE ",
+        1,
+    );
+    let sql=format!(
+        "SELECT ent.display_name AS label, COUNT(DISTINCT mi.id) AS count {entity_base} AND ent.entity_type='person' GROUP BY ent.normalized_name, ent.display_name HAVING COUNT(DISTINCT mi.id)>=2 ORDER BY count DESC, label LIMIT 8"
+    );
+    count_points(conn,&sql,monitor_key,period_days)
 }
 
 fn source_diversity_summary(conn:&Connection,base:&str,monitor_key:&str,period_days:Option<i64>)->Result<SourceDiversitySummary,String>{
@@ -664,6 +578,52 @@ pub fn list_sources(path: &Path, monitor_key: &str) -> Result<Vec<SourceSummary>
         })
     }).map_err(|e| format!("Не удалось получить каталог источников: {e}"))?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| format!("Не удалось прочитать источник: {e}"))
+}
+
+pub fn editorial_source(path: &Path, monitor_key: &str, document_uid: &str) -> Result<Option<EditorialSource>, String> {
+    let conn = open_database(path)?;
+    let document = conn.query_row(
+        r#"
+        SELECT d.id, d.document_uid, d.title, d.url, COALESCE(s.canonical_name,''),
+               d.full_text, d.full_text_sha256, d.full_text_quality,
+               d.full_text_extraction_strategy, d.full_text_transport
+        FROM documents d
+        JOIN monitor_items mi ON mi.document_id=d.id
+        JOIN monitors m ON m.id=mi.monitor_id
+        LEFT JOIN sources s ON s.id=d.source_id
+        WHERE m.monitor_key=?1 AND d.document_uid=?2
+          AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid)
+        LIMIT 1
+        "#,
+        params![monitor_key, document_uid],
+        |row| Ok((
+            row.get::<_,i64>(0)?, row.get::<_,String>(1)?, row.get::<_,String>(2)?,
+            row.get::<_,String>(3)?, row.get::<_,String>(4)?, row.get::<_,Option<String>>(5)?,
+            row.get::<_,Option<String>>(6)?, row.get::<_,Option<String>>(7)?,
+            row.get::<_,Option<String>>(8)?, row.get::<_,Option<String>>(9)?,
+        )),
+    ).optional().map_err(|e| format!("Не удалось прочитать редакционный источник: {e}"))?;
+    let Some((document_id, document_uid, title, url, source, full_text, text_sha256, quality, extraction_strategy, transport)) = document else {
+        return Ok(None);
+    };
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT ent.entity_type, ent.display_name, de.surface_form, de.confidence, de.mentions, de.method
+        FROM document_entities de
+        JOIN entities ent ON ent.id=de.entity_id
+        WHERE de.document_id=?1
+        ORDER BY ent.entity_type, de.mentions DESC, ent.display_name
+        "#
+    ).map_err(|e| format!("Не удалось подготовить сущности публикации: {e}"))?;
+    let rows = stmt.query_map(params![document_id], |row| Ok(EditorialEntity {
+        entity_type: row.get(0)?, name: row.get(1)?, surface_form: row.get(2)?,
+        confidence: row.get(3)?, mentions: row.get(4)?, method: row.get(5)?,
+    })).map_err(|e| format!("Не удалось прочитать сущности публикации: {e}"))?;
+    let entities = rows.collect::<Result<Vec<_>, _>>().map_err(|e| format!("Не удалось собрать сущности публикации: {e}"))?;
+    Ok(Some(EditorialSource {
+        document_uid, title, url, source, full_text, text_sha256, quality,
+        extraction_strategy, transport, entities,
+    }))
 }
 
 pub fn replace_moderation_snapshot(

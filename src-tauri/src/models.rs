@@ -33,6 +33,7 @@ pub struct BundleFiles {
     pub source_metrics: String,
     pub run_metrics: String,
     pub entities: Option<String>,
+    pub full_texts: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -97,6 +98,34 @@ pub struct EventData {
     pub echo_sources: Option<Value>,
     pub also_covered_by: Option<Value>,
     pub also_covered_urls: Option<Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct FullTextRecord {
+    pub schema_version: String,
+    pub monitor_key: String,
+    pub document_id: String,
+    pub text: String,
+    pub text_sha256: Option<String>,
+    pub text_length: Option<i64>,
+    pub quality: Option<String>,
+    pub extraction_strategy: Option<String>,
+    pub transport: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct EntityRecord {
+    pub schema_version: String,
+    pub monitor_key: String,
+    pub document_id: String,
+    pub entity_id: String,
+    pub entity_type: String,
+    pub canonical_name: String,
+    pub surface_form: Option<String>,
+    pub normalized_name: String,
+    pub confidence: Option<f64>,
+    pub mentions: Option<i64>,
+    pub method: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -203,9 +232,36 @@ pub struct PublicationSummary {
     pub score: Option<f64>,
     pub official_response: Option<bool>,
     pub preview_image_url: Option<String>,
+    pub has_full_text: bool,
     pub seen_in_runs: i64,
 }
 
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditorialEntity {
+    pub entity_type: String,
+    pub name: String,
+    pub surface_form: Option<String>,
+    pub confidence: Option<f64>,
+    pub mentions: i64,
+    pub method: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditorialSource {
+    pub document_uid: String,
+    pub title: String,
+    pub url: String,
+    pub source: String,
+    pub full_text: Option<String>,
+    pub text_sha256: Option<String>,
+    pub quality: Option<String>,
+    pub extraction_strategy: Option<String>,
+    pub transport: Option<String>,
+    pub entities: Vec<EditorialEntity>,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

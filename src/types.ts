@@ -89,6 +89,7 @@ export type PublicationSummary = {
   score: number | null;
   officialResponse: boolean | null;
   previewImageUrl: string | null;
+  hasFullText: boolean;
   seenInRuns: number;
 };
 
@@ -197,6 +198,28 @@ export type WorkroomMessage = {
 export type PublicationLink = {
   title: string;
   url: string;
+};
+
+export type EditorialEntity = {
+  entityType: string;
+  name: string;
+  surfaceForm: string | null;
+  confidence: number | null;
+  mentions: number;
+  method: string | null;
+};
+
+export type EditorialSource = {
+  documentUid: string;
+  title: string;
+  url: string;
+  source: string;
+  fullText: string | null;
+  textSha256: string | null;
+  quality: string | null;
+  extractionStrategy: string | null;
+  transport: string | null;
+  entities: EditorialEntity[];
 };
 
 

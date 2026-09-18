@@ -10,10 +10,10 @@ use sha2::{Digest, Sha256};
 use zip::ZipArchive;
 
 use crate::db::{existing_run, open_database};
-use crate::models::{ImportResult, Manifest, PublicationRecord};
+use crate::models::{EntityRecord, FullTextRecord, ImportResult, Manifest, PublicationRecord};
 
-const MAX_INPUT_BYTES: u64 = 64 * 1024 * 1024;
-const MAX_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_INPUT_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_ENTRY_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_JSONL_LINE_BYTES: usize = 4 * 1024 * 1024;
 const MANIFEST_SCHEMA: &str = include_str!("../schemas/manifest-0.1.schema.json");
 const PUBLICATION_SCHEMA: &str = include_str!("../schemas/publication-0.1.schema.json");
@@ -32,7 +32,7 @@ pub fn inspect_bundle(input_path: &Path) -> Result<BundleInspection, String> {
     let metadata = fs::metadata(input_path)
         .map_err(|e| format!("Не удалось открыть ZIP: {e}"))?;
     if metadata.len() > MAX_INPUT_BYTES {
-        return Err(format!("ZIP слишком велик: {} МБ (лимит 64 МБ)", metadata.len() / 1024 / 1024));
+        return Err(format!("ZIP слишком велик: {} МБ (лимит 128 МБ)", metadata.len() / 1024 / 1024));
     }
     let input_bytes = fs::read(input_path)
         .map_err(|e| format!("Не удалось прочитать ZIP: {e}"))?;
@@ -54,13 +54,15 @@ struct ParsedBundle {
     publications: Vec<PublicationRecord>,
     source_metrics: Vec<Value>,
     run_metrics: Value,
+    full_texts: Vec<FullTextRecord>,
+    entities: Vec<EntityRecord>,
 }
 
 pub fn import_bundle(db_path: &Path, input_path: &Path) -> Result<ImportResult, String> {
     let metadata = fs::metadata(input_path)
         .map_err(|e| format!("Не удалось открыть выбранный ZIP: {e}"))?;
     if metadata.len() > MAX_INPUT_BYTES {
-        return Err(format!("ZIP слишком велик: {} МБ (лимит 64 МБ)", metadata.len() / 1024 / 1024));
+        return Err(format!("ZIP слишком велик: {} МБ (лимит 128 МБ)", metadata.len() / 1024 / 1024));
     }
 
     let input_bytes = fs::read(input_path)
@@ -106,6 +108,31 @@ fn validate_semantic_consistency(parsed: &ParsedBundle) -> Result<(), String> {
         }
         if let Some(version) = str_field(metric, "schema_version") {
             ensure_supported_contract(version)?;
+        }
+    }
+    let document_ids: std::collections::HashSet<&str> = parsed.publications.iter().map(|item| item.document_id.as_str()).collect();
+    for item in &parsed.full_texts {
+        ensure_supported_contract(&item.schema_version)?;
+        if item.monitor_key.as_str() != monitor_key.as_str() {
+            return Err(format!("full_texts.jsonl: monitor_key={} не совпадает с manifest.monitor.key={}", item.monitor_key, monitor_key));
+        }
+        if !document_ids.contains(item.document_id.as_str()) {
+            return Err(format!("full_texts.jsonl ссылается на отсутствующий document_id={}", item.document_id));
+        }
+        if item.text.trim().is_empty() {
+            return Err(format!("full_texts.jsonl: пустой text для document_id={}", item.document_id));
+        }
+    }
+    for item in &parsed.entities {
+        ensure_supported_contract(&item.schema_version)?;
+        if item.monitor_key.as_str() != monitor_key.as_str() {
+            return Err(format!("entities.jsonl: monitor_key={} не совпадает с manifest.monitor.key={}", item.monitor_key, monitor_key));
+        }
+        if !document_ids.contains(item.document_id.as_str()) {
+            return Err(format!("entities.jsonl ссылается на отсутствующий document_id={}", item.document_id));
+        }
+        if item.entity_type.trim().is_empty() || item.canonical_name.trim().is_empty() || item.normalized_name.trim().is_empty() {
+            return Err(format!("entities.jsonl: неполная сущность {}", item.entity_id));
         }
     }
     Ok(())
@@ -166,6 +193,27 @@ fn parse_bundle(input_bytes: Vec<u8>) -> Result<ParsedBundle, String> {
     let run_metrics: Value = serde_json::from_slice(&run_metric_bytes)
         .map_err(|e| format!("run_metrics.json содержит некорректный JSON: {e}"))?;
 
+    let full_texts = match manifest.files.full_texts.as_deref() {
+        Some(name) => {
+            let bytes = read_zip_entry(&mut archive, name)?;
+            parse_jsonl(name, &bytes)?.into_iter().enumerate().map(|(index, value)| {
+                serde_json::from_value::<FullTextRecord>(value)
+                    .map_err(|e| format!("{name}, строка {}: {e}", index + 1))
+            }).collect::<Result<Vec<_>, _>>()?
+        }
+        None => Vec::new(),
+    };
+    let entities = match manifest.files.entities.as_deref() {
+        Some(name) => {
+            let bytes = read_zip_entry(&mut archive, name)?;
+            parse_jsonl(name, &bytes)?.into_iter().enumerate().map(|(index, value)| {
+                serde_json::from_value::<EntityRecord>(value)
+                    .map_err(|e| format!("{name}, строка {}: {e}", index + 1))
+            }).collect::<Result<Vec<_>, _>>()?
+        }
+        None => Vec::new(),
+    };
+
     Ok(ParsedBundle {
         input_kind,
         bundle_sha256,
@@ -175,6 +223,8 @@ fn parse_bundle(input_bytes: Vec<u8>) -> Result<ParsedBundle, String> {
         publications,
         source_metrics,
         run_metrics,
+        full_texts,
+        entities,
     })
 }
 
@@ -299,6 +349,12 @@ fn ingest(conn: &Connection, input_path: &Path, parsed: ParsedBundle) -> Result<
         &source_ids,
         &parsed.publications,
     )?;
+    if parsed.manifest.files.full_texts.is_some() {
+        ingest_full_texts(&tx, &parsed.full_texts)?;
+    }
+    if parsed.manifest.files.entities.is_some() {
+        ingest_entities(&tx, &parsed.publications, &parsed.entities)?;
+    }
 
     write_import_log(
         &tx,
@@ -640,6 +696,83 @@ fn ingest_publications(
             )
             .map_err(|e| format!("Не удалось связать event и publication: {e}"))?;
         }
+    }
+    Ok(())
+}
+
+fn ingest_full_texts(tx: &Transaction<'_>, full_texts: &[FullTextRecord]) -> Result<(), String> {
+    for item in full_texts {
+        let changed = tx.execute(
+            r#"UPDATE documents SET
+                full_text=?2,
+                full_text_sha256=?3,
+                full_text_quality=?4,
+                full_text_extraction_strategy=?5,
+                full_text_transport=?6,
+                text_length=COALESCE(?7, text_length)
+               WHERE document_uid=?1"#,
+            params![
+                item.document_id,
+                item.text,
+                item.text_sha256,
+                item.quality,
+                item.extraction_strategy,
+                item.transport,
+                item.text_length,
+            ],
+        ).map_err(|e| format!("Не удалось записать полный текст {}: {e}", item.document_id))?;
+        if changed == 0 {
+            return Err(format!("Не найден document для полного текста {}", item.document_id));
+        }
+    }
+    Ok(())
+}
+
+fn ingest_entities(
+    tx: &Transaction<'_>,
+    publications: &[PublicationRecord],
+    entities: &[EntityRecord],
+) -> Result<(), String> {
+    for publication in publications {
+        tx.execute(
+            "DELETE FROM document_entities WHERE document_id=(SELECT id FROM documents WHERE document_uid=?1)",
+            params![publication.document_id],
+        ).map_err(|e| format!("Не удалось обновить сущности {}: {e}", publication.document_id))?;
+    }
+    for item in entities {
+        tx.execute(
+            r#"INSERT INTO entities(normalized_name, display_name, entity_type)
+               VALUES (?1,?2,?3)
+               ON CONFLICT(normalized_name, entity_type) DO UPDATE SET display_name=excluded.display_name"#,
+            params![item.normalized_name, item.canonical_name, item.entity_type],
+        ).map_err(|e| format!("Не удалось записать сущность {}: {e}", item.canonical_name))?;
+        let entity_id: i64 = tx.query_row(
+            "SELECT id FROM entities WHERE normalized_name=?1 AND entity_type=?2",
+            params![item.normalized_name, item.entity_type],
+            |row| row.get(0),
+        ).map_err(|e| format!("Не удалось найти сущность {}: {e}", item.canonical_name))?;
+        let document_id: i64 = tx.query_row(
+            "SELECT id FROM documents WHERE document_uid=?1",
+            params![item.document_id],
+            |row| row.get(0),
+        ).map_err(|e| format!("Не удалось найти document {} для сущности: {e}", item.document_id))?;
+        tx.execute(
+            r#"INSERT INTO document_entities(document_id, entity_id, mentions, confidence, method, surface_form)
+               VALUES (?1,?2,?3,?4,?5,?6)
+               ON CONFLICT(document_id, entity_id) DO UPDATE SET
+                 mentions=excluded.mentions,
+                 confidence=excluded.confidence,
+                 method=excluded.method,
+                 surface_form=excluded.surface_form"#,
+            params![
+                document_id,
+                entity_id,
+                item.mentions.unwrap_or(1).max(1),
+                item.confidence,
+                item.method,
+                item.surface_form,
+            ],
+        ).map_err(|e| format!("Не удалось связать сущность {} с документом: {e}", item.canonical_name))?;
     }
     Ok(())
 }

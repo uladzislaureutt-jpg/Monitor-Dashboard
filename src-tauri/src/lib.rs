@@ -9,7 +9,7 @@ use std::process::Command;
 use tauri::{Manager, State};
 
 use models::{
-    ArchiveFacets, ArchivePage, DashboardOverview, DatabaseStats, ImportResult, RunSummary,
+    ArchiveFacets, ArchivePage, DashboardOverview, DatabaseStats, EditorialSource, ImportResult, RunSummary,
     SourceSummary, ModerationFlagInput, ModerationExclusionInput,
 };
 
@@ -88,6 +88,15 @@ fn list_sources(
 }
 
 #[tauri::command]
+fn get_editorial_source(
+    monitor_key: String,
+    document_uid: String,
+    state: State<'_, AppState>,
+) -> Result<Option<EditorialSource>, String> {
+    db::editorial_source(&state.db_path, &monitor_key, &document_uid)
+}
+
+#[tauri::command]
 fn sync_github_artifacts(
     repository: String,
     token: String,
@@ -149,6 +158,7 @@ pub fn run() {
             list_publications,
             get_archive_facets,
             list_sources,
+            get_editorial_source,
             sync_github_artifacts,
             replace_moderation_snapshot,
             open_external_url
