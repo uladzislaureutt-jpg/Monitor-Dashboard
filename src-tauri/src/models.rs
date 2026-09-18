@@ -69,6 +69,7 @@ pub struct PublicationData {
     pub url: String,
     pub normalized_url: String,
     pub text_length: Option<i64>,
+    pub preview_image_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -154,6 +155,14 @@ pub struct CountPoint {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TopicTrendPoint {
+    pub bucket: String,
+    pub category: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PublicationSummary {
     pub id: i64,
     pub title: String,
@@ -169,6 +178,7 @@ pub struct PublicationSummary {
     pub excerpt: Option<String>,
     pub score: Option<f64>,
     pub official_response: Option<bool>,
+    pub preview_image_url: Option<String>,
     pub seen_in_runs: i64,
 }
 
@@ -182,9 +192,13 @@ pub struct DashboardOverview {
     pub categories: i64,
     pub official_responses: i64,
     pub trend: Vec<CountPoint>,
+    pub topic_trend: Vec<TopicTrendPoint>,
     pub category_breakdown: Vec<CountPoint>,
     pub source_breakdown: Vec<CountPoint>,
     pub region_breakdown: Vec<CountPoint>,
+    pub concept_breakdown: Vec<CountPoint>,
+    pub person_breakdown: Vec<CountPoint>,
+    pub visuals: Vec<PublicationSummary>,
     pub recent: Vec<PublicationSummary>,
 }
 

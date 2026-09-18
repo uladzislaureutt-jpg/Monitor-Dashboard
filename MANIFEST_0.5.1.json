@@ -1,0 +1,16 @@
+{
+  "package": "Monitor-0.5.1",
+  "base": "Monitor-0.5.0",
+  "purpose": "bilingual data labels, richer trends, insights, preview images, workroom profile onboarding",
+  "sqlite_schema_version": 3,
+  "preserves_existing_sqlite": true,
+  "requires_se_exporter_for_future_images": "0.2.5-preview-images",
+  "supabase_live_project_already_upgraded": true,
+  "changed_areas": [
+    "RU/BE data label localization",
+    "trend chart modes",
+    "person/concept insights",
+    "preview image support",
+    "workroom first-login profile onboarding"
+  ]
+}
