@@ -4,11 +4,12 @@ import type { ArchiveFacets, ArchivePage, PeriodDays } from "../types";
 import { useI18n } from "../i18n";
 import { PublicationCard } from "../components/PublicationCard";
 import { PeriodSelector } from "../components/PeriodSelector";
+import { localizeDataLabel } from "../dataLabels";
 
 const EMPTY_FACETS: ArchiveFacets = { categories: [], regions: [], sources: [] };
 
 export function ArchiveView({ initialQuery = "" }: { initialQuery?: string }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [query, setQuery] = useState(initialQuery);
   const [period, setPeriod] = useState<PeriodDays>(30);
   const [category, setCategory] = useState("");
@@ -41,7 +42,7 @@ export function ArchiveView({ initialQuery = "" }: { initialQuery?: string }) {
     <section className="view-heading archive-heading"><div><div className="eyebrow dark">{t("archive.eyebrow")}</div><h2>{t("archive.title")}</h2><p>{t("archive.subtitle")}</p></div><PeriodSelector value={period} onChange={(value) => { setPeriod(value); setOffset(0); }} /></section>
     <section className="panel filters-panel">
       <div className="archive-search-row"><div className="archive-search-box"><span>⌕</span><input value={query} onChange={(event) => { setQuery(event.target.value); setOffset(0); }} placeholder={t("archive.search")} /></div><select value={sort} onChange={(event) => { setSort(event.target.value as typeof sort); setOffset(0); }}><option value="newest">{t("archive.newest")}</option><option value="oldest">{t("archive.oldest")}</option><option value="score">{t("archive.score")}</option></select></div>
-      <div className="filter-row"><select value={category} onChange={(event) => { setCategory(event.target.value); setOffset(0); }}><option value="">{t("archive.allCategories")}</option>{facets.categories.map((value) => <option key={value}>{value}</option>)}</select><select value={region} onChange={(event) => { setRegion(event.target.value); setOffset(0); }}><option value="">{t("archive.allRegions")}</option>{facets.regions.map((value) => <option key={value}>{value}</option>)}</select><select value={source} onChange={(event) => { setSource(event.target.value); setOffset(0); }}><option value="">{t("archive.allSources")}</option>{facets.sources.map((value) => <option key={value}>{value}</option>)}</select>{hasFilters && <button className="ghost-button" onClick={reset}>{t("archive.reset")}</button>}</div>
+      <div className="filter-row"><select value={category} onChange={(event) => { setCategory(event.target.value); setOffset(0); }}><option value="">{t("archive.allCategories")}</option>{facets.categories.map((value) => <option key={value} value={value}>{localizeDataLabel(value, locale, "category")}</option>)}</select><select value={region} onChange={(event) => { setRegion(event.target.value); setOffset(0); }}><option value="">{t("archive.allRegions")}</option>{facets.regions.map((value) => <option key={value} value={value}>{localizeDataLabel(value, locale, "region")}</option>)}</select><select value={source} onChange={(event) => { setSource(event.target.value); setOffset(0); }}><option value="">{t("archive.allSources")}</option>{facets.sources.map((value) => <option key={value}>{value}</option>)}</select>{hasFilters && <button className="ghost-button" onClick={reset}>{t("archive.reset")}</button>}</div>
     </section>
     {error && <div className="notice error">{error}</div>}
     <div className="archive-summary"><b>{loading ? t("archive.searching") : page.total}</b> {t("archive.materials")} <span>· {t("archive.page", { page: pageNumber, pages })}</span></div>
