@@ -1,4 +1,7 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
+
+use regex::Regex;
 use std::fs;
 use std::path::Path;
 
@@ -6,11 +9,12 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use crate::models::{
     ArchiveFacets, ArchivePage, CountPoint, DashboardOverview, DatabaseStats,
-    PublicationSummary, RunSummary, SourceSummary,
+    PublicationSummary, RunSummary, SourceSummary, TopicTrendPoint,
 };
 
 const MIGRATION_0001: &str = include_str!("../migrations/0001_init.sql");
 const MIGRATION_0002: &str = include_str!("../migrations/0002_sync.sql");
+const MIGRATION_0003: &str = include_str!("../migrations/0003_preview_images.sql");
 
 pub fn open_database(path: &Path) -> Result<Connection, String> {
     let conn = Connection::open(path).map_err(|e| format!("Не удалось открыть SQLite: {e}"))?;
@@ -62,6 +66,13 @@ pub fn initialize_database(path: &Path) -> Result<(), String> {
             .map_err(|e| format!("Не удалось записать версию миграции 0002: {e}"))?;
         tx.commit()
             .map_err(|e| format!("Не удалось завершить миграцию 0002: {e}"))?;
+    }
+
+    if current < 3 {
+        let tx = conn.unchecked_transaction().map_err(|e| format!("Не удалось начать миграцию 0003: {e}"))?;
+        tx.execute_batch(MIGRATION_0003).map_err(|e| format!("Миграция 0003 завершилась ошибкой: {e}"))?;
+        tx.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (3)", []).map_err(|e| format!("Не удалось записать версию миграции 0003: {e}"))?;
+        tx.commit().map_err(|e| format!("Не удалось завершить миграцию 0003: {e}"))?;
     }
     Ok(())
 }
@@ -186,7 +197,8 @@ fn publication_row(row: &Row<'_>) -> rusqlite::Result<PublicationSummary> {
         excerpt: row.get(11)?,
         official_response: official.map(|value| value != 0),
         score: row.get(13)?,
-        seen_in_runs: row.get(14)?,
+        preview_image_url: row.get(14)?,
+        seen_in_runs: row.get(15)?,
     })
 }
 
@@ -207,6 +219,7 @@ fn publication_select() -> &'static str {
             d.excerpt,
             mi.official_response,
             mi.score,
+            d.preview_image_url,
             (SELECT COUNT(*) FROM run_items ri2 WHERE ri2.monitor_item_id = mi.id) AS seen_in_runs
         FROM monitor_items mi
         JOIN monitors m ON m.id = mi.monitor_id
@@ -231,6 +244,12 @@ fn count_points(
         .map_err(|e| format!("Не удалось выполнить агрегацию: {e}"))?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| format!("Не удалось прочитать агрегацию: {e}"))
 }
+
+
+fn topic_trend_points(conn:&Connection,base:&str,monitor_key:&str,period_days:Option<i64>,trend_bucket:&str,categories:&[CountPoint])->Result<Vec<TopicTrendPoint>,String>{let mut result=Vec::new();for category in categories.iter().filter(|i|!i.label.eq_ignore_ascii_case("Без категории")).take(4){let sql=format!("SELECT {trend_bucket} AS bucket, COUNT(DISTINCT mi.id) AS count {base} AND d.published_at IS NOT NULL AND mi.category=?3 GROUP BY bucket ORDER BY bucket");let mut stmt=conn.prepare(&sql).map_err(|e|format!("Не удалось подготовить динамику темы: {e}"))?;let rows=stmt.query_map(params![monitor_key,period_days,category.label.as_str()],|row|Ok(TopicTrendPoint{bucket:row.get(0)?,category:category.label.clone(),count:row.get(1)?})).map_err(|e|format!("Не удалось рассчитать динамику темы: {e}"))?;result.extend(rows.collect::<Result<Vec<_>,_>>().map_err(|e|format!("Не удалось прочитать динамику темы: {e}"))?);}Ok(result)}
+fn person_regex()->&'static Regex{static PERSON_RE:OnceLock<Regex>=OnceLock::new();PERSON_RE.get_or_init(||Regex::new(r"(?u)\b([А-ЯЁІЎ][а-яёіў'’-]{2,})\s+([А-ЯЁІЎ][а-яёіў'’-]{2,})(?:\s+([А-ЯЁІЎ][а-яёіў'’-]{2,}))?\b").expect("valid person regex"))}
+fn plausible_person(candidate:&str)->bool{let lower=candidate.to_lowercase();let blocked=["область","обласць","вобласць","район","раён","улица","вуліца","проспект","совет","савет","комитет","камітэт","министерство","міністэрства","суд","больница","бальніца","поликлиника","паліклініка","беларусь","минск","мінск","жители","жыхары","власти","улады","красный крест","чырвоны крыж","белая русь"];if blocked.iter().any(|word|lower.contains(word)){return false;}let first=lower.split_whitespace().next().unwrap_or("");let endings=["ский","ская","ское","ской","ские","цкі","цкая","цкае","скія","ая","ый","ий"];!endings.iter().any(|ending|first.ends_with(ending))}
+fn person_breakdown(conn:&Connection,base:&str,monitor_key:&str,period_days:Option<i64>)->Result<Vec<CountPoint>,String>{let sql=format!("SELECT mi.id, d.title, COALESCE(d.excerpt,'') {base}");let mut stmt=conn.prepare(&sql).map_err(|e|format!("Не удалось подготовить извлечение персоналий: {e}"))?;let rows=stmt.query_map(params![monitor_key,period_days],|row|Ok((row.get::<_,i64>(0)?,row.get::<_,String>(1)?,row.get::<_,String>(2)?))).map_err(|e|format!("Не удалось прочитать тексты для персоналий: {e}"))?;let mut counts:HashMap<String,i64>=HashMap::new();for row in rows{let(_,title,excerpt)=row.map_err(|e|format!("Не удалось прочитать строку для персоналий: {e}"))?;let text=format!("{title}. {excerpt}");let mut seen=HashSet::new();for caps in person_regex().captures_iter(&text){let c=caps.get(0).map(|m|m.as_str().trim()).unwrap_or("");if !c.is_empty()&&plausible_person(c){seen.insert(c.to_string());}}for c in seen{*counts.entry(c).or_insert(0)+=1;}}let mut items:Vec<CountPoint>=counts.into_iter().filter(|(_,count)|*count>=2).map(|(label,count)|CountPoint{label,count}).collect();items.sort_by(|a,b|b.count.cmp(&a.count).then_with(||a.label.cmp(&b.label)));items.truncate(8);Ok(items)}
 
 pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i64>) -> Result<DashboardOverview, String> {
     let conn = open_database(path)?;
@@ -264,6 +283,7 @@ pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i6
         "SELECT COALESCE(NULLIF(TRIM(mi.category),''),'Без категории') AS label, COUNT(DISTINCT mi.id) AS count {base} GROUP BY label ORDER BY count DESC, label LIMIT 12"
     );
     let category_breakdown = count_points(&conn, &category_sql, monitor_key, period_days)?;
+    let topic_trend = topic_trend_points(&conn, &base, monitor_key, period_days, trend_bucket, &category_breakdown)?;
 
     let source_sql = format!(
         "SELECT COALESCE(NULLIF(TRIM(s.canonical_name),''),'Неизвестный источник') AS label, COUNT(DISTINCT mi.id) AS count {base} GROUP BY label ORDER BY count DESC, label LIMIT 16"
@@ -274,6 +294,18 @@ pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i6
         "SELECT COALESCE(NULLIF(TRIM(e.event_region),''),'Не определён') AS label, COUNT(DISTINCT mi.id) AS count {base} GROUP BY label ORDER BY count DESC, label LIMIT 12"
     );
     let region_breakdown = count_points(&conn, &region_sql, monitor_key, period_days)?;
+    let concept_sql = format!("SELECT COALESCE(NULLIF(TRIM(e.event_object),''), NULLIF(TRIM(mi.subcategory),'')) AS label, COUNT(DISTINCT mi.id) AS count {base} AND COALESCE(NULLIF(TRIM(e.event_object),''), NULLIF(TRIM(mi.subcategory),'')) IS NOT NULL GROUP BY label ORDER BY count DESC, label LIMIT 12");
+    let concept_breakdown = count_points(&conn, &concept_sql, monitor_key, period_days)?;
+    let person_breakdown = person_breakdown(&conn, &base, monitor_key, period_days)?;
+
+    let visuals_sql = format!(
+        "{} WHERE m.monitor_key=?1 AND {} AND NULLIF(TRIM(d.preview_image_url),'') IS NOT NULL ORDER BY COALESCE(datetime(d.published_at), datetime(d.last_seen_at), datetime(d.first_seen_at)) DESC, mi.id DESC LIMIT 4",
+        publication_select(), period
+    );
+    let mut visuals_stmt = conn.prepare(&visuals_sql).map_err(|e| format!("Не удалось подготовить визуальные материалы: {e}"))?;
+    let visuals_rows = visuals_stmt.query_map(params![monitor_key, period_days], publication_row)
+        .map_err(|e| format!("Не удалось прочитать визуальные материалы: {e}"))?;
+    let visuals = visuals_rows.collect::<Result<Vec<_>, _>>().map_err(|e| format!("Не удалось собрать визуальные материалы: {e}"))?;
 
     let recent_sql = format!(
         "{} WHERE m.monitor_key=?1 AND {} ORDER BY COALESCE(datetime(d.published_at), datetime(d.last_seen_at), datetime(d.first_seen_at)) DESC, mi.id DESC LIMIT 8",
@@ -292,9 +324,13 @@ pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i6
         categories,
         official_responses,
         trend,
+        topic_trend,
         category_breakdown,
         source_breakdown,
         region_breakdown,
+        concept_breakdown,
+        person_breakdown,
+        visuals,
         recent,
     })
 }
