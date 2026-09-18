@@ -1,0 +1,5 @@
+# Replace only these two lines in config/settings.yaml -> semantic_gate.
+# All context, batch and Groq rate settings remain unchanged.
+semantic_gate:
+  max_keep: 20
+  max_reject: 20
