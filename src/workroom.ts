@@ -191,7 +191,7 @@ async function apiRequest(
 
 export async function getWorkroomProfile(config: WorkroomConfig, session: WorkroomSession) {
   const params = new URLSearchParams({
-    select: "id,display_name,is_admin",
+    select: "id,display_name,is_admin,name_confirmed",
     id: `eq.${session.userId}`,
     limit: "1",
   });
@@ -202,7 +202,17 @@ export async function getWorkroomProfile(config: WorkroomConfig, session: Workro
     id: session.userId,
     displayName: row?.display_name ? String(row.display_name) : session.email,
     isAdmin: Boolean(row?.is_admin),
+    nameConfirmed: Boolean(row?.name_confirmed),
   };
+  return { profile, session: active };
+}
+
+export async function updateWorkroomProfileName(config: WorkroomConfig, session: WorkroomSession, displayName: string) {
+  const value = displayName.trim(); if (value.length < 2 || value.length > 80) throw new Error("PROFILE_NAME_INVALID");
+  const params = new URLSearchParams({ id: `eq.${session.userId}` });
+  const { payload, session: active } = await apiRequest(config, session, `/rest/v1/monitor_profiles?${params.toString()}`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify({ display_name: value, name_confirmed: true }) });
+  const rows = Array.isArray(payload) ? payload as Array<Record<string, unknown>> : []; const row=rows[0];
+  const profile: WorkroomProfile = { id: session.userId, displayName: row?.display_name ? String(row.display_name) : value, isAdmin: Boolean(row?.is_admin), nameConfirmed: Boolean(row?.name_confirmed ?? true) };
   return { profile, session: active };
 }
 
