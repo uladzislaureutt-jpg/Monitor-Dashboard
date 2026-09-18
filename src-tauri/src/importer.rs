@@ -498,8 +498,8 @@ fn ingest_publications(
             r#"
             INSERT INTO documents(
                 document_uid, source_id, url, normalized_url, published_at, language, title,
-                title_generated, excerpt, text_length, first_seen_at, last_seen_at
-            ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?11)
+                title_generated, excerpt, text_length, preview_image_url, first_seen_at, last_seen_at
+            ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?12)
             ON CONFLICT(document_uid) DO UPDATE SET
                 source_id=excluded.source_id,
                 url=excluded.url,
@@ -510,6 +510,7 @@ fn ingest_publications(
                 title_generated=excluded.title_generated,
                 excerpt=COALESCE(excluded.excerpt, documents.excerpt),
                 text_length=COALESCE(excluded.text_length, documents.text_length),
+                preview_image_url=COALESCE(excluded.preview_image_url, documents.preview_image_url),
                 last_seen_at=COALESCE(excluded.last_seen_at, documents.last_seen_at)
             "#,
             params![
@@ -523,6 +524,7 @@ fn ingest_publications(
                 if item.publication.title_generated { 1_i64 } else { 0_i64 },
                 item.publication.excerpt,
                 item.publication.text_length,
+                item.publication.preview_image_url,
                 seen,
             ],
         )
