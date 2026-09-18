@@ -74,6 +74,7 @@ export type CoverageHealthSummary = {
 
 export type PublicationSummary = {
   id: number;
+  documentUid: string;
   title: string;
   url: string;
   publishedAt: string | null;
@@ -196,6 +197,25 @@ export type WorkroomMessage = {
 export type PublicationLink = {
   title: string;
   url: string;
+};
+
+
+export type PublicationModerationFlag = {
+  documentUid: string;
+  userId: string;
+  userName: string;
+  flaggedAt: string;
+};
+
+export type PublicationModerationExclusion = {
+  documentUid: string;
+  excludedByName: string;
+  excludedAt: string;
+};
+
+export type PublicationModerationSnapshot = {
+  flags: PublicationModerationFlag[];
+  exclusions: PublicationModerationExclusion[];
 };
 
 export type SyncSettings = {

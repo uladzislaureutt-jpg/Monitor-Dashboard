@@ -1,0 +1,10 @@
+{
+  "status": "PASS",
+  "sqlite_schema_version": 4,
+  "flagged_excluded_from_analytics": true,
+  "flagged_remains_in_archive": true,
+  "admin_exclusion_hidden_from_archive": true,
+  "clear_flag_restores_analytics": true,
+  "reaction_marker": true,
+  "i18n_keys_each": 276
+}

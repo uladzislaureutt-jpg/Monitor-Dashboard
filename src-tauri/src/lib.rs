@@ -10,7 +10,7 @@ use tauri::{Manager, State};
 
 use models::{
     ArchiveFacets, ArchivePage, DashboardOverview, DatabaseStats, ImportResult, RunSummary,
-    SourceSummary,
+    SourceSummary, ModerationFlagInput, ModerationExclusionInput,
 };
 
 #[derive(Clone)]
@@ -97,6 +97,16 @@ fn sync_github_artifacts(
 }
 
 #[tauri::command]
+fn replace_moderation_snapshot(
+    monitor_key: String,
+    flags: Vec<ModerationFlagInput>,
+    exclusions: Vec<ModerationExclusionInput>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    db::replace_moderation_snapshot(&state.db_path, &monitor_key, &flags, &exclusions)
+}
+
+#[tauri::command]
 fn open_external_url(url: String) -> Result<(), String> {
     let parsed = url.trim();
     if !(parsed.starts_with("https://") || parsed.starts_with("http://")) {
@@ -140,6 +150,7 @@ pub fn run() {
             get_archive_facets,
             list_sources,
             sync_github_artifacts,
+            replace_moderation_snapshot,
             open_external_url
         ])
         .run(tauri::generate_context!())

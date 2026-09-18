@@ -424,3 +424,19 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 .health-footnote { margin: 10px 0 0; color: #8b8178; font-size: 8px; line-height: 1.45; }
 @media (max-width: 1150px) { .source-intelligence-kpis { grid-template-columns: repeat(2, minmax(0,1fr)); } }
 @media (max-width: 980px) { .analytics-intelligence-grid { grid-template-columns: 1fr; } }
+
+/* 0.5.2.1 — shared relevance moderation + response marker */
+.publication-card.flagged { border-color: #d9a39d; box-shadow: inset 3px 0 #b94a43, 0 4px 13px #48351f08; }
+.reaction-badge { display: inline-flex; align-items: center; gap: 3px; padding: 3px 6px; border-radius: 999px; background: #edf4e8; color: #4d6a3f; font-weight: 800; }
+.flagged-badge { display: inline-flex; align-items: center; gap: 3px; padding: 3px 6px; border-radius: 999px; background: #fff0ee; color: #9d3f39; font-weight: 800; cursor: help; }
+.moderation-flag-button { width: 26px; height: 25px; border: 1px solid #dbc8c4; border-radius: 8px; background: #fffdfa; color: #9b6b66; cursor: pointer; font-size: 12px; line-height: 1; }
+.moderation-flag-button:hover { background: #fff1ef; border-color: #ce8d87; }
+.moderation-flag-button.active { background: #b94a43; color: #fff; border-color: #b94a43; }
+.moderation-flag-button.active.own { box-shadow: 0 0 0 2px #f2cbc7; }
+.moderation-flag-button:disabled { opacity: .55; cursor: wait; }
+.moderation-delete { color: #a23d38 !important; font-weight: 800; }
+.moderation-keep { color: #4e6f46 !important; font-weight: 800; }
+.publication-card.compact .reaction-badge,
+.publication-card.compact .flagged-badge { font-size: 7.5px; padding: 2px 5px; }
+.publication-card.compact .moderation-keep,
+.publication-card.compact .moderation-delete { font-size: 8px; }

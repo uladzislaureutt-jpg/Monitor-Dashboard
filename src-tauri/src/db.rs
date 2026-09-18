@@ -10,11 +10,13 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 use crate::models::{
     ArchiveFacets, ArchivePage, CountPoint, DashboardOverview, DatabaseStats,
     PublicationSummary, RunSummary, SourceSummary, TopicTrendPoint, SourceDiversitySummary, CoverageHealthSummary,
+    ModerationFlagInput, ModerationExclusionInput,
 };
 
 const MIGRATION_0001: &str = include_str!("../migrations/0001_init.sql");
 const MIGRATION_0002: &str = include_str!("../migrations/0002_sync.sql");
 const MIGRATION_0003: &str = include_str!("../migrations/0003_preview_images.sql");
+const MIGRATION_0004: &str = include_str!("../migrations/0004_moderation.sql");
 
 pub fn open_database(path: &Path) -> Result<Connection, String> {
     let conn = Connection::open(path).map_err(|e| format!("Не удалось открыть SQLite: {e}"))?;
@@ -73,6 +75,12 @@ pub fn initialize_database(path: &Path) -> Result<(), String> {
         tx.execute_batch(MIGRATION_0003).map_err(|e| format!("Миграция 0003 завершилась ошибкой: {e}"))?;
         tx.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (3)", []).map_err(|e| format!("Не удалось записать версию миграции 0003: {e}"))?;
         tx.commit().map_err(|e| format!("Не удалось завершить миграцию 0003: {e}"))?;
+    }
+    if current < 4 {
+        let tx = conn.unchecked_transaction().map_err(|e| format!("Не удалось начать миграцию 0004: {e}"))?;
+        tx.execute_batch(MIGRATION_0004).map_err(|e| format!("Миграция 0004 завершилась ошибкой: {e}"))?;
+        tx.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (4)", []).map_err(|e| format!("Не удалось записать версию миграции 0004: {e}"))?;
+        tx.commit().map_err(|e| format!("Не удалось завершить миграцию 0004: {e}"))?;
     }
     Ok(())
 }
@@ -181,24 +189,25 @@ fn period_clause(alias: &str, parameter: &str) -> String {
 }
 
 fn publication_row(row: &Row<'_>) -> rusqlite::Result<PublicationSummary> {
-    let official: Option<i64> = row.get(12)?;
+    let official: Option<i64> = row.get(13)?;
     Ok(PublicationSummary {
         id: row.get(0)?,
-        title: row.get(1)?,
-        url: row.get(2)?,
-        published_at: row.get(3)?,
-        source: row.get(4)?,
-        category: row.get(5)?,
-        subcategory: row.get(6)?,
-        region: row.get(7)?,
-        locality: row.get(8)?,
-        event_object: row.get(9)?,
-        event_problem: row.get(10)?,
-        excerpt: row.get(11)?,
+        document_uid: row.get(1)?,
+        title: row.get(2)?,
+        url: row.get(3)?,
+        published_at: row.get(4)?,
+        source: row.get(5)?,
+        category: row.get(6)?,
+        subcategory: row.get(7)?,
+        region: row.get(8)?,
+        locality: row.get(9)?,
+        event_object: row.get(10)?,
+        event_problem: row.get(11)?,
+        excerpt: row.get(12)?,
         official_response: official.map(|value| value != 0),
-        score: row.get(13)?,
-        preview_image_url: row.get(14)?,
-        seen_in_runs: row.get(15)?,
+        score: row.get(14)?,
+        preview_image_url: row.get(15)?,
+        seen_in_runs: row.get(16)?,
     })
 }
 
@@ -206,6 +215,7 @@ fn publication_select() -> &'static str {
     r#"
         SELECT
             mi.id,
+            d.document_uid,
             d.title,
             d.url,
             d.published_at,
@@ -413,7 +423,7 @@ pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i6
     let conn = open_database(path)?;
     let period = period_clause("d", "?2");
     let base = format!(
-        "FROM monitor_items mi JOIN monitors m ON m.id=mi.monitor_id JOIN documents d ON d.id=mi.document_id LEFT JOIN sources s ON s.id=d.source_id LEFT JOIN event_items ei ON ei.monitor_item_id=mi.id AND ei.relation='primary' LEFT JOIN events e ON e.id=ei.event_id WHERE m.monitor_key=?1 AND {period}"
+        "FROM monitor_items mi JOIN monitors m ON m.id=mi.monitor_id JOIN documents d ON d.id=mi.document_id LEFT JOIN sources s ON s.id=d.source_id LEFT JOIN event_items ei ON ei.monitor_item_id=mi.id AND ei.relation='primary' LEFT JOIN events e ON e.id=ei.event_id WHERE m.monitor_key=?1 AND {period} AND NOT EXISTS (SELECT 1 FROM moderation_flags mf WHERE mf.monitor_key=m.monitor_key AND mf.document_uid=d.document_uid) AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid)"
     );
 
     let scalar = |expr: &str| -> Result<i64, String> {
@@ -459,7 +469,7 @@ pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i6
     let coverage_health = coverage_health_summary(&conn, monitor_key)?;
 
     let visuals_sql = format!(
-        "{} WHERE m.monitor_key=?1 AND {} AND NULLIF(TRIM(d.preview_image_url),'') IS NOT NULL ORDER BY COALESCE(datetime(d.published_at), datetime(d.last_seen_at), datetime(d.first_seen_at)) DESC, mi.id DESC LIMIT 4",
+        "{} WHERE m.monitor_key=?1 AND {} AND NOT EXISTS (SELECT 1 FROM moderation_flags mf WHERE mf.monitor_key=m.monitor_key AND mf.document_uid=d.document_uid) AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid) AND NULLIF(TRIM(d.preview_image_url),'') IS NOT NULL ORDER BY COALESCE(datetime(d.published_at), datetime(d.last_seen_at), datetime(d.first_seen_at)) DESC, mi.id DESC LIMIT 4",
         publication_select(), period
     );
     let mut visuals_stmt = conn.prepare(&visuals_sql).map_err(|e| format!("Не удалось подготовить визуальные материалы: {e}"))?;
@@ -468,7 +478,7 @@ pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i6
     let visuals = visuals_rows.collect::<Result<Vec<_>, _>>().map_err(|e| format!("Не удалось собрать визуальные материалы: {e}"))?;
 
     let recent_sql = format!(
-        "{} WHERE m.monitor_key=?1 AND {} ORDER BY COALESCE(datetime(d.published_at), datetime(d.last_seen_at), datetime(d.first_seen_at)) DESC, mi.id DESC LIMIT 8",
+        "{} WHERE m.monitor_key=?1 AND {} AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid) ORDER BY COALESCE(datetime(d.published_at), datetime(d.last_seen_at), datetime(d.first_seen_at)) DESC, mi.id DESC LIMIT 8",
         publication_select(), period
     );
     let mut recent_stmt = conn.prepare(&recent_sql).map_err(|e| format!("Не удалось подготовить последние публикации: {e}"))?;
@@ -537,6 +547,7 @@ pub fn list_publications(
         AND (?4='' OR mi.category=?4)
         AND (?5='' OR e.event_region=?5)
         AND (?6='' OR s.canonical_name=?6)
+        AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid)
         "#
     );
 
@@ -578,13 +589,13 @@ fn string_list(conn: &Connection, sql: &str, monitor_key: &str) -> Result<Vec<St
 pub fn archive_facets(path: &Path, monitor_key: &str) -> Result<ArchiveFacets, String> {
     let conn = open_database(path)?;
     let categories = string_list(&conn,
-        "SELECT DISTINCT mi.category FROM monitor_items mi JOIN monitors m ON m.id=mi.monitor_id WHERE m.monitor_key=?1 AND mi.category IS NOT NULL AND TRIM(mi.category)<>'' ORDER BY mi.category",
+        "SELECT DISTINCT mi.category FROM monitor_items mi JOIN monitors m ON m.id=mi.monitor_id JOIN documents d ON d.id=mi.document_id WHERE m.monitor_key=?1 AND mi.category IS NOT NULL AND TRIM(mi.category)<>'' AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid) ORDER BY mi.category",
         monitor_key)?;
     let regions = string_list(&conn,
-        "SELECT DISTINCT e.event_region FROM events e JOIN monitors m ON m.id=e.monitor_id WHERE m.monitor_key=?1 AND e.event_region IS NOT NULL AND TRIM(e.event_region)<>'' ORDER BY e.event_region",
+        "SELECT DISTINCT e.event_region FROM events e JOIN monitors m ON m.id=e.monitor_id JOIN event_items ei ON ei.event_id=e.id JOIN monitor_items mi ON mi.id=ei.monitor_item_id JOIN documents d ON d.id=mi.document_id WHERE m.monitor_key=?1 AND e.event_region IS NOT NULL AND TRIM(e.event_region)<>'' AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid) ORDER BY e.event_region",
         monitor_key)?;
     let sources = string_list(&conn,
-        "SELECT DISTINCT s.canonical_name FROM sources s WHERE EXISTS (SELECT 1 FROM documents d JOIN monitor_items mi ON mi.document_id=d.id JOIN monitors m ON m.id=mi.monitor_id WHERE d.source_id=s.id AND m.monitor_key=?1) ORDER BY s.canonical_name",
+        "SELECT DISTINCT s.canonical_name FROM sources s WHERE EXISTS (SELECT 1 FROM documents d JOIN monitor_items mi ON mi.document_id=d.id JOIN monitors m ON m.id=mi.monitor_id WHERE d.source_id=s.id AND m.monitor_key=?1 AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid)) ORDER BY s.canonical_name",
         monitor_key)?;
     Ok(ArchiveFacets { categories, regions, sources })
 }
@@ -604,7 +615,9 @@ pub fn list_sources(path: &Path, monitor_key: &str) -> Result<Vec<SourceSummary>
                FROM documents d
                JOIN monitor_items mi ON mi.document_id=d.id
                JOIN monitors m ON m.id=mi.monitor_id
-              WHERE d.source_id=s.id AND m.monitor_key=?1) AS publications,
+              WHERE d.source_id=s.id AND m.monitor_key=?1
+                AND NOT EXISTS (SELECT 1 FROM moderation_flags mf WHERE mf.monitor_key=m.monitor_key AND mf.document_uid=d.document_uid)
+                AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid)) AS publications,
             COALESCE((SELECT SUM(COALESCE(srm.results,0))
                FROM source_run_metrics srm
                JOIN runs r ON r.id=srm.run_id
@@ -651,6 +664,34 @@ pub fn list_sources(path: &Path, monitor_key: &str) -> Result<Vec<SourceSummary>
         })
     }).map_err(|e| format!("Не удалось получить каталог источников: {e}"))?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| format!("Не удалось прочитать источник: {e}"))
+}
+
+pub fn replace_moderation_snapshot(
+    path: &Path,
+    monitor_key: &str,
+    flags: &[ModerationFlagInput],
+    exclusions: &[ModerationExclusionInput],
+) -> Result<(), String> {
+    let conn = open_database(path)?;
+    let tx = conn.unchecked_transaction().map_err(|e| format!("Не удалось начать синхронизацию модерации: {e}"))?;
+    tx.execute("DELETE FROM moderation_flags WHERE monitor_key=?1", params![monitor_key])
+        .map_err(|e| format!("Не удалось очистить локальные флаги модерации: {e}"))?;
+    tx.execute("DELETE FROM moderation_exclusions WHERE monitor_key=?1", params![monitor_key])
+        .map_err(|e| format!("Не удалось очистить локальные исключения модерации: {e}"))?;
+    for flag in flags {
+        tx.execute(
+            "INSERT OR REPLACE INTO moderation_flags(monitor_key,document_uid,user_id,user_name,flagged_at) VALUES (?1,?2,?3,?4,?5)",
+            params![monitor_key, flag.document_uid, flag.user_id, flag.user_name, flag.flagged_at],
+        ).map_err(|e| format!("Не удалось сохранить локальный флаг модерации: {e}"))?;
+    }
+    for exclusion in exclusions {
+        tx.execute(
+            "INSERT OR REPLACE INTO moderation_exclusions(monitor_key,document_uid,excluded_by_name,excluded_at) VALUES (?1,?2,?3,?4)",
+            params![monitor_key, exclusion.document_uid, exclusion.excluded_by_name, exclusion.excluded_at],
+        ).map_err(|e| format!("Не удалось сохранить локальное исключение модерации: {e}"))?;
+    }
+    tx.commit().map_err(|e| format!("Не удалось завершить синхронизацию модерации: {e}"))?;
+    Ok(())
 }
 
 

@@ -3,6 +3,9 @@ import type {
   WorkroomMessage,
   WorkroomProfile,
   WorkroomSession,
+  PublicationModerationFlag,
+  PublicationModerationExclusion,
+  PublicationModerationSnapshot,
 } from "./types";
 
 const CONFIG_KEY = "monitor-workroom-network-config-v1";
@@ -261,4 +264,85 @@ export async function deleteWorkroomMessage(config: WorkroomConfig, session: Wor
     method: "DELETE",
   });
   return active;
+}
+
+
+function moderationFlagFromRow(row: Record<string, unknown>): PublicationModerationFlag {
+  return {
+    documentUid: String(row.document_uid ?? ""),
+    userId: String(row.user_id ?? ""),
+    userName: String(row.user_name ?? ""),
+    flaggedAt: String(row.created_at ?? ""),
+  };
+}
+
+function moderationExclusionFromRow(row: Record<string, unknown>): PublicationModerationExclusion {
+  return {
+    documentUid: String(row.document_uid ?? ""),
+    excludedByName: String(row.excluded_by_name ?? ""),
+    excludedAt: String(row.created_at ?? ""),
+  };
+}
+
+export async function listPublicationModeration(config: WorkroomConfig, session: WorkroomSession, monitorKey = "social_economic") {
+  const common = { room_key: `eq.${config.roomKey}`, monitor_key: `eq.${monitorKey}` };
+  const flagParams = new URLSearchParams({
+    select: "document_uid,user_id,user_name,created_at",
+    ...common,
+    order: "created_at.asc",
+  });
+  const exclusionParams = new URLSearchParams({
+    select: "document_uid,excluded_by_name,created_at",
+    ...common,
+    order: "created_at.asc",
+  });
+  const first = await apiRequest(config, session, `/rest/v1/publication_flags?${flagParams.toString()}`);
+  const second = await apiRequest(config, first.session, `/rest/v1/publication_exclusions?${exclusionParams.toString()}`);
+  const snapshot: PublicationModerationSnapshot = {
+    flags: (Array.isArray(first.payload) ? first.payload : []).map((row) => moderationFlagFromRow(row as Record<string, unknown>)),
+    exclusions: (Array.isArray(second.payload) ? second.payload : []).map((row) => moderationExclusionFromRow(row as Record<string, unknown>)),
+  };
+  return { snapshot, session: second.session };
+}
+
+export async function flagPublication(config: WorkroomConfig, session: WorkroomSession, documentUid: string, monitorKey = "social_economic") {
+  const cleared = await unflagPublication(config, session, documentUid, monitorKey);
+  const { session: active } = await apiRequest(config, cleared, "/rest/v1/publication_flags", {
+    method: "POST",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify({ room_key: config.roomKey, monitor_key: monitorKey, document_uid: documentUid, user_id: cleared.userId }),
+  });
+  return active;
+}
+
+export async function unflagPublication(config: WorkroomConfig, session: WorkroomSession, documentUid: string, monitorKey = "social_economic") {
+  const query = new URLSearchParams({
+    room_key: `eq.${config.roomKey}`,
+    monitor_key: `eq.${monitorKey}`,
+    document_uid: `eq.${documentUid}`,
+    user_id: `eq.${session.userId}`,
+  });
+  const { session: active } = await apiRequest(config, session, `/rest/v1/publication_flags?${query.toString()}`, { method: "DELETE" });
+  return active;
+}
+
+export async function clearPublicationFlags(config: WorkroomConfig, session: WorkroomSession, documentUid: string, monitorKey = "social_economic") {
+  const query = new URLSearchParams({
+    room_key: `eq.${config.roomKey}`,
+    monitor_key: `eq.${monitorKey}`,
+    document_uid: `eq.${documentUid}`,
+  });
+  const { session: active } = await apiRequest(config, session, `/rest/v1/publication_flags?${query.toString()}`, { method: "DELETE" });
+  return active;
+}
+
+export async function excludePublication(config: WorkroomConfig, session: WorkroomSession, documentUid: string, monitorKey = "social_economic") {
+  const query = new URLSearchParams({ room_key: `eq.${config.roomKey}`, monitor_key: `eq.${monitorKey}`, document_uid: `eq.${documentUid}` });
+  const cleared = await apiRequest(config, session, `/rest/v1/publication_exclusions?${query.toString()}`, { method: "DELETE" });
+  const { session: active } = await apiRequest(config, cleared.session, "/rest/v1/publication_exclusions", {
+    method: "POST",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify({ room_key: config.roomKey, monitor_key: monitorKey, document_uid: documentUid, excluded_by: cleared.session.userId }),
+  });
+  return clearPublicationFlags(config, active, documentUid, monitorKey);
 }

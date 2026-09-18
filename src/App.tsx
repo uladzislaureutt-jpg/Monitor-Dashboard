@@ -90,6 +90,11 @@ export default function App() {
   useEffect(() => { refreshCore().catch((reason) => setError(String(reason))); }, [refreshCore]);
   useEffect(() => { refreshDashboard(period); }, [period, refreshDashboard]);
   useEffect(() => {
+    const onModeration = () => refreshDashboard(period);
+    window.addEventListener("monitor:moderation-changed", onModeration);
+    return () => window.removeEventListener("monitor:moderation-changed", onModeration);
+  }, [period, refreshDashboard]);
+  useEffect(() => {
     if (!syncSettings.autoSync || !syncSettings.repository.trim()) return;
     const start = window.setTimeout(() => performSync(syncSettings, true), 900);
     const interval = window.setInterval(() => performSync(syncSettings, true), syncSettings.intervalMinutes * 60_000);

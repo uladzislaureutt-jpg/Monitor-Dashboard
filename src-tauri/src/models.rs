@@ -188,6 +188,7 @@ pub struct CoverageHealthSummary {
 #[serde(rename_all = "camelCase")]
 pub struct PublicationSummary {
     pub id: i64,
+    pub document_uid: String,
     pub title: String,
     pub url: String,
     pub published_at: Option<String>,
@@ -203,6 +204,24 @@ pub struct PublicationSummary {
     pub official_response: Option<bool>,
     pub preview_image_url: Option<String>,
     pub seen_in_runs: i64,
+}
+
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModerationFlagInput {
+    pub document_uid: String,
+    pub user_id: String,
+    pub user_name: String,
+    pub flagged_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModerationExclusionInput {
+    pub document_uid: String,
+    pub excluded_by_name: String,
+    pub excluded_at: String,
 }
 
 #[derive(Debug, Serialize)]

@@ -21,9 +21,11 @@ export function ArchiveView({ initialQuery = "" }: { initialQuery?: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [offset, setOffset] = useState(0);
+  const [moderationVersion, setModerationVersion] = useState(0);
   const pageSize = 30;
 
   useEffect(() => { setQuery(initialQuery); setOffset(0); }, [initialQuery]);
+  useEffect(() => { const handler = () => setModerationVersion((value) => value + 1); window.addEventListener("monitor:moderation-changed", handler); return () => window.removeEventListener("monitor:moderation-changed", handler); }, []);
   useEffect(() => { desktopApi.archiveFacets().then(setFacets).catch((reason) => setError(String(reason))); }, []);
   useEffect(() => {
     setLoading(true);
@@ -31,7 +33,7 @@ export function ArchiveView({ initialQuery = "" }: { initialQuery?: string }) {
       .then((result) => { setPage(result); setError(""); })
       .catch((reason) => setError(String(reason)))
       .finally(() => setLoading(false));
-  }, [query, period, category, region, source, sort, offset]);
+  }, [query, period, category, region, source, sort, offset, moderationVersion]);
 
   const pageNumber = Math.floor(offset / pageSize) + 1;
   const pages = Math.max(1, Math.ceil(page.total / pageSize));

@@ -9,6 +9,7 @@ import type {
   RunSummary,
   SourceSummary,
   SyncResult,
+  PublicationModerationSnapshot,
 } from "./types";
 
 const MONITOR_KEY = "social_economic";
@@ -53,5 +54,7 @@ export const desktopApi = {
     invoke<SourceSummary[]>("list_sources", { monitorKey: MONITOR_KEY }),
   syncGithub: (repository: string, token: string) =>
     invoke<SyncResult>("sync_github_artifacts", { repository, token }),
+  replaceModerationSnapshot: (snapshot: PublicationModerationSnapshot) =>
+    invoke<void>("replace_moderation_snapshot", { monitorKey: MONITOR_KEY, flags: snapshot.flags, exclusions: snapshot.exclusions }),
   openUrl: (url: string) => invoke<void>("open_external_url", { url }),
 };

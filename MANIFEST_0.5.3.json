@@ -1,0 +1,16 @@
+{
+  "package": "Monitor-0.5.3",
+  "base": "Monitor-0.5.2",
+  "purpose": "shared relevance moderation and official-response markers",
+  "sqlite_schema_version": 4,
+  "preserves_existing_sqlite": true,
+  "supabase_live_project_already_upgraded": true,
+  "changed_areas": [
+    "shared red-flag moderation",
+    "admin exclusion tombstones",
+    "analytics exclusion for pending red flags",
+    "flagger-name hover tooltip",
+    "official reaction marker",
+    "RU/BE moderation localization"
+  ]
+}

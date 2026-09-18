@@ -2,22 +2,67 @@ import { desktopApi } from "../api";
 import type { PublicationSummary } from "../types";
 import { useI18n } from "../i18n";
 import { localizeDataLabel } from "../dataLabels";
+import { useModeration } from "../moderation";
 
 export function PublicationCard({ item, compact = false }: { item: PublicationSummary; compact?: boolean }) {
   const { t, formatLocale, locale } = useI18n();
+  const moderation = useModeration();
+  const flags = moderation.flagsFor(item.documentUid);
+  const ownFlag = moderation.isOwnFlag(item.documentUid);
+  const moderationBusy = moderation.busyDocumentUid === item.documentUid;
+  const flaggers = [...new Set(flags.map((flag) => flag.userName).filter(Boolean))];
+  const flagTitle = flags.length
+    ? t("moderation.flaggedBy", { names: flaggers.join(", ") || t("workroom.user") })
+    : moderation.profile
+      ? t("moderation.flag")
+      : t("moderation.loginToFlag");
+
   const formatDate = (value: string | null) => {
     if (!value) return t("publication.dateUnknown");
     const parsed = new Date(value);
     return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString(formatLocale, { dateStyle: "medium", timeStyle: "short" });
   };
+
   async function openOriginal() { try { await desktopApi.openUrl(item.url); } catch (error) { console.error(error); } }
   function discuss() {
     window.dispatchEvent(new CustomEvent("monitor:workroom-compose", { detail: { title: item.title, url: item.url } }));
   }
-  return <article className={`publication-card ${compact ? "compact" : ""}`}>
-    <div className="publication-meta"><span className="source-chip">{item.source}</span><span>{formatDate(item.publishedAt)}</span>{item.region && <span>{localizeDataLabel(item.region, locale, "region")}{item.locality && item.locality !== item.region ? ` · ${item.locality}` : ""}</span>}</div>
+  async function toggleFlag() {
+    try { await moderation.toggleFlag(item); } catch (error) { console.error(error); }
+  }
+  async function keepAsRelevant() {
+    if (!window.confirm(t("moderation.keepConfirm"))) return;
+    try { await moderation.clearFlags(item); } catch (error) { console.error(error); }
+  }
+  async function excludeAsIrrelevant() {
+    if (!window.confirm(t("moderation.excludeConfirm"))) return;
+    try { await moderation.exclude(item); } catch (error) { console.error(error); }
+  }
+
+  return <article className={`publication-card ${compact ? "compact" : ""} ${flags.length ? "flagged" : ""}`}>
+    <div className="publication-meta">
+      <span className="source-chip">{item.source}</span>
+      <span>{formatDate(item.publishedAt)}</span>
+      {item.region && <span>{localizeDataLabel(item.region, locale, "region")}{item.locality && item.locality !== item.region ? ` · ${item.locality}` : ""}</span>}
+      {item.officialResponse && <span className="reaction-badge" title={t("publication.reactionHelp")}>✓ {t("publication.reaction")}</span>}
+      {flags.length > 0 && <span className="flagged-badge" title={flagTitle}>🚩 {t("moderation.flagged")}</span>}
+    </div>
     <button className="publication-title" onClick={openOriginal}>{item.title}</button>
     {!compact && item.excerpt && <p className="publication-excerpt">{item.excerpt}</p>}
-    <div className="publication-footer"><div className="tag-row">{item.category && <span className="tag">{localizeDataLabel(item.category, locale, "category")}</span>}{item.eventObject && <span className="tag subtle">{item.eventObject}</span>}{item.eventProblem && <span className="tag subtle">{item.eventProblem}</span>}</div><div className="publication-actions">{item.seenInRuns > 1 && <span className="seen-count">{t("publication.inRuns", { count: item.seenInRuns })}</span>}<button className="link-button discuss-link" onClick={discuss}>{t("publication.discuss")}</button><button className="link-button" onClick={openOriginal}>{t("publication.open")}</button></div></div>
+    <div className="publication-footer">
+      <div className="tag-row">
+        {item.category && <span className="tag">{localizeDataLabel(item.category, locale, "category")}</span>}
+        {item.eventObject && <span className="tag subtle">{item.eventObject}</span>}
+        {item.eventProblem && <span className="tag subtle">{item.eventProblem}</span>}
+      </div>
+      <div className="publication-actions">
+        {item.seenInRuns > 1 && <span className="seen-count">{t("publication.inRuns", { count: item.seenInRuns })}</span>}
+        <button className={`moderation-flag-button ${flags.length ? "active" : ""} ${ownFlag ? "own" : ""}`} disabled={moderationBusy} onClick={toggleFlag} title={flagTitle} aria-label={flagTitle}>🚩</button>
+        {moderation.profile?.isAdmin && flags.length > 0 && <button className="link-button moderation-keep" disabled={moderationBusy} onClick={keepAsRelevant} title={t("moderation.keepHelp")}>{t("moderation.keep")}</button>}
+        {moderation.profile?.isAdmin && <button className="link-button moderation-delete" disabled={moderationBusy} onClick={excludeAsIrrelevant} title={t("moderation.excludeHelp")}>{t("moderation.exclude")}</button>}
+        <button className="link-button discuss-link" onClick={discuss}>{t("publication.discuss")}</button>
+        <button className="link-button" onClick={openOriginal}>{t("publication.open")}</button>
+      </div>
+    </div>
   </article>;
 }
