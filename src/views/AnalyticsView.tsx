@@ -14,8 +14,8 @@ export function AnalyticsView({ data, period, onPeriodChange }: { data: Dashboar
       </section>
       <section className="panel chart-panel analytics-trend"><div className="panel-head"><div><h3>{t("analytics.intensity")}</h3><p>{t("analytics.intensityHelp")}</p></div></div><TrendColumns data={data?.trend ?? []} /></section>
       <section className="analytics-grid">
-        <BreakdownPanel title={t("analytics.categories")} subtitle={t("analytics.categoriesHelp")} data={data?.categoryBreakdown ?? []} maxItems={12} />
-        <BreakdownPanel title={t("analytics.regions")} subtitle={t("analytics.regionsHelp")} data={data?.regionBreakdown ?? []} maxItems={12} allowMap />
+        <BreakdownPanel title={t("analytics.categories")} subtitle={t("analytics.categoriesHelp")} data={data?.categoryBreakdown ?? []} maxItems={12} labelKind="category" />
+        <BreakdownPanel title={t("analytics.regions")} subtitle={t("analytics.regionsHelp")} data={data?.regionBreakdown ?? []} maxItems={12} allowMap labelKind="region" />
         <BreakdownPanel title={t("analytics.sources")} subtitle={t("analytics.sourcesHelp")} data={data?.sourceBreakdown ?? []} maxItems={16} className="span-two" />
       </section>
       <section className="panel roadmap-card"><b>{t("analytics.next")}</b><p>{t("analytics.nextText")}</p></section>
