@@ -5,7 +5,7 @@ const STORAGE_KEY = "monitor-dashboard-locale-v1";
 
 const RU = {
   "brand.title": "Монитор",
-  "brand.subtitle": "SEP-Monitor · Windows · 0.5.2",
+  "brand.subtitle": "SEP-Monitor · Windows · 0.6.0",
   "nav.label": "Навигация",
   "nav.dashboard": "Обзор",
   "nav.archive": "Архив",
@@ -286,7 +286,7 @@ type TranslationKey = keyof typeof RU;
 
 const BE: Record<TranslationKey, string> = {
   "brand.title": "Манітор",
-  "brand.subtitle": "SEP-Monitor · Windows · 0.5.2",
+  "brand.subtitle": "SEP-Monitor · Windows · 0.6.0",
   "nav.label": "Навігацыя",
   "nav.dashboard": "Агляд",
   "nav.archive": "Архіў",
