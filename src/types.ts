@@ -47,6 +47,12 @@ export type CountPoint = {
   count: number;
 };
 
+export type TopicTrendPoint = {
+  bucket: string;
+  category: string;
+  count: number;
+};
+
 export type PublicationSummary = {
   id: number;
   title: string;
@@ -62,6 +68,7 @@ export type PublicationSummary = {
   excerpt: string | null;
   score: number | null;
   officialResponse: boolean | null;
+  previewImageUrl: string | null;
   seenInRuns: number;
 };
 
@@ -73,9 +80,13 @@ export type DashboardOverview = {
   categories: number;
   officialResponses: number;
   trend: CountPoint[];
+  topicTrend: TopicTrendPoint[];
   categoryBreakdown: CountPoint[];
   sourceBreakdown: CountPoint[];
   regionBreakdown: CountPoint[];
+  conceptBreakdown: CountPoint[];
+  personBreakdown: CountPoint[];
+  visuals: PublicationSummary[];
   recent: PublicationSummary[];
 };
 
@@ -144,6 +155,7 @@ export type WorkroomProfile = {
   id: string;
   displayName: string;
   isAdmin: boolean;
+  nameConfirmed: boolean;
 };
 
 export type WorkroomMessage = {
