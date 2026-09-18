@@ -31,7 +31,8 @@
         "excerpt": { "type": ["string", "null"] },
         "url": { "type": "string", "minLength": 1 },
         "normalized_url": { "type": "string", "minLength": 1 },
-        "text_length": { "type": ["integer", "null"] }
+        "text_length": { "type": ["integer", "null"] },
+        "preview_image_url": { "type": ["string", "null"] }
       },
       "additionalProperties": true
     },
