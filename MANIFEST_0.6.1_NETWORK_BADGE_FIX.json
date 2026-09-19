@@ -1,0 +1,16 @@
+{
+  "name": "Monitor 0.6.1 network + report badge corrective",
+  "base": "Monitor 0.6.1 fulltext corrective",
+  "schema_version": 6,
+  "files": [
+    "src-tauri/src/fulltext.rs",
+    "src/reportWorkspace.tsx",
+    "src/views/ReportView.tsx",
+    "src/App.tsx"
+  ],
+  "changes": [
+    "Windows curl fallback for full-text fetch transport/TLS failures and retryable HTTP statuses",
+    "source-labelled hydration errors",
+    "report badge tracks unexported changes and clears after successful DOCX export"
+  ]
+}

@@ -6,13 +6,14 @@ const STORAGE_KEY = "monitor-report-workspace-social-v1";
 const SETTING_KEY = "report.workspace.social_economic.v1";
 const MAX_ITEMS = 8;
 
-type ReportState = { date: string; items: ReportDraftItem[] };
+type ReportState = { date: string; items: ReportDraftItem[]; revision: number; exportedRevision: number };
 type ReportContextValue = ReportState & {
   ready: boolean;
   busyDocumentUid: string | null;
   hydrating: boolean;
   maxItems: number;
   missingFullTextCount: number;
+  pendingCount: number;
   contains: (documentUid: string) => boolean;
   toggle: (item: PublicationSummary) => Promise<void>;
   hydrateMissing: () => Promise<FullTextHydrationResult[]>;
@@ -23,6 +24,7 @@ type ReportContextValue = ReportState & {
   useExcerpt: (documentUid: string) => void;
   setDate: (value: string) => void;
   clear: () => void;
+  markExported: () => void;
 };
 
 const ReportContext = createContext<ReportContextValue | null>(null);
@@ -33,7 +35,7 @@ function todayIso() {
   return local.toISOString().slice(0, 10);
 }
 
-function emptyState(): ReportState { return { date: todayIso(), items: [] }; }
+function emptyState(): ReportState { return { date: todayIso(), items: [], revision: 0, exportedRevision: 0 }; }
 
 function stripOmissionMarkers(value: string) {
   return value.replace(/\[\s*(?:…|\.{3})\s*\]/g, " ");
@@ -55,7 +57,9 @@ function normalize(raw: unknown): ReportState {
         .slice(0, MAX_ITEMS)
         .map((item) => ({ ...item, editorialText: cleanEditorialText(item.editorialText ?? item.sourceText ?? "") }))
     : [];
-  return { date: typeof value.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.date) ? value.date : todayIso(), items };
+  const revision = Number.isFinite(Number(value.revision)) ? Math.max(0, Number(value.revision)) : (items.length ? 1 : 0);
+  const exportedRevision = Number.isFinite(Number(value.exportedRevision)) ? Math.max(0, Number(value.exportedRevision)) : 0;
+  return { date: typeof value.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.date) ? value.date : todayIso(), items, revision, exportedRevision };
 }
 
 function loadLocal(): ReportState {
@@ -69,12 +73,16 @@ export function ReportProvider({ children }: { children: ReactNode }) {
   const [busyDocumentUid, setBusyDocumentUid] = useState<string | null>(null);
   const [hydrating, setHydrating] = useState(false);
 
-  const persist = useCallback((next: ReportState) => {
+  const persistRaw = useCallback((next: ReportState) => {
     setState(next);
     const raw = JSON.stringify(next);
     localStorage.setItem(STORAGE_KEY, raw);
     void desktopApi.setSetting(SETTING_KEY, raw);
   }, []);
+
+  const persist = useCallback((next: ReportState) => {
+    persistRaw({ ...next, revision: Math.max(state.revision + 1, next.revision ?? 0), exportedRevision: state.exportedRevision });
+  }, [persistRaw, state.exportedRevision, state.revision]);
 
   useEffect(() => {
     let cancelled = false;
@@ -175,8 +183,10 @@ export function ReportProvider({ children }: { children: ReactNode }) {
     persist({ ...state, items: state.items.map((item) => item.documentUid === documentUid ? { ...item, editorialText: cleanEditorialText(item.excerpt?.trim() || item.sourceText) } : item) });
   }, [persist, state]);
   const setDate = useCallback((date: string) => persist({ ...state, date }), [persist, state]);
-  const clear = useCallback(() => persist({ date: state.date, items: [] }), [persist, state.date]);
+  const clear = useCallback(() => persist({ ...state, date: state.date, items: [] }), [persist, state]);
+  const markExported = useCallback(() => { persistRaw({ ...state, exportedRevision: state.revision }); }, [persistRaw, state]);
   const missingFullTextCount = useMemo(() => state.items.filter((item) => item.sourceQuality !== "full").length, [state.items]);
+  const pendingCount = useMemo(() => state.items.length > 0 && state.revision !== state.exportedRevision ? state.items.length : 0, [state.items.length, state.revision, state.exportedRevision]);
 
   const value = useMemo<ReportContextValue>(() => ({
     ...state,
@@ -185,6 +195,7 @@ export function ReportProvider({ children }: { children: ReactNode }) {
     hydrating,
     maxItems: MAX_ITEMS,
     missingFullTextCount,
+    pendingCount,
     contains,
     toggle,
     hydrateMissing,
@@ -195,7 +206,8 @@ export function ReportProvider({ children }: { children: ReactNode }) {
     useExcerpt,
     setDate,
     clear,
-  }), [state, ready, busyDocumentUid, hydrating, missingFullTextCount, contains, toggle, hydrateMissing, remove, move, updateText, resetText, useExcerpt, setDate, clear]);
+    markExported,
+  }), [state, ready, busyDocumentUid, hydrating, missingFullTextCount, pendingCount, contains, toggle, hydrateMissing, remove, move, updateText, resetText, useExcerpt, setDate, clear, markExported]);
   return <ReportContext.Provider value={value}>{children}</ReportContext.Provider>;
 }
 

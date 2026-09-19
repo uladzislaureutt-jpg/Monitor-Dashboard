@@ -55,7 +55,10 @@ export function ReportView() {
       const failed = results.filter((item) => item.status === "failed").length;
       setStatus(tx.hydrated.replace("{fetched}", String(fetched)).replace("{cached}", String(cached)).replace("{failed}", String(failed)));
       if (failed) {
-        const details = results.filter((item) => item.status === "failed").map((item) => item.detail).filter(Boolean);
+        const details = results.filter((item) => item.status === "failed").map((result) => {
+          const draft = report.items.find((item) => item.documentUid === result.documentUid);
+          return `${draft?.source || "Материал"}: ${result.detail || "полный текст не получен"}`;
+        });
         if (details.length) setError(details.join("\n"));
       }
     } catch (reason) { setError(String(reason)); }
@@ -78,6 +81,7 @@ export function ReportView() {
         text: item.editorialText.trim() || item.sourceText.trim() || item.title,
         url: item.url,
       })));
+      report.markExported();
       setStatus(tx.saved);
     } catch (reason) { setError(String(reason)); }
   }
