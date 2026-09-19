@@ -50,3 +50,7 @@ Windows x64 desktop-приложение SEP-Monitor: локальный арх�
 - после каждого материала в DOCX добавляется кликабельная гиперссылка **«Ссылка на публикацию»**;
 - AI-компрессия пока не включена: это следующий этап 0.6.2; 0.6.1 формирует устойчивый ручной редакционный контур, который 0.6.2 будет заполнять автоматически;
 - страница **«Источники»** получила собственный переключатель 1/7/30/365/всё время; все источники остаются видимыми, а публикации, результаты запусков и статусы относятся к выбранному периоду.
+
+## 0.6.1 selected full-text corrective
+
+Report Workspace now has an explicit confirmation stage for the final 5–8-item selection. Missing full texts are fetched on demand from the selected public publication URLs and cached locally; Contract 0.2 texts are reused without refetching. The editor no longer keeps `[…]`/`[...]` omission markers, and DOCX exports show the literal source URL after each item.

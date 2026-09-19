@@ -1,0 +1,62 @@
+{
+  "name": "Monitor 0.6.1 selected full-text corrective",
+  "base": "0.6.1",
+  "schema_version": 6,
+  "files": [
+    {
+      "path": "src-tauri/src/fulltext.rs",
+      "sha256": "c72a821ea418165432f8793e30b59b0538632c273fa69f60287d0b0c0f645ccf",
+      "bytes": 11672
+    },
+    {
+      "path": "src-tauri/src/lib.rs",
+      "sha256": "45a160c444577eb75ae4856958fcd62cf06cdf6b5cbd2a17191bae34b40370fc",
+      "bytes": 5792
+    },
+    {
+      "path": "src-tauri/src/report.rs",
+      "sha256": "b9922b85b2d51aeea7a3a68a4fa02267a21e10799ad6ac045e1b534cb00ad1fe",
+      "bytes": 8652
+    },
+    {
+      "path": "src/types.ts",
+      "sha256": "bb7d3c282f2c712f3425f729d5ace8e73d21134a7f3b1249a075fa43083afc3b",
+      "bytes": 6217
+    },
+    {
+      "path": "src/api.ts",
+      "sha256": "3b89e5c34d2ad161484ff0aa56739843832bce79792c6487d0baa3ef5a4fde00",
+      "bytes": 2828
+    },
+    {
+      "path": "src/reportWorkspace.tsx",
+      "sha256": "cf7c97c8893f23a9c9572445bf1f5932da75ad06b42131adf6870b4d42336392",
+      "bytes": 8756
+    },
+    {
+      "path": "src/views/ReportView.tsx",
+      "sha256": "dc9524185ea67e6b72a0abaeee1addc493aa0598bc27473430ce83e7f2dff90d",
+      "bytes": 9396
+    },
+    {
+      "path": "src/styles.css",
+      "sha256": "7bc0d2f3f53c1085988a44726b4d58ce98721908c8538fcaf6a1f9c72fcd054f",
+      "bytes": 40472
+    },
+    {
+      "path": "INSTALL_0.6.1_FULLTEXT_FIX.md",
+      "sha256": "bce923373cc7e3f5680a2b768eed9b288538aa6ba8dad131c82d0f29466d165c",
+      "bytes": 1270
+    },
+    {
+      "path": "VALIDATION_0.6.1_FULLTEXT_FIX.md",
+      "sha256": "15fa79e88e5788bbb861ef89952d90d3be681b5782653e4a5eb5196b1614cb85",
+      "bytes": 979
+    },
+    {
+      "path": "README.md",
+      "sha256": "502a7833d77b56e37939cd8749cf9fd98a7b593b9fdb8d60d5da17bcd9369f05",
+      "bytes": 6700
+    }
+  ]
+}

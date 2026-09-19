@@ -3,6 +3,7 @@ use std::io::Write;
 use std::path::Path;
 
 use serde::Deserialize;
+use regex::Regex;
 use zip::ZipWriter;
 use zip::write::SimpleFileOptions;
 
@@ -53,6 +54,13 @@ fn source_label(value: &str) -> String {
     format!("«{clean}»")
 }
 
+fn sanitize_editorial_text(value: &str) -> String {
+    let omission = Regex::new(r"\[\s*(?:…|\.{3})\s*\]").expect("valid omission regex");
+    let spaces = Regex::new(r"[ \t]{2,}").expect("valid spaces regex");
+    let cleaned = omission.replace_all(value, " ");
+    spaces.replace_all(cleaned.trim(), " ").to_string()
+}
+
 pub fn export_docx(path: &Path, date: &str, items: &[ReportExportItem]) -> Result<(), String> {
     if items.is_empty() { return Err("В обзор не добавлено ни одного материала.".to_string()); }
     if path.extension().and_then(|value| value.to_str()).map(|value| value.eq_ignore_ascii_case("docx")) != Some(true) {
@@ -70,7 +78,9 @@ pub fn export_docx(path: &Path, date: &str, items: &[ReportExportItem]) -> Resul
 
     let mut hyperlink_rels = String::new();
     for (index, item) in items.iter().enumerate() {
-        let text = if item.text.trim().is_empty() { item.title.trim() } else { item.text.trim() };
+        let raw_text = if item.text.trim().is_empty() { item.title.trim() } else { item.text.trim() };
+        let cleaned_text = sanitize_editorial_text(raw_text);
+        let text = cleaned_text.as_str();
         let (first, rest) = split_first_sentence(text);
         let mut runs = run(&source_label(&item.source), false, true, 32, None, false);
         if !item.location.trim().is_empty() {
@@ -83,7 +93,7 @@ pub fn export_docx(path: &Path, date: &str, items: &[ReportExportItem]) -> Resul
         body.push_str(&paragraph(&runs, "both", Some(709)));
 
         let rid = format!("rId{}", index + 2);
-        let link_run = run("Ссылка на публикацию", false, false, 24, Some("0563C1"), true);
+        let link_run = run(item.url.trim(), false, false, 24, Some("0563C1"), true);
         let hyperlink = format!("<w:hyperlink r:id=\"{rid}\" w:history=\"1\">{link_run}</w:hyperlink>");
         body.push_str(&paragraph(&hyperlink, "left", Some(709)));
         body.push_str(&paragraph("", "both", None));

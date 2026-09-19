@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { desktopApi } from "./api";
-import type { PublicationSummary, ReportDraftItem } from "./types";
+import type { FullTextHydrationResult, PublicationSummary, ReportDraftItem } from "./types";
 
 const STORAGE_KEY = "monitor-report-workspace-social-v1";
 const SETTING_KEY = "report.workspace.social_economic.v1";
@@ -10,9 +10,12 @@ type ReportState = { date: string; items: ReportDraftItem[] };
 type ReportContextValue = ReportState & {
   ready: boolean;
   busyDocumentUid: string | null;
+  hydrating: boolean;
   maxItems: number;
+  missingFullTextCount: number;
   contains: (documentUid: string) => boolean;
   toggle: (item: PublicationSummary) => Promise<void>;
+  hydrateMissing: () => Promise<FullTextHydrationResult[]>;
   remove: (documentUid: string) => void;
   move: (documentUid: string, direction: -1 | 1) => void;
   updateText: (documentUid: string, text: string) => void;
@@ -32,11 +35,25 @@ function todayIso() {
 
 function emptyState(): ReportState { return { date: todayIso(), items: [] }; }
 
+function stripOmissionMarkers(value: string) {
+  return value.replace(/\[\s*(?:…|\.{3})\s*\]/g, " ");
+}
+
+function cleanEditorialText(value: string) {
+  return stripOmissionMarkers(value)
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/ +([,.;:!?])/g, "$1")
+    .trim();
+}
+
 function normalize(raw: unknown): ReportState {
   if (!raw || typeof raw !== "object") return emptyState();
   const value = raw as Partial<ReportState>;
   const items = Array.isArray(value.items)
-    ? value.items.filter((item): item is ReportDraftItem => Boolean(item && typeof item === "object" && typeof (item as ReportDraftItem).documentUid === "string")).slice(0, MAX_ITEMS)
+    ? value.items
+        .filter((item): item is ReportDraftItem => Boolean(item && typeof item === "object" && typeof (item as ReportDraftItem).documentUid === "string"))
+        .slice(0, MAX_ITEMS)
+        .map((item) => ({ ...item, editorialText: cleanEditorialText(item.editorialText ?? item.sourceText ?? "") }))
     : [];
   return { date: typeof value.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.date) ? value.date : todayIso(), items };
 }
@@ -50,6 +67,7 @@ export function ReportProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<ReportState>(loadLocal);
   const [ready, setReady] = useState(false);
   const [busyDocumentUid, setBusyDocumentUid] = useState<string | null>(null);
+  const [hydrating, setHydrating] = useState(false);
 
   const persist = useCallback((next: ReportState) => {
     setState(next);
@@ -67,6 +85,7 @@ export function ReportProvider({ children }: { children: ReactNode }) {
           const restored = normalize(JSON.parse(raw));
           setState(restored);
           localStorage.setItem(STORAGE_KEY, JSON.stringify(restored));
+          void desktopApi.setSetting(SETTING_KEY, JSON.stringify(restored));
         } catch { /* keep local fallback */ }
       } else {
         const local = loadLocal();
@@ -89,7 +108,8 @@ export function ReportProvider({ children }: { children: ReactNode }) {
     setBusyDocumentUid(item.documentUid);
     try {
       const editorial = await desktopApi.editorialSource(item.documentUid);
-      const sourceText = editorial?.fullText?.trim() || item.excerpt?.trim() || item.title;
+      const fullText = editorial?.fullText?.trim() || "";
+      const sourceText = fullText || item.excerpt?.trim() || item.title;
       const draft: ReportDraftItem = {
         documentUid: item.documentUid,
         title: item.title,
@@ -102,12 +122,39 @@ export function ReportProvider({ children }: { children: ReactNode }) {
         score: item.score,
         officialResponse: item.officialResponse,
         sourceText,
-        sourceQuality: editorial?.fullText?.trim() ? "full" : "excerpt",
-        editorialText: sourceText,
+        sourceQuality: fullText ? "full" : "excerpt",
+        editorialText: fullText || cleanEditorialText(item.excerpt?.trim() || item.title),
       };
       persist({ ...state, items: [...state.items, draft] });
     } finally { setBusyDocumentUid(null); }
   }, [contains, persist, remove, state]);
+
+  const hydrateMissing = useCallback(async () => {
+    const missing = state.items.filter((item) => item.sourceQuality !== "full");
+    if (!missing.length) return [];
+    setHydrating(true);
+    try {
+      const results = await desktopApi.hydrateReportFullTexts(missing.map((item) => item.documentUid));
+      const nextItems = await Promise.all(state.items.map(async (item) => {
+        if (item.sourceQuality === "full") return item;
+        const editorial = await desktopApi.editorialSource(item.documentUid);
+        const fullText = editorial?.fullText?.trim() || "";
+        if (!fullText) return item;
+        const previousClean = cleanEditorialText(item.sourceText);
+        const currentClean = cleanEditorialText(item.editorialText);
+        const excerptClean = cleanEditorialText(item.excerpt?.trim() || "");
+        const untouched = !currentClean || currentClean === previousClean || currentClean === excerptClean;
+        return {
+          ...item,
+          sourceText: fullText,
+          sourceQuality: "full" as const,
+          editorialText: untouched ? fullText : item.editorialText,
+        };
+      }));
+      persist({ ...state, items: nextItems });
+      return results;
+    } finally { setHydrating(false); }
+  }, [persist, state]);
 
   const move = useCallback((documentUid: string, direction: -1 | 1) => {
     const index = state.items.findIndex((item) => item.documentUid === documentUid);
@@ -119,18 +166,36 @@ export function ReportProvider({ children }: { children: ReactNode }) {
   }, [persist, state]);
 
   const updateText = useCallback((documentUid: string, text: string) => {
-    persist({ ...state, items: state.items.map((item) => item.documentUid === documentUid ? { ...item, editorialText: text } : item) });
+    persist({ ...state, items: state.items.map((item) => item.documentUid === documentUid ? { ...item, editorialText: stripOmissionMarkers(text) } : item) });
   }, [persist, state]);
   const resetText = useCallback((documentUid: string) => {
-    persist({ ...state, items: state.items.map((item) => item.documentUid === documentUid ? { ...item, editorialText: item.sourceText } : item) });
+    persist({ ...state, items: state.items.map((item) => item.documentUid === documentUid ? { ...item, editorialText: cleanEditorialText(item.sourceText) } : item) });
   }, [persist, state]);
   const useExcerpt = useCallback((documentUid: string) => {
-    persist({ ...state, items: state.items.map((item) => item.documentUid === documentUid ? { ...item, editorialText: item.excerpt?.trim() || item.sourceText } : item) });
+    persist({ ...state, items: state.items.map((item) => item.documentUid === documentUid ? { ...item, editorialText: cleanEditorialText(item.excerpt?.trim() || item.sourceText) } : item) });
   }, [persist, state]);
   const setDate = useCallback((date: string) => persist({ ...state, date }), [persist, state]);
   const clear = useCallback(() => persist({ date: state.date, items: [] }), [persist, state.date]);
+  const missingFullTextCount = useMemo(() => state.items.filter((item) => item.sourceQuality !== "full").length, [state.items]);
 
-  const value = useMemo<ReportContextValue>(() => ({ ...state, ready, busyDocumentUid, maxItems: MAX_ITEMS, contains, toggle, remove, move, updateText, resetText, useExcerpt, setDate, clear }), [state, ready, busyDocumentUid, contains, toggle, remove, move, updateText, resetText, useExcerpt, setDate, clear]);
+  const value = useMemo<ReportContextValue>(() => ({
+    ...state,
+    ready,
+    busyDocumentUid,
+    hydrating,
+    maxItems: MAX_ITEMS,
+    missingFullTextCount,
+    contains,
+    toggle,
+    hydrateMissing,
+    remove,
+    move,
+    updateText,
+    resetText,
+    useExcerpt,
+    setDate,
+    clear,
+  }), [state, ready, busyDocumentUid, hydrating, missingFullTextCount, contains, toggle, hydrateMissing, remove, move, updateText, resetText, useExcerpt, setDate, clear]);
   return <ReportContext.Provider value={value}>{children}</ReportContext.Provider>;
 }
 

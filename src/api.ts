@@ -12,6 +12,7 @@ import type {
   SyncResult,
   PublicationModerationSnapshot,
   ReportExportItem,
+  FullTextHydrationResult,
 } from "./types";
 
 const MONITOR_KEY = "social_economic";
@@ -56,6 +57,8 @@ export const desktopApi = {
     invoke<SourceSummary[]>("list_sources", { monitorKey: MONITOR_KEY, periodDays }),
   editorialSource: (documentUid: string) =>
     invoke<EditorialSource | null>("get_editorial_source", { monitorKey: MONITOR_KEY, documentUid }),
+  hydrateReportFullTexts: (documentUids: string[]) =>
+    invoke<FullTextHydrationResult[]>("hydrate_report_full_texts", { monitorKey: MONITOR_KEY, documentUids }),
   exportReport: (path: string, date: string, items: ReportExportItem[]) =>
     invoke<void>("export_report_docx", { path, date, items }),
   syncGithub: (repository: string, token: string) =>

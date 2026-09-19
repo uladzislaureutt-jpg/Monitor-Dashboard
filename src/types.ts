@@ -250,6 +250,13 @@ export type ReportExportItem = {
   url: string;
 };
 
+export type FullTextHydrationResult = {
+  documentUid: string;
+  status: "fetched" | "already_present" | "failed";
+  textLength: number | null;
+  detail: string | null;
+};
+
 export type PublicationModerationFlag = {
   documentUid: string;
   userId: string;

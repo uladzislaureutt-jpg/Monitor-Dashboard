@@ -1,4 +1,5 @@
 mod db;
+mod fulltext;
 mod importer;
 mod models;
 mod report;
@@ -99,6 +100,15 @@ fn get_editorial_source(
 }
 
 #[tauri::command]
+fn hydrate_report_full_texts(
+    monitor_key: String,
+    document_uids: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<fulltext::FullTextHydrationResult>, String> {
+    fulltext::hydrate_selected(&state.db_path, &monitor_key, &document_uids)
+}
+
+#[tauri::command]
 fn export_report_docx(
     path: String,
     date: String,
@@ -186,6 +196,7 @@ pub fn run() {
             get_archive_facets,
             list_sources,
             get_editorial_source,
+            hydrate_report_full_texts,
             export_report_docx,
             sync_github_artifacts,
             replace_moderation_snapshot,
