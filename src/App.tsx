@@ -12,6 +12,7 @@ import { SourcesView } from "./views/SourcesView";
 import { DataView } from "./views/DataView";
 
 const SYNC_STORAGE_KEY = "monitor-dashboard-github-sync-v1";
+const SYNC_PERSIST_KEY = "github.sync.v1";
 const DEFAULT_SYNC: SyncSettings = { repository: "", token: "", autoSync: false, intervalMinutes: 30 };
 
 type SyncUiStatus = { kind: "none" | "notConfigured" | "configured" | "notFound" | "error" | "partial" | "upToDate"; run?: number; count?: number };
@@ -28,6 +29,15 @@ function loadSyncSettings(): SyncSettings {
       intervalMinutes: [15, 30, 60].includes(Number(parsed.intervalMinutes)) ? Number(parsed.intervalMinutes) : 30,
     };
   } catch { return DEFAULT_SYNC; }
+}
+
+function normalizeSyncSettings(parsed: Partial<SyncSettings>): SyncSettings {
+  return {
+    repository: typeof parsed.repository === "string" ? parsed.repository.trim() : "",
+    token: typeof parsed.token === "string" ? parsed.token : "",
+    autoSync: parsed.autoSync === true,
+    intervalMinutes: [15, 30, 60].includes(Number(parsed.intervalMinutes)) ? Number(parsed.intervalMinutes) : 30,
+  };
 }
 
 export default function App() {
@@ -87,6 +97,24 @@ export default function App() {
     } finally { syncBusyRef.current = false; setSyncBusy(false); }
   }, [period, refreshCore, refreshDashboard, t]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const local = loadSyncSettings();
+    desktopApi.getSetting(SYNC_PERSIST_KEY).then((raw) => {
+      if (cancelled) return;
+      if (raw) {
+        try {
+          const next = normalizeSyncSettings(JSON.parse(raw) as Partial<SyncSettings>);
+          localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(next));
+          setSyncSettings(next);
+          setSyncStatus({ kind: next.repository ? "configured" : "notConfigured" });
+          return;
+        } catch { /* fall through to local migration */ }
+      }
+      if (local.repository || local.token || local.autoSync) void desktopApi.setSetting(SYNC_PERSIST_KEY, JSON.stringify(local));
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
   useEffect(() => { refreshCore().catch((reason) => setError(String(reason))); }, [refreshCore]);
   useEffect(() => { refreshDashboard(period); }, [period, refreshDashboard]);
   useEffect(() => {
@@ -126,14 +154,14 @@ export default function App() {
   }
 
   function saveSyncSettings(next: SyncSettings) {
-    const normalized = { ...next, repository: next.repository.trim(), intervalMinutes: [15, 30, 60].includes(next.intervalMinutes) ? next.intervalMinutes : 30 };
+    const normalized = normalizeSyncSettings(next);
     localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(normalized));
+    void desktopApi.setSetting(SYNC_PERSIST_KEY, JSON.stringify(normalized));
     setSyncSettings(normalized); setSyncStatus({ kind: normalized.repository ? "configured" : "notConfigured" }); setMessage(t("sync.saved"));
   }
   function showArchiveForSearch(query: string) { setArchiveSeed(query); setGlobalQuery(query); setSearchOpen(false); setView("archive"); }
   function navigate(next: ViewKey) { setView(next); if (next !== "archive") setArchiveSeed(""); }
 
-  const latestProduction = runs.find((run) => run.dryRun === false) ?? runs[0] ?? null;
   const nav: Array<{ key: ViewKey; label: string; icon: string }> = [
     { key: "dashboard", label: t("nav.dashboard"), icon: "▦" }, { key: "archive", label: t("nav.archive"), icon: "▤" }, { key: "analytics", label: t("nav.analytics"), icon: "◫" }, { key: "sources", label: t("nav.sources"), icon: "◎" }, { key: "data", label: t("nav.data"), icon: "⇩" },
   ];
@@ -150,7 +178,7 @@ export default function App() {
       <div className="global-search-wrap"><span className="search-icon">⌕</span><input ref={searchRef} value={globalQuery} onFocus={() => setSearchOpen(true)} onChange={(event) => { setGlobalQuery(event.target.value); setSearchOpen(true); }} placeholder={t("search.placeholder")} aria-label={t("search.aria")} /><kbd>Ctrl K</kbd></div>
       <div className="top-actions">
         <div className="language-switch" role="group" aria-label={t("lang.aria")}><button className={locale === "ru" ? "active" : ""} onClick={() => setLocale("ru")}>{t("lang.ru")}</button><button className={locale === "be" ? "active" : ""} onClick={() => setLocale("be")}>{t("lang.be")}</button></div>
-        <span className="module-pill">{t("module.name")}</span>{latestProduction?.runNumber != null && <span className="run-pill">{t("run.label")} {latestProduction.runNumber}</span>}
+        <span className="module-pill">{t("module.name")}</span>
       </div>
     </header>
     <div className="layout"><aside className="sidebar"><div className="nav-label">{t("nav.label")}</div>{nav.slice(0, 4).map((item) => <button key={item.key} className={`nav-item ${view === item.key ? "active" : ""}`} onClick={() => navigate(item.key)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}<button className={`nav-item workroom-nav ${workroomOpen ? "active" : ""}`} onClick={() => setWorkroomOpen((value) => !value)}><span className="nav-icon">◌</span><span className="workroom-nav-label">{t("nav.workroom")}</span>{workroomUnread > 0 && <span className="workroom-unread">{workroomUnread > 99 ? "99+" : workroomUnread}</span>}</button>{nav.slice(4).map((item) => <button key={item.key} className={`nav-item ${view === item.key ? "active" : ""}`} onClick={() => navigate(item.key)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}<div className="sidebar-spacer" /><button className="side-status side-status-button" onClick={() => navigate("data")} title={t("data.syncNow")}><span className={`status-dot ${syncBusy ? "pulse" : ""}`} /><div><b>{syncSettings.autoSync ? t("sync.autoLabel") : t("status.localDb")}</b><small>{syncSettings.autoSync && syncSettings.repository ? (syncStatusText || t("status.ready")) : stats ? t("status.stats", { docs: stats.documents, sources: stats.sources }) : t("status.initializing")}</small></div></button></aside>

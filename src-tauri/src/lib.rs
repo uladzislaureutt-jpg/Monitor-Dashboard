@@ -115,6 +115,22 @@ fn replace_moderation_snapshot(
     db::replace_moderation_snapshot(&state.db_path, &monitor_key, &flags, &exclusions)
 }
 
+
+#[tauri::command]
+fn get_app_setting(key: String, state: State<'_, AppState>) -> Result<Option<String>, String> {
+    db::get_app_setting(&state.db_path, &key)
+}
+
+#[tauri::command]
+fn set_app_setting(key: String, value: String, state: State<'_, AppState>) -> Result<(), String> {
+    db::set_app_setting(&state.db_path, &key, &value)
+}
+
+#[tauri::command]
+fn delete_app_setting(key: String, state: State<'_, AppState>) -> Result<(), String> {
+    db::delete_app_setting(&state.db_path, &key)
+}
+
 #[tauri::command]
 fn open_external_url(url: String) -> Result<(), String> {
     let parsed = url.trim();
@@ -161,6 +177,9 @@ pub fn run() {
             get_editorial_source,
             sync_github_artifacts,
             replace_moderation_snapshot,
+            get_app_setting,
+            set_app_setting,
+            delete_app_setting,
             open_external_url
         ])
         .run(tauri::generate_context!())

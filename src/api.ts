@@ -59,5 +59,8 @@ export const desktopApi = {
     invoke<SyncResult>("sync_github_artifacts", { repository, token }),
   replaceModerationSnapshot: (snapshot: PublicationModerationSnapshot) =>
     invoke<void>("replace_moderation_snapshot", { monitorKey: MONITOR_KEY, flags: snapshot.flags, exclusions: snapshot.exclusions }),
+  getSetting: (key: string) => invoke<string | null>("get_app_setting", { key }),
+  setSetting: (key: string, value: string) => invoke<void>("set_app_setting", { key, value }),
+  deleteSetting: (key: string) => invoke<void>("delete_app_setting", { key }),
   openUrl: (url: string) => invoke<void>("open_external_url", { url }),
 };

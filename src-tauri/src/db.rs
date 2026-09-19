@@ -15,6 +15,7 @@ const MIGRATION_0002: &str = include_str!("../migrations/0002_sync.sql");
 const MIGRATION_0003: &str = include_str!("../migrations/0003_preview_images.sql");
 const MIGRATION_0004: &str = include_str!("../migrations/0004_moderation.sql");
 const MIGRATION_0005: &str = include_str!("../migrations/0005_editorial_sources.sql");
+const MIGRATION_0006: &str = include_str!("../migrations/0006_persistent_settings.sql");
 
 pub fn open_database(path: &Path) -> Result<Connection, String> {
     let conn = Connection::open(path).map_err(|e| format!("Не удалось открыть SQLite: {e}"))?;
@@ -85,6 +86,12 @@ pub fn initialize_database(path: &Path) -> Result<(), String> {
         tx.execute_batch(MIGRATION_0005).map_err(|e| format!("Миграция 0005 завершилась ошибкой: {e}"))?;
         tx.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (5)", []).map_err(|e| format!("Не удалось записать версию миграции 0005: {e}"))?;
         tx.commit().map_err(|e| format!("Не удалось завершить миграцию 0005: {e}"))?;
+    }
+    if current < 6 {
+        let tx = conn.unchecked_transaction().map_err(|e| format!("Не удалось начать миграцию 0006: {e}"))?;
+        tx.execute_batch(MIGRATION_0006).map_err(|e| format!("Миграция 0006 завершилась ошибкой: {e}"))?;
+        tx.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (6)", []).map_err(|e| format!("Не удалось записать версию миграции 0006: {e}"))?;
+        tx.commit().map_err(|e| format!("Не удалось завершить миграцию 0006: {e}"))?;
     }
     Ok(())
 }
@@ -379,6 +386,50 @@ pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i6
     let concept_sql = format!("SELECT COALESCE(NULLIF(TRIM(e.event_object),''), NULLIF(TRIM(mi.subcategory),'')) AS label, COUNT(DISTINCT mi.id) AS count {base} AND COALESCE(NULLIF(TRIM(e.event_object),''), NULLIF(TRIM(mi.subcategory),'')) IS NOT NULL GROUP BY label ORDER BY count DESC, label LIMIT 12");
     let concept_breakdown = count_points(&conn, &concept_sql, monitor_key, period_days)?;
     let person_breakdown = person_breakdown(&conn, &base, monitor_key, period_days)?;
+
+    // SEP dashboard: prefer stories with explicit cross-media coverage.
+    // A primary publication + at least one `also_covered_by`/echo source is
+    // already a multi-outlet story. Moderation flags/exclusions are omitted
+    // because flagged material must not influence analytical blocks.
+    let resonance_sql = format!(
+        "{} WHERE m.monitor_key=?1 AND {} \
+         AND NOT EXISTS (SELECT 1 FROM moderation_flags mf WHERE mf.monitor_key=m.monitor_key AND mf.document_uid=d.document_uid) \
+         AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid) \
+         AND EXISTS (SELECT 1 FROM run_items ri WHERE ri.monitor_item_id=mi.id AND (\
+             NULLIF(TRIM(ri.also_covered_by),'') IS NOT NULL OR \
+             NULLIF(TRIM(ri.event_echo_sources),'') IS NOT NULL OR \
+             LOWER(COALESCE(ri.event_echo,'')) IN ('1','true','yes')\
+         )) \
+         ORDER BY (SELECT COUNT(*) FROM run_items ri2 WHERE ri2.monitor_item_id=mi.id AND (\
+             NULLIF(TRIM(ri2.also_covered_by),'') IS NOT NULL OR \
+             NULLIF(TRIM(ri2.event_echo_sources),'') IS NOT NULL OR \
+             LOWER(COALESCE(ri2.event_echo,'')) IN ('1','true','yes')\
+         )) DESC, COALESCE(mi.score,0) DESC, \
+         COALESCE(datetime(d.published_at),datetime(d.last_seen_at),datetime(d.first_seen_at)) DESC, mi.id DESC LIMIT 4",
+        publication_select(), period
+    );
+    let mut resonance_stmt = conn.prepare(&resonance_sql).map_err(|e| format!("Не удалось подготовить резонансные сюжеты: {e}"))?;
+    let resonance_rows = resonance_stmt.query_map(params![monitor_key, period_days], publication_row)
+        .map_err(|e| format!("Не удалось прочитать резонансные сюжеты: {e}"))?;
+    let mut resonance_items = resonance_rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Не удалось собрать резонансные сюжеты: {e}"))?;
+    let resonance_fallback = resonance_items.is_empty();
+    if resonance_fallback {
+        let fallback_sql = format!(
+            "{} WHERE m.monitor_key=?1 AND {} \
+             AND NOT EXISTS (SELECT 1 FROM moderation_flags mf WHERE mf.monitor_key=m.monitor_key AND mf.document_uid=d.document_uid) \
+             AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid) \
+             ORDER BY COALESCE(mi.score,0) DESC, \
+             COALESCE(datetime(d.published_at),datetime(d.last_seen_at),datetime(d.first_seen_at)) DESC, mi.id DESC LIMIT 4",
+            publication_select(), period
+        );
+        let mut fallback_stmt = conn.prepare(&fallback_sql).map_err(|e| format!("Не удалось подготовить fallback резонансных сюжетов: {e}"))?;
+        let fallback_rows = fallback_stmt.query_map(params![monitor_key, period_days], publication_row)
+            .map_err(|e| format!("Не удалось прочитать fallback резонансных сюжетов: {e}"))?;
+        resonance_items = fallback_rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Не удалось собрать fallback резонансных сюжетов: {e}"))?;
+    }
+
     let source_diversity = source_diversity_summary(&conn, &base, monitor_key, period_days)?;
     let coverage_health = coverage_health_summary(&conn, monitor_key)?;
 
@@ -414,6 +465,8 @@ pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i6
         region_breakdown,
         concept_breakdown,
         person_breakdown,
+        resonance_items,
+        resonance_fallback,
         source_diversity,
         coverage_health,
         visuals,
@@ -654,6 +707,37 @@ pub fn replace_moderation_snapshot(
     Ok(())
 }
 
+
+pub fn get_app_setting(path: &Path, key: &str) -> Result<Option<String>, String> {
+    let conn = open_database(path)?;
+    conn.query_row(
+        "SELECT value FROM app_settings WHERE key=?1",
+        params![key],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(|e| format!("Не удалось прочитать настройку {key}: {e}"))
+}
+
+pub fn set_app_setting(path: &Path, key: &str, value: &str) -> Result<(), String> {
+    let conn = open_database(path)?;
+    conn.execute(
+        r#"
+        INSERT INTO app_settings(key,value,updated_at) VALUES (?1,?2,CURRENT_TIMESTAMP)
+        ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP
+        "#,
+        params![key, value],
+    )
+    .map_err(|e| format!("Не удалось сохранить настройку {key}: {e}"))?;
+    Ok(())
+}
+
+pub fn delete_app_setting(path: &Path, key: &str) -> Result<(), String> {
+    let conn = open_database(path)?;
+    conn.execute("DELETE FROM app_settings WHERE key=?1", params![key])
+        .map_err(|e| format!("Не удалось удалить настройку {key}: {e}"))?;
+    Ok(())
+}
 
 pub fn sync_skipped_run_numbers(path: &Path, monitor_key: &str) -> Result<HashSet<i64>, String> {
     let conn = open_database(path)?;

@@ -296,6 +296,8 @@ pub struct DashboardOverview {
     pub region_breakdown: Vec<CountPoint>,
     pub concept_breakdown: Vec<CountPoint>,
     pub person_breakdown: Vec<CountPoint>,
+    pub resonance_items: Vec<PublicationSummary>,
+    pub resonance_fallback: bool,
     pub source_diversity: SourceDiversitySummary,
     pub coverage_health: CoverageHealthSummary,
     pub visuals: Vec<PublicationSummary>,

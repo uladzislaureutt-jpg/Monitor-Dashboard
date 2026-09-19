@@ -107,6 +107,8 @@ export type DashboardOverview = {
   regionBreakdown: CountPoint[];
   conceptBreakdown: CountPoint[];
   personBreakdown: CountPoint[];
+  resonanceItems: PublicationSummary[];
+  resonanceFallback: boolean;
   sourceDiversity: SourceDiversitySummary;
   coverageHealth: CoverageHealthSummary;
   visuals: PublicationSummary[];

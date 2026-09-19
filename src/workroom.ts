@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import type {
   WorkroomConfig,
   WorkroomMessage,
@@ -10,6 +11,13 @@ import type {
 
 const CONFIG_KEY = "monitor-workroom-network-config-v1";
 const SESSION_KEY = "monitor-workroom-network-session-v1";
+const PERSIST_CONFIG_KEY = "workroom.config.v1";
+const PERSIST_SESSION_KEY = "workroom.session.v1";
+const DEFAULT_WORKROOM_CONFIG: WorkroomConfig = {
+  url: "https://kcmmnngcjfmyjzzczvko.supabase.co",
+  anonKey: "sb_publishable_YBBgEf75Jl6TRlSIgILGgQ_uz15ucef",
+  roomKey: "sep-monitor",
+};
 const CACHE_PREFIX = "monitor-workroom-message-cache-v1";
 const READ_PREFIX = "monitor-workroom-last-read-v1";
 
@@ -37,10 +45,43 @@ function parseJson<T>(raw: string | null): T | null {
 export function loadWorkroomConfig(): WorkroomConfig {
   const parsed = parseJson<Partial<WorkroomConfig>>(localStorage.getItem(CONFIG_KEY));
   return {
-    url: typeof parsed?.url === "string" ? parsed.url : "",
-    anonKey: typeof parsed?.anonKey === "string" ? parsed.anonKey : "",
-    roomKey: typeof parsed?.roomKey === "string" && parsed.roomKey.trim() ? parsed.roomKey : "sep-monitor",
+    url: typeof parsed?.url === "string" && parsed.url.trim() ? parsed.url : DEFAULT_WORKROOM_CONFIG.url,
+    anonKey: typeof parsed?.anonKey === "string" && parsed.anonKey.trim() ? parsed.anonKey : DEFAULT_WORKROOM_CONFIG.anonKey,
+    roomKey: typeof parsed?.roomKey === "string" && parsed.roomKey.trim() ? parsed.roomKey : DEFAULT_WORKROOM_CONFIG.roomKey,
   };
+}
+
+async function persistentGet(key: string) {
+  try { return await invoke<string | null>("get_app_setting", { key }); } catch { return null; }
+}
+async function persistentSet(key: string, value: string) {
+  try { await invoke<void>("set_app_setting", { key, value }); } catch { /* localStorage remains compatibility fallback */ }
+}
+async function persistentDelete(key: string) {
+  try { await invoke<void>("delete_app_setting", { key }); } catch { /* best effort */ }
+}
+
+export async function hydrateWorkroomPersistence() {
+  const localConfig = loadWorkroomConfig();
+  const storedConfigRaw = await persistentGet(PERSIST_CONFIG_KEY);
+  const storedConfig = parseJson<Partial<WorkroomConfig>>(storedConfigRaw);
+  const config: WorkroomConfig = storedConfig ? {
+    url: typeof storedConfig.url === "string" && storedConfig.url.trim() ? storedConfig.url : DEFAULT_WORKROOM_CONFIG.url,
+    anonKey: typeof storedConfig.anonKey === "string" && storedConfig.anonKey.trim() ? storedConfig.anonKey : DEFAULT_WORKROOM_CONFIG.anonKey,
+    roomKey: typeof storedConfig.roomKey === "string" && storedConfig.roomKey.trim() ? storedConfig.roomKey : DEFAULT_WORKROOM_CONFIG.roomKey,
+  } : localConfig;
+  localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+  if (!storedConfigRaw) await persistentSet(PERSIST_CONFIG_KEY, JSON.stringify(config));
+
+  const localSession = loadWorkroomSession();
+  const storedSessionRaw = await persistentGet(PERSIST_SESSION_KEY);
+  const storedSession = parseJson<WorkroomSession>(storedSessionRaw);
+  const session = storedSession ?? localSession;
+  if (session) {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    if (!storedSessionRaw) await persistentSet(PERSIST_SESSION_KEY, JSON.stringify(session));
+  }
+  return { config, session };
 }
 
 export function saveWorkroomConfig(config: WorkroomConfig) {
@@ -50,11 +91,13 @@ export function saveWorkroomConfig(config: WorkroomConfig) {
     roomKey: config.roomKey.trim() || "sep-monitor",
   };
   localStorage.setItem(CONFIG_KEY, JSON.stringify(normalized));
+  void persistentSet(PERSIST_CONFIG_KEY, JSON.stringify(normalized));
   return normalized;
 }
 
 export function clearWorkroomConfig() {
   localStorage.removeItem(CONFIG_KEY);
+  void persistentDelete(PERSIST_CONFIG_KEY);
   clearWorkroomSession();
 }
 
@@ -64,10 +107,12 @@ export function loadWorkroomSession(): WorkroomSession | null {
 
 export function saveWorkroomSession(session: WorkroomSession) {
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  void persistentSet(PERSIST_SESSION_KEY, JSON.stringify(session));
 }
 
 export function clearWorkroomSession() {
   localStorage.removeItem(SESSION_KEY);
+  void persistentDelete(PERSIST_SESSION_KEY);
 }
 
 export function loadCachedMessages(config: WorkroomConfig): WorkroomMessage[] {

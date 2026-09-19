@@ -1,0 +1,16 @@
+dba7c1c8b92c659bb46f56d33730fcc1499848132b77d59484405404508d7c82  ./INSTALL_0.6.0_PERSISTENCE_UI_FIX.md
+2ba368628985f90a905a1a07195b4097447c19f24dcbad57c4f9b95dbef99506  ./VALIDATION_0.6.0_PERSISTENCE_UI.md
+7abc0d85ad9006769506262ae1279c4d364d2693e3b4330f83ef5eb76164040e  ./src-tauri/migrations/0006_persistent_settings.sql
+fe83849edb8de25e8408d5d711c137c5920292cf036e7f2a1697c46802ff5984  ./src-tauri/src/db.rs
+32bc261c2f17ae131aac5a0e93cb6831905c04c3fda1142f5bc2c1d5958d75f6  ./src-tauri/src/lib.rs
+6b5dca7da804b5392d1c6165b3e1e928b740ee51c10a2f453df185e2dcf90e97  ./src-tauri/src/models.rs
+1b160803edc101015c75e844aecc4fd37ba8e45db725fdd018cd6cc146f6b6b8  ./src-tauri/tauri.conf.json
+78e00848387eda425ff1d4ea88996336943782abe011afab72b67788473bbe99  ./src/App.tsx
+f8e767c7d6fd0b472cba4aff537809daf3b1da70d72112c9c2720039302deeaf  ./src/api.ts
+e662a3fb6d3faeaaa71649b49e2e23cf562485052076a4f0e62b791a74803d6c  ./src/components/ResonancePanel.tsx
+429f1ee30c7fbfb709a12eb59cf5feddd0ca66b0c5b50e3def741c3bc3f3061b  ./src/components/WorkroomDrawer.tsx
+c8faff9d9a87dd2dae0b93d8f8e2ebfd64231535c498746e10600e3435c0d69e  ./src/i18n.tsx
+fe57ba6f0b042bcacc5d0e971a3d4ec988bfa374649a2c769a629636d3e176bf  ./src/styles.css
+dc3c7914410b4e4da5d3828a58361953520a3259e22a2ac62a14074f1a61c584  ./src/types.ts
+c5e357ef6cf643560326eda47699de29e08a44ed262b77c6d8bbc59405ee528d  ./src/views/DashboardView.tsx
+250c2878463895d17dd18403257fc212f271fa8b8566a578e44cbafdaa91d777  ./src/workroom.ts

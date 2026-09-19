@@ -87,6 +87,8 @@ kbd { color: #c4d5df; border: 1px solid #ffffff25; background: #ffffff0e; border
 
 .kpi-grid { display: grid; grid-template-columns: repeat(6, minmax(120px,1fr)); gap: 12px; }
 .dashboard-kpis { grid-template-columns: repeat(5, minmax(130px, 1fr)); }
+.dashboard-summary { display: grid; gap: 7px; }
+.dashboard-summary-controls { display: flex; justify-content: flex-end; align-items: center; min-height: 28px; }
 .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 15px; padding: 16px; box-shadow: 0 5px 16px rgba(54,43,28,.04); min-height: 86px; }
 .kpi strong { display: block; font-size: 28px; line-height: 1; color: #1e3d56; }
 .kpi span { display: block; margin-top: 7px; font-size: 10px; color: var(--muted); }
@@ -145,6 +147,10 @@ kbd { color: #c4d5df; border: 1px solid #ffffff25; background: #ffffff0e; border
 .map-scale.low { opacity: .18; }
 .map-scale.high { opacity: .95; }
 
+.resonance-panel { min-height: 280px; }
+.resonance-list { display: grid; gap: 8px; }
+.resonance-list .publication-actions { gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+.resonance-list .publication-card.compact .publication-footer { margin-top: 6px; }
 .recent-panel { padding-bottom: 8px; }
 .recent-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
 .analytics-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; }
