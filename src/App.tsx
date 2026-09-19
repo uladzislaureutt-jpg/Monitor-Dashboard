@@ -10,6 +10,8 @@ import { ArchiveView } from "./views/ArchiveView";
 import { AnalyticsView } from "./views/AnalyticsView";
 import { SourcesView } from "./views/SourcesView";
 import { DataView } from "./views/DataView";
+import { ReportView } from "./views/ReportView";
+import { useReportWorkspace } from "./reportWorkspace";
 
 const SYNC_STORAGE_KEY = "monitor-dashboard-github-sync-v1";
 const SYNC_PERSIST_KEY = "github.sync.v1";
@@ -42,6 +44,7 @@ function normalizeSyncSettings(parsed: Partial<SyncSettings>): SyncSettings {
 
 export default function App() {
   const { t, locale, setLocale } = useI18n();
+  const report = useReportWorkspace();
   const [view, setView] = useState<ViewKey>("dashboard");
   const [stats, setStats] = useState<DatabaseStats | null>(null);
   const [runs, setRuns] = useState<RunSummary[]>([]);
@@ -163,7 +166,12 @@ export default function App() {
   function navigate(next: ViewKey) { setView(next); if (next !== "archive") setArchiveSeed(""); }
 
   const nav: Array<{ key: ViewKey; label: string; icon: string }> = [
-    { key: "dashboard", label: t("nav.dashboard"), icon: "▦" }, { key: "archive", label: t("nav.archive"), icon: "▤" }, { key: "analytics", label: t("nav.analytics"), icon: "◫" }, { key: "sources", label: t("nav.sources"), icon: "◎" }, { key: "data", label: t("nav.data"), icon: "⇩" },
+    { key: "dashboard", label: t("nav.dashboard"), icon: "▦" },
+    { key: "archive", label: t("nav.archive"), icon: "▤" },
+    { key: "report", label: t("nav.report"), icon: "✎" },
+    { key: "analytics", label: t("nav.analytics"), icon: "◫" },
+    { key: "sources", label: t("nav.sources"), icon: "◎" },
+    { key: "data", label: t("nav.data"), icon: "⇩" },
   ];
   const syncStatusText = syncStatus.kind === "upToDate" ? t("status.upToDate", { run: syncStatus.run ?? "—" })
     : syncStatus.kind === "partial" ? t("status.partial", { count: syncStatus.count ?? 0 })
@@ -181,8 +189,8 @@ export default function App() {
         <span className="module-pill">{t("module.name")}</span>
       </div>
     </header>
-    <div className="layout"><aside className="sidebar"><div className="nav-label">{t("nav.label")}</div>{nav.slice(0, 4).map((item) => <button key={item.key} className={`nav-item ${view === item.key ? "active" : ""}`} onClick={() => navigate(item.key)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}<button className={`nav-item workroom-nav ${workroomOpen ? "active" : ""}`} onClick={() => setWorkroomOpen((value) => !value)}><span className="nav-icon">◌</span><span className="workroom-nav-label">{t("nav.workroom")}</span>{workroomUnread > 0 && <span className="workroom-unread">{workroomUnread > 99 ? "99+" : workroomUnread}</span>}</button>{nav.slice(4).map((item) => <button key={item.key} className={`nav-item ${view === item.key ? "active" : ""}`} onClick={() => navigate(item.key)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}<div className="sidebar-spacer" /><button className="side-status side-status-button" onClick={() => navigate("data")} title={t("data.syncNow")}><span className={`status-dot ${syncBusy ? "pulse" : ""}`} /><div><b>{syncSettings.autoSync ? t("sync.autoLabel") : t("status.localDb")}</b><small>{syncSettings.autoSync && syncSettings.repository ? (syncStatusText || t("status.ready")) : stats ? t("status.stats", { docs: stats.documents, sources: stats.sources }) : t("status.initializing")}</small></div></button></aside>
-      <main className="content">{message && <div className="notice success global-notice"><span>{message}</span><button onClick={() => setMessage("")}>×</button></div>}{error && <div className="notice error global-notice"><span>{error}</span><button onClick={() => setError("")}>×</button></div>}{view === "dashboard" && <DashboardView data={dashboard} period={period} onPeriodChange={setPeriod} loading={dashboardLoading} onOpenArchive={() => navigate("archive")} />}{view === "archive" && <ArchiveView initialQuery={archiveSeed} />}{view === "analytics" && <AnalyticsView data={dashboard} period={period} onPeriodChange={setPeriod} />}{view === "sources" && <SourcesView />}{view === "data" && <DataView stats={stats} runs={runs} busy={busy} onImport={importBundle} syncSettings={syncSettings} onSaveSyncSettings={saveSyncSettings} onSyncNow={(value) => performSync(value)} syncBusy={syncBusy} syncStatus={syncStatusText} />}</main>
+    <div className="layout"><aside className="sidebar"><div className="nav-label">{t("nav.label")}</div>{nav.slice(0, 5).map((item) => <button key={item.key} className={`nav-item ${view === item.key ? "active" : ""}`} onClick={() => navigate(item.key)}><span className="nav-icon">{item.icon}</span><span>{item.label}{item.key === "report" && report.items.length > 0 && <span className="report-count-badge">{report.items.length}</span>}</span></button>)}<button className={`nav-item workroom-nav ${workroomOpen ? "active" : ""}`} onClick={() => setWorkroomOpen((value) => !value)}><span className="nav-icon">◌</span><span className="workroom-nav-label">{t("nav.workroom")}</span>{workroomUnread > 0 && <span className="workroom-unread">{workroomUnread > 99 ? "99+" : workroomUnread}</span>}</button>{nav.slice(5).map((item) => <button key={item.key} className={`nav-item ${view === item.key ? "active" : ""}`} onClick={() => navigate(item.key)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}<div className="sidebar-spacer" /><button className="side-status side-status-button" onClick={() => navigate("data")} title={t("data.syncNow")}><span className={`status-dot ${syncBusy ? "pulse" : ""}`} /><div><b>{syncSettings.autoSync ? t("sync.autoLabel") : t("status.localDb")}</b><small>{syncSettings.autoSync && syncSettings.repository ? (syncStatusText || t("status.ready")) : stats ? t("status.stats", { docs: stats.documents, sources: stats.sources }) : t("status.initializing")}</small></div></button></aside>
+      <main className="content">{message && <div className="notice success global-notice"><span>{message}</span><button onClick={() => setMessage("")}>×</button></div>}{error && <div className="notice error global-notice"><span>{error}</span><button onClick={() => setError("")}>×</button></div>}{view === "dashboard" && <DashboardView data={dashboard} period={period} onPeriodChange={setPeriod} loading={dashboardLoading} onOpenArchive={() => navigate("archive")} />}{view === "archive" && <ArchiveView initialQuery={archiveSeed} />}{view === "report" && <ReportView />}{view === "analytics" && <AnalyticsView data={dashboard} period={period} onPeriodChange={setPeriod} />}{view === "sources" && <SourcesView />}{view === "data" && <DataView stats={stats} runs={runs} busy={busy} onImport={importBundle} syncSettings={syncSettings} onSaveSyncSettings={saveSyncSettings} onSyncNow={(value) => performSync(value)} syncBusy={syncBusy} syncStatus={syncStatusText} />}</main>
     </div>
     <SearchOverlay query={globalQuery} open={searchOpen} onClose={() => setSearchOpen(false)} onShowArchive={showArchiveForSearch} /><WorkroomDrawer open={workroomOpen} onClose={() => setWorkroomOpen(false)} onUnreadChange={setWorkroomUnread} />
   </div>;

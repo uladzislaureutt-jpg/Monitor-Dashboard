@@ -1,4 +1,4 @@
-export type ViewKey = "dashboard" | "archive" | "analytics" | "sources" | "data";
+export type ViewKey = "dashboard" | "archive" | "report" | "analytics" | "sources" | "data";
 export type PeriodDays = 1 | 7 | 30 | 365 | null;
 
 export type RunSummary = {
@@ -224,6 +224,31 @@ export type EditorialSource = {
   entities: EditorialEntity[];
 };
 
+
+
+export type ReportDraftItem = {
+  documentUid: string;
+  title: string;
+  url: string;
+  source: string;
+  publishedAt: string | null;
+  region: string | null;
+  locality: string | null;
+  excerpt: string | null;
+  score: number | null;
+  officialResponse: boolean | null;
+  sourceText: string;
+  sourceQuality: "full" | "excerpt";
+  editorialText: string;
+};
+
+export type ReportExportItem = {
+  source: string;
+  location: string;
+  title: string;
+  text: string;
+  url: string;
+};
 
 export type PublicationModerationFlag = {
   documentUid: string;

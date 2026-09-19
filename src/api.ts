@@ -11,6 +11,7 @@ import type {
   SourceSummary,
   SyncResult,
   PublicationModerationSnapshot,
+  ReportExportItem,
 } from "./types";
 
 const MONITOR_KEY = "social_economic";
@@ -51,10 +52,12 @@ export const desktopApi = {
       limit,
       offset: 0,
     }),
-  sources: () =>
-    invoke<SourceSummary[]>("list_sources", { monitorKey: MONITOR_KEY }),
+  sources: (periodDays: number | null = 30) =>
+    invoke<SourceSummary[]>("list_sources", { monitorKey: MONITOR_KEY, periodDays }),
   editorialSource: (documentUid: string) =>
     invoke<EditorialSource | null>("get_editorial_source", { monitorKey: MONITOR_KEY, documentUid }),
+  exportReport: (path: string, date: string, items: ReportExportItem[]) =>
+    invoke<void>("export_report_docx", { path, date, items }),
   syncGithub: (repository: string, token: string) =>
     invoke<SyncResult>("sync_github_artifacts", { repository, token }),
   replaceModerationSnapshot: (snapshot: PublicationModerationSnapshot) =>

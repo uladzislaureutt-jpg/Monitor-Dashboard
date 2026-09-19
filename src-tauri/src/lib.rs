@@ -1,6 +1,7 @@
 mod db;
 mod importer;
 mod models;
+mod report;
 mod sync;
 
 use std::path::PathBuf;
@@ -82,9 +83,10 @@ fn get_archive_facets(
 #[tauri::command]
 fn list_sources(
     monitor_key: String,
+    period_days: Option<i64>,
     state: State<'_, AppState>,
 ) -> Result<Vec<SourceSummary>, String> {
-    db::list_sources(&state.db_path, &monitor_key)
+    db::list_sources(&state.db_path, &monitor_key, period_days)
 }
 
 #[tauri::command]
@@ -94,6 +96,15 @@ fn get_editorial_source(
     state: State<'_, AppState>,
 ) -> Result<Option<EditorialSource>, String> {
     db::editorial_source(&state.db_path, &monitor_key, &document_uid)
+}
+
+#[tauri::command]
+fn export_report_docx(
+    path: String,
+    date: String,
+    items: Vec<report::ReportExportItem>,
+) -> Result<(), String> {
+    report::export_docx(&PathBuf::from(path), &date, &items)
 }
 
 #[tauri::command]
@@ -175,6 +186,7 @@ pub fn run() {
             get_archive_facets,
             list_sources,
             get_editorial_source,
+            export_report_docx,
             sync_github_artifacts,
             replace_moderation_snapshot,
             get_app_setting,

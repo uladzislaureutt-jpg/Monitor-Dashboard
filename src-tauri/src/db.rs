@@ -567,7 +567,7 @@ pub fn archive_facets(path: &Path, monitor_key: &str) -> Result<ArchiveFacets, S
     Ok(ArchiveFacets { categories, regions, sources })
 }
 
-pub fn list_sources(path: &Path, monitor_key: &str) -> Result<Vec<SourceSummary>, String> {
+pub fn list_sources(path: &Path, monitor_key: &str, period_days: Option<i64>) -> Result<Vec<SourceSummary>, String> {
     let conn = open_database(path)?;
     let sql = r#"
         SELECT
@@ -583,25 +583,31 @@ pub fn list_sources(path: &Path, monitor_key: &str) -> Result<Vec<SourceSummary>
                JOIN monitor_items mi ON mi.document_id=d.id
                JOIN monitors m ON m.id=mi.monitor_id
               WHERE d.source_id=s.id AND m.monitor_key=?1
+                AND (?2 IS NULL OR (d.published_at IS NOT NULL AND datetime(d.published_at) >= datetime('now', '-' || ?2 || ' days')))
                 AND NOT EXISTS (SELECT 1 FROM moderation_flags mf WHERE mf.monitor_key=m.monitor_key AND mf.document_uid=d.document_uid)
                 AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid)) AS publications,
             COALESCE((SELECT SUM(COALESCE(srm.results,0))
                FROM source_run_metrics srm
                JOIN runs r ON r.id=srm.run_id
                JOIN monitors m ON m.id=r.monitor_id
-              WHERE srm.source_id=s.id AND m.monitor_key=?1),0) AS total_results,
-            (SELECT MAX(d.published_at) FROM documents d WHERE d.source_id=s.id) AS last_seen_at,
+              WHERE srm.source_id=s.id AND m.monitor_key=?1
+                AND (?2 IS NULL OR datetime(COALESCE(r.started_at,r.imported_at)) >= datetime('now', '-' || ?2 || ' days'))),0) AS total_results,
+            (SELECT MAX(d.published_at) FROM documents d
+              WHERE d.source_id=s.id
+                AND (?2 IS NULL OR (d.published_at IS NOT NULL AND datetime(d.published_at) >= datetime('now', '-' || ?2 || ' days')))) AS last_seen_at,
             (SELECT srm.access_status
                FROM source_run_metrics srm
                JOIN runs r ON r.id=srm.run_id
                JOIN monitors m ON m.id=r.monitor_id
               WHERE srm.source_id=s.id AND m.monitor_key=?1
+                AND (?2 IS NULL OR datetime(COALESCE(r.started_at,r.imported_at)) >= datetime('now', '-' || ?2 || ' days'))
               ORDER BY COALESCE(r.started_at,r.imported_at) DESC, r.id DESC LIMIT 1) AS access_status,
             (SELECT srm.admission_status
                FROM source_run_metrics srm
                JOIN runs r ON r.id=srm.run_id
                JOIN monitors m ON m.id=r.monitor_id
               WHERE srm.source_id=s.id AND m.monitor_key=?1
+                AND (?2 IS NULL OR datetime(COALESCE(r.started_at,r.imported_at)) >= datetime('now', '-' || ?2 || ' days'))
               ORDER BY COALESCE(r.started_at,r.imported_at) DESC, r.id DESC LIMIT 1) AS admission_status
         FROM sources s
         WHERE EXISTS (
@@ -614,7 +620,7 @@ pub fn list_sources(path: &Path, monitor_key: &str) -> Result<Vec<SourceSummary>
         ORDER BY LOWER(s.canonical_name), s.id
     "#;
     let mut stmt = conn.prepare(sql).map_err(|e| format!("Не удалось подготовить каталог источников: {e}"))?;
-    let rows = stmt.query_map(params![monitor_key], |row| {
+    let rows = stmt.query_map(params![monitor_key, period_days], |row| {
         Ok(SourceSummary {
             id: row.get(0)?,
             name: row.get(1)?,
