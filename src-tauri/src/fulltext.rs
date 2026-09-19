@@ -1,8 +1,8 @@
 use std::io::Read;
 use std::net::IpAddr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use regex::Regex;
 use reqwest::blocking::Client;
@@ -236,6 +236,76 @@ fn fetch_with_windows_curl(_url: &str, _title: &str) -> Result<(String, String),
     Err("Windows curl fallback недоступен на этой платформе.".to_string())
 }
 
+
+#[cfg(target_os = "windows")]
+fn find_edge_executable() -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Ok(program_files_x86) = std::env::var("ProgramFiles(x86)") {
+        candidates.push(PathBuf::from(program_files_x86).join("Microsoft/Edge/Application/msedge.exe"));
+    }
+    if let Ok(program_files) = std::env::var("ProgramFiles") {
+        candidates.push(PathBuf::from(program_files).join("Microsoft/Edge/Application/msedge.exe"));
+    }
+    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+        candidates.push(PathBuf::from(local_app_data).join("Microsoft/Edge/Application/msedge.exe"));
+    }
+    candidates.into_iter().find(|path| path.is_file())
+}
+
+#[cfg(target_os = "windows")]
+fn fetch_with_edge(url: &str, title: &str) -> Result<(String, String), String> {
+    // Final fallback: use the installed Edge browser engine rather than another
+    // raw HTTP client. This is intentionally limited to operator-selected
+    // report items (max 8) and executes the page before dumping the DOM.
+    let edge = find_edge_executable().ok_or_else(|| "Microsoft Edge не найден.".to_string())?;
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let profile_dir = std::env::temp_dir().join(format!("monitor-edge-{}-{stamp}", std::process::id()));
+    let profile_arg = format!("--user-data-dir={}", profile_dir.to_string_lossy());
+    let realistic_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0";
+    let ua_arg = format!("--user-agent={realistic_ua}");
+
+    let output = Command::new(edge)
+        .args([
+            "--headless=new",
+            "--disable-gpu",
+            "--disable-extensions",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-background-networking",
+            "--disable-features=msEdgeFirstRunExperience",
+            "--virtual-time-budget=8000",
+            "--dump-dom",
+        ])
+        .arg(profile_arg)
+        .arg(ua_arg)
+        .arg(url)
+        .output()
+        .map_err(|e| format!("Не удалось запустить Microsoft Edge: {e}"));
+
+    let _ = std::fs::remove_dir_all(&profile_dir);
+    let output = output?;
+    if !output.status.success() {
+        let stderr = normalize_space(&String::from_utf8_lossy(&output.stderr));
+        return Err(if stderr.is_empty() {
+            format!("Microsoft Edge завершился с кодом {}", output.status.code().unwrap_or(-1))
+        } else {
+            format!("Microsoft Edge: {stderr}")
+        });
+    }
+    if output.stdout.is_empty() {
+        return Err("Microsoft Edge не вернул DOM страницы.".to_string());
+    }
+    extract_from_bytes(&output.stdout, title, "windows_edge_dom")
+}
+
+#[cfg(not(target_os = "windows"))]
+fn fetch_with_edge(_url: &str, _title: &str) -> Result<(String, String), String> {
+    Err("Browser fallback недоступен на этой платформе.".to_string())
+}
+
 fn fetch_text(client: &Client, url: &str, title: &str) -> Result<(String, String), String> {
     let parsed = safe_public_url(url)?;
     let request = client
@@ -245,7 +315,7 @@ fn fetch_text(client: &Client, url: &str, title: &str) -> Result<(String, String
         .header(reqwest::header::CACHE_CONTROL, "no-cache")
         .send();
 
-    match request {
+    let should_fallback = match request {
         Ok(mut response) if response.status().is_success() => {
             if let Some(content_type) = response.headers().get(reqwest::header::CONTENT_TYPE) {
                 let value = content_type.to_str().unwrap_or_default().to_lowercase();
@@ -258,21 +328,23 @@ fn fetch_text(client: &Client, url: &str, title: &str) -> Result<(String, String
                 .take(MAX_HTML_BYTES as u64 + 1)
                 .read_to_end(&mut bytes)
                 .map_err(|e| format!("Чтение ответа: {e}"))?;
-            extract_from_bytes(&bytes, title, "reqwest")
-        }
-        Ok(response) => {
-            let status = response.status().as_u16();
-            if matches!(status, 403 | 408 | 429 | 500 | 502 | 503 | 504) {
-                return fetch_with_windows_curl(url, title)
-                    .map_err(|fallback| format!("HTTP {status}; {fallback}"));
+            match extract_from_bytes(&bytes, title, "reqwest") {
+                Ok(value) => return Ok(value),
+                Err(_) => true,
             }
-            Err(format!("HTTP {status}"))
         }
-        Err(primary) => fetch_with_windows_curl(url, title).map_err(|fallback| {
-            let primary_kind = if primary.is_timeout() { "таймаут" } else if primary.is_connect() { "соединение/TLS" } else { "HTTP-клиент" };
-            format!("{primary_kind}: {}; {fallback}", normalize_space(&primary.to_string()))
-        }),
+        Ok(response) => matches!(response.status().as_u16(), 403 | 408 | 429 | 500 | 502 | 503 | 504),
+        Err(_) => true,
+    };
+
+    if !should_fallback {
+        return Err("Источник не отдал пригодную HTML-страницу.".to_string());
     }
+
+    if let Ok(value) = fetch_with_windows_curl(url, title) {
+        return Ok(value);
+    }
+    fetch_with_edge(url, title).map_err(|edge| format!("Не удалось получить полный текст автоматически: {edge}"))
 }
 
 pub fn hydrate_selected(
@@ -337,7 +409,7 @@ pub fn hydrate_selected(
             Ok((text, strategy)) => {
                 let text_length = text.chars().count();
                 let digest = hex::encode(Sha256::digest(text.as_bytes()));
-                let transport = if strategy.starts_with("windows_curl:") { "desktop_windows_curl" } else { "desktop_direct_http" };
+                let transport = if strategy.starts_with("windows_edge_dom:") { "desktop_windows_edge" } else if strategy.starts_with("windows_curl:") { "desktop_windows_curl" } else { "desktop_direct_http" };
                 conn.execute(
                     r#"
                     UPDATE documents SET
