@@ -238,7 +238,8 @@ export type ReportDraftItem = {
   score: number | null;
   officialResponse: boolean | null;
   sourceText: string;
-  sourceQuality: "full" | "excerpt";
+  sourceQuality: "full" | "partial" | "missing";
+  sourceOrigin?: "contract" | "manual" | "excerpt";
   editorialText: string;
 };
 
