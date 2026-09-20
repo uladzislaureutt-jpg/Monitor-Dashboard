@@ -1,11 +1,14 @@
 import { ensureWorkroomSession, loadWorkroomConfig, loadWorkroomSession } from "./workroom";
-import type { CompressionMode } from "./editorialCompression";
+import { compressionRange, compressionReduction, effectiveCompressionMode, type CompressionMode } from "./editorialCompression";
 
 export type EditorialAiResult = {
   compressedText: string;
   reductionPct: number;
   model: string;
   mode: CompressionMode;
+  effectiveMode: Exclude<CompressionMode, "auto">;
+  attempts: number;
+  fallback: string | null;
   usage: { promptTokens: number; completionTokens: number; totalTokens: number };
 };
 
@@ -35,12 +38,25 @@ export async function aiCompress(input: { text: string; mode: CompressionMode; t
     const reason = payload.reason ? `: ${String(payload.reason)}` : "";
     throw new Error(`${code}${reason}`);
   }
+  const compressedText = String(payload.compressed_text || "").trim();
+  if (!compressedText) throw new Error("AI_CLIENT_INVALID_RESULT");
+  const effectiveMode = (payload.effective_mode === "light" || payload.effective_mode === "standard"
+    ? payload.effective_mode
+    : effectiveCompressionMode(input.text, input.mode)) as Exclude<CompressionMode, "auto">;
+  const reductionPct = compressionReduction(input.text, compressedText);
+  const range = compressionRange(effectiveMode);
+  if (reductionPct < range.min || reductionPct > range.max) {
+    throw new Error(`AI_CLIENT_REJECTED_RANGE:${reductionPct}:${range.min}-${range.max}`);
+  }
   const usage = (payload.usage ?? {}) as Record<string, unknown>;
   return {
-    compressedText: String(payload.compressed_text || ""),
-    reductionPct: Number(payload.reduction_pct || 0),
+    compressedText,
+    reductionPct,
     model: String(payload.model || "openai/gpt-oss-120b"),
     mode: (payload.mode === "light" || payload.mode === "standard" ? payload.mode : "auto") as CompressionMode,
+    effectiveMode,
+    attempts: Math.max(1, Number(payload.attempts || (payload.retried === true ? 2 : 1))),
+    fallback: typeof payload.fallback === "string" ? payload.fallback : null,
     usage: {
       promptTokens: Number(usage.prompt_tokens || 0),
       completionTokens: Number(usage.completion_tokens || 0),

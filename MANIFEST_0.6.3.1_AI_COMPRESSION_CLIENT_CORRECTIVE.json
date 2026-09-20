@@ -1,0 +1,11 @@
+{
+  "version": "0.6.3.1",
+  "base": "0.6.2",
+  "sqlite_schema": 6,
+  "features": [
+    "independent client-side compression range check",
+    "server retry and fallback telemetry in the Desktop status",
+    "no Supabase Edge Function replacement"
+  ],
+  "se_monitor_change_required": false
+}
