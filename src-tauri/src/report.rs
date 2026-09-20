@@ -58,7 +58,23 @@ fn sanitize_editorial_text(value: &str) -> String {
     let omission = Regex::new(r"\[\s*(?:…|\.{3})\s*\]").expect("valid omission regex");
     let spaces = Regex::new(r"[ \t]{2,}").expect("valid spaces regex");
     let cleaned = omission.replace_all(value, " ");
-    spaces.replace_all(cleaned.trim(), " ").to_string()
+    let compact = spaces.replace_all(cleaned.trim(), " ");
+    let mut quoted = String::with_capacity(compact.len());
+    let mut opening_quote = true;
+    for ch in compact.chars() {
+        match ch {
+            '«' | '»' | '“' | '”' | '„' | '‟' | '"' => {
+                quoted.push(if opening_quote { '«' } else { '»' });
+                opening_quote = !opening_quote;
+            }
+            '—' => quoted.push('–'),
+            _ => quoted.push(ch),
+        }
+    }
+    let spaced_dash = Regex::new(r"\s-\s").expect("valid spaced dash regex");
+    let normalized = spaced_dash.replace_all(&quoted, " – ");
+    // The exporter supplies the one final full stop after its closing quotation mark.
+    normalized.trim().trim_end_matches('.').trim_end().to_string()
 }
 
 pub fn export_docx(path: &Path, date: &str, items: &[ReportExportItem]) -> Result<(), String> {

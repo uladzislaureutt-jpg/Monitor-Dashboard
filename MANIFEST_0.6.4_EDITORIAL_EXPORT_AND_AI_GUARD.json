@@ -1,0 +1,16 @@
+{
+  "version": "0.6.4",
+  "base": "0.6.3.1 client corrective",
+  "changed_files": [
+    "src-tauri/src/report.rs",
+    "src/editorialCompression.ts",
+    "src/editorialAi.ts",
+    "src/views/ReportView.tsx",
+    "package.json",
+    "src-tauri/Cargo.toml",
+    "src-tauri/tauri.conf.json"
+  ],
+  "supabase_edge_function": "editorial-compress v6 already deployed",
+  "se_monitor_changed": false,
+  "sqlite_migration_required": false
+}
