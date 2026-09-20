@@ -89,7 +89,7 @@ pub fn export_docx(path: &Path, date: &str, items: &[ReportExportItem]) -> Resul
         runs.push_str(&run(": «", false, false, 32, None, false));
         runs.push_str(&run(first, true, true, 32, None, false));
         if !rest.is_empty() { runs.push_str(&run(&format!(" {rest}"), false, false, 32, None, false)); }
-        runs.push_str(&run("»", false, false, 32, None, false));
+        runs.push_str(&run("».", false, false, 32, None, false));
         body.push_str(&paragraph(&runs, "both", Some(709)));
 
         let rid = format!("rId{}", index + 2);

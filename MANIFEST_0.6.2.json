@@ -1,0 +1,12 @@
+{
+  "version": "0.6.2",
+  "base": "0.6.1-report-ux-corrective",
+  "sqlite_schema": 6,
+  "features": [
+    "exact editorial compression",
+    "authenticated Groq editorial compression",
+    "server-side factual integrity guard",
+    "DOCX terminal punctuation fix"
+  ],
+  "se_monitor_change_required": false
+}

@@ -4,6 +4,8 @@ import { desktopApi } from "../api";
 import { useI18n } from "../i18n";
 import { useReportWorkspace } from "../reportWorkspace";
 import type { ReportDraftItem } from "../types";
+import { compressionReduction, exactCompress, type CompressionMode } from "../editorialCompression";
+import { aiCompress } from "../editorialAi";
 
 function prettyDate(value: string) {
   const [year, month, day] = value.split("-");
@@ -19,6 +21,8 @@ export function ReportView() {
   const [error, setError] = useState("");
   const [manualOpen, setManualOpen] = useState(false);
   const [manualText, setManualText] = useState("");
+  const [compressionMode, setCompressionMode] = useState<CompressionMode>("auto");
+  const [aiBusy, setAiBusy] = useState(false);
   const active = useMemo(() => report.items.find((item) => item.documentUid === activeUid) ?? report.items[0] ?? null, [report.items, activeUid]);
   const be = locale === "be";
   const tx = {
@@ -57,6 +61,20 @@ export function ReportView() {
     saveManual: be ? "Захаваць як поўны тэкст" : "Сохранить как полный текст",
     cancel: be ? "Скасаваць" : "Отмена",
     manualSaved: be ? "Поўны тэкст захаваны ў рабочай падборцы." : "Полный текст сохранён в рабочей подборке.",
+    compression: be ? "Кампрэсія" : "Компрессия",
+    compressionAuto: be ? "Аўта" : "Авто",
+    compressionLight: be ? "Лёгкая 5–10%" : "Лёгкая 5–10%",
+    compressionStandard: be ? "Стандарт 20–40%" : "Стандарт 20–40%",
+    exact: be ? "Exact · без перапісвання" : "Exact · без переписывания",
+    ai: be ? "AI · GPT-OSS 120B" : "AI · GPT-OSS 120B",
+    aiRunning: be ? "AI апрацоўвае…" : "AI обрабатывает…",
+    compressionNeedsFull: be ? "Кампрэсія даступная толькі для поўнага тэксту." : "Компрессия доступна только для полного текста.",
+    exactDone: be ? "Exact-кампрэсія прыменена." : "Exact-компрессия применена.",
+    aiDone: be ? "AI-кампрэсія гатовая." : "AI-компрессия готова.",
+    aiAuth: be ? "Для AI-кампрэсіі трэба ўвайсці ў Рабочую кімнату." : "Для AI-компрессии нужно войти в Рабочую комнату.",
+    aiConfig: be ? "На серверы яшчэ не зададзены GROQ_API_KEY. Exact-рэжым ужо даступны." : "На сервере ещё не задан GROQ_API_KEY. Exact-режим уже доступен.",
+    aiValidation: be ? "AI-варыянт не прайшоў праверку фактычнай цэласнасці і не быў ужыты." : "AI-вариант не прошёл проверку фактической целостности и не был применён.",
+    aiHelp: be ? "AI адпраўляе толькі поўны тэкст абранага матэрыялу. Лічбы, імёны і прамыя цытаты правяраюцца перад заменай." : "AI отправляет только полный текст выбранного материала. Числа, имена и прямые цитаты проверяются перед заменой.",
   };
 
   useEffect(() => {
@@ -83,6 +101,31 @@ export function ReportView() {
     setManualText("");
     setError("");
     setStatus(tx.manualSaved);
+  }
+
+  function applyExactCompression() {
+    if (!active || active.sourceQuality !== "full") return;
+    const result = exactCompress(active.sourceText, compressionMode);
+    report.updateText(active.documentUid, result.text);
+    setError("");
+    setStatus(`${tx.exactDone} ${be ? "Скарачэнне" : "Сокращение"}: ${result.reductionPct}%.`);
+  }
+
+  async function applyAiCompression() {
+    if (!active || active.sourceQuality !== "full" || aiBusy) return;
+    setAiBusy(true);
+    setError(""); setStatus("");
+    try {
+      const result = await aiCompress({ text: active.sourceText, mode: compressionMode, title: active.title, source: active.source });
+      report.updateText(active.documentUid, result.compressedText);
+      setStatus(`${tx.aiDone} ${be ? "Скарачэнне" : "Сокращение"}: ${result.reductionPct}% · ${result.usage.totalTokens.toLocaleString()} ${be ? "токенаў" : "токенов"}.`);
+    } catch (reason) {
+      const message = String(reason);
+      if (message.includes("AI_AUTH_REQUIRED") || message.includes("AUTH_REQUIRED")) setError(tx.aiAuth);
+      else if (message.includes("groq_not_configured")) setError(tx.aiConfig);
+      else if (message.includes("compression_validation_failed")) setError(tx.aiValidation);
+      else setError(message);
+    } finally { setAiBusy(false); }
   }
 
   async function exportDocx() {
@@ -123,6 +166,11 @@ export function ReportView() {
         <details className={`report-source-details quality-${active.sourceQuality}`} open><summary><span>{tx.original} · {qualityLabel(active)}</span><span className={`report-text-status ${active.sourceQuality}`}><i />{qualityShort(active)}</span></summary><div className="report-source-text">{active.sourceText}</div></details>
         {active.sourceQuality !== "full" && <div className="report-source-warning"><div><b>{qualityLabel(active)}</b><p>{tx.needsReview}</p></div><button className="secondary-button small-button" onClick={() => { setManualOpen((value) => !value); if (!manualText) setManualText(""); }}>{active.sourceQuality === "partial" ? tx.replaceFull : tx.pasteFull}</button></div>}
         {manualOpen && active.sourceQuality !== "full" && <div className="report-manual-source"><p>{tx.pasteHelp}</p><textarea value={manualText} onChange={(e) => setManualText(e.target.value)} placeholder={tx.pastePlaceholder} /><div><button className="primary-button small-button" disabled={!manualText.trim()} onClick={saveManualFullText}>{tx.saveManual}</button><button className="ghost-button small-button" onClick={() => { setManualOpen(false); setManualText(""); }}>{tx.cancel}</button></div></div>}
+        <div className={`report-compression-panel ${active.sourceQuality !== "full" ? "disabled" : ""}`}>
+          <div className="report-compression-head"><div><b>{tx.compression}</b><span>{tx.aiHelp}</span></div><label><select value={compressionMode} onChange={(e) => setCompressionMode(e.target.value as CompressionMode)} disabled={active.sourceQuality !== "full" || aiBusy}><option value="auto">{tx.compressionAuto}</option><option value="light">{tx.compressionLight}</option><option value="standard">{tx.compressionStandard}</option></select></label></div>
+          <div className="report-compression-actions"><button className="secondary-button small-button" disabled={active.sourceQuality !== "full" || aiBusy} onClick={applyExactCompression}>{tx.exact}</button><button className="primary-button small-button" disabled={active.sourceQuality !== "full" || aiBusy} onClick={applyAiCompression}>{aiBusy ? tx.aiRunning : tx.ai}</button><span>{be ? "Бягучае скарачэнне" : "Текущее сокращение"}: {compressionReduction(active.sourceText, active.editorialText)}%</span></div>
+          {active.sourceQuality !== "full" && <p>{tx.compressionNeedsFull}</p>}
+        </div>
         <div className="report-editor-label"><b>{tx.editorial}</b><div><button className="ghost-button small-button" onClick={() => report.resetText(active.documentUid)}>{tx.reset}</button>{active.excerpt && <button className="ghost-button small-button" onClick={() => report.useExcerpt(active.documentUid)}>{tx.useExcerpt}</button>}</div></div>
         <textarea className="report-editor-textarea" value={active.editorialText} onChange={(e) => report.updateText(active.documentUid, e.target.value)} />
       </article>}

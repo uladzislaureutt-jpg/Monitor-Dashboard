@@ -5,7 +5,7 @@ const STORAGE_KEY = "monitor-dashboard-locale-v1";
 
 const RU = {
   "brand.title": "Монитор",
-  "brand.subtitle": "SEP-Monitor · Windows · 0.6.1",
+  "brand.subtitle": "SEP-Monitor · Windows · 0.6.2",
   "nav.label": "Навигация",
   "nav.dashboard": "Обзор",
   "nav.archive": "Архив",
@@ -174,7 +174,7 @@ const RU = {
   "analytics.healthFootnote": "Категории взаимоисключающие и суммируются в общее число источников последнего production-запуска.",
   "analytics.run": "запуск {run}",
   "analytics.next": "Следующий этап дорожной карты",
-  "analytics.nextText": "Report Workspace 0.6.1 использует полный текст из Dashboard Contract 0.2; следующий этап — автоматическая редакционная компрессия.",
+  "analytics.nextText": "Report Workspace 0.6.2 использует полный текст из Dashboard Contract 0.2 и поддерживает Exact/AI-компрессию с обязательной редакторской проверкой.",
   "sources.eyebrow": "ИСТОЧНИКИ",
   "sources.title": "Каталог мониторинга",
   "sources.subtitle": "Все источники из coverage, включая те, которые не дали публикаций в последнем запуске.",
@@ -290,7 +290,7 @@ type TranslationKey = keyof typeof RU;
 
 const BE: Record<TranslationKey, string> = {
   "brand.title": "Манітор",
-  "brand.subtitle": "SEP-Monitor · Windows · 0.6.1",
+  "brand.subtitle": "SEP-Monitor · Windows · 0.6.2",
   "nav.label": "Навігацыя",
   "nav.dashboard": "Агляд",
   "nav.archive": "Архіў",
@@ -459,7 +459,7 @@ const BE: Record<TranslationKey, string> = {
   "analytics.healthFootnote": "Катэгорыі ўзаемавыключальныя і сумуюцца ў агульную колькасць крыніц апошняга production-запуску.",
   "analytics.run": "запуск {run}",
   "analytics.next": "Наступны этап дарожнай карты",
-  "analytics.nextText": "Report Workspace 0.6.1 выкарыстоўвае поўны тэкст з Dashboard Contract 0.2; наступны этап — аўтаматычная рэдакцыйная кампрэсія.",
+  "analytics.nextText": "Report Workspace 0.6.2 выкарыстоўвае поўны тэкст з Dashboard Contract 0.2 і падтрымлівае Exact/AI-кампрэсію з абавязковай рэдактарскай праверкай.",
   "sources.eyebrow": "КРЫНІЦЫ",
   "sources.title": "Каталог маніторынгу",
   "sources.subtitle": "Усе крыніцы з coverage застаюцца ў каталогу; паказчыкі пералічваюцца за выбраны перыяд.",
