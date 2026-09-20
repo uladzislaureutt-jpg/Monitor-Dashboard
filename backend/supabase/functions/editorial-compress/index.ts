@@ -5,7 +5,6 @@ const corsHeaders = {
 };
 
 type CompressionMode = "auto" | "light" | "standard";
-type EffectiveCompressionMode = Exclude<CompressionMode, "auto">;
 
 type CompressionRequest = {
   text?: string;
@@ -51,14 +50,6 @@ function suspiciousNames(value: string) {
 }
 
 
-function effectiveMode(source: string, mode: CompressionMode): EffectiveCompressionMode {
-  return mode === "auto" ? (sentenceCount(source) <= 6 || source.length < 900 ? "light" : "standard") : mode;
-}
-
-function compressionBounds(mode: EffectiveCompressionMode) {
-  return mode === "light" ? { minReduction: 3, maxReduction: 14 } : { minReduction: 18, maxReduction: 42 };
-}
-
 function validateCompression(original: string, compressed: string, mode: CompressionMode) {
   const source = normalizeSpaces(original);
   const result = normalizeSpaces(compressed)
@@ -67,12 +58,10 @@ function validateCompression(original: string, compressed: string, mode: Compres
     .trim();
   if (!result) return { ok: false, reason: "empty_result", result };
   const ratio = result.length / Math.max(1, source.length);
-  const effective = effectiveMode(source, mode);
-  const bounds = compressionBounds(effective);
-  const reductionPct = (1 - ratio) * 100;
-  if (reductionPct < bounds.minReduction || reductionPct > bounds.maxReduction) {
-    return { ok: false, reason: "reduction_out_of_range", result, ratio, effective, reductionPct };
-  }
+  const sentences = sentenceCount(source);
+  const effective = mode === "auto" ? (sentences <= 6 || source.length < 900 ? "light" : "standard") : mode;
+  const minRatio = effective === "light" ? 0.80 : 0.50;
+  if (ratio < minRatio || ratio > 1.04) return { ok: false, reason: "length_out_of_range", result, ratio };
 
   const sourceNumbers = numericTokens(source);
   for (const token of numericTokens(result)) {
@@ -90,19 +79,14 @@ function validateCompression(original: string, compressed: string, mode: Compres
       return { ok: false, reason: `new_name:${name}`, result, ratio };
     }
   }
-  return { ok: true, reason: "ok", result, ratio, effective, reductionPct };
+  return { ok: true, reason: "ok", result, ratio };
 }
 
 function instructions(mode: CompressionMode, text: string) {
-  const effective = effectiveMode(text, mode);
+  const sentences = sentenceCount(text);
+  const effective = mode === "auto" ? (sentences <= 6 || text.length < 900 ? "light" : "standard") : mode;
   const target = effective === "light" ? "Сократи не более чем на 5–10%; если сокращение ухудшает текст, оставь почти без изменений." : "Сократи примерно на 20–40%.";
   return `Ты редактор информационного обзора. Нужно аккуратно сократить исходную публикацию, не превращая её в пересказ. ${target}\n\nЖЁСТКИЕ ПРАВИЛА:\n1. Не добавляй ни одного факта, вывода, причины, оценки или связки, которых нет в исходнике.\n2. Сохраняй смысл проблемы, место, действующих лиц, даты, числа, суммы, масштабы, прямые цитаты и официальную реакцию.\n3. Удаляй прежде всего вводные фразы, повторы, второстепенные детали и редакционную упаковку.\n4. Допускается лёгкое грамматическое сокращение длинной фразы, но без изменения фактов и тональности.\n5. Не используй маркеры пропуска […], [...], многоточие как обозначение вырезанного текста и служебные комментарии. После точки просто идёт следующее предложение.\n6. Не добавляй заголовок, источник, URL или пояснения. Нужен только готовый текст публикации для редактора.\n7. Если материал короткий, не сокращай его искусственно.\n8. Прямые цитаты либо сохраняй дословно, либо удаляй целиком; не переписывай слова внутри цитаты.\n9. Язык исходника сохраняй.\n\nВерни строго JSON по заданной схеме.`;
-}
-
-function retryInstructions(mode: CompressionMode, text: string) {
-  const effective = effectiveMode(text, mode);
-  const bounds = compressionBounds(effective);
-  return `${instructions(mode, text)}\n\nПОВТОРНАЯ ПОПЫТКА: предыдущий вариант не прошёл автоматическую проверку. Верни новый вариант с сокращением строго на ${bounds.minReduction}–${bounds.maxReduction}% от исходного текста. Не возвращай исходник почти без изменений.`;
 }
 
 Deno.serve(async (req: Request) => {
@@ -120,12 +104,12 @@ Deno.serve(async (req: Request) => {
   if (text.length > 30000) return json({ error: "text_too_long", max_chars: 30000 }, 400);
 
   const userContext = [body.source ? `Источник: ${body.source}` : "", body.title ? `Заголовок: ${body.title}` : ""].filter(Boolean).join("\n");
-  const makePayload = (retry = false) => ({
+  const payload = {
     model: "openai/gpt-oss-120b",
     reasoning_effort: "low",
     reasoning_format: "hidden",
     messages: [
-      { role: "system", content: retry ? retryInstructions(mode, text) : instructions(mode, text) },
+      { role: "system", content: instructions(mode, text) },
       { role: "user", content: `${userContext}${userContext ? "\n\n" : ""}ИСХОДНЫЙ ТЕКСТ:\n${text}` },
     ],
     response_format: {
@@ -141,55 +125,43 @@ Deno.serve(async (req: Request) => {
         },
       },
     },
-  });
+  };
 
-  let validation: any = null;
-  let attempts = 0;
-  let promptTokens = 0;
-  let completionTokens = 0;
-  let totalTokens = 0;
-  for (const retry of [false, true]) {
-    attempts += 1;
-    let response: Response;
-    try {
-      response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify(makePayload(retry)),
-      });
-    } catch (error) {
-      return json({ error: "groq_network_error", detail: String(error) }, 502);
-    }
-    const raw = await response.text();
-    if (!response.ok) return json({ error: "groq_error", status: response.status, detail: raw.slice(0, 1200) }, 502);
-    let decoded: any;
-    try { decoded = JSON.parse(raw); } catch { return json({ error: "groq_invalid_response" }, 502); }
-    const content = decoded?.choices?.[0]?.message?.content;
-    if (!content) return json({ error: "groq_empty_response" }, 502);
-    let parsed: any;
-    try { parsed = JSON.parse(content); } catch { return json({ error: "groq_invalid_json" }, 502); }
-    const usage = decoded?.usage || {};
-    promptTokens += Number(usage.prompt_tokens || 0);
-    completionTokens += Number(usage.completion_tokens || 0);
-    totalTokens += Number(usage.total_tokens || 0);
-    validation = validateCompression(text, String(parsed?.compressed_text || ""), mode);
-    if (validation.ok) break;
+  let response: Response;
+  try {
+    response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    return json({ error: "groq_network_error", detail: String(error) }, 502);
+  }
+  const raw = await response.text();
+  if (!response.ok) return json({ error: "groq_error", status: response.status, detail: raw.slice(0, 1200) }, 502);
+
+  let decoded: any;
+  try { decoded = JSON.parse(raw); } catch { return json({ error: "groq_invalid_response" }, 502); }
+  const content = decoded?.choices?.[0]?.message?.content;
+  if (!content) return json({ error: "groq_empty_response" }, 502);
+  let parsed: any;
+  try { parsed = JSON.parse(content); } catch { return json({ error: "groq_invalid_json" }, 502); }
+
+  const validation = validateCompression(text, String(parsed?.compressed_text || ""), mode);
+  if (!validation.ok) {
+    return json({ error: "compression_validation_failed", reason: validation.reason, ratio: validation.ratio ?? null }, 422);
   }
 
-  if (!validation?.ok) {
-    return json({ error: "compression_validation_failed", reason: validation?.reason ?? "unknown", ratio: validation?.ratio ?? null, attempts }, 422);
-  }
+  const usage = decoded?.usage || {};
   return json({
     compressed_text: validation.result,
     reduction_pct: Math.max(0, Math.round((1 - validation.ratio) * 1000) / 10),
     model: "openai/gpt-oss-120b",
     mode,
-    effective_mode: validation.effective,
-    attempts,
     usage: {
-      prompt_tokens: promptTokens,
-      completion_tokens: completionTokens,
-      total_tokens: totalTokens,
+      prompt_tokens: Number(usage.prompt_tokens || 0),
+      completion_tokens: Number(usage.completion_tokens || 0),
+      total_tokens: Number(usage.total_tokens || 0),
     },
   });
 });

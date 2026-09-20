@@ -12,7 +12,7 @@ export function splitEditorialSentences(value: string) {
     .filter((part) => part.length >= 8);
 }
 
-export function effectiveCompressionMode(text: string, mode: CompressionMode): Exclude<CompressionMode, "auto"> {
+function effectiveMode(text: string, mode: CompressionMode): Exclude<CompressionMode, "auto"> {
   if (mode !== "auto") return mode;
   const sentences = splitEditorialSentences(text);
   return sentences.length <= 6 || normalize(text).length < 900 ? "light" : "standard";
@@ -37,7 +37,7 @@ function sentenceScore(sentence: string, index: number, total: number) {
 export function exactCompress(text: string, mode: CompressionMode = "auto") {
   const source = normalize(text);
   const sentences = splitEditorialSentences(source);
-  const effective = effectiveCompressionMode(source, mode);
+  const effective = effectiveMode(source, mode);
   if (!source || sentences.length <= 3) return { text: source, reductionPct: 0, mode: effective };
 
   // Very short news items are intentionally kept almost intact.
@@ -78,8 +78,4 @@ export function compressionReduction(source: string, result: string) {
   const a = normalize(source).length;
   const b = normalize(result).length;
   return a ? Math.max(0, Math.round((1 - b / a) * 1000) / 10) : 0;
-}
-
-export function compressionRange(mode: Exclude<CompressionMode, "auto">) {
-  return mode === "light" ? { min: 3, max: 14 } : { min: 18, max: 42 };
 }

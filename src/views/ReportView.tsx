@@ -74,7 +74,6 @@ export function ReportView() {
     aiAuth: be ? "Для AI-кампрэсіі трэба ўвайсці ў Рабочую кімнату." : "Для AI-компрессии нужно войти в Рабочую комнату.",
     aiConfig: be ? "На серверы яшчэ не зададзены GROQ_API_KEY. Exact-рэжым ужо даступны." : "На сервере ещё не задан GROQ_API_KEY. Exact-режим уже доступен.",
     aiValidation: be ? "AI-варыянт не прайшоў праверку фактычнай цэласнасці і не быў ужыты." : "AI-вариант не прошёл проверку фактической целостности и не был применён.",
-    aiRange: be ? "AI-варыянт не адпавядае дапушчальнаму дыяпазону скарачэння і не быў ужыты." : "AI-вариант не соответствует допустимому диапазону сокращения и не был применён.",
     aiHelp: be ? "AI адпраўляе толькі поўны тэкст абранага матэрыялу. Лічбы, імёны і прамыя цытаты правяраюцца перад заменай." : "AI отправляет только полный текст выбранного материала. Числа, имена и прямые цитаты проверяются перед заменой.",
   };
 
@@ -112,12 +111,6 @@ export function ReportView() {
     setStatus(`${tx.exactDone} ${be ? "Скарачэнне" : "Сокращение"}: ${result.reductionPct}%.`);
   }
 
-  function aiModeLabel(mode: "light" | "standard") {
-    return mode === "light"
-      ? (be ? "Лёгкая" : "Лёгкая")
-      : (be ? "Стандарт" : "Стандарт");
-  }
-
   async function applyAiCompression() {
     if (!active || active.sourceQuality !== "full" || aiBusy) return;
     setAiBusy(true);
@@ -125,13 +118,12 @@ export function ReportView() {
     try {
       const result = await aiCompress({ text: active.sourceText, mode: compressionMode, title: active.title, source: active.source });
       report.updateText(active.documentUid, result.compressedText);
-      setStatus(`${tx.aiDone} AI · ${aiModeLabel(result.effectiveMode)} · ${be ? "скарачэнне" : "сокращение"} ${result.reductionPct}% · ${result.attempts} ${be ? "спроба" : "попытка"} · ${result.usage.totalTokens.toLocaleString()} ${be ? "токенаў" : "токенов"}.`);
+      setStatus(`${tx.aiDone} ${be ? "Скарачэнне" : "Сокращение"}: ${result.reductionPct}% · ${result.usage.totalTokens.toLocaleString()} ${be ? "токенаў" : "токенов"}.`);
     } catch (reason) {
       const message = String(reason);
       if (message.includes("AI_AUTH_REQUIRED") || message.includes("AUTH_REQUIRED")) setError(tx.aiAuth);
       else if (message.includes("groq_not_configured")) setError(tx.aiConfig);
       else if (message.includes("compression_validation_failed")) setError(tx.aiValidation);
-      else if (message.includes("AI_CLIENT_REJECTED_RANGE") || message.includes("AI_CLIENT_INVALID_RESULT")) setError(tx.aiRange);
       else setError(message);
     } finally { setAiBusy(false); }
   }
