@@ -11,6 +11,7 @@ import type {
   SourceSummary,
   SyncResult,
   PublicationModerationSnapshot,
+  PublicationSummary,
   ReportExportItem,
   FullTextHydrationResult,
 } from "./types";
@@ -40,6 +41,13 @@ export const desktopApi = {
       sort: options.sort ?? "newest",
       limit: options.limit ?? 50,
       offset: options.offset ?? 0,
+    }),
+  topicBucketPublications: (category: string, bucket: string, limit = 8) =>
+    invoke<PublicationSummary[]>("list_topic_bucket_publications", {
+      monitorKey: MONITOR_KEY,
+      category,
+      bucket,
+      limit,
     }),
   search: (query: string, limit = 12) =>
     invoke<ArchivePage>("list_publications", {

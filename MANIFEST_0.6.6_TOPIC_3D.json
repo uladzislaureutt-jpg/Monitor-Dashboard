@@ -1,0 +1,26 @@
+{
+  "package": "Monitor 0.6.6 — Topic trend 3D",
+  "base_version": "0.6.5",
+  "changes": [
+    "Новый WebGL-режим «Темы · 3D» с вращением, масштабированием и средней плоскостью.",
+    "Карточки публикаций по клику на столбец темы и даты.",
+    "Локальная Tauri-команда получает только публикации выбранного столбца; внешний сервис не вызывается."
+  ],
+  "files": [
+    "package.json",
+    "src/api.ts",
+    "src/i18n.tsx",
+    "src/styles.css",
+    "src/views/DashboardView.tsx",
+    "src/components/TopicTrend3D.tsx",
+    "src/echarts-gl.d.ts",
+    "src-tauri/Cargo.toml",
+    "src-tauri/tauri.conf.json",
+    "src-tauri/src/db.rs",
+    "src-tauri/src/lib.rs"
+  ],
+  "verification": [
+    "npm run check",
+    "npm run build"
+  ]
+}

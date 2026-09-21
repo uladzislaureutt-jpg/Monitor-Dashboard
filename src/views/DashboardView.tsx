@@ -1,15 +1,18 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { desktopApi } from "../api";
-import type { DashboardOverview, PeriodDays } from "../types";
+import type { DashboardOverview, PeriodDays, PublicationSummary } from "../types";
 import { useI18n } from "../i18n";
 import { PeriodSelector } from "../components/PeriodSelector";
 import { TopicTrendLines, TrendColumns, TrendLine } from "../components/Charts";
+import { TopicTrend3D } from "../components/TopicTrend3D";
 import { BreakdownPanel } from "../components/BreakdownPanel";
 import { ResonancePanel } from "../components/ResonancePanel";
 import { PublicationCard } from "../components/PublicationCard";
 import { VisualStories } from "../components/VisualStories";
+import { localizeDataLabel } from "../dataLabels";
 
-type TrendMode = "volume" | "line" | "topics";
+type TrendMode = "volume" | "line" | "topics" | "topics3d";
+type TopicPoint = { category: string; bucket: string };
 
 function useSectionOverview(period: PeriodDays, basePeriod: PeriodDays, baseData: DashboardOverview | null) {
   const [data, setData] = useState<DashboardOverview | null>(baseData);
@@ -40,8 +43,11 @@ export function DashboardView({
   loading: boolean;
   onOpenArchive: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [trendMode, setTrendMode] = useState<TrendMode>("volume");
+  const [selectedTopicPoint, setSelectedTopicPoint] = useState<TopicPoint | null>(null);
+  const [topicPointItems, setTopicPointItems] = useState<PublicationSummary[]>([]);
+  const [topicPointLoading, setTopicPointLoading] = useState(false);
   const [summaryPeriod, setSummaryPeriod] = useState<PeriodDays>(30);
   const [topicsPeriod, setTopicsPeriod] = useState<PeriodDays>(30);
   const [geoPeriod, setGeoPeriod] = useState<PeriodDays>(30);
@@ -55,6 +61,19 @@ export function DashboardView({
   const resonanceData = useSectionOverview(resonancePeriod, period, data);
 
   const summaryLoading = loading && summaryPeriod === period;
+  const selectTopicPoint = useCallback((point: TopicPoint) => setSelectedTopicPoint(point), []);
+
+  useEffect(() => {
+    if (!selectedTopicPoint) return;
+    let cancelled = false;
+    setTopicPointLoading(true);
+    setTopicPointItems([]);
+    desktopApi.topicBucketPublications(selectedTopicPoint.category, selectedTopicPoint.bucket)
+      .then((items) => { if (!cancelled) setTopicPointItems(items); })
+      .catch(() => { if (!cancelled) setTopicPointItems([]); })
+      .finally(() => { if (!cancelled) setTopicPointLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedTopicPoint]);
 
   return <div className="view-stack">
     <section className="view-heading dashboard-heading">
@@ -88,12 +107,29 @@ export function DashboardView({
               <button className={trendMode === "volume" ? "active" : ""} onClick={() => setTrendMode("volume")}>{t("chart.volume")}</button>
               <button className={trendMode === "line" ? "active" : ""} onClick={() => setTrendMode("line")}>{t("chart.line")}</button>
               <button className={trendMode === "topics" ? "active" : ""} onClick={() => setTrendMode("topics")}>{t("chart.topicLines")}</button>
+              <button className={trendMode === "topics3d" ? "active" : ""} onClick={() => setTrendMode("topics3d")}>{t("chart.topic3d")}</button>
             </div>
           </div>
         </div>
         {trendMode === "volume" && <TrendColumns data={data?.trend ?? []} />}
         {trendMode === "line" && <TrendLine data={data?.trend ?? []} />}
         {trendMode === "topics" && <TopicTrendLines data={data?.topicTrend ?? []} />}
+        {trendMode === "topics3d" && <>
+          <TopicTrend3D data={data?.topicTrend ?? []} onSelect={selectTopicPoint} />
+          {selectedTopicPoint && <section className="topic-point-results" aria-live="polite">
+            <div className="topic-point-results-head">
+              <div>
+                <h4>{t("chart.selectedPublications", { category: localizeDataLabel(selectedTopicPoint.category, locale, "category"), bucket: selectedTopicPoint.bucket })}</h4>
+                <p>{t("chart.selectedPublicationsHelp")}</p>
+              </div>
+            </div>
+            {topicPointLoading
+              ? <div className="chart-empty">{t("chart.loadingPublications")}</div>
+              : topicPointItems.length
+                ? <div className="topic-point-publications">{topicPointItems.map((item) => <PublicationCard item={item} compact key={item.id} />)}</div>
+                : <div className="chart-empty">{t("chart.noPointPublications")}</div>}
+          </section>}
+        </>}
       </article>
       <BreakdownPanel title={t("dashboard.topics")} subtitle={t("dashboard.topicsHelp")} data={topicsData?.categoryBreakdown ?? []} period={topicsPeriod} onPeriodChange={setTopicsPeriod} labelKind="category" />
       <BreakdownPanel title={t("dashboard.geography")} subtitle={t("dashboard.geographyHelp")} data={geoData?.regionBreakdown ?? []} allowMap period={geoPeriod} onPeriodChange={setGeoPeriod} labelKind="region" />

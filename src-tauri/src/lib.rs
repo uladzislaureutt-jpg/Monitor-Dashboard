@@ -11,7 +11,7 @@ use std::process::Command;
 use tauri::{Manager, State};
 
 use models::{
-    ArchiveFacets, ArchivePage, DashboardOverview, DatabaseStats, EditorialSource, ImportResult, RunSummary,
+    ArchiveFacets, ArchivePage, DashboardOverview, DatabaseStats, EditorialSource, ImportResult, PublicationSummary, RunSummary,
     SourceSummary, ModerationFlagInput, ModerationExclusionInput,
 };
 
@@ -70,6 +70,23 @@ fn list_publications(
         &sort,
         limit,
         offset,
+    )
+}
+
+#[tauri::command]
+fn list_topic_bucket_publications(
+    monitor_key: String,
+    category: String,
+    bucket: String,
+    limit: i64,
+    state: State<'_, AppState>,
+) -> Result<Vec<PublicationSummary>, String> {
+    db::list_topic_bucket_publications(
+        &state.db_path,
+        &monitor_key,
+        &category,
+        &bucket,
+        limit,
     )
 }
 
@@ -193,6 +210,7 @@ pub fn run() {
             import_dashboard_bundle,
             get_dashboard_overview,
             list_publications,
+            list_topic_bucket_publications,
             get_archive_facets,
             list_sources,
             get_editorial_source,
