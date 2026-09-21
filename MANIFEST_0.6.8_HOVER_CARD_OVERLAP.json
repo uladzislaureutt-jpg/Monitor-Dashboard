@@ -1,0 +1,18 @@
+{
+  "package": "Monitor 0.6.8 — 3D hover card overlap fix",
+  "base_version": "0.6.7",
+  "changes": [
+    "Отключена дублирующая стандартная подсказка ECharts.",
+    "При наведении остаётся только всплывающее окно с карточками публикаций."
+  ],
+  "files": [
+    "src/components/TopicTrend3D.tsx",
+    "package.json",
+    "src-tauri/Cargo.toml",
+    "src-tauri/tauri.conf.json"
+  ],
+  "verification": [
+    "npm run check",
+    "npm run build"
+  ]
+}

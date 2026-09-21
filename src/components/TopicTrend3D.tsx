@@ -11,10 +11,6 @@ const TOPIC_COLORS = ["#2f6f98", "#a35b46", "#6c8c58", "#8a6b9c"];
 type Selection = { category: string; bucket: string };
 type Preview = Selection & { x: number; y: number; items: PublicationSummary[] | null };
 
-function tooltipText(value: string) {
-  return value.replace(/[&<>\"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[character] ?? character));
-}
-
 export function TopicTrend3D({ data, onSelect }: { data: TopicTrendPoint[]; onSelect: (selection: Selection) => void }) {
   const { t, locale } = useI18n();
   const host = useRef<HTMLDivElement | null>(null);
@@ -57,16 +53,9 @@ export function TopicTrend3D({ data, onSelect }: { data: TopicTrendPoint[]; onSe
     const plane = model.buckets.flatMap((_, bucketIndex) => model.categories.map((__, categoryIndex) => [bucketIndex, categoryIndex, model.average]));
     const option = {
       backgroundColor: "transparent",
-      tooltip: {
-        formatter: (params: { seriesName?: string; data?: { bucket?: string; category?: string; count?: number } }) => {
-          if (params.seriesName === t("chart.averagePlane")) {
-            return `${t("chart.average")}: <b>${model.average.toFixed(1)}</b>`;
-          }
-          const point = params.data;
-          if (!point?.bucket || !point.category) return "";
-          return `<b>${tooltipText(point.bucket)}</b><br/>${tooltipText(localizeDataLabel(point.category, locale, "category"))}: <b>${point.count ?? 0}</b> ${t("chart.publications")}`;
-        },
-      },
+      // Карточки ниже управляются React-компонентом. Стандартный tooltip
+      // ECharts выключен, чтобы он не перекрывал эти карточки.
+      tooltip: { show: false },
       xAxis3D: {
         type: "value",
         min: -0.5,
