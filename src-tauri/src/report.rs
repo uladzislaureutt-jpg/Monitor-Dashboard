@@ -60,12 +60,19 @@ fn sanitize_editorial_text(value: &str) -> String {
     let cleaned = omission.replace_all(value, " ");
     let compact = spaces.replace_all(cleaned.trim(), " ");
     let mut quoted = String::with_capacity(compact.len());
-    let mut opening_quote = true;
+    let mut opening_straight_quote = true;
     for ch in compact.chars() {
         match ch {
-            '«' | '»' | '“' | '”' | '„' | '‟' | '"' => {
-                quoted.push(if opening_quote { '«' } else { '»' });
-                opening_quote = !opening_quote;
+            // Existing Russian quotation marks are already directional.
+            '«' => quoted.push('«'),
+            '»' => quoted.push('»'),
+            // Curly quotation marks have their own direction as well.
+            '“' | '„' | '‟' => quoted.push('«'),
+            '”' => quoted.push('»'),
+            // Straight quotes have no direction, so pair only these.
+            '"' => {
+                quoted.push(if opening_straight_quote { '«' } else { '»' });
+                opening_straight_quote = !opening_straight_quote;
             }
             '—' => quoted.push('–'),
             _ => quoted.push(ch),

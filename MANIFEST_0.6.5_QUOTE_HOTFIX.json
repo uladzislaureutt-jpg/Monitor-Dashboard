@@ -1,0 +1,13 @@
+{
+  "version": "0.6.5",
+  "base": "0.6.4",
+  "changed_files": [
+    "src-tauri/src/report.rs",
+    "package.json",
+    "src-tauri/Cargo.toml",
+    "src-tauri/tauri.conf.json"
+  ],
+  "supabase_changed": false,
+  "sqlite_migration_required": false,
+  "se_monitor_changed": false
+}
