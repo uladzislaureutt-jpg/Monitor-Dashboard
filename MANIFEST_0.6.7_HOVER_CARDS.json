@@ -1,0 +1,20 @@
+{
+  "package": "Monitor 0.6.7 — 3D hover cards",
+  "base_version": "0.6.6",
+  "changes": [
+    "При наведении на 3D-столбец выводятся три конкретные публикации выбранной темы и даты.",
+    "Запросы имеют задержку и кэшируются; полный список по щелчку сохранён."
+  ],
+  "files": [
+    "src/components/TopicTrend3D.tsx",
+    "src/i18n.tsx",
+    "src/styles.css",
+    "package.json",
+    "src-tauri/Cargo.toml",
+    "src-tauri/tauri.conf.json"
+  ],
+  "verification": [
+    "npm run check",
+    "npm run build"
+  ]
+}

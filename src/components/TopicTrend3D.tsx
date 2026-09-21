@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import "echarts-gl";
-import type { TopicTrendPoint } from "../types";
+import type { PublicationSummary, TopicTrendPoint } from "../types";
 import { useI18n } from "../i18n";
 import { localizeDataLabel } from "../dataLabels";
+import { desktopApi } from "../api";
 
 const TOPIC_COLORS = ["#2f6f98", "#a35b46", "#6c8c58", "#8a6b9c"];
 
 type Selection = { category: string; bucket: string };
+type Preview = Selection & { x: number; y: number; items: PublicationSummary[] | null };
 
 function tooltipText(value: string) {
   return value.replace(/[&<>\"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[character] ?? character));
@@ -16,7 +18,11 @@ function tooltipText(value: string) {
 export function TopicTrend3D({ data, onSelect }: { data: TopicTrendPoint[]; onSelect: (selection: Selection) => void }) {
   const { t, locale } = useI18n();
   const host = useRef<HTMLDivElement | null>(null);
+  const previewTimer = useRef<number | null>(null);
+  const previewCache = useRef(new Map<string, PublicationSummary[]>());
+  const hoveredKey = useRef<string | null>(null);
   const [webglUnavailable, setWebglUnavailable] = useState(false);
+  const [preview, setPreview] = useState<Preview | null>(null);
   const model = useMemo(() => {
     const buckets = Array.from(new Set(data.map((point) => point.bucket))).sort();
     const categories = Array.from(new Set(data.map((point) => point.category))).slice(0, 4);
@@ -39,6 +45,7 @@ export function TopicTrend3D({ data, onSelect }: { data: TopicTrendPoint[]; onSe
       return;
     }
     let chart: echarts.ECharts;
+    let disposed = false;
     try {
       chart = echarts.init(host.current, undefined, { renderer: "canvas" });
     } catch {
@@ -129,15 +136,68 @@ export function TopicTrend3D({ data, onSelect }: { data: TopicTrendPoint[]; onSe
       ],
     };
     chart.setOption(option as never);
-    chart.on("click", (params) => {
+    const selectionFrom = (params: { seriesType?: string; data?: unknown }): (Selection & { count: number }) | null => {
       const point = params.data as { bucket?: string; category?: string } | null;
-      if (params.seriesType !== "bar3D" || !point?.bucket || !point.category) return;
-      onSelect({ bucket: point.bucket, category: point.category });
+      const count = Number((point as { count?: number } | null)?.count ?? 0);
+      if (params.seriesType !== "bar3D" || !point?.bucket || !point.category || count <= 0) return null;
+      return { bucket: point.bucket, category: point.category, count };
+    };
+    const clearPreviewTimer = () => {
+      if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
+      previewTimer.current = null;
+    };
+    const previewPosition = (event: unknown) => {
+      const pointer = event as { offsetX?: number; offsetY?: number } | undefined;
+      const width = host.current?.clientWidth ?? 0;
+      const height = host.current?.clientHeight ?? 0;
+      const x = pointer?.offsetX ?? width * 0.54;
+      const y = pointer?.offsetY ?? height * 0.42;
+      return { x: Math.max(12, Math.min(x + 14, Math.max(12, width - 328))), y: Math.max(42, Math.min(y + 14, Math.max(42, height - 210))) };
+    };
+    const schedulePreview = (selection: Selection, position: { x: number; y: number }) => {
+      clearPreviewTimer();
+      const key = `${selection.bucket}\u0000${selection.category}`;
+      hoveredKey.current = key;
+      previewTimer.current = window.setTimeout(() => {
+        const cached = previewCache.current.get(key);
+        if (cached) {
+          setPreview({ ...selection, ...position, items: cached });
+          return;
+        }
+        setPreview({ ...selection, ...position, items: null });
+        desktopApi.topicBucketPublications(selection.category, selection.bucket, 3)
+          .then((items) => {
+            previewCache.current.set(key, items);
+            if (!disposed && hoveredKey.current === key) setPreview({ ...selection, ...position, items });
+          })
+          .catch(() => {
+            if (!disposed && hoveredKey.current === key) setPreview({ ...selection, ...position, items: [] });
+          });
+      }, 260);
+    };
+    chart.on("click", (params) => {
+      const selection = selectionFrom(params);
+      if (selection) onSelect(selection);
+    });
+    chart.on("mouseover", (params) => {
+      const selection = selectionFrom(params);
+      if (selection) schedulePreview(selection, previewPosition(params.event));
+    });
+    chart.on("mouseout", (params) => {
+      if (params.seriesType !== "bar3D") return;
+      clearPreviewTimer();
+      hoveredKey.current = null;
+      setPreview(null);
+    });
+    chart.on("globalout", () => {
+      clearPreviewTimer();
+      hoveredKey.current = null;
+      setPreview(null);
     });
     const resize = () => chart.resize();
     const observer = new ResizeObserver(resize);
     observer.observe(host.current);
-    return () => { observer.disconnect(); chart.dispose(); };
+    return () => { disposed = true; clearPreviewTimer(); observer.disconnect(); chart.dispose(); };
   }, [locale, model, onSelect, t]);
 
   if (!data.length) return <div className="chart-empty">{t("common.notEnough")}</div>;
@@ -146,5 +206,14 @@ export function TopicTrend3D({ data, onSelect }: { data: TopicTrendPoint[]; onSe
     <div className="topic-3d-help">{t("chart.topic3dHelp")}</div>
     <div className="topic-3d-average"><i />{t("chart.averagePlane")}: <b>{model.average.toFixed(1)}</b></div>
     <div ref={host} className="topic-3d-chart" role="img" aria-label={t("chart.topic3d")} />
+    {preview && <aside className="topic-3d-preview" style={{ left: preview.x, top: preview.y }} aria-live="polite">
+      <div className="topic-3d-preview-head"><b>{localizeDataLabel(preview.category, locale, "category")}</b><span>{preview.bucket}</span></div>
+      {preview.items === null
+        ? <div className="topic-3d-preview-status">{t("chart.hoverPreviewLoading")}</div>
+        : preview.items.length
+          ? <div className="topic-3d-preview-list">{preview.items.map((item) => <article key={item.id} className="topic-3d-preview-card"><span>{item.source}</span><strong>{item.title}</strong></article>)}</div>
+          : <div className="topic-3d-preview-status">{t("chart.noPointPublications")}</div>}
+      <div className="topic-3d-preview-foot">{t("chart.hoverPreviewHint")}</div>
+    </aside>}
   </div>;
 }
