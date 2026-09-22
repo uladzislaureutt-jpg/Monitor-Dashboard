@@ -6,10 +6,22 @@ import { useI18n } from "../i18n";
 import { localizeDataLabel } from "../dataLabels";
 import { desktopApi } from "../api";
 
-const TOPIC_COLORS = ["#2f6f98", "#a35b46", "#6c8c58", "#8a6b9c"];
+const TOPIC_COLORS = ["#1685D1", "#F06431", "#20AE70", "#B764D9"];
 
 type Selection = { category: string; bucket: string };
 type Preview = Selection & { x: number; y: number; items: PublicationSummary[] | null };
+
+function interpolate(values: number[], position: number) {
+  const left = Math.max(0, Math.floor(position));
+  const right = Math.min(values.length - 1, Math.ceil(position));
+  if (left === right) return values[left] ?? 0;
+  const progress = position - left;
+  return (values[left] ?? 0) + ((values[right] ?? 0) - (values[left] ?? 0)) * progress;
+}
+
+function compactCategory(value: string) {
+  return value.length > 25 ? `${value.slice(0, 23)}…` : value;
+}
 
 export function TopicTrend3D({ data, onSelect }: { data: TopicTrendPoint[]; onSelect: (selection: Selection) => void }) {
   const { t, locale } = useI18n();
@@ -49,10 +61,11 @@ export function TopicTrend3D({ data, onSelect }: { data: TopicTrendPoint[]; onSe
       return;
     }
 
-    const zMax = Math.max(1, Math.ceil(model.max * 1.18));
-    const plane = model.buckets.flatMap((_, bucketIndex) => model.categories.map((__, categoryIndex) => [bucketIndex, categoryIndex, model.average]));
+    const zMax = Math.max(1, Math.ceil(model.max * 1.16));
+    const averagePlane = model.buckets.flatMap((_, bucketIndex) => model.categories.map((__, categoryIndex) => [bucketIndex, categoryIndex, model.average]));
+    const categoryValues = model.categories.map((category) => model.buckets.map((bucket) => model.cells.find((point) => point.bucket === bucket && point.category === category)?.count ?? 0));
     const option = {
-      backgroundColor: "transparent",
+      backgroundColor: "#163842",
       // Карточки ниже управляются React-компонентом. Стандартный tooltip
       // ECharts выключен, чтобы он не перекрывал эти карточки.
       tooltip: { show: false },
@@ -62,8 +75,9 @@ export function TopicTrend3D({ data, onSelect }: { data: TopicTrendPoint[]; onSe
         max: Math.max(0.5, model.buckets.length - 0.5),
         interval: 1,
         name: t("chart.dateAxis"),
-        axisLabel: { formatter: (value: number) => model.buckets[Math.round(value)]?.slice(5) ?? "" },
-        axisLine: { lineStyle: { color: "#9aa9b2" } },
+        axisLabel: { color: "#d6e5e8", formatter: (value: number) => model.buckets[Math.round(value)]?.slice(5) ?? "" },
+        axisLine: { lineStyle: { color: "#9ab8c0" } },
+        splitLine: { lineStyle: { color: "#456871", opacity: 0.72 } },
       },
       yAxis3D: {
         type: "value",
@@ -71,33 +85,36 @@ export function TopicTrend3D({ data, onSelect }: { data: TopicTrendPoint[]; onSe
         max: Math.max(0.5, model.categories.length - 0.5),
         interval: 1,
         name: t("chart.topicAxis"),
-        axisLabel: { formatter: (value: number) => localizeDataLabel(model.categories[Math.round(value)] ?? "", locale, "category") },
-        axisLine: { lineStyle: { color: "#9aa9b2" } },
+        axisLabel: { color: "#d6e5e8", formatter: (value: number) => compactCategory(localizeDataLabel(model.categories[Math.round(value)] ?? "", locale, "category")) },
+        axisLine: { lineStyle: { color: "#9ab8c0" } },
+        splitLine: { lineStyle: { color: "#456871", opacity: 0.72 } },
       },
       zAxis3D: {
         type: "value",
         min: 0,
         max: zMax,
         name: t("chart.publications"),
-        axisLine: { lineStyle: { color: "#9aa9b2" } },
+        axisLabel: { color: "#d6e5e8" },
+        axisLine: { lineStyle: { color: "#9ab8c0" } },
+        splitLine: { lineStyle: { color: "#456871", opacity: 0.72 } },
       },
       grid3D: {
-        boxWidth: Math.max(90, model.buckets.length * 12),
-        boxDepth: Math.max(68, model.categories.length * 23),
-        boxHeight: 95,
-        environment: "#fbf8f3",
+        boxWidth: Math.max(100, model.buckets.length * 12),
+        boxDepth: Math.max(78, model.categories.length * 26),
+        boxHeight: 102,
+        environment: "#163842",
         viewControl: {
           projection: "perspective",
-          alpha: 22,
-          beta: 32,
-          distance: 155,
+          alpha: 24,
+          beta: 38,
+          distance: 165,
           minDistance: 90,
-          maxDistance: 260,
+          maxDistance: 285,
           rotateSensitivity: 1,
           zoomSensitivity: 1,
           panSensitivity: 0,
         },
-        light: { main: { intensity: 1.15, shadow: true }, ambient: { intensity: 0.55 } },
+        light: { main: { intensity: 1.22, shadow: true }, ambient: { intensity: 0.64 } },
       },
       series: [
         {
@@ -105,30 +122,58 @@ export function TopicTrend3D({ data, onSelect }: { data: TopicTrendPoint[]; onSe
           type: "surface",
           silent: true,
           shading: "color",
-          data: plane,
-          itemStyle: { color: "#d6a975", opacity: 0.24 },
+          data: averagePlane,
+          itemStyle: { color: "#F3B455", opacity: 0.12 },
           wireframe: { show: false },
         },
-        {
-          name: t("chart.topicLines"),
-          type: "bar3D",
-          shading: "lambert",
-          bevelSize: 0.25,
-          data: model.cells.map((point) => ({
-            value: [point.bucketIndex, point.categoryIndex, point.count],
-            bucket: point.bucket,
-            category: point.category,
-            count: point.count,
-            itemStyle: { color: TOPIC_COLORS[point.categoryIndex % TOPIC_COLORS.length], opacity: point.count === 0 ? 0.12 : 0.92 },
-          })),
-        },
+        ...model.categories.flatMap((category, categoryIndex) => {
+          const values = categoryValues[categoryIndex];
+          const color = TOPIC_COLORS[categoryIndex % TOPIC_COLORS.length];
+          return [
+            {
+              name: category,
+              type: "surface",
+              parametric: true,
+              silent: true,
+              shading: "color",
+              parametricEquation: {
+                u: { min: 0, max: Math.max(0, model.buckets.length - 1), step: 0.1 },
+                v: { min: 0, max: 1, step: 1 },
+                x: (u: number) => u,
+                y: () => categoryIndex,
+                z: (u: number, v: number) => interpolate(values, u) * v,
+              },
+              itemStyle: { color, opacity: 0.2 },
+              wireframe: { show: false },
+            },
+            {
+              name: category,
+              type: "line3D",
+              silent: true,
+              lineStyle: { color, width: 4, opacity: 1 },
+              data: values.map((count, bucketIndex) => [bucketIndex, categoryIndex, count]),
+            },
+            {
+              name: category,
+              type: "scatter3D",
+              symbolSize: 9,
+              itemStyle: { color, opacity: 1 },
+              data: values.map((count, bucketIndex) => ({
+                value: [bucketIndex, categoryIndex, count],
+                bucket: model.buckets[bucketIndex],
+                category,
+                count,
+              })),
+            },
+          ];
+        }),
       ],
     };
     chart.setOption(option as never);
     const selectionFrom = (params: { seriesType?: string; data?: unknown }): (Selection & { count: number }) | null => {
       const point = params.data as { bucket?: string; category?: string } | null;
       const count = Number((point as { count?: number } | null)?.count ?? 0);
-      if (params.seriesType !== "bar3D" || !point?.bucket || !point.category || count <= 0) return null;
+      if (params.seriesType !== "scatter3D" || !point?.bucket || !point.category || count <= 0) return null;
       return { bucket: point.bucket, category: point.category, count };
     };
     const clearPreviewTimer = () => {
@@ -173,7 +218,7 @@ export function TopicTrend3D({ data, onSelect }: { data: TopicTrendPoint[]; onSe
       if (selection) schedulePreview(selection, previewPosition(params.event));
     });
     chart.on("mouseout", (params) => {
-      if (params.seriesType !== "bar3D") return;
+      if (params.seriesType !== "scatter3D") return;
       clearPreviewTimer();
       hoveredKey.current = null;
       setPreview(null);
@@ -193,6 +238,7 @@ export function TopicTrend3D({ data, onSelect }: { data: TopicTrendPoint[]; onSe
   if (webglUnavailable) return <div className="chart-empty">{t("chart.webglUnavailable")}</div>;
   return <div className="topic-3d-wrap">
     <div className="topic-3d-help">{t("chart.topic3dHelp")}</div>
+    <div className="topic-3d-legend">{model.categories.map((category, index) => <span key={category}><i style={{ background: TOPIC_COLORS[index % TOPIC_COLORS.length] }} />{localizeDataLabel(category, locale, "category")}</span>)}</div>
     <div className="topic-3d-average"><i />{t("chart.averagePlane")}: <b>{model.average.toFixed(1)}</b></div>
     <div ref={host} className="topic-3d-chart" role="img" aria-label={t("chart.topic3d")} />
     {preview && <aside className="topic-3d-preview" style={{ left: preview.x, top: preview.y }} aria-live="polite">

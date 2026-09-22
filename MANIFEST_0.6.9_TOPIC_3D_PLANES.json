@@ -1,0 +1,20 @@
+{
+  "package": "Monitor 0.6.9 — Topic 3D planes",
+  "base_version": "0.6.8",
+  "changes": [
+    "Объёмные столбцы заменены на четыре вертикальные тематические плоскости с линиями и точками.",
+    "Добавлены насыщенная контрастная палитра и акцентный сине-зелёный фон блока.",
+    "Сохранены 360°-поворот, средняя плоскость, карточки при наведении и полный список по щелчку."
+  ],
+  "files": [
+    "src/components/TopicTrend3D.tsx",
+    "src/styles.css",
+    "package.json",
+    "src-tauri/Cargo.toml",
+    "src-tauri/tauri.conf.json"
+  ],
+  "verification": [
+    "npm run check",
+    "npm run build"
+  ]
+}
