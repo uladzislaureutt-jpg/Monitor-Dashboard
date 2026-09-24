@@ -1,4 +1,4 @@
-export type CompressionMode = "auto" | "light" | "standard" | "maximum";
+export type CompressionMode = "auto" | "light" | "standard" | "maximum" | "extract";
 
 function normalize(value: string) {
   return value.replace(/\s+/g, " ").trim();
@@ -52,15 +52,15 @@ export function exactCompress(text: string, mode: CompressionMode = "auto") {
     return reductionPct <= 12 ? { text: kept, reductionPct, mode: effective } : { text: source, reductionPct: 0, mode: effective };
   }
 
-  const targetRatio = effective === "light" ? 0.93 : effective === "standard" ? 0.72 : 0.50;
-  const minimumRatio = effective === "light" ? 0.86 : effective === "standard" ? 0.60 : 0.40;
+  const targetRatio = effective === "light" ? 0.93 : effective === "standard" ? 0.72 : effective === "maximum" ? 0.50 : 0.30;
+  const minimumRatio = effective === "light" ? 0.86 : effective === "standard" ? 0.60 : effective === "maximum" ? 0.40 : 0.20;
   const selected = new Set(sentences.map((_, index) => index));
   let selectedChars = sentences.reduce((sum, sentence) => sum + sentence.length + 1, 0);
   const removable = sentences
     .map((sentence, index) => ({ sentence, index, score: sentenceScore(sentence, index, sentences.length) }))
     .filter((item) => item.index !== 0)
     .sort((a, b) => a.score - b.score || b.index - a.index);
-  const minimumSentences = effective === "maximum" ? 2 : 3;
+  const minimumSentences = effective === "extract" ? 1 : effective === "maximum" ? 2 : 3;
 
   for (const item of removable) {
     if (selectedChars <= source.length * targetRatio || selected.size <= minimumSentences) break;
@@ -84,5 +84,6 @@ export function compressionReduction(source: string, result: string) {
 export function compressionRange(mode: Exclude<CompressionMode, "auto">) {
   if (mode === "light") return { min: 3, max: 14 };
   if (mode === "maximum") return { min: 40, max: 60 };
+  if (mode === "extract") return { min: 60, max: 80 };
   return { min: 18, max: 42 };
 }

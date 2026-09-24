@@ -40,7 +40,7 @@ export async function aiCompress(input: { text: string; mode: CompressionMode; t
   }
   const compressedText = String(payload.compressed_text || "").trim();
   if (!compressedText) throw new Error("AI_CLIENT_INVALID_RESULT");
-  const effectiveMode = (payload.effective_mode === "light" || payload.effective_mode === "standard" || payload.effective_mode === "maximum"
+  const effectiveMode = (payload.effective_mode === "light" || payload.effective_mode === "standard" || payload.effective_mode === "maximum" || payload.effective_mode === "extract"
     ? payload.effective_mode
     : effectiveCompressionMode(input.text, input.mode)) as Exclude<CompressionMode, "auto">;
   const reductionPct = compressionReduction(input.text, compressedText);
@@ -53,7 +53,7 @@ export async function aiCompress(input: { text: string; mode: CompressionMode; t
     compressedText,
     reductionPct,
     model: String(payload.model || "openai/gpt-oss-120b"),
-    mode: (payload.mode === "light" || payload.mode === "standard" || payload.mode === "maximum" ? payload.mode : "auto") as CompressionMode,
+    mode: (payload.mode === "light" || payload.mode === "standard" || payload.mode === "maximum" || payload.mode === "extract" ? payload.mode : "auto") as CompressionMode,
     effectiveMode,
     attempts: Math.max(1, Number(payload.attempts || (payload.retried === true ? 2 : 1))),
     fallback: typeof payload.fallback === "string" ? payload.fallback : null,

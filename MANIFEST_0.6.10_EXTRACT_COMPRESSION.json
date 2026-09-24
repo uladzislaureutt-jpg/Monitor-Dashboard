@@ -1,0 +1,25 @@
+{
+  "package": "Monitor 0.6.10 — Extract compression",
+  "base_version": "0.6.9",
+  "target_version": "0.6.10",
+  "client_changes": [
+    "Добавлен режим extract (60–80%) в интерфейс и локальную валидацию",
+    "Exact-режим поддерживает тот же целевой диапазон при явном выборе extract"
+  ],
+  "server_change": {
+    "function": "editorial-compress",
+    "deployed_version": 7,
+    "mode": "extract",
+    "final_text_ratio": "20–40%",
+    "reduction": "60–80%"
+  },
+  "files": [
+    "src/editorialCompression.ts",
+    "src/editorialAi.ts",
+    "src/views/ReportView.tsx",
+    "backend/supabase/functions/editorial-compress/index.ts",
+    "package.json",
+    "src-tauri/Cargo.toml",
+    "src-tauri/tauri.conf.json"
+  ]
+}

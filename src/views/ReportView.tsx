@@ -69,6 +69,7 @@ export function ReportView() {
     compressionLight: be ? "Лёгкая 5–10%" : "Лёгкая 5–10%",
     compressionStandard: be ? "Стандарт 20–40%" : "Стандарт 20–40%",
     compressionMaximum: be ? "Максімальная 40–60%" : "Максимальная 40–60%",
+    compressionExtract: be ? "Экстракт 60–80%" : "Экстракт 60–80%",
     exact: be ? "Exact · без перапісвання" : "Exact · без переписывания",
     ai: be ? "AI · GPT-OSS 120B" : "AI · GPT-OSS 120B",
     aiRunning: be ? "AI апрацоўвае…" : "AI обрабатывает…",
@@ -83,6 +84,7 @@ export function ReportView() {
     aiLimit: be ? "AI-запускі для матэрыялу" : "AI-запуски для публикации",
     aiLimitReached: be ? "Для гэтай публікацыі ўжо выкарыстаны два AI-запускі." : "Для этой публикации уже использованы два AI-запуска.",
     aiMaximumHelp: be ? "Максімальны AI-рэжым строга правяраецца ў дыяпазоне 40–60%." : "Максимальный AI-режим строго проверяется в диапазоне 40–60%.",
+    aiExtractHelp: be ? "Рэжым «Экстракт» строга правяраецца ў дыяпазоне 60–80%; у выніку застаецца 20–40% зыходнага тэксту." : "Режим «Экстракт» строго проверяется в диапазоне 60–80%; в результате остаётся 20–40% исходного текста.",
     aiHelp: be ? "AI адпраўляе толькі поўны тэкст абранага матэрыялу. Лічбы, імёны і прамыя цытаты правяраюцца перад заменай." : "AI отправляет только полный текст выбранного материала. Числа, имена и прямые цитаты проверяются перед заменой.",
   };
 
@@ -136,6 +138,7 @@ export function ReportView() {
   function aiModeLabel(mode: Exclude<CompressionMode, "auto">) {
     if (mode === "light") return be ? "Лёгкая" : "Лёгкая";
     if (mode === "maximum") return be ? "Максімальная" : "Максимальная";
+    if (mode === "extract") return "Экстракт";
     return be ? "Стандарт" : "Стандарт";
   }
 
@@ -187,6 +190,7 @@ export function ReportView() {
   const integrityClass = report.partialTextCount + report.missingFullTextCount === 0 ? "ready" : "attention";
   const aiLimitReached = (aiRuns ?? 0) >= MAX_AI_COMPRESSION_RUNS;
   const maximumMode = compressionMode === "maximum";
+  const extractMode = compressionMode === "extract";
 
   return <div className="view-stack report-view">
     <section className="view-heading"><div><div className="eyebrow dark">{tx.eyebrow}</div><h2>{tx.title}</h2><p>{tx.subtitle}</p></div><div className="report-head-controls"><label>{tx.date}<input type="date" value={report.date} onChange={(e) => report.setDate(e.target.value)} /></label><button className="primary-button" disabled={!report.items.length} onClick={exportDocx}>{tx.export}</button></div></section>
@@ -203,10 +207,11 @@ export function ReportView() {
         {active.sourceQuality !== "full" && <div className="report-source-warning"><div><b>{qualityLabel(active)}</b><p>{tx.needsReview}</p></div><button className="secondary-button small-button" onClick={() => { setManualOpen((value) => !value); if (!manualText) setManualText(""); }}>{active.sourceQuality === "partial" ? tx.replaceFull : tx.pasteFull}</button></div>}
         {manualOpen && active.sourceQuality !== "full" && <div className="report-manual-source"><p>{tx.pasteHelp}</p><textarea value={manualText} onChange={(e) => setManualText(e.target.value)} placeholder={tx.pastePlaceholder} /><div><button className="primary-button small-button" disabled={!manualText.trim()} onClick={saveManualFullText}>{tx.saveManual}</button><button className="ghost-button small-button" onClick={() => { setManualOpen(false); setManualText(""); }}>{tx.cancel}</button></div></div>}
         <div className={`report-compression-panel ${active.sourceQuality !== "full" ? "disabled" : ""}`}>
-          <div className="report-compression-head"><div><b>{tx.compression}</b><span>{tx.aiHelp}</span></div><label><select value={compressionMode} onChange={(e) => setCompressionMode(e.target.value as CompressionMode)} disabled={active.sourceQuality !== "full" || aiBusy}><option value="auto">{tx.compressionAuto}</option><option value="light">{tx.compressionLight}</option><option value="standard">{tx.compressionStandard}</option><option value="maximum">{tx.compressionMaximum}</option></select></label></div>
+          <div className="report-compression-head"><div><b>{tx.compression}</b><span>{tx.aiHelp}</span></div><label><select value={compressionMode} onChange={(e) => setCompressionMode(e.target.value as CompressionMode)} disabled={active.sourceQuality !== "full" || aiBusy}><option value="auto">{tx.compressionAuto}</option><option value="light">{tx.compressionLight}</option><option value="standard">{tx.compressionStandard}</option><option value="maximum">{tx.compressionMaximum}</option><option value="extract">{tx.compressionExtract}</option></select></label></div>
           <div className="report-compression-actions"><button className="secondary-button small-button" disabled={active.sourceQuality !== "full" || aiBusy} onClick={applyExactCompression}>{tx.exact}</button><button className="primary-button small-button" disabled={active.sourceQuality !== "full" || aiBusy || aiLimitReached || aiRuns === null} onClick={applyAiCompression}>{aiBusy ? tx.aiRunning : tx.ai}</button><span>{be ? "Бягучае скарачэнне" : "Текущее сокращение"}: {compressionReduction(active.sourceText, active.editorialText)}%</span><span>{tx.aiLimit}: {aiRuns ?? "…"}/{MAX_AI_COMPRESSION_RUNS}</span></div>
           {active.sourceQuality !== "full" && <p>{tx.compressionNeedsFull}</p>}
           {maximumMode && <p>{tx.aiMaximumHelp}</p>}
+          {extractMode && <p>{tx.aiExtractHelp}</p>}
           {aiLimitReached && <p>{tx.aiLimitReached}</p>}
         </div>
         <div className="report-editor-label"><b>{tx.editorial}</b><div><button className="ghost-button small-button" onClick={() => report.resetText(active.documentUid)}>{tx.reset}</button>{active.excerpt && <button className="ghost-button small-button" onClick={() => report.useExcerpt(active.documentUid)}>{tx.useExcerpt}</button>}</div></div>
