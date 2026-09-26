@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
-use rusqlite::{Connection, OptionalExtension, Row, params};
+use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExtension, Row};
 
 use crate::models::{
     ArchiveFacets, ArchivePage, CountPoint, DashboardOverview, DatabaseStats,
@@ -483,6 +483,7 @@ pub fn list_publications(
     category: &str,
     region: &str,
     source: &str,
+    sources: &[String],
     sort: &str,
     limit: i64,
     offset: i64,
@@ -496,6 +497,21 @@ pub fn list_publications(
         _ => "COALESCE(datetime(d.published_at), datetime(d.last_seen_at), datetime(d.first_seen_at)) DESC, mi.id DESC",
     };
     let period = period_clause("d", "?2");
+    let selected_sources: Vec<String> = if sources.is_empty() {
+        if source.trim().is_empty() { Vec::new() } else { vec![source.trim().to_string()] }
+    } else {
+        let mut unique = HashSet::new();
+        sources.iter().filter_map(|value| {
+            let value = value.trim();
+            (!value.is_empty() && unique.insert(value.to_string())).then(|| value.to_string())
+        }).take(200).collect()
+    };
+    let source_filter = if selected_sources.is_empty() {
+        "1=1".to_string()
+    } else {
+        let placeholders = (6..6 + selected_sources.len()).map(|index| format!("?{index}")).collect::<Vec<_>>().join(", ");
+        format!("s.canonical_name IN ({placeholders})")
+    };
     let filters = format!(
         r#"
         m.monitor_key=?1
@@ -513,7 +529,7 @@ pub fn list_publications(
              COALESCE(e.event_problem,'') LIKE '%' || ?3 || '%')
         AND (?4='' OR mi.category=?4)
         AND (?5='' OR e.event_region=?5)
-        AND (?6='' OR s.canonical_name=?6)
+        AND {source_filter}
         AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid)
         "#
     );
@@ -527,68 +543,36 @@ pub fn list_publications(
         LEFT JOIN events e ON e.id=ei.event_id
     "#;
 
+    let mut filter_values = vec![
+        Value::Text(monitor_key.to_string()),
+        period_days.map(Value::Integer).unwrap_or(Value::Null),
+        Value::Text(query.trim().to_string()),
+        Value::Text(category.to_string()),
+        Value::Text(region.to_string()),
+    ];
+    filter_values.extend(selected_sources.iter().cloned().map(Value::Text));
+
     let total: i64 = conn.query_row(
         &format!("SELECT COUNT(DISTINCT mi.id) {from} WHERE {filters}"),
-        params![monitor_key, period_days, query.trim(), category, region, source],
+        params_from_iter(filter_values.iter()),
         |row| row.get(0),
     ).map_err(|e| format!("Не удалось посчитать результаты архива: {e}"))?;
 
     let sql = format!(
-        "{} WHERE {} ORDER BY {} LIMIT ?7 OFFSET ?8",
-        publication_select(), filters, order
+        "{} WHERE {} ORDER BY {} LIMIT ?{} OFFSET ?{}",
+        publication_select(), filters, order, filter_values.len() + 1, filter_values.len() + 2
     );
     let mut stmt = conn.prepare(&sql).map_err(|e| format!("Не удалось подготовить архив: {e}"))?;
+    let mut page_values = filter_values;
+    page_values.push(Value::Integer(safe_limit));
+    page_values.push(Value::Integer(safe_offset));
     let rows = stmt.query_map(
-        params![monitor_key, period_days, query.trim(), category, region, source, safe_limit, safe_offset],
+        params_from_iter(page_values.iter()),
         publication_row,
     ).map_err(|e| format!("Не удалось выполнить запрос архива: {e}"))?;
     let items = rows.collect::<Result<Vec<_>, _>>().map_err(|e| format!("Не удалось прочитать архив: {e}"))?;
 
     Ok(ArchivePage { total, items })
-}
-
-/// Returns the publications represented by one point in the 3D topic trend.
-/// `bucket` is deliberately restricted to the ISO day/month values that the
-/// dashboard itself produces, rather than being interpolated into SQL.
-pub fn list_topic_bucket_publications(
-    path: &Path,
-    monitor_key: &str,
-    category: &str,
-    bucket: &str,
-    limit: i64,
-) -> Result<Vec<PublicationSummary>, String> {
-    let bucket = bucket.trim();
-    let is_month = bucket.len() == 7
-        && bucket.as_bytes().get(4) == Some(&b'-')
-        && bucket.chars().enumerate().all(|(index, ch)| index == 4 || ch.is_ascii_digit());
-    let is_day = bucket.len() == 10
-        && bucket.as_bytes().get(4) == Some(&b'-')
-        && bucket.as_bytes().get(7) == Some(&b'-')
-        && bucket.chars().enumerate().all(|(index, ch)| index == 4 || index == 7 || ch.is_ascii_digit());
-    if !is_month && !is_day {
-        return Err("Некорректный период точки динамики".to_string());
-    }
-
-    let conn = open_database(path)?;
-    let prefix_length = if is_day { 10 } else { 7 };
-    let safe_limit = limit.clamp(1, 12);
-    let filters = r#"
-        m.monitor_key=?1
-        AND mi.category=?2
-        AND substr(d.published_at,1,?3)=?4
-        AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid)
-    "#;
-    let sql = format!(
-        "{} WHERE {} ORDER BY COALESCE(datetime(d.published_at), datetime(d.last_seen_at), datetime(d.first_seen_at)) DESC, mi.id DESC LIMIT ?5",
-        publication_select(),
-        filters,
-    );
-    let mut stmt = conn.prepare(&sql).map_err(|e| format!("Не удалось подготовить публикации точки динамики: {e}"))?;
-    let rows = stmt.query_map(
-        params![monitor_key, category.trim(), prefix_length, bucket, safe_limit],
-        publication_row,
-    ).map_err(|e| format!("Не удалось получить публикации точки динамики: {e}"))?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| format!("Не удалось прочитать публикации точки динамики: {e}"))
 }
 
 fn string_list(conn: &Connection, sql: &str, monitor_key: &str) -> Result<Vec<String>, String> {
@@ -655,11 +639,21 @@ pub fn list_sources(path: &Path, monitor_key: &str, period_days: Option<i64>) ->
               ORDER BY COALESCE(r.started_at,r.imported_at) DESC, r.id DESC LIMIT 1) AS admission_status
         FROM sources s
         WHERE EXISTS (
-            SELECT 1 FROM source_run_metrics srm JOIN runs r ON r.id=srm.run_id JOIN monitors m ON m.id=r.monitor_id
-            WHERE srm.source_id=s.id AND m.monitor_key=?1
-        ) OR EXISTS (
-            SELECT 1 FROM documents d JOIN monitor_items mi ON mi.document_id=d.id JOIN monitors m ON m.id=mi.monitor_id
-            WHERE d.source_id=s.id AND m.monitor_key=?1
+            SELECT 1
+            FROM source_run_metrics srm
+            WHERE srm.source_id=s.id
+              AND srm.run_id=COALESCE(
+                  (
+                    SELECT r.id FROM runs r JOIN monitors m ON m.id=r.monitor_id
+                    WHERE m.monitor_key=?1 AND r.dry_run=0
+                    ORDER BY COALESCE(r.started_at,r.imported_at) DESC, r.id DESC LIMIT 1
+                  ),
+                  (
+                    SELECT r.id FROM runs r JOIN monitors m ON m.id=r.monitor_id
+                    WHERE m.monitor_key=?1
+                    ORDER BY COALESCE(r.started_at,r.imported_at) DESC, r.id DESC LIMIT 1
+                  )
+              )
         )
         ORDER BY LOWER(s.canonical_name), s.id
     "#;

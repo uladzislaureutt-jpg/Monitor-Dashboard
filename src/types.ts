@@ -133,6 +133,7 @@ export type ArchiveQuery = {
   category?: string;
   region?: string;
   source?: string;
+  sources?: string[];
   sort?: "newest" | "oldest" | "score";
   limit?: number;
   offset?: number;

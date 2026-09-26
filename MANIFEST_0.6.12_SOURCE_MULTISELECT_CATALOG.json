@@ -1,0 +1,23 @@
+{
+  "package": "Monitor 0.6.12 source multiselect and current catalog",
+  "base_version": "0.6.10",
+  "scope": [
+    "Archive multi-source filter",
+    "Current source catalog from latest coverage"
+  ],
+  "files": [
+    "src/api.ts",
+    "src/i18n.tsx",
+    "src/styles.css",
+    "src/types.ts",
+    "src/views/ArchiveView.tsx",
+    "src-tauri/src/db.rs",
+    "src-tauri/src/lib.rs"
+  ],
+  "does_not_change": [
+    "Supabase Edge Functions",
+    "AI compression settings",
+    "SE-monitor workflow",
+    "existing publication history"
+  ]
+}
