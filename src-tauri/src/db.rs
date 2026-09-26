@@ -575,6 +575,50 @@ pub fn list_publications(
     Ok(ArchivePage { total, items })
 }
 
+/// Returns the publications represented by one point in the 3D topic trend.
+/// `bucket` is deliberately restricted to the ISO day/month values that the
+/// dashboard itself produces, rather than being interpolated into SQL.
+pub fn list_topic_bucket_publications(
+    path: &Path,
+    monitor_key: &str,
+    category: &str,
+    bucket: &str,
+    limit: i64,
+) -> Result<Vec<PublicationSummary>, String> {
+    let bucket = bucket.trim();
+    let is_month = bucket.len() == 7
+        && bucket.as_bytes().get(4) == Some(&b'-')
+        && bucket.chars().enumerate().all(|(index, ch)| index == 4 || ch.is_ascii_digit());
+    let is_day = bucket.len() == 10
+        && bucket.as_bytes().get(4) == Some(&b'-')
+        && bucket.as_bytes().get(7) == Some(&b'-')
+        && bucket.chars().enumerate().all(|(index, ch)| index == 4 || index == 7 || ch.is_ascii_digit());
+    if !is_month && !is_day {
+        return Err("Некорректный период точки динамики".to_string());
+    }
+
+    let conn = open_database(path)?;
+    let prefix_length = if is_day { 10 } else { 7 };
+    let safe_limit = limit.clamp(1, 12);
+    let filters = r#"
+        m.monitor_key=?1
+        AND mi.category=?2
+        AND substr(d.published_at,1,?3)=?4
+        AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid)
+    "#;
+    let sql = format!(
+        "{} WHERE {} ORDER BY COALESCE(datetime(d.published_at), datetime(d.last_seen_at), datetime(d.first_seen_at)) DESC, mi.id DESC LIMIT ?5",
+        publication_select(),
+        filters,
+    );
+    let mut stmt = conn.prepare(&sql).map_err(|e| format!("Не удалось подготовить публикации точки динамики: {e}"))?;
+    let rows = stmt.query_map(
+        params![monitor_key, category.trim(), prefix_length, bucket, safe_limit],
+        publication_row,
+    ).map_err(|e| format!("Не удалось получить публикации точки динамики: {e}"))?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| format!("Не удалось прочитать публикации точки динамики: {e}"))
+}
+
 fn string_list(conn: &Connection, sql: &str, monitor_key: &str) -> Result<Vec<String>, String> {
     let mut stmt = conn.prepare(sql).map_err(|e| format!("Не удалось подготовить список фильтра: {e}"))?;
     let rows = stmt.query_map(params![monitor_key], |row| row.get(0)).map_err(|e| format!("Не удалось получить фильтр: {e}"))?;

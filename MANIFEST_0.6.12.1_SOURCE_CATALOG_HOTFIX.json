@@ -1,0 +1,22 @@
+{
+  "package": "Monitor 0.6.12.1 source catalog build hotfix",
+  "base_version": "0.6.10 with attempted 0.6.12",
+  "files": [
+    "src/api.ts",
+    "src/i18n.tsx",
+    "src/styles.css",
+    "src/types.ts",
+    "src/views/ArchiveView.tsx",
+    "src-tauri/src/db.rs",
+    "src-tauri/src/lib.rs"
+  ],
+  "restores": [
+    "3D topic chart API method",
+    "3D topic chart translations",
+    "3D topic chart type-safe build"
+  ],
+  "retains": [
+    "archive multi-source filter",
+    "current catalog from latest production coverage"
+  ]
+}
