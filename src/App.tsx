@@ -114,11 +114,12 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     const local = loadSyncSettings();
-    desktopApi.getSetting(SYNC_PERSIST_KEY).then((raw) => {
+    Promise.all([desktopApi.getSetting(SYNC_PERSIST_KEY), desktopApi.getSetting("github.sync.v1")]).then(([raw, legacyRaw]) => {
       if (cancelled) return;
-      if (raw) {
+      const stored = raw ?? legacyRaw;
+      if (stored) {
         try {
-          const next = normalizeMonitorSyncSettings(JSON.parse(raw));
+          const next = normalizeMonitorSyncSettings(JSON.parse(stored));
           localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(next));
           setSyncSettingsByMonitor(next);
           setSyncStatus({ kind: next[monitorKey].repository ? "configured" : "notConfigured" });
