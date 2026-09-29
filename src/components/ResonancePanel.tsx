@@ -4,11 +4,15 @@ import { PeriodSelector } from "./PeriodSelector";
 import { PublicationCard } from "./PublicationCard";
 
 export function ResonancePanel({
+  title,
+  subtitle,
   items,
   fallback,
   period,
   onPeriodChange,
 }: {
+  title?: string;
+  subtitle?: string;
   items: PublicationSummary[];
   fallback: boolean;
   period: PeriodDays;
@@ -19,8 +23,8 @@ export function ResonancePanel({
     <article className="panel resonance-panel">
       <div className="panel-head chart-head-with-mode">
         <div>
-          <h3>{t("dashboard.resonance")}</h3>
-          <p>{fallback ? t("dashboard.resonanceFallback") : t("dashboard.resonanceHelp")}</p>
+          <h3>{title ?? t("dashboard.resonance")}</h3>
+          <p>{fallback ? t("dashboard.resonanceFallback") : (subtitle ?? t("dashboard.resonanceHelp"))}</p>
         </div>
         <PeriodSelector value={period} onChange={onPeriodChange} compact />
       </div>
