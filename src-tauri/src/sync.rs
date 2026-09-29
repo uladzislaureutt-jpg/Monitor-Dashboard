@@ -8,8 +8,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::{db, importer};
 
-const ARTIFACT_PREFIX: &str = "dashboard-bundle-social-";
-const MONITOR_KEY: &str = "social_economic";
+const SOCIAL_MONITOR_KEY: &str = "social_economic";
+const L_MONITOR_KEY: &str = "lukashenko";
+
+fn artifact_prefix(monitor_key: &str) -> Result<&'static str, String> {
+    match monitor_key {
+        SOCIAL_MONITOR_KEY => Ok("dashboard-bundle-social-"),
+        L_MONITOR_KEY => Ok("dashboard-bundle-l-monitor-"),
+        _ => Err(format!("Неизвестный ключ мониторинга: {monitor_key}")),
+    }
+}
 
 #[derive(Debug, Deserialize)]
 struct ArtifactList {
@@ -51,12 +59,13 @@ fn validate_repository(value: &str) -> Result<&str, String> {
     Ok(trimmed)
 }
 
-fn artifact_run_number(name: &str) -> Option<i64> {
-    name.strip_prefix(ARTIFACT_PREFIX)?.parse::<i64>().ok()
+fn artifact_run_number(name: &str, prefix: &str) -> Option<i64> {
+    name.strip_prefix(prefix)?.parse::<i64>().ok()
 }
 
-pub fn sync_github(db_path: &Path, repository: &str, token: &str) -> Result<SyncResult, String> {
+pub fn sync_github(db_path: &Path, repository: &str, token: &str, monitor_key: &str) -> Result<SyncResult, String> {
     let repository = validate_repository(repository)?;
+    let prefix = artifact_prefix(monitor_key)?;
     let client = Client::builder()
         .user_agent("Monitor-Dashboard/0.4.1")
         .timeout(Duration::from_secs(60))
@@ -96,7 +105,7 @@ pub fn sync_github(db_path: &Path, repository: &str, token: &str) -> Result<Sync
             if artifact.expired {
                 continue;
             }
-            if let Some(run_number) = artifact_run_number(&artifact.name) {
+            if let Some(run_number) = artifact_run_number(&artifact.name, prefix) {
                 artifacts.push((run_number, artifact));
             }
         }
@@ -111,10 +120,10 @@ pub fn sync_github(db_path: &Path, repository: &str, token: &str) -> Result<Sync
 
     let existing_runs: HashSet<i64> = db::list_runs(db_path)?
         .into_iter()
-        .filter(|run| run.monitor_key == MONITOR_KEY)
+        .filter(|run| run.monitor_key == monitor_key)
         .filter_map(|run| run.run_number)
         .collect();
-    let known_dry_runs = db::sync_skipped_run_numbers(db_path, MONITOR_KEY)?;
+    let known_dry_runs = db::sync_skipped_run_numbers(db_path, monitor_key)?;
 
     let mut imported_runs = Vec::new();
     let mut skipped_dry_runs = Vec::new();
@@ -169,12 +178,12 @@ pub fn sync_github(db_path: &Path, repository: &str, token: &str) -> Result<Sync
         let inspection = importer::inspect_bundle(&temp_path);
         let outcome = match inspection {
             Ok(meta) => {
-                if meta.monitor_key != MONITOR_KEY {
+                if meta.monitor_key != monitor_key {
                     Err(format!("unexpected monitor_key={}", meta.monitor_key))
                 } else if meta.run_number.is_some() && meta.run_number != Some(run_number) {
                     Err(format!("artifact name says run {run_number}, bundle says run {:?}", meta.run_number))
                 } else if meta.dry_run == Some(true) {
-                    db::mark_sync_dry_run(db_path, MONITOR_KEY, run_number, artifact.id)?;
+                    db::mark_sync_dry_run(db_path, monitor_key, run_number, artifact.id)?;
                     skipped_dry_runs.push(run_number);
                     Ok(None)
                 } else {
@@ -200,7 +209,7 @@ pub fn sync_github(db_path: &Path, repository: &str, token: &str) -> Result<Sync
 
     let latest_available_run = db::list_runs(db_path)?
         .into_iter()
-        .filter(|run| run.monitor_key == MONITOR_KEY && run.dry_run != Some(true))
+        .filter(|run| run.monitor_key == monitor_key && run.dry_run != Some(true))
         .filter_map(|run| run.run_number)
         .max();
 
