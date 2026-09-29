@@ -13,39 +13,49 @@ import { DataView } from "./views/DataView";
 import { ReportView } from "./views/ReportView";
 import { useReportWorkspace } from "./reportWorkspace";
 
-const SYNC_STORAGE_KEY = "monitor-dashboard-github-sync-v1";
-const SYNC_PERSIST_KEY = "github.sync.v1";
+const SYNC_STORAGE_KEY = "monitor-dashboard-github-sync-v2";
+const SYNC_PERSIST_KEY = "github.sync.v2";
 const DEFAULT_SYNC: SyncSettings = { repository: "", token: "", autoSync: false, intervalMinutes: 30 };
+const DEFAULT_L_SYNC: SyncSettings = { repository: "vladreuth-cmd/M-Trouble", token: "", autoSync: false, intervalMinutes: 30 };
 
+type MonitorKey = "social_economic" | "lukashenko";
+type MonitorSyncSettings = Record<MonitorKey, SyncSettings>;
 type SyncUiStatus = { kind: "none" | "notConfigured" | "configured" | "notFound" | "error" | "partial" | "upToDate"; run?: number; count?: number };
 
-function loadSyncSettings(): SyncSettings {
-  try {
-    const raw = localStorage.getItem(SYNC_STORAGE_KEY);
-    if (!raw) return DEFAULT_SYNC;
-    const parsed = JSON.parse(raw) as Partial<SyncSettings>;
-    return {
-      repository: typeof parsed.repository === "string" ? parsed.repository : "",
-      token: typeof parsed.token === "string" ? parsed.token : "",
-      autoSync: parsed.autoSync === true,
-      intervalMinutes: [15, 30, 60].includes(Number(parsed.intervalMinutes)) ? Number(parsed.intervalMinutes) : 30,
-    };
-  } catch { return DEFAULT_SYNC; }
+function normalizeSyncSettings(parsed: unknown): SyncSettings {
+  const value = parsed && typeof parsed === "object" ? parsed as Partial<SyncSettings> : {};
+  return {
+    repository: typeof value.repository === "string" ? value.repository.trim() : "",
+    token: typeof value.token === "string" ? value.token : "",
+    autoSync: value.autoSync === true,
+    intervalMinutes: [15, 30, 60].includes(Number(value.intervalMinutes)) ? Number(value.intervalMinutes) : 30,
+  };
 }
 
-function normalizeSyncSettings(parsed: Partial<SyncSettings>): SyncSettings {
+function normalizeMonitorSyncSettings(parsed: unknown): MonitorSyncSettings {
+  const value = parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : {};
+  const hasMonitorKeys = "social_economic" in value || "lukashenko" in value;
   return {
-    repository: typeof parsed.repository === "string" ? parsed.repository.trim() : "",
-    token: typeof parsed.token === "string" ? parsed.token : "",
-    autoSync: parsed.autoSync === true,
-    intervalMinutes: [15, 30, 60].includes(Number(parsed.intervalMinutes)) ? Number(parsed.intervalMinutes) : 30,
+    social_economic: normalizeSyncSettings(hasMonitorKeys ? value.social_economic : value),
+    lukashenko: {
+      ...DEFAULT_L_SYNC,
+      ...normalizeSyncSettings(hasMonitorKeys ? value.lukashenko : DEFAULT_L_SYNC),
+    },
   };
+}
+
+function loadSyncSettings(): MonitorSyncSettings {
+  try {
+    const raw = localStorage.getItem(SYNC_STORAGE_KEY) ?? localStorage.getItem("monitor-dashboard-github-sync-v1");
+    return raw ? normalizeMonitorSyncSettings(JSON.parse(raw)) : normalizeMonitorSyncSettings(null);
+  } catch { return normalizeMonitorSyncSettings(null); }
 }
 
 export default function App() {
   const { t, locale, setLocale } = useI18n();
   const report = useReportWorkspace();
   const [view, setView] = useState<ViewKey>("dashboard");
+  const [monitorKey, setMonitorKey] = useState<MonitorKey>("social_economic");
   const [stats, setStats] = useState<DatabaseStats | null>(null);
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [dashboard, setDashboard] = useState<DashboardOverview | null>(null);
@@ -59,7 +69,8 @@ export default function App() {
   const [archiveSeed, setArchiveSeed] = useState("");
   const [workroomOpen, setWorkroomOpen] = useState(false);
   const [workroomUnread, setWorkroomUnread] = useState(0);
-  const [syncSettings, setSyncSettings] = useState<SyncSettings>(loadSyncSettings);
+  const [syncSettingsByMonitor, setSyncSettingsByMonitor] = useState<MonitorSyncSettings>(loadSyncSettings);
+  const syncSettings = syncSettingsByMonitor[monitorKey];
   const [syncBusy, setSyncBusy] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncUiStatus>({ kind: "none" });
   const syncBusyRef = useRef(false);
@@ -68,7 +79,7 @@ export default function App() {
   const refreshCore = useCallback(async () => {
     const [nextStats, nextRuns] = await Promise.all([desktopApi.stats(), desktopApi.runs()]);
     setStats(nextStats); setRuns(nextRuns);
-  }, []);
+  }, [monitorKey]);
   const refreshDashboard = useCallback(async (nextPeriod: PeriodDays) => {
     setDashboardLoading(true);
     try { setDashboard(await desktopApi.dashboard(nextPeriod)); }
@@ -107,19 +118,19 @@ export default function App() {
       if (cancelled) return;
       if (raw) {
         try {
-          const next = normalizeSyncSettings(JSON.parse(raw) as Partial<SyncSettings>);
+          const next = normalizeMonitorSyncSettings(JSON.parse(raw));
           localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(next));
-          setSyncSettings(next);
-          setSyncStatus({ kind: next.repository ? "configured" : "notConfigured" });
+          setSyncSettingsByMonitor(next);
+          setSyncStatus({ kind: next[monitorKey].repository ? "configured" : "notConfigured" });
           return;
         } catch { /* fall through to local migration */ }
       }
-      if (local.repository || local.token || local.autoSync) void desktopApi.setSetting(SYNC_PERSIST_KEY, JSON.stringify(local));
+      if (local.social_economic.repository || local.social_economic.token || local.social_economic.autoSync || local.lukashenko.repository) void desktopApi.setSetting(SYNC_PERSIST_KEY, JSON.stringify(local));
     }).catch(() => undefined);
     return () => { cancelled = true; };
   }, []);
   useEffect(() => { refreshCore().catch((reason) => setError(String(reason))); }, [refreshCore]);
-  useEffect(() => { refreshDashboard(period); }, [period, refreshDashboard]);
+  useEffect(() => { refreshDashboard(period); }, [period, monitorKey, refreshDashboard]);
   useEffect(() => {
     const onModeration = () => refreshDashboard(period);
     window.addEventListener("monitor:moderation-changed", onModeration);
@@ -158,12 +169,20 @@ export default function App() {
 
   function saveSyncSettings(next: SyncSettings) {
     const normalized = normalizeSyncSettings(next);
-    localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(normalized));
-    void desktopApi.setSetting(SYNC_PERSIST_KEY, JSON.stringify(normalized));
-    setSyncSettings(normalized); setSyncStatus({ kind: normalized.repository ? "configured" : "notConfigured" }); setMessage(t("sync.saved"));
+    const allSettings = { ...syncSettingsByMonitor, [monitorKey]: normalized };
+    localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(allSettings));
+    void desktopApi.setSetting(SYNC_PERSIST_KEY, JSON.stringify(allSettings));
+    setSyncSettingsByMonitor(allSettings); setSyncStatus({ kind: normalized.repository ? "configured" : "notConfigured" }); setMessage(t("sync.saved"));
   }
   function showArchiveForSearch(query: string) { setArchiveSeed(query); setGlobalQuery(query); setSearchOpen(false); setView("archive"); }
   function navigate(next: ViewKey) { setView(next); if (next !== "archive") setArchiveSeed(""); }
+  function switchMonitor(next: MonitorKey) {
+    if (next === monitorKey) return;
+    desktopApi.setActiveMonitorKey(next);
+    setMonitorKey(next);
+    setGlobalQuery(""); setArchiveSeed(""); setView("dashboard");
+    window.dispatchEvent(new Event("monitor:changed"));
+  }
 
   const nav: Array<{ key: ViewKey; label: string; icon: string }> = [
     { key: "dashboard", label: t("nav.dashboard"), icon: "▦" },
@@ -186,12 +205,15 @@ export default function App() {
       <div className="global-search-wrap"><span className="search-icon">⌕</span><input ref={searchRef} value={globalQuery} onFocus={() => setSearchOpen(true)} onChange={(event) => { setGlobalQuery(event.target.value); setSearchOpen(true); }} placeholder={t("search.placeholder")} aria-label={t("search.aria")} /><kbd>Ctrl K</kbd></div>
       <div className="top-actions">
         <div className="language-switch" role="group" aria-label={t("lang.aria")}><button className={locale === "ru" ? "active" : ""} onClick={() => setLocale("ru")}>{t("lang.ru")}</button><button className={locale === "be" ? "active" : ""} onClick={() => setLocale("be")}>{t("lang.be")}</button></div>
-        <span className="module-pill">{t("module.name")}</span>
+        <div className="module-switch" role="group" aria-label="Выбор мониторинга">
+          <button className={monitorKey === "social_economic" ? "active" : ""} onClick={() => switchMonitor("social_economic")}>SEP-Monitor</button>
+          <button className={monitorKey === "lukashenko" ? "active" : ""} onClick={() => switchMonitor("lukashenko")}>L-Monitor</button>
+        </div>
       </div>
     </header>
     <div className="layout"><aside className="sidebar"><div className="nav-label">{t("nav.label")}</div>{nav.slice(0, 5).map((item) => <button key={item.key} className={`nav-item ${view === item.key ? "active" : ""}`} onClick={() => navigate(item.key)}><span className="nav-icon">{item.icon}</span><span>{item.label}{item.key === "report" && report.pendingCount > 0 && <span className="report-count-badge">{report.pendingCount}</span>}</span></button>)}<button className={`nav-item workroom-nav ${workroomOpen ? "active" : ""}`} onClick={() => setWorkroomOpen((value) => !value)}><span className="nav-icon">◌</span><span className="workroom-nav-label">{t("nav.workroom")}</span>{workroomUnread > 0 && <span className="workroom-unread">{workroomUnread > 99 ? "99+" : workroomUnread}</span>}</button>{nav.slice(5).map((item) => <button key={item.key} className={`nav-item ${view === item.key ? "active" : ""}`} onClick={() => navigate(item.key)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}<div className="sidebar-spacer" /><button className="side-status side-status-button" onClick={() => navigate("data")} title={t("data.syncNow")}><span className={`status-dot ${syncBusy ? "pulse" : ""}`} /><div><b>{syncSettings.autoSync ? t("sync.autoLabel") : t("status.localDb")}</b><small>{syncSettings.autoSync && syncSettings.repository ? (syncStatusText || t("status.ready")) : stats ? t("status.stats", { docs: stats.documents, sources: stats.sources }) : t("status.initializing")}</small></div></button></aside>
-      <main className="content">{message && <div className="notice success global-notice"><span>{message}</span><button onClick={() => setMessage("")}>×</button></div>}{error && <div className="notice error global-notice"><span>{error}</span><button onClick={() => setError("")}>×</button></div>}{view === "dashboard" && <DashboardView data={dashboard} period={period} onPeriodChange={setPeriod} loading={dashboardLoading} onOpenArchive={() => navigate("archive")} />}{view === "archive" && <ArchiveView initialQuery={archiveSeed} />}{view === "report" && <ReportView />}{view === "analytics" && <AnalyticsView data={dashboard} period={period} onPeriodChange={setPeriod} />}{view === "sources" && <SourcesView />}{view === "data" && <DataView stats={stats} runs={runs} busy={busy} onImport={importBundle} syncSettings={syncSettings} onSaveSyncSettings={saveSyncSettings} onSyncNow={(value) => performSync(value)} syncBusy={syncBusy} syncStatus={syncStatusText} />}</main>
+      <main className="content">{message && <div className="notice success global-notice"><span>{message}</span><button onClick={() => setMessage("")}>×</button></div>}{error && <div className="notice error global-notice"><span>{error}</span><button onClick={() => setError("")}>×</button></div>}{view === "dashboard" && <DashboardView key={monitorKey} monitorKey={monitorKey} data={dashboard} period={period} onPeriodChange={setPeriod} loading={dashboardLoading} onOpenArchive={() => navigate("archive")} />}{view === "archive" && <ArchiveView key={monitorKey} initialQuery={archiveSeed} />}{view === "report" && <ReportView key={monitorKey} />}{view === "analytics" && <AnalyticsView key={monitorKey} data={dashboard} period={period} onPeriodChange={setPeriod} />}{view === "sources" && <SourcesView key={monitorKey} />}{view === "data" && <DataView key={monitorKey} stats={stats} runs={runs.filter((run) => run.monitorKey === monitorKey)} busy={busy} onImport={importBundle} syncSettings={syncSettings} onSaveSyncSettings={saveSyncSettings} onSyncNow={(value) => performSync(value)} syncBusy={syncBusy} syncStatus={syncStatusText} />}</main>
     </div>
-    <SearchOverlay query={globalQuery} open={searchOpen} onClose={() => setSearchOpen(false)} onShowArchive={showArchiveForSearch} /><WorkroomDrawer open={workroomOpen} onClose={() => setWorkroomOpen(false)} onUnreadChange={setWorkroomUnread} />
+    <SearchOverlay key={monitorKey} query={globalQuery} open={searchOpen} onClose={() => setSearchOpen(false)} onShowArchive={showArchiveForSearch} /><WorkroomDrawer open={workroomOpen} onClose={() => setWorkroomOpen(false)} onUnreadChange={setWorkroomUnread} />
   </div>;
 }
