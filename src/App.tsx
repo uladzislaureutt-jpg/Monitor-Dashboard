@@ -130,6 +130,9 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
   useEffect(() => { refreshCore().catch((reason) => setError(String(reason))); }, [refreshCore]);
+  useEffect(() => {
+    setSyncStatus({ kind: syncSettings.repository ? "configured" : "notConfigured" });
+  }, [monitorKey, syncSettings.repository]);
   useEffect(() => { refreshDashboard(period); }, [period, monitorKey, refreshDashboard]);
   useEffect(() => {
     const onModeration = () => refreshDashboard(period);
