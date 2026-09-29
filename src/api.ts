@@ -16,23 +16,25 @@ import type {
   FullTextHydrationResult,
 } from "./types";
 
-const MONITOR_KEY = "social_economic";
+let activeMonitorKey = "social_economic";
 
 export const desktopApi = {
+  setActiveMonitorKey: (monitorKey: string) => { activeMonitorKey = monitorKey; },
+  activeMonitorKey: () => activeMonitorKey,
   stats: () => invoke<DatabaseStats>("get_database_stats"),
   runs: () => invoke<RunSummary[]>("list_runs"),
   importBundle: (path: string) =>
     invoke<ImportResult>("import_dashboard_bundle", { path }),
   dashboard: (periodDays: number | null) =>
     invoke<DashboardOverview>("get_dashboard_overview", {
-      monitorKey: MONITOR_KEY,
+      monitorKey: activeMonitorKey,
       periodDays,
     }),
   archiveFacets: () =>
-    invoke<ArchiveFacets>("get_archive_facets", { monitorKey: MONITOR_KEY }),
+    invoke<ArchiveFacets>("get_archive_facets", { monitorKey: activeMonitorKey }),
   archive: (options: ArchiveQuery = {}) =>
     invoke<ArchivePage>("list_publications", {
-      monitorKey: options.monitorKey ?? MONITOR_KEY,
+      monitorKey: options.monitorKey ?? activeMonitorKey,
       query: options.query ?? "",
       periodDays: options.periodDays ?? null,
       category: options.category ?? "",
@@ -45,14 +47,14 @@ export const desktopApi = {
     }),
   topicBucketPublications: (category: string, bucket: string, limit = 8) =>
     invoke<PublicationSummary[]>("list_topic_bucket_publications", {
-      monitorKey: MONITOR_KEY,
+      monitorKey: activeMonitorKey,
       category,
       bucket,
       limit,
     }),
   search: (query: string, limit = 12) =>
     invoke<ArchivePage>("list_publications", {
-      monitorKey: MONITOR_KEY,
+      monitorKey: activeMonitorKey,
       query,
       periodDays: null,
       category: "",
@@ -64,17 +66,17 @@ export const desktopApi = {
       offset: 0,
     }),
   sources: (periodDays: number | null = 30) =>
-    invoke<SourceSummary[]>("list_sources", { monitorKey: MONITOR_KEY, periodDays }),
+    invoke<SourceSummary[]>("list_sources", { monitorKey: activeMonitorKey, periodDays }),
   editorialSource: (documentUid: string) =>
-    invoke<EditorialSource | null>("get_editorial_source", { monitorKey: MONITOR_KEY, documentUid }),
+    invoke<EditorialSource | null>("get_editorial_source", { monitorKey: activeMonitorKey, documentUid }),
   hydrateReportFullTexts: (documentUids: string[]) =>
-    invoke<FullTextHydrationResult[]>("hydrate_report_full_texts", { monitorKey: MONITOR_KEY, documentUids }),
+    invoke<FullTextHydrationResult[]>("hydrate_report_full_texts", { monitorKey: activeMonitorKey, documentUids }),
   exportReport: (path: string, date: string, items: ReportExportItem[]) =>
     invoke<void>("export_report_docx", { path, date, items }),
   syncGithub: (repository: string, token: string) =>
     invoke<SyncResult>("sync_github_artifacts", { repository, token }),
   replaceModerationSnapshot: (snapshot: PublicationModerationSnapshot) =>
-    invoke<void>("replace_moderation_snapshot", { monitorKey: MONITOR_KEY, flags: snapshot.flags, exclusions: snapshot.exclusions }),
+    invoke<void>("replace_moderation_snapshot", { monitorKey: activeMonitorKey, flags: snapshot.flags, exclusions: snapshot.exclusions }),
   getSetting: (key: string) => invoke<string | null>("get_app_setting", { key }),
   setSetting: (key: string, value: string) => invoke<void>("set_app_setting", { key, value }),
   deleteSetting: (key: string) => invoke<void>("delete_app_setting", { key }),
