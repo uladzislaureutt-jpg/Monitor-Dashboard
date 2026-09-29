@@ -74,7 +74,7 @@ export const desktopApi = {
   exportReport: (path: string, date: string, items: ReportExportItem[]) =>
     invoke<void>("export_report_docx", { path, date, items }),
   syncGithub: (repository: string, token: string) =>
-    invoke<SyncResult>("sync_github_artifacts", { repository, token }),
+    invoke<SyncResult>("sync_github_artifacts", { repository, token, monitorKey: activeMonitorKey }),
   replaceModerationSnapshot: (snapshot: PublicationModerationSnapshot) =>
     invoke<void>("replace_moderation_snapshot", { monitorKey: activeMonitorKey, flags: snapshot.flags, exclusions: snapshot.exclusions }),
   getSetting: (key: string) => invoke<string | null>("get_app_setting", { key }),
