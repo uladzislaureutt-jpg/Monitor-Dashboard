@@ -2,8 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { desktopApi } from "./api";
 import type { PublicationSummary, ReportDraftItem } from "./types";
 
-const STORAGE_KEY = "monitor-report-workspace-social-v1";
-const SETTING_KEY = "report.workspace.social_economic.v1";
+const storageKey = (monitorKey: string) => `monitor-report-workspace-${monitorKey}-v1`;
+const settingKey = (monitorKey: string) => `report.workspace.${monitorKey}.v1`;
 const MAX_ITEMS = 8;
 
 type ReportState = { date: string; items: ReportDraftItem[]; revision: number; exportedRevision: number };
@@ -75,21 +75,22 @@ function normalize(raw: unknown): ReportState {
   return { date: typeof value.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.date) ? value.date : todayIso(), items, revision, exportedRevision };
 }
 
-function loadLocal(): ReportState {
-  try { return normalize(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")); }
+function loadLocal(monitorKey: string): ReportState {
+  try { return normalize(JSON.parse(localStorage.getItem(storageKey(monitorKey)) ?? "null")); }
   catch { return emptyState(); }
 }
 
 export function ReportProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<ReportState>(loadLocal);
+  const [monitorKey, setMonitorKey] = useState(() => desktopApi.activeMonitorKey());
+  const [state, setState] = useState<ReportState>(() => loadLocal(desktopApi.activeMonitorKey()));
   const [ready, setReady] = useState(false);
   const [busyDocumentUid, setBusyDocumentUid] = useState<string | null>(null);
 
   const persistRaw = useCallback((next: ReportState) => {
     setState(next);
     const raw = JSON.stringify(next);
-    localStorage.setItem(STORAGE_KEY, raw);
-    void desktopApi.setSetting(SETTING_KEY, raw);
+    localStorage.setItem(storageKey(monitorKey), raw);
+    void desktopApi.setSetting(settingKey(monitorKey), raw);
   }, []);
 
   const persist = useCallback((next: ReportState) => {
@@ -98,22 +99,30 @@ export function ReportProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    desktopApi.getSetting(SETTING_KEY).then((raw) => {
+    setReady(false);
+    setState(loadLocal(monitorKey));
+    desktopApi.getSetting(settingKey(monitorKey)).then((raw) => {
       if (cancelled) return;
       if (raw) {
         try {
           const restored = normalize(JSON.parse(raw));
           setState(restored);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(restored));
-          void desktopApi.setSetting(SETTING_KEY, JSON.stringify(restored));
+          localStorage.setItem(storageKey(monitorKey), JSON.stringify(restored));
+          void desktopApi.setSetting(settingKey(monitorKey), JSON.stringify(restored));
         } catch { /* keep local fallback */ }
       } else {
-        const local = loadLocal();
-        if (local.items.length) void desktopApi.setSetting(SETTING_KEY, JSON.stringify(local));
+        const local = loadLocal(monitorKey);
+        if (local.items.length) void desktopApi.setSetting(settingKey(monitorKey), JSON.stringify(local));
       }
       setReady(true);
     }).catch(() => setReady(true));
     return () => { cancelled = true; };
+  }, [monitorKey]);
+
+  useEffect(() => {
+    const onMonitorChanged = () => setMonitorKey(desktopApi.activeMonitorKey());
+    window.addEventListener("monitor:changed", onMonitorChanged);
+    return () => window.removeEventListener("monitor:changed", onMonitorChanged);
   }, []);
 
   const contains = useCallback((documentUid: string) => state.items.some((item) => item.documentUid === documentUid), [state.items]);
