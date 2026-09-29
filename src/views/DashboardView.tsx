@@ -12,6 +12,7 @@ import { VisualStories } from "../components/VisualStories";
 import { localizeDataLabel } from "../dataLabels";
 
 type TrendMode = "volume" | "line" | "topics" | "topics3d";
+type MonitorKey = "social_economic" | "lukashenko";
 type TopicPoint = { category: string; bucket: string };
 
 function useSectionOverview(period: PeriodDays, basePeriod: PeriodDays, baseData: DashboardOverview | null) {
@@ -31,12 +32,14 @@ function useSectionOverview(period: PeriodDays, basePeriod: PeriodDays, baseData
 }
 
 export function DashboardView({
+  monitorKey,
   data,
   period,
   onPeriodChange,
   loading,
   onOpenArchive,
 }: {
+  monitorKey: MonitorKey;
   data: DashboardOverview | null;
   period: PeriodDays;
   onPeriodChange: (value: PeriodDays) => void;
@@ -44,7 +47,8 @@ export function DashboardView({
   onOpenArchive: () => void;
 }) {
   const { t, locale } = useI18n();
-  const [trendMode, setTrendMode] = useState<TrendMode>("volume");
+  const isLMonitor = monitorKey === "lukashenko";
+  const [trendMode, setTrendMode] = useState<TrendMode>(isLMonitor ? "topics" : "volume");
   const [selectedTopicPoint, setSelectedTopicPoint] = useState<TopicPoint | null>(null);
   const [topicPointItems, setTopicPointItems] = useState<PublicationSummary[]>([]);
   const [topicPointLoading, setTopicPointLoading] = useState(false);
@@ -59,6 +63,7 @@ export function DashboardView({
   const geoData = useSectionOverview(geoPeriod, period, data);
   const sourcesData = useSectionOverview(sourcesPeriod, period, data);
   const resonanceData = useSectionOverview(resonancePeriod, period, data);
+  const insightsData = [...(resonanceData?.personBreakdown ?? []), ...(resonanceData?.conceptBreakdown ?? [])];
 
   const summaryLoading = loading && summaryPeriod === period;
   const selectTopicPoint = useCallback((point: TopicPoint) => setSelectedTopicPoint(point), []);
@@ -78,9 +83,9 @@ export function DashboardView({
   return <div className="view-stack">
     <section className="view-heading dashboard-heading">
       <div>
-        <div className="eyebrow dark">{t("dashboard.eyebrow")}</div>
-        <h2>{t("dashboard.title")}</h2>
-        <p>{t("dashboard.subtitle")}</p>
+        <div className="eyebrow dark">{isLMonitor ? "L-MONITOR" : t("dashboard.eyebrow")}</div>
+        <h2>{isLMonitor ? (locale === "be" ? "Маніторынг Аляксандра Лукашэнкі" : "Мониторинг Александра Лукашенко") : t("dashboard.title")}</h2>
+        <p>{isLMonitor ? (locale === "be" ? "Міжнародны інфармацыйны паток: унутраная і знешнепалітычная павестка, сюжэты, краіны і крыніцы." : "Международный информационный поток: внутренняя и внешнеполитическая повестка, сюжеты, страны и источники.") : t("dashboard.subtitle")}</p>
       </div>
     </section>
 
@@ -100,7 +105,7 @@ export function DashboardView({
     <section className="dashboard-grid">
       <article className="panel chart-panel span-two">
         <div className="panel-head chart-head-with-mode">
-          <div><h3>{t("dashboard.trend")}</h3><p>{t("dashboard.trendHelp")}</p></div>
+          <div><h3>{t("dashboard.trend")}</h3><p>{isLMonitor ? (locale === "be" ? "Два патокі: унутраная павестка і знешняя палітыка." : "Два потока: внутренняя повестка и внешняя политика.") : t("dashboard.trendHelp")}</p></div>
           <div className="panel-control-stack trend-controls">
             <PeriodSelector value={period} onChange={onPeriodChange} compact />
             <div className="chart-mode-switch">
@@ -131,10 +136,17 @@ export function DashboardView({
           </section>}
         </>}
       </article>
-      <BreakdownPanel title={t("dashboard.topics")} subtitle={t("dashboard.topicsHelp")} data={topicsData?.categoryBreakdown ?? []} period={topicsPeriod} onPeriodChange={setTopicsPeriod} labelKind="category" />
-      <BreakdownPanel title={t("dashboard.geography")} subtitle={t("dashboard.geographyHelp")} data={geoData?.regionBreakdown ?? []} allowMap period={geoPeriod} onPeriodChange={setGeoPeriod} labelKind="region" />
-      <BreakdownPanel title={t("dashboard.sources")} subtitle={t("dashboard.sourcesHelp")} data={sourcesData?.sourceBreakdown ?? []} period={sourcesPeriod} onPeriodChange={setSourcesPeriod} />
-      <ResonancePanel items={resonanceData?.resonanceItems ?? []} fallback={resonanceData?.resonanceFallback ?? false} period={resonancePeriod} onPeriodChange={setResonancePeriod} />
+{isLMonitor ? <>
+        <ResonancePanel title={locale === "be" ? "Сюжэты" : "Сюжеты"} subtitle={locale === "be" ? "Загаловак рэпрэзентатыўнай публікацыі і матэрыялы той жа тэмы." : "Заголовок репрезентативной публикации и материалы той же темы."} items={resonanceData?.resonanceItems ?? []} fallback={resonanceData?.resonanceFallback ?? false} period={resonancePeriod} onPeriodChange={setResonancePeriod} />
+        <BreakdownPanel title={locale === "be" ? "Выданні па краінах" : "Издания по странам"} subtitle={locale === "be" ? "Краіны выданняў, якія апублікавалі матэрыялы." : "Страны изданий, опубликовавших материалы."} data={geoData?.regionBreakdown ?? []} allowMap period={geoPeriod} onPeriodChange={setGeoPeriod} labelKind="region" />
+        <BreakdownPanel title={t("dashboard.sources")} subtitle={t("dashboard.sourcesHelp")} data={sourcesData?.sourceBreakdown ?? []} period={sourcesPeriod} onPeriodChange={setSourcesPeriod} />
+        <BreakdownPanel title={locale === "be" ? "Персаналіі і паняцці" : "Персоналии и понятия"} subtitle={locale === "be" ? "Асобы і паняцці, выдзеленыя ў матэрыялах." : "Персоны и понятия, выделенные в материалах."} data={insightsData} period={resonancePeriod} onPeriodChange={setResonancePeriod} />
+      </> : <>
+        <BreakdownPanel title={t("dashboard.topics")} subtitle={t("dashboard.topicsHelp")} data={topicsData?.categoryBreakdown ?? []} period={topicsPeriod} onPeriodChange={setTopicsPeriod} labelKind="category" />
+        <BreakdownPanel title={t("dashboard.geography")} subtitle={t("dashboard.geographyHelp")} data={geoData?.regionBreakdown ?? []} allowMap period={geoPeriod} onPeriodChange={setGeoPeriod} labelKind="region" />
+        <BreakdownPanel title={t("dashboard.sources")} subtitle={t("dashboard.sourcesHelp")} data={sourcesData?.sourceBreakdown ?? []} period={sourcesPeriod} onPeriodChange={setSourcesPeriod} />
+        <ResonancePanel items={resonanceData?.resonanceItems ?? []} fallback={resonanceData?.resonanceFallback ?? false} period={resonancePeriod} onPeriodChange={setResonancePeriod} />
+      </>}
     </section>
 
     <VisualStories items={data?.visuals ?? []} />
