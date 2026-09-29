@@ -43,6 +43,10 @@ kbd { color: #c4d5df; border: 1px solid #ffffff25; background: #ffffff0e; border
 .top-actions { display: flex; justify-content: flex-end; align-items: center; gap: 9px; }
 .module-pill, .run-pill { border: 1px solid #ffffff2e; background: #ffffff10; color: white; padding: 9px 12px; border-radius: 999px; font-size: 12px; }
 .run-pill { color: #bdd7e8; padding-inline: 10px; }
+.module-switch { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid #ffffff2e; border-radius: 999px; background: #ffffff10; }
+.module-switch button { border: 0; border-radius: 999px; padding: 7px 10px; background: transparent; color: #c8d9e4; font-size: 11px; }
+.module-switch button:hover { color: #fff; background: #ffffff15; }
+.module-switch button.active { color: #17384f; background: #eaf4fa; box-shadow: 0 1px 5px #071a2738; }
 
 .layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); min-height: calc(100vh - 76px); }
 .sidebar { background: linear-gradient(180deg, #172b3c, #21384c); color: #dfe9f0; padding: 18px 12px; display: flex; flex-direction: column; position: sticky; top: 76px; height: calc(100vh - 76px); }
