@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { getVersion } from "@tauri-apps/api/app";
 import { desktopApi } from "./api";
 import type { DatabaseStats, DashboardOverview, ImportResult, PeriodDays, RunSummary, SyncSettings, ViewKey } from "./types";
 import { useI18n } from "./i18n";
@@ -54,6 +55,7 @@ function loadSyncSettings(): MonitorSyncSettings {
 export default function App() {
   const { t, locale, setLocale } = useI18n();
   const report = useReportWorkspace();
+  const [appVersion, setAppVersion] = useState("—");
   const [view, setView] = useState<ViewKey>("dashboard");
   const [monitorKey, setMonitorKey] = useState<MonitorKey>("social_economic");
   const [stats, setStats] = useState<DatabaseStats | null>(null);
@@ -130,6 +132,7 @@ export default function App() {
     }).catch(() => undefined);
     return () => { cancelled = true; };
   }, []);
+  useEffect(() => { getVersion().then(setAppVersion).catch(() => undefined); }, []);
   useEffect(() => { refreshCore().catch((reason) => setError(String(reason))); }, [refreshCore]);
   useEffect(() => {
     setSyncStatus({ kind: syncSettings.repository ? "configured" : "notConfigured" });
@@ -205,7 +208,7 @@ export default function App() {
 
   return <div className="app-shell">
     <header className="topbar">
-      <button className="brand" onClick={() => navigate("dashboard")}><span className="brand-mark">M</span><span><b>{t("brand.title")}</b><small>{t("brand.subtitle")}</small></span></button>
+      <button className="brand" onClick={() => navigate("dashboard")}><span className="brand-mark">M</span><span><b>{t("brand.title")}</b><small>{t("brand.subtitle", { version: appVersion })}</small></span></button>
       <div className="global-search-wrap"><span className="search-icon">⌕</span><input ref={searchRef} value={globalQuery} onFocus={() => setSearchOpen(true)} onChange={(event) => { setGlobalQuery(event.target.value); setSearchOpen(true); }} placeholder={t("search.placeholder")} aria-label={t("search.aria")} /><kbd>Ctrl K</kbd></div>
       <div className="top-actions">
         <div className="language-switch" role="group" aria-label={t("lang.aria")}><button className={locale === "ru" ? "active" : ""} onClick={() => setLocale("ru")}>{t("lang.ru")}</button><button className={locale === "be" ? "active" : ""} onClick={() => setLocale("be")}>{t("lang.be")}</button></div>
