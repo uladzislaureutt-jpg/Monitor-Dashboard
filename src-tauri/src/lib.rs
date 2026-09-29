@@ -140,9 +140,10 @@ fn export_report_docx(
 fn sync_github_artifacts(
     repository: String,
     token: String,
+    monitor_key: String,
     state: State<'_, AppState>,
 ) -> Result<sync::SyncResult, String> {
-    sync::sync_github(&state.db_path, &repository, &token)
+    sync::sync_github(&state.db_path, &repository, &token, &monitor_key)
 }
 
 #[tauri::command]
