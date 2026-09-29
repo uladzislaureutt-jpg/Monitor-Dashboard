@@ -91,7 +91,7 @@ export function ReportProvider({ children }: { children: ReactNode }) {
     const raw = JSON.stringify(next);
     localStorage.setItem(storageKey(monitorKey), raw);
     void desktopApi.setSetting(settingKey(monitorKey), raw);
-  }, []);
+  }, [monitorKey]);
 
   const persist = useCallback((next: ReportState) => {
     persistRaw({ ...next, revision: Math.max(state.revision + 1, next.revision ?? 0), exportedRevision: state.exportedRevision });
