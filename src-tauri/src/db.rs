@@ -105,26 +105,26 @@ pub fn schema_version(conn: &Connection) -> Result<i64, String> {
     .map_err(|e| format!("Не удалось прочитать версию БД: {e}"))
 }
 
-pub fn database_stats(path: &Path) -> Result<DatabaseStats, String> {
+pub fn database_stats(path: &Path, monitor_key: &str) -> Result<DatabaseStats, String> {
     let conn = open_database(path)?;
-    let count = |table: &str| -> Result<i64, String> {
-        conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0))
-            .map_err(|e| format!("Не удалось посчитать {table}: {e}"))
+    let count = |sql: &str, label: &str| -> Result<i64, String> {
+        conn.query_row(sql, params![monitor_key], |row| row.get(0))
+            .map_err(|e| format!("Не удалось посчитать {label}: {e}"))
     };
 
     Ok(DatabaseStats {
         database_path: path.to_string_lossy().into_owned(),
         database_size_bytes: fs::metadata(path).map(|m| m.len()).unwrap_or(0),
         schema_version: schema_version(&conn)?,
-        monitors: count("monitors")?,
-        runs: count("runs")?,
-        documents: count("documents")?,
-        sources: count("sources")?,
-        monitor_items: count("monitor_items")?,
+        monitors: count("SELECT COUNT(*) FROM monitors WHERE monitor_key=?1", "мониторы")?,
+        runs: count("SELECT COUNT(*) FROM runs r JOIN monitors m ON m.id=r.monitor_id WHERE m.monitor_key=?1", "запуски")?,
+        documents: count("SELECT COUNT(DISTINCT d.id) FROM documents d JOIN monitor_items mi ON mi.document_id=d.id JOIN monitors m ON m.id=mi.monitor_id WHERE m.monitor_key=?1", "публикации")?,
+        sources: count("SELECT COUNT(DISTINCT d.source_id) FROM documents d JOIN monitor_items mi ON mi.document_id=d.id JOIN monitors m ON m.id=mi.monitor_id WHERE m.monitor_key=?1 AND d.source_id IS NOT NULL", "источники")?,
+        monitor_items: count("SELECT COUNT(*) FROM monitor_items mi JOIN monitors m ON m.id=mi.monitor_id WHERE m.monitor_key=?1", "элементы мониторинга")?,
     })
 }
 
-pub fn list_runs(path: &Path) -> Result<Vec<RunSummary>, String> {
+pub fn list_runs(path: &Path, monitor_key: &str) -> Result<Vec<RunSummary>, String> {
     let conn = open_database(path)?;
     let mut stmt = conn
         .prepare(
@@ -149,13 +149,14 @@ pub fn list_runs(path: &Path) -> Result<Vec<RunSummary>, String> {
                 (SELECT COUNT(*) FROM source_run_metrics srm WHERE srm.run_id = r.id) AS sources_in_coverage
             FROM runs r
             JOIN monitors m ON m.id = r.monitor_id
+            WHERE m.monitor_key = ?1
             ORDER BY COALESCE(r.started_at, r.imported_at) DESC, r.id DESC
             "#,
         )
         .map_err(|e| format!("Не удалось подготовить список запусков: {e}"))?;
 
     let rows = stmt
-        .query_map([], |row| {
+        .query_map(params![monitor_key], |row| {
             let dry: Option<i64> = row.get(7)?;
             Ok(RunSummary {
                 id: row.get(0)?,
