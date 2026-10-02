@@ -2,11 +2,6 @@ name: Build Monitor Dashboard Windows x64
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/build-windows.yml"
 
 permissions:
   contents: read
