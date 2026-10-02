@@ -3,7 +3,7 @@ import { desktopApi } from "../api";
 import type { DashboardOverview, PeriodDays, PublicationSummary } from "../types";
 import { useI18n } from "../i18n";
 import { PeriodSelector } from "../components/PeriodSelector";
-import { TopicTrendLines, TrendColumns, TrendLine } from "../components/Charts";
+import { CountryTreemap, TopicTrendLines, TrendColumns, TrendLine } from "../components/Charts";
 import { TopicTrend3D } from "../components/TopicTrend3D";
 import { BreakdownPanel } from "../components/BreakdownPanel";
 import { ResonancePanel } from "../components/ResonancePanel";
@@ -57,13 +57,14 @@ export function DashboardView({
   const [geoPeriod, setGeoPeriod] = useState<PeriodDays>(30);
   const [sourcesPeriod, setSourcesPeriod] = useState<PeriodDays>(30);
   const [resonancePeriod, setResonancePeriod] = useState<PeriodDays>(30);
+  const [countryMapPeriod, setCountryMapPeriod] = useState<PeriodDays>(30);
 
   const summaryData = useSectionOverview(summaryPeriod, period, data);
   const topicsData = useSectionOverview(topicsPeriod, period, data);
   const geoData = useSectionOverview(geoPeriod, period, data);
   const sourcesData = useSectionOverview(sourcesPeriod, period, data);
   const resonanceData = useSectionOverview(resonancePeriod, period, data);
-  const detailedThemes = resonanceData?.conceptBreakdown ?? [];
+  const countryMapData = useSectionOverview(countryMapPeriod, period, data);
 
   const summaryLoading = loading && summaryPeriod === period;
   const selectTopicPoint = useCallback((point: TopicPoint) => setSelectedTopicPoint(point), []);
@@ -140,7 +141,13 @@ export function DashboardView({
         <ResonancePanel title={locale === "be" ? "Сюжэты" : "Сюжеты"} subtitle={locale === "be" ? "Асноўная публікацыя і спіс іншых крыніц, якія асвятлялі той жа сюжэт." : "Основная публикация и список других источников, освещавших тот же сюжет."} items={[]} stories={resonanceData?.stories ?? []} fallback={false} period={resonancePeriod} onPeriodChange={setResonancePeriod} />
         <BreakdownPanel title={locale === "be" ? "Краіны паходжання крыніц" : "Страны происхождения источников"} subtitle={locale === "be" ? "Странавая прыналежнасць выданняў, якія апублікавалі матэрыялы." : "Страновая принадлежность изданий, опубликовавших материалы."} data={geoData?.regionBreakdown ?? []} period={geoPeriod} onPeriodChange={setGeoPeriod} />
         <BreakdownPanel title={t("dashboard.sources")} subtitle={t("dashboard.sourcesHelp")} data={sourcesData?.sourceBreakdown ?? []} period={sourcesPeriod} onPeriodChange={setSourcesPeriod} />
-        <BreakdownPanel title={locale === "be" ? "Тэмы публікацый" : "Темы публикаций"} subtitle={locale === "be" ? "Больш дэталёвыя тэматычныя напрамкі ўнутры ўнутранага і знешняга парадку дня." : "Более детальные тематические направления внутри внутренней и внешней повестки."} data={detailedThemes} period={resonancePeriod} onPeriodChange={setResonancePeriod} />
+        <article className="panel chart-panel">
+          <div className="panel-head chart-head-with-mode">
+            <div><h3>{locale === "be" ? "Краінавая прыналежнасць СМІ" : "Страновая принадлежность СМИ"}</h3><p>{locale === "be" ? "Кожны прамавугольнік — краіна паходжання крыніц; плошча адпавядае колькасці публікацый." : "Каждый прямоугольник — страна происхождения источников; площадь соответствует количеству публикаций."}</p></div>
+            <div className="panel-control-stack"><PeriodSelector value={countryMapPeriod} onChange={setCountryMapPeriod} compact /></div>
+          </div>
+          <CountryTreemap data={countryMapData?.regionBreakdown ?? []} />
+        </article>
       </> : <>
         <BreakdownPanel title={t("dashboard.topics")} subtitle={t("dashboard.topicsHelp")} data={topicsData?.categoryBreakdown ?? []} period={topicsPeriod} onPeriodChange={setTopicsPeriod} labelKind="category" />
         <BreakdownPanel title={t("dashboard.geography")} subtitle={t("dashboard.geographyHelp")} data={geoData?.regionBreakdown ?? []} allowMap period={geoPeriod} onPeriodChange={setGeoPeriod} labelKind="region" />
