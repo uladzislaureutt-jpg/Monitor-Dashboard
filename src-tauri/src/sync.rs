@@ -63,6 +63,22 @@ fn artifact_run_number(name: &str, prefix: &str) -> Option<i64> {
     name.strip_prefix(prefix)?.parse::<i64>().ok()
 }
 
+fn record_artifact_error(
+    errors: &mut Vec<String>,
+    db_path: &Path,
+    monitor_key: &str,
+    run_number: i64,
+    artifact_id: u64,
+    detail: String,
+) {
+    let message = format!("run {run_number}: {detail}");
+    if let Err(status_error) = db::mark_sync_failed_run(db_path, monitor_key, run_number, artifact_id) {
+        errors.push(format!("{message}; не удалось сохранить статус ошибки: {status_error}"));
+    } else {
+        errors.push(message);
+    }
+}
+
 pub fn sync_github(db_path: &Path, repository: &str, token: &str, monitor_key: &str) -> Result<SyncResult, String> {
     let repository = validate_repository(repository)?;
     let prefix = artifact_prefix(monitor_key)?;
@@ -118,12 +134,14 @@ pub fn sync_github(db_path: &Path, repository: &str, token: &str, monitor_key: &
     artifacts.dedup_by_key(|(run, _)| *run);
     let checked_artifacts = artifacts.len();
 
-    let existing_runs: HashSet<i64> = db::list_runs(db_path)?
+    let existing_runs: HashSet<i64> = db::list_runs(db_path, monitor_key)?
         .into_iter()
         .filter(|run| run.monitor_key == monitor_key)
         .filter_map(|run| run.run_number)
         .collect();
+    let latest_imported_run = existing_runs.iter().copied().max();
     let known_dry_runs = db::sync_skipped_run_numbers(db_path, monitor_key)?;
+    let known_failed_artifacts = db::sync_failed_artifacts(db_path, monitor_key)?;
 
     let mut imported_runs = Vec::new();
     let mut skipped_dry_runs = Vec::new();
@@ -135,8 +153,14 @@ pub fn sync_github(db_path: &Path, repository: &str, token: &str, monitor_key: &
             already_present += 1;
             continue;
         }
+        if latest_imported_run.is_some_and(|latest| run_number < latest) {
+            continue;
+        }
         if known_dry_runs.contains(&run_number) {
             skipped_dry_runs.push(run_number);
+            continue;
+        }
+        if known_failed_artifacts.get(&run_number) == Some(&artifact.id) {
             continue;
         }
 
@@ -150,18 +174,18 @@ pub fn sync_github(db_path: &Path, repository: &str, token: &str, monitor_key: &
         let response = match request.send() {
             Ok(value) => value,
             Err(error) => {
-                errors.push(format!("run {run_number}: download error: {error}"));
+                record_artifact_error(&mut errors, db_path, monitor_key, run_number, artifact.id, format!("download error: {error}"));
                 continue;
             }
         };
         if !response.status().is_success() {
-            errors.push(format!("run {run_number}: GitHub download returned {}", response.status()));
+            record_artifact_error(&mut errors, db_path, monitor_key, run_number, artifact.id, format!("GitHub download returned {}", response.status()));
             continue;
         }
         let bytes = match response.bytes() {
             Ok(value) => value,
             Err(error) => {
-                errors.push(format!("run {run_number}: cannot read artifact: {error}"));
+                record_artifact_error(&mut errors, db_path, monitor_key, run_number, artifact.id, format!("cannot read artifact: {error}"));
                 continue;
             }
         };
@@ -171,7 +195,7 @@ pub fn sync_github(db_path: &Path, repository: &str, token: &str, monitor_key: &
             artifact.id, run_number
         ));
         if let Err(error) = fs::write(&temp_path, &bytes) {
-            errors.push(format!("run {run_number}: cannot write temporary ZIP: {error}"));
+            record_artifact_error(&mut errors, db_path, monitor_key, run_number, artifact.id, format!("cannot write temporary ZIP: {error}"));
             continue;
         }
 
@@ -196,6 +220,7 @@ pub fn sync_github(db_path: &Path, repository: &str, token: &str, monitor_key: &
         let _ = fs::remove_file(&temp_path);
         match outcome {
             Ok(Some(result)) => {
+                db::clear_sync_status(db_path, monitor_key, run_number)?;
                 if result.status == "imported" || result.status == "replaced" {
                     imported_runs.push(run_number);
                 } else {
@@ -203,11 +228,11 @@ pub fn sync_github(db_path: &Path, repository: &str, token: &str, monitor_key: &
                 }
             }
             Ok(None) => {}
-            Err(error) => errors.push(format!("run {run_number}: {error}")),
+            Err(error) => record_artifact_error(&mut errors, db_path, monitor_key, run_number, artifact.id, error),
         }
     }
 
-    let latest_available_run = db::list_runs(db_path)?
+    let latest_available_run = db::list_runs(db_path, monitor_key)?
         .into_iter()
         .filter(|run| run.monitor_key == monitor_key && run.dry_run != Some(true))
         .filter_map(|run| run.run_number)
