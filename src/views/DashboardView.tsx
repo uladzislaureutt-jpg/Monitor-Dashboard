@@ -63,7 +63,7 @@ export function DashboardView({
   const geoData = useSectionOverview(geoPeriod, period, data);
   const sourcesData = useSectionOverview(sourcesPeriod, period, data);
   const resonanceData = useSectionOverview(resonancePeriod, period, data);
-  const insightsData = [...(resonanceData?.personBreakdown ?? []), ...(resonanceData?.conceptBreakdown ?? [])];
+  const detailedThemes = resonanceData?.conceptBreakdown ?? [];
 
   const summaryLoading = loading && summaryPeriod === period;
   const selectTopicPoint = useCallback((point: TopicPoint) => setSelectedTopicPoint(point), []);
@@ -93,12 +93,12 @@ export function DashboardView({
       <div className="dashboard-summary-controls">
         <PeriodSelector value={summaryPeriod} onChange={setSummaryPeriod} compact />
       </div>
-      <div className="kpi-grid dashboard-kpis">
+      <div className={`kpi-grid dashboard-kpis ${isLMonitor ? "l-monitor-kpis" : ""}`}>
         <article className="kpi"><strong>{summaryLoading ? "…" : summaryData?.publications ?? 0}</strong><span>{t("dashboard.publications")}</span></article>
         <article className="kpi"><strong>{summaryLoading ? "…" : summaryData?.activeSources ?? 0}</strong><span>{t("dashboard.activeSources")}</span></article>
-        <article className="kpi"><strong>{summaryLoading ? "…" : summaryData?.regions ?? 0}</strong><span>{t("dashboard.regions")}</span></article>
-        <article className="kpi"><strong>{summaryLoading ? "…" : summaryData?.categories ?? 0}</strong><span>{t("dashboard.categories")}</span></article>
-        <article className="kpi info-kpi" title={t("dashboard.responsesHelp")}><strong>{summaryLoading ? "…" : summaryData?.officialResponses ?? 0}</strong><span>{t("dashboard.responses")} <i className="info-dot">i</i></span></article>
+        <article className="kpi"><strong>{summaryLoading ? "…" : summaryData?.regions ?? 0}</strong><span>{isLMonitor ? (locale === "be" ? "краін паходжання крыніц" : "стран происхождения источников") : t("dashboard.regions")}</span></article>
+        <article className="kpi"><strong>{summaryLoading ? "…" : summaryData?.categories ?? 0}</strong><span>{isLMonitor ? (locale === "be" ? "напрамкі парадку дня" : "направления повестки") : t("dashboard.categories")}</span></article>
+        {!isLMonitor && <article className="kpi info-kpi" title={t("dashboard.responsesHelp")}><strong>{summaryLoading ? "…" : summaryData?.officialResponses ?? 0}</strong><span>{t("dashboard.responses")} <i className="info-dot">i</i></span></article>}
       </div>
     </section>
 
@@ -137,10 +137,10 @@ export function DashboardView({
         </>}
       </article>
 {isLMonitor ? <>
-        <ResonancePanel title={locale === "be" ? "Сюжэты" : "Сюжеты"} subtitle={locale === "be" ? "Загаловак рэпрэзентатыўнай публікацыі і матэрыялы той жа тэмы." : "Заголовок репрезентативной публикации и материалы той же темы."} items={resonanceData?.resonanceItems ?? []} fallback={resonanceData?.resonanceFallback ?? false} period={resonancePeriod} onPeriodChange={setResonancePeriod} />
-        <BreakdownPanel title={locale === "be" ? "Выданні па краінах" : "Издания по странам"} subtitle={locale === "be" ? "Краіны выданняў, якія апублікавалі матэрыялы." : "Страны изданий, опубликовавших материалы."} data={geoData?.regionBreakdown ?? []} allowMap period={geoPeriod} onPeriodChange={setGeoPeriod} labelKind="region" />
+        <ResonancePanel title={locale === "be" ? "Сюжэты" : "Сюжеты"} subtitle={locale === "be" ? "Асноўная публікацыя і спіс іншых крыніц, якія асвятлялі той жа сюжэт." : "Основная публикация и список других источников, освещавших тот же сюжет."} items={[]} stories={resonanceData?.stories ?? []} fallback={false} period={resonancePeriod} onPeriodChange={setResonancePeriod} />
+        <BreakdownPanel title={locale === "be" ? "Краіны паходжання крыніц" : "Страны происхождения источников"} subtitle={locale === "be" ? "Странавая прыналежнасць выданняў, якія апублікавалі матэрыялы." : "Страновая принадлежность изданий, опубликовавших материалы."} data={geoData?.regionBreakdown ?? []} period={geoPeriod} onPeriodChange={setGeoPeriod} />
         <BreakdownPanel title={t("dashboard.sources")} subtitle={t("dashboard.sourcesHelp")} data={sourcesData?.sourceBreakdown ?? []} period={sourcesPeriod} onPeriodChange={setSourcesPeriod} />
-        <BreakdownPanel title={locale === "be" ? "Персаналіі і паняцці" : "Персоналии и понятия"} subtitle={locale === "be" ? "Асобы і паняцці, выдзеленыя ў матэрыялах." : "Персоны и понятия, выделенные в материалах."} data={insightsData} period={resonancePeriod} onPeriodChange={setResonancePeriod} />
+        <BreakdownPanel title={locale === "be" ? "Тэмы публікацый" : "Темы публикаций"} subtitle={locale === "be" ? "Больш дэталёвыя тэматычныя напрамкі ўнутры ўнутранага і знешняга парадку дня." : "Более детальные тематические направления внутри внутренней и внешней повестки."} data={detailedThemes} period={resonancePeriod} onPeriodChange={setResonancePeriod} />
       </> : <>
         <BreakdownPanel title={t("dashboard.topics")} subtitle={t("dashboard.topicsHelp")} data={topicsData?.categoryBreakdown ?? []} period={topicsPeriod} onPeriodChange={setTopicsPeriod} labelKind="category" />
         <BreakdownPanel title={t("dashboard.geography")} subtitle={t("dashboard.geographyHelp")} data={geoData?.regionBreakdown ?? []} allowMap period={geoPeriod} onPeriodChange={setGeoPeriod} labelKind="region" />
