@@ -21,13 +21,13 @@ struct AppState {
 }
 
 #[tauri::command]
-fn get_database_stats(state: State<'_, AppState>) -> Result<DatabaseStats, String> {
-    db::database_stats(&state.db_path)
+fn get_database_stats(state: State<'_, AppState>, monitor_key: String) -> Result<DatabaseStats, String> {
+    db::database_stats(&state.db_path, &monitor_key)
 }
 
 #[tauri::command]
-fn list_runs(state: State<'_, AppState>) -> Result<Vec<RunSummary>, String> {
-    db::list_runs(&state.db_path)
+fn list_runs(state: State<'_, AppState>, monitor_key: String) -> Result<Vec<RunSummary>, String> {
+    db::list_runs(&state.db_path, &monitor_key)
 }
 
 #[tauri::command]
