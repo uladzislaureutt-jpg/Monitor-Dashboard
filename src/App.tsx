@@ -21,7 +21,7 @@ const DEFAULT_L_SYNC: SyncSettings = { repository: "vladreuth-cmd/M-Trouble", to
 
 type MonitorKey = "social_economic" | "lukashenko";
 type MonitorSyncSettings = Record<MonitorKey, SyncSettings>;
-type SyncUiStatus = { kind: "none" | "notConfigured" | "configured" | "notFound" | "error" | "partial" | "upToDate"; run?: number; count?: number; errors?: string[] };
+type SyncUiStatus = { kind: "none" | "notConfigured" | "configured" | "notFound" | "upToDate"; run?: number };
 
 function normalizeSyncSettings(parsed: unknown): SyncSettings {
   const value = parsed && typeof parsed === "object" ? parsed as Partial<SyncSettings> : {};
@@ -66,6 +66,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [syncWarning, setSyncWarning] = useState("");
   const [globalQuery, setGlobalQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [archiveSeed, setArchiveSeed] = useState("");
@@ -94,22 +95,23 @@ export default function App() {
       if (!settings.repository.trim()) setSyncStatus({ kind: "notConfigured" });
       return;
     }
-    syncBusyRef.current = true; setSyncBusy(true); if (!silent) setError("");
+    syncBusyRef.current = true; setSyncBusy(true); if (!silent) { setError(""); setSyncWarning(""); }
     try {
       const result = await desktopApi.syncGithub(settings.repository.trim(), settings.token);
       const latest = result.latestAvailableRun;
       if (result.errors.length) {
-        setSyncStatus({ kind: "partial", count: result.errors.length, errors: result.errors });
-        if (!silent) setError(result.errors.join("\n"));
-      } else if (latest != null) setSyncStatus({ kind: "upToDate", run: latest });
+        if (!silent) setSyncWarning(result.errors.join("\n"));
+      }
+      if (latest != null) setSyncStatus({ kind: "upToDate", run: latest });
+      else if (result.errors.length) setSyncStatus({ kind: "configured" });
       else setSyncStatus({ kind: "notFound" });
       if (result.importedRuns.length) {
         setMessage(t("sync.added", { runs: result.importedRuns.join(", ") }));
         await Promise.all([refreshCore(), refreshDashboard(period)]);
       }
     } catch (reason) {
-      setSyncStatus({ kind: "error" });
-      if (!silent) setError(String(reason));
+      setSyncStatus({ kind: "configured" });
+      if (!silent) setSyncWarning(String(reason));
     } finally { syncBusyRef.current = false; setSyncBusy(false); }
   }, [period, refreshCore, refreshDashboard, t]);
 
@@ -133,6 +135,11 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
   useEffect(() => { getVersion().then(setAppVersion).catch(() => undefined); }, []);
+  useEffect(() => {
+    if (!syncWarning) return;
+    const timer = window.setTimeout(() => setSyncWarning(""), 12_000);
+    return () => window.clearTimeout(timer);
+  }, [syncWarning]);
   useEffect(() => { refreshCore().catch((reason) => setError(String(reason))); }, [refreshCore]);
   useEffect(() => {
     setSyncStatus({ kind: syncSettings.repository ? "configured" : "notConfigured" });
@@ -200,9 +207,7 @@ export default function App() {
     { key: "data", label: t("nav.data"), icon: "⇩" },
   ];
   const syncStatusText = syncStatus.kind === "upToDate" ? t("status.upToDate", { run: syncStatus.run ?? "—" })
-    : syncStatus.kind === "partial" ? t("status.partial", { count: syncStatus.count ?? 0 })
     : syncStatus.kind === "notFound" ? t("status.notFound")
-    : syncStatus.kind === "error" ? t("status.syncError")
     : syncStatus.kind === "configured" ? t("status.configured")
     : syncStatus.kind === "notConfigured" ? t("status.notConfigured") : "";
 
@@ -219,7 +224,7 @@ export default function App() {
       </div>
     </header>
     <div className="layout"><aside className="sidebar"><div className="nav-label">{t("nav.label")}</div>{nav.slice(0, 5).map((item) => <button key={item.key} className={`nav-item ${view === item.key ? "active" : ""}`} onClick={() => navigate(item.key)}><span className="nav-icon">{item.icon}</span><span>{item.label}{item.key === "report" && report.pendingCount > 0 && <span className="report-count-badge">{report.pendingCount}</span>}</span></button>)}<button className={`nav-item workroom-nav ${workroomOpen ? "active" : ""}`} onClick={() => setWorkroomOpen((value) => !value)}><span className="nav-icon">◌</span><span className="workroom-nav-label">{t("nav.workroom")}</span>{workroomUnread > 0 && <span className="workroom-unread">{workroomUnread > 99 ? "99+" : workroomUnread}</span>}</button>{nav.slice(5).map((item) => <button key={item.key} className={`nav-item ${view === item.key ? "active" : ""}`} onClick={() => navigate(item.key)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}<div className="sidebar-spacer" /><button className="side-status side-status-button" onClick={() => navigate("data")} title={t("data.syncNow")}><span className={`status-dot ${syncBusy ? "pulse" : ""}`} /><div><b>{syncSettings.autoSync ? t("sync.autoLabel") : t("status.localDb")}</b><small>{syncSettings.autoSync && syncSettings.repository ? (syncStatusText || t("status.ready")) : dashboard ? t("status.stats", { docs: dashboard.publications, sources: dashboard.activeSources }) : t("status.initializing")}</small></div></button></aside>
-      <main className="content">{message && <div className="notice success global-notice"><span>{message}</span><button onClick={() => setMessage("")}>×</button></div>}{error && <div className="notice error global-notice"><span>{error}</span><button onClick={() => setError("")}>×</button></div>}{view === "dashboard" && <DashboardView key={monitorKey} monitorKey={monitorKey} data={dashboard} period={period} onPeriodChange={setPeriod} loading={dashboardLoading} onOpenArchive={() => navigate("archive")} />}{view === "archive" && <ArchiveView key={monitorKey} initialQuery={archiveSeed} />}{view === "report" && <ReportView key={monitorKey} />}{view === "analytics" && <AnalyticsView key={monitorKey} data={dashboard} period={period} onPeriodChange={setPeriod} />}{view === "sources" && <SourcesView key={monitorKey} />}{view === "data" && <DataView key={monitorKey} stats={stats} runs={runs.filter((run) => run.monitorKey === monitorKey)} busy={busy} onImport={importBundle} syncSettings={syncSettings} onSaveSyncSettings={saveSyncSettings} onSyncNow={(value) => performSync(value)} syncBusy={syncBusy} syncStatus={syncStatusText} syncErrors={syncStatus.errors ?? []} />}</main>
+      <main className="content">{message && <div className="notice success global-notice"><span>{message}</span><button onClick={() => setMessage("")}>×</button></div>}{error && <div className="notice error global-notice"><span>{error}</span><button onClick={() => setError("")}>×</button></div>}{syncWarning && <div className="notice error global-notice"><span>{syncWarning}</span><button onClick={() => setSyncWarning("")}>×</button></div>}{view === "dashboard" && <DashboardView key={monitorKey} monitorKey={monitorKey} data={dashboard} period={period} onPeriodChange={setPeriod} loading={dashboardLoading} onOpenArchive={() => navigate("archive")} />}{view === "archive" && <ArchiveView key={monitorKey} initialQuery={archiveSeed} />}{view === "report" && <ReportView key={monitorKey} />}{view === "analytics" && <AnalyticsView key={monitorKey} data={dashboard} period={period} onPeriodChange={setPeriod} />}{view === "sources" && <SourcesView key={monitorKey} />}{view === "data" && <DataView key={monitorKey} stats={stats} runs={runs.filter((run) => run.monitorKey === monitorKey)} busy={busy} onImport={importBundle} syncSettings={syncSettings} onSaveSyncSettings={saveSyncSettings} onSyncNow={(value) => performSync(value)} syncBusy={syncBusy} syncStatus={syncStatusText} />}</main>
     </div>
     <SearchOverlay key={monitorKey} query={globalQuery} open={searchOpen} onClose={() => setSearchOpen(false)} onShowArchive={showArchiveForSearch} /><WorkroomDrawer open={workroomOpen} onClose={() => setWorkroomOpen(false)} onUnreadChange={setWorkroomUnread} />
   </div>;
