@@ -161,3 +161,29 @@ export function BelarusRegionTreemap({ data }: { data: CountPoint[] }) {
     <div className="map-footer"><span><i className="map-scale low" />{t("geo.less")}</span><span><i className="map-scale high" />{t("geo.more")}</span></div>
   </div>;
 }
+
+export function CountryTreemap({ data }: { data: CountPoint[] }) {
+  const { t, locale } = useI18n();
+  const items: GeoItem[] = data
+    .filter((item) => item.count > 0)
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+    .map((item, index) => ({ key: `${item.label}-${index}`, label: item.label, aliases: [], count: item.count }));
+  if (!items.length) return <div className="chart-empty">{t("common.none")}</div>;
+  const max = Math.max(1, ...items.map((item) => item.count));
+  const total = items.reduce((sum, item) => sum + item.count, 0);
+  const tiles = binaryTreemap(items, { x: 0, y: 0, w: 100, h: 100 });
+  const opacity = (count: number) => 0.15 + (count / max) * 0.75;
+  const ariaLabel = locale === "be" ? "Краіны паходжання СМІ" : "Страны происхождения СМИ";
+  return <div className="geo-treemap-wrap">
+    <div className="geo-treemap country-treemap" role="img" aria-label={ariaLabel}>
+      {tiles.map((tile) => {
+        const strength = tile.count / max;
+        const percent = total ? Math.round(tile.count / total * 100) : 0;
+        return <div key={tile.key} className={`geo-tile ${strength >= 0.48 ? "dense" : "light"}`} style={{ left: `${tile.x}%`, top: `${tile.y}%`, width: `${tile.w}%`, height: `${tile.h}%`, background: `rgba(47, 111, 152, ${opacity(tile.count)})` }} title={`${tile.label}: ${tile.count} (${percent}%)`}>
+          <span>{tile.label}</span><b>{tile.count}</b>
+        </div>;
+      })}
+    </div>
+    <div className="map-footer"><span><i className="map-scale country-scale low" />{t("geo.less")}</span><span><i className="map-scale country-scale high" />{t("geo.more")}</span></div>
+  </div>;
+}
