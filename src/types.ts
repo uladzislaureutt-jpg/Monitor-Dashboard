@@ -93,6 +93,12 @@ export type PublicationSummary = {
   seenInRuns: number;
 };
 
+export type StorySummary = {
+  title: string;
+  representative: PublicationSummary;
+  publications: PublicationSummary[];
+};
+
 export type DashboardOverview = {
   periodDays: number | null;
   publications: number;
@@ -107,6 +113,7 @@ export type DashboardOverview = {
   regionBreakdown: CountPoint[];
   conceptBreakdown: CountPoint[];
   personBreakdown: CountPoint[];
+  stories: StorySummary[];
   resonanceItems: PublicationSummary[];
   resonanceFallback: boolean;
   sourceDiversity: SourceDiversitySummary;
