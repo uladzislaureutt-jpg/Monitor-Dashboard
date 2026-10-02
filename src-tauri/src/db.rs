@@ -119,7 +119,7 @@ pub fn database_stats(path: &Path, monitor_key: &str) -> Result<DatabaseStats, S
         monitors: count("SELECT COUNT(*) FROM monitors WHERE monitor_key=?1", "мониторы")?,
         runs: count("SELECT COUNT(*) FROM runs r JOIN monitors m ON m.id=r.monitor_id WHERE m.monitor_key=?1", "запуски")?,
         documents: count("SELECT COUNT(DISTINCT d.id) FROM documents d JOIN monitor_items mi ON mi.document_id=d.id JOIN monitors m ON m.id=mi.monitor_id WHERE m.monitor_key=?1", "публикации")?,
-        sources: count("SELECT COUNT(DISTINCT d.source_id) FROM documents d JOIN monitor_items mi ON mi.document_id=d.id JOIN monitors m ON m.id=mi.monitor_id WHERE m.monitor_key=?1 AND d.source_id IS NOT NULL", "источники")?,
+        sources: count("SELECT COUNT(DISTINCT srm.source_id) FROM source_run_metrics srm JOIN runs r ON r.id=srm.run_id JOIN monitors m ON m.id=r.monitor_id WHERE m.monitor_key=?1 AND srm.source_id IS NOT NULL", "источники")?,
         monitor_items: count("SELECT COUNT(*) FROM monitor_items mi JOIN monitors m ON m.id=mi.monitor_id WHERE m.monitor_key=?1", "элементы мониторинга")?,
     })
 }
