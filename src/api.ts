@@ -21,8 +21,8 @@ let activeMonitorKey = "social_economic";
 export const desktopApi = {
   setActiveMonitorKey: (monitorKey: string) => { activeMonitorKey = monitorKey; },
   activeMonitorKey: () => activeMonitorKey,
-  stats: () => invoke<DatabaseStats>("get_database_stats"),
-  runs: () => invoke<RunSummary[]>("list_runs"),
+  stats: () => invoke<DatabaseStats>("get_database_stats", { monitorKey: activeMonitorKey }),
+  runs: () => invoke<RunSummary[]>("list_runs", { monitorKey: activeMonitorKey }),
   importBundle: (path: string) =>
     invoke<ImportResult>("import_dashboard_bundle", { path }),
   dashboard: (periodDays: number | null) =>
