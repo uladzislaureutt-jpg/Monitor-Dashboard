@@ -213,7 +213,7 @@ pub struct CoverageHealthSummary {
     pub attention_sources: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicationSummary {
     pub id: i64,
@@ -234,6 +234,14 @@ pub struct PublicationSummary {
     pub preview_image_url: Option<String>,
     pub has_full_text: bool,
     pub seen_in_runs: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorySummary {
+    pub title: String,
+    pub representative: PublicationSummary,
+    pub publications: Vec<PublicationSummary>,
 }
 
 
@@ -296,6 +304,7 @@ pub struct DashboardOverview {
     pub region_breakdown: Vec<CountPoint>,
     pub concept_breakdown: Vec<CountPoint>,
     pub person_breakdown: Vec<CountPoint>,
+    pub stories: Vec<StorySummary>,
     pub resonance_items: Vec<PublicationSummary>,
     pub resonance_fallback: bool,
     pub source_diversity: SourceDiversitySummary,
