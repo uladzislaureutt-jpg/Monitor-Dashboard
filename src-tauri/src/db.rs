@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
@@ -6,7 +6,7 @@ use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExten
 
 use crate::models::{
     ArchiveFacets, ArchivePage, CountPoint, DashboardOverview, DatabaseStats,
-    PublicationSummary, RunSummary, SourceSummary, TopicTrendPoint, SourceDiversitySummary, CoverageHealthSummary,
+    PublicationSummary, RunSummary, SourceSummary, StorySummary, TopicTrendPoint, SourceDiversitySummary, CoverageHealthSummary,
     ModerationFlagInput, ModerationExclusionInput, EditorialSource, EditorialEntity,
 };
 
@@ -341,6 +341,70 @@ fn coverage_health_summary(conn:&Connection,monitor_key:&str)->Result<CoverageHe
     Ok(CoverageHealthSummary{run_number,total_sources:total,stable_sources:stable,recovery_sources:recovery,limited_sources:limited,attention_sources:attention})
 }
 
+fn l_monitor_stories(
+    conn: &Connection,
+    monitor_key: &str,
+    period_days: Option<i64>,
+) -> Result<Vec<StorySummary>, String> {
+    if monitor_key != "lukashenko" {
+        return Ok(Vec::new());
+    }
+    let period = period_clause("d", "?2");
+    let story_sql = format!(r#"
+        SELECT e.id,
+               COALESCE(NULLIF(TRIM(e.event_object),''), MIN(d.title)) AS story_title,
+               COUNT(DISTINCT mi.id) AS publication_count,
+               MAX(COALESCE(datetime(d.published_at), datetime(d.last_seen_at), datetime(d.first_seen_at))) AS latest_at
+        FROM events e
+        JOIN event_items ei ON ei.event_id=e.id AND ei.relation='primary'
+        JOIN monitor_items mi ON mi.id=ei.monitor_item_id
+        JOIN monitors m ON m.id=mi.monitor_id
+        JOIN documents d ON d.id=mi.document_id
+        WHERE m.monitor_key=?1 AND {period}
+          AND NOT EXISTS (SELECT 1 FROM moderation_flags mf WHERE mf.monitor_key=m.monitor_key AND mf.document_uid=d.document_uid)
+          AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid)
+        GROUP BY e.id
+        HAVING COUNT(DISTINCT mi.id) > 1
+        ORDER BY publication_count DESC, latest_at DESC
+        LIMIT 6
+    "#);
+    let mut story_stmt = conn.prepare(&story_sql)
+        .map_err(|e| format!("Не удалось подготовить сюжеты L-Monitor: {e}"))?;
+    let story_rows = story_stmt.query_map(params![monitor_key, period_days], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+    }).map_err(|e| format!("Не удалось прочитать сюжеты L-Monitor: {e}"))?;
+
+    let mut stories = Vec::new();
+    for story_row in story_rows {
+        let (event_id, story_title) = story_row
+            .map_err(|e| format!("Не удалось прочитать сюжет L-Monitor: {e}"))?;
+        let member_sql = format!(
+            "{} WHERE m.monitor_key=?1 AND {} AND e.id=?3 \
+             AND NOT EXISTS (SELECT 1 FROM moderation_flags mf WHERE mf.monitor_key=m.monitor_key AND mf.document_uid=d.document_uid) \
+             AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid) \
+             ORDER BY CASE WHEN d.title=?4 THEN 0 ELSE 1 END, \
+             COALESCE(mi.score,0) DESC, COALESCE(datetime(d.published_at),datetime(d.last_seen_at),datetime(d.first_seen_at)) DESC, mi.id DESC",
+            publication_select(), period
+        );
+        let mut member_stmt = conn.prepare(&member_sql)
+            .map_err(|e| format!("Не удалось подготовить публикации сюжета: {e}"))?;
+        let member_rows = member_stmt.query_map(
+            params![monitor_key, period_days, event_id, story_title.as_str()],
+            publication_row,
+        ).map_err(|e| format!("Не удалось прочитать публикации сюжета: {e}"))?;
+        let publications = member_rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Не удалось собрать публикации сюжета: {e}"))?;
+        if let Some(representative) = publications.first().cloned() {
+            stories.push(StorySummary {
+                title: if story_title.trim().is_empty() { representative.title.clone() } else { story_title },
+                representative,
+                publications,
+            });
+        }
+    }
+    Ok(stories)
+}
+
 pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i64>) -> Result<DashboardOverview, String> {
     let conn = open_database(path)?;
     let period = period_clause("d", "?2");
@@ -355,7 +419,8 @@ pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i6
 
     let publications = scalar("COUNT(DISTINCT mi.id)")?;
     let active_sources = scalar("COUNT(DISTINCT d.source_id)")?;
-    let regions = scalar("COUNT(DISTINCT NULLIF(TRIM(e.event_region),''))")?;
+    let geo_expr = if monitor_key == "lukashenko" { "s.configured_region" } else { "e.event_region" };
+    let regions = scalar(&format!("COUNT(DISTINCT NULLIF(TRIM({geo_expr}),''))"))?;
     let categories = scalar("COUNT(DISTINCT NULLIF(TRIM(mi.category),''))")?;
     let official_responses = scalar("COUNT(DISTINCT CASE WHEN mi.official_response=1 THEN mi.id END)")?;
 
@@ -381,12 +446,18 @@ pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i6
     let source_breakdown = count_points(&conn, &source_sql, monitor_key, period_days)?;
 
     let region_sql = format!(
-        "SELECT COALESCE(NULLIF(TRIM(e.event_region),''),'Не определён') AS label, COUNT(DISTINCT mi.id) AS count {base} GROUP BY label ORDER BY count DESC, label LIMIT 12"
+        "SELECT COALESCE(NULLIF(TRIM({geo_expr}),''),'Не определено') AS label, COUNT(DISTINCT mi.id) AS count {base} GROUP BY label ORDER BY count DESC, label LIMIT 12"
     );
     let region_breakdown = count_points(&conn, &region_sql, monitor_key, period_days)?;
-    let concept_sql = format!("SELECT COALESCE(NULLIF(TRIM(e.event_object),''), NULLIF(TRIM(mi.subcategory),'')) AS label, COUNT(DISTINCT mi.id) AS count {base} AND COALESCE(NULLIF(TRIM(e.event_object),''), NULLIF(TRIM(mi.subcategory),'')) IS NOT NULL GROUP BY label ORDER BY count DESC, label LIMIT 12");
+    let concept_expr = if monitor_key == "lukashenko" {
+        "NULLIF(TRIM(mi.subcategory),'')"
+    } else {
+        "COALESCE(NULLIF(TRIM(e.event_object),''), NULLIF(TRIM(mi.subcategory),''))"
+    };
+    let concept_sql = format!("SELECT {concept_expr} AS label, COUNT(DISTINCT mi.id) AS count {base} AND {concept_expr} IS NOT NULL GROUP BY label ORDER BY count DESC, label LIMIT 12");
     let concept_breakdown = count_points(&conn, &concept_sql, monitor_key, period_days)?;
     let person_breakdown = person_breakdown(&conn, &base, monitor_key, period_days)?;
+    let stories = l_monitor_stories(&conn, monitor_key, period_days)?;
 
     // SEP dashboard: prefer stories with explicit cross-media coverage.
     // A primary publication + at least one `also_covered_by`/echo source is
@@ -466,6 +537,7 @@ pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i6
         region_breakdown,
         concept_breakdown,
         person_breakdown,
+        stories,
         resonance_items,
         resonance_fallback,
         source_diversity,
@@ -838,6 +910,43 @@ pub fn sync_skipped_run_numbers(path: &Path, monitor_key: &str) -> Result<HashSe
         .map_err(|e| format!("Не удалось прочитать sync status: {e}"))?;
     rows.collect::<Result<HashSet<_>, _>>()
         .map_err(|e| format!("Не удалось собрать sync status: {e}"))
+}
+
+pub fn sync_failed_artifacts(path: &Path, monitor_key: &str) -> Result<HashMap<i64, u64>, String> {
+    let conn = open_database(path)?;
+    let mut stmt = conn
+        .prepare("SELECT run_number, artifact_id FROM sync_run_status WHERE monitor_key=?1 AND status='failed' AND artifact_id IS NOT NULL")
+        .map_err(|e| format!("Не удалось подготовить список ошибок sync: {e}"))?;
+    let rows = stmt
+        .query_map(params![monitor_key], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)? as u64)))
+        .map_err(|e| format!("Не удалось прочитать список ошибок sync: {e}"))?;
+    rows.collect::<Result<HashMap<_, _>, _>>()
+        .map_err(|e| format!("Не удалось собрать список ошибок sync: {e}"))
+}
+
+pub fn mark_sync_failed_run(path: &Path, monitor_key: &str, run_number: i64, artifact_id: u64) -> Result<(), String> {
+    let conn = open_database(path)?;
+    conn.execute(
+        r#"
+        INSERT INTO sync_run_status(monitor_key, run_number, status, artifact_id, updated_at)
+        VALUES (?1,?2,'failed',?3,CURRENT_TIMESTAMP)
+        ON CONFLICT(monitor_key, run_number) DO UPDATE SET
+            status='failed', artifact_id=excluded.artifact_id, updated_at=CURRENT_TIMESTAMP
+        "#,
+        params![monitor_key, run_number, artifact_id as i64],
+    )
+    .map_err(|e| format!("Не удалось сохранить failed sync status: {e}"))?;
+    Ok(())
+}
+
+pub fn clear_sync_status(path: &Path, monitor_key: &str, run_number: i64) -> Result<(), String> {
+    let conn = open_database(path)?;
+    conn.execute(
+        "DELETE FROM sync_run_status WHERE monitor_key=?1 AND run_number=?2",
+        params![monitor_key, run_number],
+    )
+    .map_err(|e| format!("Не удалось очистить sync status: {e}"))?;
+    Ok(())
 }
 
 pub fn mark_sync_dry_run(path: &Path, monitor_key: &str, run_number: i64, artifact_id: u64) -> Result<(), String> {
