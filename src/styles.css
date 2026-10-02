@@ -91,6 +91,7 @@ kbd { color: #c4d5df; border: 1px solid #ffffff25; background: #ffffff0e; border
 
 .kpi-grid { display: grid; grid-template-columns: repeat(6, minmax(120px,1fr)); gap: 12px; }
 .dashboard-kpis { grid-template-columns: repeat(5, minmax(130px, 1fr)); }
+.dashboard-kpis.l-monitor-kpis { grid-template-columns: repeat(4, minmax(150px, 1fr)); }
 .dashboard-summary { display: grid; gap: 7px; }
 .dashboard-summary-controls { display: flex; justify-content: flex-end; align-items: center; min-height: 28px; }
 .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 15px; padding: 16px; box-shadow: 0 5px 16px rgba(54,43,28,.04); min-height: 86px; }
@@ -177,6 +178,18 @@ kbd { color: #c4d5df; border: 1px solid #ffffff25; background: #ffffff0e; border
 .resonance-list { display: grid; gap: 8px; }
 .resonance-list .publication-actions { gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
 .resonance-list .publication-card.compact .publication-footer { margin-top: 6px; }
+.story-list { display: grid; gap: 10px; }
+.story-card { padding: 12px; border: 1px solid #e1d8cc; border-radius: 12px; background: #fffdf9; }
+.story-primary-meta { display: flex; align-items: center; gap: 8px; color: #7a8790; font-size: 8px; }
+.story-primary-meta b { color: #286184; font-size: 9px; }
+.story-title { display: block; width: 100%; margin: 7px 0 0; padding: 0; border: 0; background: transparent; color: #113d5a; text-align: left; font: inherit; font-size: 11px; font-weight: 800; line-height: 1.4; cursor: pointer; }
+.story-title:hover { color: #26729f; }
+.story-related { display: grid; gap: 5px; margin-top: 10px; padding-top: 9px; border-top: 1px solid #ebe3da; }
+.story-related > strong { color: #81766d; font-size: 8px; text-transform: uppercase; letter-spacing: .04em; }
+.story-related button { display: grid; grid-template-columns: minmax(90px, .34fr) minmax(0, 1fr); gap: 8px; padding: 6px 8px; border: 0; border-radius: 8px; background: #f7f2eb; text-align: left; cursor: pointer; }
+.story-related button:hover { background: #eef4f7; }
+.story-related button span { color: #39708f; font-size: 8px; font-weight: 750; }
+.story-related button b { color: #46545e; font-size: 8.5px; line-height: 1.35; }
 .recent-panel { padding-bottom: 8px; }
 .recent-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
 .analytics-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; }
@@ -313,6 +326,7 @@ td small { display: block; margin-top: 3px; color: #81909b; max-width: 230px; ov
   .topbar { grid-template-columns: 240px minmax(260px, 1fr) auto; }
   .module-pill { display: none; }
   .dashboard-kpis, .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+  .dashboard-kpis.l-monitor-kpis { grid-template-columns: repeat(2, 1fr); }
   .recent-list { grid-template-columns: 1fr; }
   .pie-layout { grid-template-columns: 1fr; gap: 3px; }
   .pie-svg { max-height: 185px; }
