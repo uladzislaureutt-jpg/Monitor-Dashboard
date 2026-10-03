@@ -65,7 +65,15 @@ export function TopicTrendLines({ data }: { data: TopicTrendPoint[] }) {
   return <div className="trend-chart" aria-label={t("chart.topicLines")}><div className="trend-topic-legend">{series.map((item,index)=><span key={item.raw}><i style={{background:TOPIC_LINE_COLORS[index]}}/>{item.label}</span>)}</div><svg viewBox={`0 0 ${width} ${height}`} role="img">{[0,.25,.5,.75,1].map(r=>{const yy=padTop+r*plotHeight,label=Math.round(max*(1-r));return <g key={r}><line x1={padX} y1={yy} x2={width-padX} y2={yy} className="chart-grid"/><text x={5} y={yy+4} className="chart-axis">{compact(label,formatLocale)}</text></g>})}{series.map((item,index)=><path key={item.raw} d={pathFor(item.values,width,height,padX,padTop,padBottom,max)} fill="none" stroke={TOPIC_LINE_COLORS[index]} strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round"/>)}{buckets.map((bucket,index)=>(index%every===0||index===buckets.length-1)?<text key={bucket} x={padX+index*step} y={height-8} textAnchor="middle" className="chart-axis chart-x-label">{bucket.length>7?bucket.slice(5):bucket}</text>:null)}{series.flatMap((item,si)=>item.values.map((value,index)=>value>0?<circle key={`${item.raw}-${buckets[index]}`} cx={padX+index*step} cy={padTop+plotHeight-(value/max)*plotHeight} r="2.8" fill={TOPIC_LINE_COLORS[si]}><title>{`${buckets[index]} · ${item.label}: ${value}`}</title></circle>:null))}</svg></div>;
 }
 
-export function RankBars({ data, maxItems = 8 }: { data: CountPoint[]; maxItems?: number }) {
+function sourceMark(label: string) {
+  const cleaned = label.trim();
+  if (!cleaned) return "•";
+  const parts = cleaned.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return cleaned.slice(0, 2).toUpperCase();
+}
+
+export function RankBars({ data, maxItems = 8, withIcons = false }: { data: CountPoint[]; maxItems?: number; withIcons?: boolean }) {
   const { t } = useI18n();
   const sliced = data.slice(0, maxItems);
   const max = Math.max(1, ...sliced.map((item) => item.count));
@@ -131,34 +139,61 @@ export function BelarusRegionTreemap({ data }: { data: CountPoint[] }) {
   const { t } = useI18n();
   const values = new Map(data.map((item) => [normalizedLabel(item.label), item.count]));
   const find = (aliases: string[]) => aliases.reduce((best, alias) => Math.max(best, values.get(normalizedLabel(alias)) ?? 0), 0);
-  const allBelarus = data.filter((item) => {
-    const value = normalizedLabel(item.label);
-    return value.startsWith("не определ") || value.startsWith("не вызнач") || value === normalizedLabel(t("geo.allBelarus"));
-  }).reduce((sum, item) => sum + item.count, 0);
-  const items: GeoItem[] = [
-    { key: "grodno", label: t("geo.grodno"), aliases: ["Гродненская область", "Гродзенская вобласць"], count: 0 },
-    { key: "brest", label: t("geo.brest"), aliases: ["Брестская область", "Брэсцкая вобласць"], count: 0 },
-    { key: "vitebsk", label: t("geo.vitebsk"), aliases: ["Витебская область", "Віцебская вобласць"], count: 0 },
-    { key: "minsk-region", label: t("geo.minskRegion"), aliases: ["Минская область", "Мінская вобласць"], count: 0 },
-    { key: "mogilev", label: t("geo.mogilev"), aliases: ["Могилёвская область", "Могилевская область", "Магілёўская вобласць"], count: 0 },
-    { key: "gomel", label: t("geo.gomel"), aliases: ["Гомельская область", "Гомельская вобласць"], count: 0 },
-    { key: "minsk", label: t("geo.minsk"), aliases: ["Минск", "г. Минск", "Мінск", "г. Мінск"], count: 0 },
-    { key: "all", label: t("geo.allBelarus"), aliases: [], count: allBelarus },
-  ].map((item) => ({ ...item, count: item.key === "all" ? allBelarus : find(item.aliases) }));
-  const sorted = [...items].sort((a, b) => b.count - a.count);
+  const items = [
+    { key: "vitebsk", label: t("geo.vitebsk"), aliases: ["Витебская область","Віцебская вобласць"], x: 135, y: 18, w: 105, h: 58 },
+    { key: "grodno", label: t("geo.grodno"), aliases: ["Гродненская область","Гродзенская вобласць"], x: 18, y: 76, w: 92, h: 70 },
+    { key: "minsk-region", label: t("geo.minskRegion"), aliases: ["Минская область","Мінская вобласць"], x: 103, y: 72, w: 110, h: 82 },
+    { key: "mogilev", label: t("geo.mogilev"), aliases: ["Могилёвская область","Могилевская область","Магілёўская вобласць"], x: 205, y: 80, w: 84, h: 72 },
+    { key: "brest", label: t("geo.brest"), aliases: ["Брестская область","Брэсцкая вобласць"], x: 28, y: 145, w: 102, h: 64 },
+    { key: "gomel", label: t("geo.gomel"), aliases: ["Гомельская область","Гомельская вобласць"], x: 170, y: 148, w: 108, h: 68 },
+    { key: "minsk", label: t("geo.minsk"), aliases: ["Минск","г. Минск","Мінск","г. Мінск"], x: 142, y: 108, w: 42, h: 36 },
+  ].map((item) => ({ ...item, count: find(item.aliases) }));
   const max = Math.max(1, ...items.map((item) => item.count));
-  const tiles = binaryTreemap(sorted, { x: 0, y: 0, w: 100, h: 100 });
-  const opacity = (count: number) => 0.13 + (count / max) * 0.77;
-  return <div className="geo-treemap-wrap">
-    <div className="geo-treemap" role="img" aria-label={t("dashboard.geography")}>
-      {tiles.map((tile) => {
-        const strength = tile.count / max;
-        return <div key={tile.key} className={`geo-tile ${strength >= 0.48 ? "dense" : "light"}`} style={{ left: `${tile.x}%`, top: `${tile.y}%`, width: `${tile.w}%`, height: `${tile.h}%`, background: `rgba(174, 34, 34, ${opacity(tile.count)})` }} title={`${tile.label}: ${tile.count}`}>
-          <span>{tile.label}</span><b>{tile.count}</b>
-        </div>;
+  return <div className="belarus-map-wrap" role="img" aria-label={t("dashboard.geography")}>
+    <svg className="belarus-region-map" viewBox="0 0 310 230">
+      <path className="belarus-map-outline" d="M21 86 50 52 103 50 125 20 204 17 239 42 278 77 287 124 269 177 229 211 165 214 123 201 72 209 31 177 15 130Z" />
+      {items.map((item) => {
+        const alpha=.16 + (item.count/max)*.72;
+        return <g key={item.key}>
+          <rect x={item.x} y={item.y} width={item.w} height={item.h} rx="18" fill={`rgba(47,111,152,${alpha})`} className="belarus-region-cell" />
+          <text x={item.x+item.w/2} y={item.y+item.h/2-3} textAnchor="middle" className="belarus-region-label">{item.label}</text>
+          <text x={item.x+item.w/2} y={item.y+item.h/2+13} textAnchor="middle" className="belarus-region-count">{item.count}</text>
+        </g>;
       })}
-    </div>
-    <div className="map-footer"><span><i className="map-scale low" />{t("geo.less")}</span><span><i className="map-scale high" />{t("geo.more")}</span></div>
+    </svg>
+    <div className="map-footer"><span><i className="map-scale belarus-scale low" />{t("geo.less")}</span><span><i className="map-scale belarus-scale high" />{t("geo.more")}</span></div>
+  </div>;
+}
+
+const COUNTRY_COORDS: Record<string, [number,number]> = {
+  "россия":[73,30], "russia":[73,30], "беларусь":[58,29], "belarus":[58,29], "украина":[59,34], "ukraine":[59,34],
+  "азербайджан":[64,38], "azerbaijan":[64,38], "армения":[62,39], "armenia":[62,39], "испания":[46,38], "spain":[46,38],
+  "казахстан":[70,37], "kazakhstan":[70,37], "литва":[57,27], "lithuania":[57,27], "польша":[55,30], "poland":[55,30],
+  "германия":[52,29], "germany":[52,29], "франция":[49,31], "france":[49,31], "сша":[20,34], "usa":[20,34], "united states":[20,34],
+  "китай":[79,42], "china":[79,42], "турция":[61,42], "turkey":[61,42], "великобритания":[48,26], "united kingdom":[48,26],
+  "италия":[54,39], "italy":[54,39], "грузия":[63,36], "georgia":[63,36], "латвия":[58,25], "latvia":[58,25],
+};
+
+export function WorldSourceMap({ data }: { data: CountPoint[] }) {
+  const { locale } = useI18n();
+  const normalized = data.filter((item)=>item.count>0).map((item)=>({ ...item, key: normalizedLabel(item.label), coord: COUNTRY_COORDS[normalizedLabel(item.label)] })).filter((item)=>item.coord);
+  const max=Math.max(1,...normalized.map((item)=>item.count));
+  const title=locale==="be"?"Карта краін паходжання крыніц":"Карта стран происхождения источников";
+  return <div className="world-source-map" role="img" aria-label={title}>
+    <svg viewBox="0 0 1000 430" preserveAspectRatio="none">
+      <g className="world-land">
+        <path d="M73 111 122 72 190 67 229 96 252 142 220 165 181 159 149 184 98 163Z" />
+        <path d="M227 206 261 227 282 282 267 346 239 394 218 336 210 274Z" />
+        <path d="M433 83 505 67 566 84 602 117 684 99 764 118 839 153 886 196 839 219 768 200 707 217 645 197 591 209 545 173 498 177 458 149Z" />
+        <path d="M491 196 548 205 585 253 574 329 540 387 495 368 469 307 462 244Z" />
+        <path d="M829 279 871 262 913 284 918 323 881 347 842 330Z" />
+        <path d="M914 167 944 157 965 180 946 198Z" />
+      </g>
+      {normalized.map((item)=>{
+        const [x,y]=item.coord as [number,number]; const r=5+Math.sqrt(item.count/max)*18;
+        return <g key={item.label}><circle cx={x*10} cy={y*10} r={r} className="world-country-dot" style={{opacity:.32+(item.count/max)*.68}}><title>{item.label}: {item.count}</title></circle></g>;
+      })}
+    </svg>
   </div>;
 }
 
