@@ -65,6 +65,14 @@ export function TopicTrendLines({ data }: { data: TopicTrendPoint[] }) {
   return <div className="trend-chart" aria-label={t("chart.topicLines")}><div className="trend-topic-legend">{series.map((item,index)=><span key={item.raw}><i style={{background:TOPIC_LINE_COLORS[index]}}/>{item.label}</span>)}</div><svg viewBox={`0 0 ${width} ${height}`} role="img">{[0,.25,.5,.75,1].map(r=>{const yy=padTop+r*plotHeight,label=Math.round(max*(1-r));return <g key={r}><line x1={padX} y1={yy} x2={width-padX} y2={yy} className="chart-grid"/><text x={5} y={yy+4} className="chart-axis">{compact(label,formatLocale)}</text></g>})}{series.map((item,index)=><path key={item.raw} d={pathFor(item.values,width,height,padX,padTop,padBottom,max)} fill="none" stroke={TOPIC_LINE_COLORS[index]} strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round"/>)}{buckets.map((bucket,index)=>(index%every===0||index===buckets.length-1)?<text key={bucket} x={padX+index*step} y={height-8} textAnchor="middle" className="chart-axis chart-x-label">{bucket.length>7?bucket.slice(5):bucket}</text>:null)}{series.flatMap((item,si)=>item.values.map((value,index)=>value>0?<circle key={`${item.raw}-${buckets[index]}`} cx={padX+index*step} cy={padTop+plotHeight-(value/max)*plotHeight} r="2.8" fill={TOPIC_LINE_COLORS[si]}><title>{`${buckets[index]} · ${item.label}: ${value}`}</title></circle>:null))}</svg></div>;
 }
 
+const SOURCE_ICON_ALIASES: Array<{ match: RegExp; path: string }> = [
+  { match: /^(bbc|bbc russian|би-би-си)/i, path: "/media-icons/bbc.svg" },
+  { match: /(the guardian|guardian)/i, path: "/media-icons/theguardian.svg" },
+  { match: /(deutsche welle|\bdw\b)/i, path: "/media-icons/deutschewelle.svg" },
+  { match: /reuters|рейтер/i, path: "/media-icons/reuters.svg" },
+  { match: /коммерсант|kommersant/i, path: "/media-icons/kommersant.svg" },
+];
+
 function sourceMark(label: string) {
   const cleaned = label.trim();
   if (!cleaned) return "•";
@@ -73,12 +81,18 @@ function sourceMark(label: string) {
   return cleaned.slice(0, 2).toUpperCase();
 }
 
+function SourceIcon({ label }: { label: string }) {
+  const found = SOURCE_ICON_ALIASES.find((item) => item.match.test(label));
+  if (found) return <span className="source-logo"><img src={found.path} alt="" loading="lazy" /></span>;
+  return <i className="source-mark" aria-hidden="true">{sourceMark(label)}</i>;
+}
+
 export function RankBars({ data, maxItems = 8, withIcons = false }: { data: CountPoint[]; maxItems?: number; withIcons?: boolean }) {
   const { t } = useI18n();
   const sliced = data.slice(0, maxItems);
   const max = Math.max(1, ...sliced.map((item) => item.count));
   if (!sliced.length) return <div className="chart-empty">{t("common.none")}</div>;
-  return <div className="rank-bars">{sliced.map((item, index) => <div className="rank-row" key={`${item.label}-${index}`}><div className="rank-label" title={item.label}>{withIcons && <i className="source-mark" aria-hidden="true">{sourceMark(item.label)}</i>}<span>{item.label}</span></div><div className="rank-track"><div className="rank-fill" style={{ width: `${Math.max(3, (item.count / max) * 100)}%` }} /></div><div className="rank-value">{item.count}</div></div>)}</div>;
+  return <div className="rank-bars">{sliced.map((item, index) => <div className="rank-row" key={`${item.label}-${index}`}><div className="rank-label" title={item.label}>{withIcons && <SourceIcon label={item.label} />}<span>{item.label}</span></div><div className="rank-track"><div className="rank-fill" style={{ width: `${Math.max(3, (item.count / max) * 100)}%` }} /></div><div className="rank-value">{item.count}</div></div>)}</div>;
 }
 
 const PIE_COLORS = ["#2f6f98", "#5c92b2", "#8bb3c8", "#d29a55", "#9b7b67", "#6f9b83", "#a6a55e", "#8c7fa7"];
