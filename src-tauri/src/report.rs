@@ -91,8 +91,8 @@ fn paragraph_l_monitor(runs: &str) -> String {
 
 fn sanitize_l_monitor_text(value: &str) -> String {
     let base = sanitize_editorial_text(value);
-    let abbreviations = Regex::new(r"(?i)\b(тыс|млн|млрд|трлн)\.?(?=\s|$)").expect("valid abbreviation regex");
-    let with_abbreviations = abbreviations.replace_all(&base, "$1.");
+    let abbreviations = Regex::new(r"(?i)\b(тыс|млн|млрд|трлн)\.?(\s|$)").expect("valid abbreviation regex");
+    let with_abbreviations = abbreviations.replace_all(&base, "$1.$2");
     let initials_pair = Regex::new(r"\b([А-ЯЁA-Z])\.\s+([А-ЯЁA-Z])\.").expect("valid initials regex");
     let compact_pairs = initials_pair.replace_all(&with_abbreviations, "$1.$2.");
     let initial_surname = Regex::new(r"\b([А-ЯЁA-Z])\.\s+([А-ЯЁA-Z][А-ЯЁа-яёA-Za-z-]+)").expect("valid initial surname regex");
