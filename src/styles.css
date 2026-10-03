@@ -374,11 +374,13 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 .geo-tile.dense { color: #fff8f5; text-shadow: 0 1px 2px rgba(70, 8, 8, .52); }
 .geo-tile.dense span, .geo-tile.dense b { color: inherit; }
 .geo-tile.light span, .geo-tile.light b { color: inherit; }
-.country-treemap { background: #f2f7fa; border-color: #c9d9e3; box-shadow: inset 0 0 0 2px #f8fbfd; }
-.country-treemap .geo-tile { border-color: #f7fbfd; }
-.country-treemap .geo-tile.light { color: #173f58; }
-.country-treemap .geo-tile.dense { color: #f8fcff; text-shadow: 0 1px 2px rgba(13, 49, 70, .48); }
-.map-scale.country-scale { background: #2f6f98; }
+.country-treemap { background: #fff6f3; border-color: #d7c9bd; box-shadow: inset 0 0 0 2px #fff9f5; }
+.country-treemap .geo-tile { border-color: #fff8f2; }
+.country-treemap .geo-tile.light { color: #5d1717; }
+.country-treemap .geo-tile.dense { color: #fff8f5; text-shadow: 0 1px 2px rgba(70, 8, 8, .52); }
+.map-scale.country-scale { background: #ae2222; }
+.source-country-controls { display: flex; align-items: center; gap: 6px; }
+@media (max-width: 1220px) { .source-country-controls { flex-wrap: wrap; } }
 
 .network-workroom { width: 430px; }
 .workroom-head-actions { display: flex; align-items: center; gap: 6px; }
