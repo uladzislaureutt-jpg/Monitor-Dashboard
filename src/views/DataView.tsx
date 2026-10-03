@@ -12,8 +12,6 @@ export function DataView({
   onSyncNow,
   syncBusy,
   syncStatus,
-  wideUiEnabled,
-  onWideUiChange,
 }: {
   stats: DatabaseStats | null;
   runs: RunSummary[];
@@ -24,10 +22,8 @@ export function DataView({
   onSyncNow: (value: SyncSettings) => void;
   syncBusy: boolean;
   syncStatus: string;
-  wideUiEnabled: boolean;
-  onWideUiChange: (value: boolean) => void;
 }) {
-  const { t, formatLocale, locale } = useI18n();
+  const { t, formatLocale } = useI18n();
   const latest = runs[0] ?? null;
   const productionRuns = runs.filter((run) => run.dryRun === false).length;
   const [form, setForm] = useState(syncSettings);
@@ -47,10 +43,6 @@ export function DataView({
         <button className="primary-button" onClick={() => { onSaveSyncSettings(form); onSyncNow(form); }} disabled={syncBusy || !form.repository.trim()}>{syncBusy ? t("data.checking") : t("data.syncNow")}</button>
       </div>
       <div className="sync-note">{t("data.syncNote")}</div>
-    </section>
-    <section className="panel ui-mode-panel">
-      <div><b>{locale === "be" ? "Шырокі інтэрфейс 16:9" : "Широкий интерфейс 16:9"}</b><span>{locale === "be" ? "Агульны рухомы цёмны фон і шырокая кампазіцыя без змены даных." : "Общий динамический тёмный фон и широкая компоновка без изменения данных."}</span></div>
-      <button className={wideUiEnabled ? "secondary-button" : "primary-button"} onClick={() => onWideUiChange(!wideUiEnabled)}>{wideUiEnabled ? (locale === "be" ? "Вярнуць ранейшы выгляд" : "Вернуть прежний вид") : (locale === "be" ? "Уключыць шырокі выгляд" : "Включить широкий вид")}</button>
     </section>
     <section className="kpi-grid"><article className="kpi"><strong>{stats?.runs ?? "—"}</strong><span>{t("data.importedRuns")}</span></article><article className="kpi"><strong>{stats?.documents ?? "—"}</strong><span>{t("data.uniquePublications")}</span></article><article className="kpi"><strong>{stats?.sources ?? "—"}</strong><span>{t("data.sources")}</span></article><article className="kpi"><strong>{productionRuns}</strong><span>{t("data.productionRuns")}</span></article><article className="kpi"><strong>{latest?.runNumber ?? "—"}</strong><span>{t("data.latestRun")}</span></article></section>
     <section className="panel"><div className="panel-head"><div><h3>{t("data.runsTitle")}</h3><p>{t("data.runsHelp")}</p></div><span className="badge">{t("data.contract")}</span></div><div className="table-wrap"><table><thead><tr><th>{t("data.run")}</th><th>{t("data.mode")}</th><th>{t("data.start")}</th><th>{t("data.publications")}</th><th>{t("data.sourcesCol")}</th><th>{t("data.imported")}</th></tr></thead><tbody>{runs.length === 0 ? <tr><td colSpan={6} className="empty">{t("data.noBundles")}</td></tr> : runs.map((run) => <tr key={run.id}><td><b>#{run.runNumber ?? "—"}</b><small>{run.monitorKey === "social_economic" ? t("data.monitorSocial") : run.monitorName}</small></td><td><span className={`mode mode-${run.dryRun === true ? "dry" : run.dryRun === false ? "prod" : "unknown"}`}>{formatMode(run.dryRun)}</span></td><td>{formatDate(run.startedAt)}</td><td>{run.publications}</td><td>{run.sourcesInCoverage}</td><td>{formatDate(run.importedAt)}</td></tr>)}</tbody></table></div></section>
