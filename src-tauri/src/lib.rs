@@ -132,8 +132,9 @@ fn export_report_docx(
     path: String,
     date: String,
     items: Vec<report::ReportExportItem>,
+    monitor_key: String,
 ) -> Result<(), String> {
-    report::export_docx(&PathBuf::from(path), &date, &items)
+    report::export_docx(&PathBuf::from(path), &date, &items, &monitor_key)
 }
 
 #[tauri::command]
