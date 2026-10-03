@@ -23,7 +23,7 @@ type ReportContextValue = ReportState & {
   resetText: (documentUid: string) => void;
   useExcerpt: (documentUid: string) => void;
   setManualFullText: (documentUid: string, text: string) => void;
-  addManualItem: (input: { title: string; source: string; url: string; region: string; text: string }) => string;
+  addManualItem: (input: { title: string; source: string; url: string; region: string; text: string; quality?: "full" | "partial" }) => string;
   setDate: (value: string) => void;
   clear: () => void;
   markExported: () => void;
@@ -207,7 +207,7 @@ export function ReportProvider({ children }: { children: ReactNode }) {
     });
   }, [persist, state]);
 
-  const addManualItem = useCallback((input: { title: string; source: string; url: string; region: string; text: string }) => {
+  const addManualItem = useCallback((input: { title: string; source: string; url: string; region: string; text: string; quality?: "full" | "partial" }) => {
     const title = input.title.trim();
     const source = input.source.trim() || "Ручной материал";
     const sourceText = cleanEditorialText(input.text);
@@ -225,7 +225,7 @@ export function ReportProvider({ children }: { children: ReactNode }) {
       score: null,
       officialResponse: null,
       sourceText,
-      sourceQuality: "full",
+      sourceQuality: input.quality === "partial" ? "partial" : "full",
       sourceOrigin: "manual",
       editorialText: sourceText,
     };
