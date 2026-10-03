@@ -1,4 +1,4 @@
-# build 0.7.10
+# build 0.7.10 sync-replacement
 name: Verify L-Monitor sync fix
 
 on:
