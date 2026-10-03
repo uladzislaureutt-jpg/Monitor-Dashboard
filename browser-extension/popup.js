@@ -8,6 +8,9 @@ function extractArticle(){
   };
   const title=pick('meta[property="og:title"]')||pick('meta[name="twitter:title"]')||document.querySelector("h1")?.textContent?.trim()||document.title.trim();
   const source=pick('meta[property="og:site_name"]')||pick('meta[name="application-name"]')||location.hostname.replace(/^www\./,"");
+  const bodyText=(document.body?.innerText||"").toLowerCase();
+  const paywallMarkers=["paywall","subscription","subscriber only","только для подписчиков","доступ по подписке","оформить подписку","материал доступен по подписке","па падпісцы"];
+  const quality=paywallMarkers.some(marker=>bodyText.includes(marker))?"partial":"full";
   const root=document.querySelector("article")||document.querySelector("main")||document.querySelector('[role="main"]')||document.body;
   const clone=root.cloneNode(true);
   clone.querySelectorAll("script,style,noscript,svg,nav,aside,footer,form,button,iframe,.advert,.advertisement,.ads,.social,.share,.comments").forEach(el=>el.remove());
@@ -16,7 +19,7 @@ function extractArticle(){
   if(text.length<200){
     text=clone.innerText.replace(/[ \t]+/g," ").replace(/\n{3,}/g,"\n\n").trim();
   }
-  return {title,source,url:location.href,text};
+  return {title,source,url:location.href,text,quality};
 }
 
 async function send(){
