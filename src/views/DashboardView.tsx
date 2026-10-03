@@ -19,7 +19,10 @@ function useSectionOverview(period: PeriodDays, basePeriod: PeriodDays, baseData
   const [data, setData] = useState<DashboardOverview | null>(baseData);
   useEffect(() => {
     let cancelled = false;
-    if (period === basePeriod && baseData) {
+    // When a section uses the same period as the page-level dashboard,
+    // never issue a duplicate SQLite query while baseData is still loading.
+    // Wait for the single App-level request and reuse its result.
+    if (period === basePeriod) {
       setData(baseData);
       return () => { cancelled = true; };
     }
