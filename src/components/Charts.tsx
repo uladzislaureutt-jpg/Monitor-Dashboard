@@ -78,7 +78,7 @@ export function RankBars({ data, maxItems = 8, withIcons = false }: { data: Coun
   const sliced = data.slice(0, maxItems);
   const max = Math.max(1, ...sliced.map((item) => item.count));
   if (!sliced.length) return <div className="chart-empty">{t("common.none")}</div>;
-  return <div className="rank-bars">{sliced.map((item, index) => <div className="rank-row" key={`${item.label}-${index}`}><div className="rank-label" title={item.label}>{item.label}</div><div className="rank-track"><div className="rank-fill" style={{ width: `${Math.max(3, (item.count / max) * 100)}%` }} /></div><div className="rank-value">{item.count}</div></div>)}</div>;
+  return <div className="rank-bars">{sliced.map((item, index) => <div className="rank-row" key={`${item.label}-${index}`}><div className="rank-label" title={item.label}>{withIcons && <i className="source-mark" aria-hidden="true">{sourceMark(item.label)}</i>}<span>{item.label}</span></div><div className="rank-track"><div className="rank-fill" style={{ width: `${Math.max(3, (item.count / max) * 100)}%` }} /></div><div className="rank-value">{item.count}</div></div>)}</div>;
 }
 
 const PIE_COLORS = ["#2f6f98", "#5c92b2", "#8bb3c8", "#d29a55", "#9b7b67", "#6f9b83", "#a6a55e", "#8c7fa7"];
