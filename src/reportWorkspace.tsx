@@ -4,13 +4,13 @@ import type { PublicationSummary, ReportDraftItem } from "./types";
 
 const storageKey = (monitorKey: string) => `monitor-report-workspace-${monitorKey}-v1`;
 const settingKey = (monitorKey: string) => `report.workspace.${monitorKey}.v1`;
-const MAX_ITEMS = 8;
+const SEP_MAX_ITEMS = 8;
 
 type ReportState = { date: string; items: ReportDraftItem[]; revision: number; exportedRevision: number };
 type ReportContextValue = ReportState & {
   ready: boolean;
   busyDocumentUid: string | null;
-  maxItems: number;
+  maxItems: number | null;
   fullTextCount: number;
   partialTextCount: number;
   missingFullTextCount: number;
@@ -23,6 +23,7 @@ type ReportContextValue = ReportState & {
   resetText: (documentUid: string) => void;
   useExcerpt: (documentUid: string) => void;
   setManualFullText: (documentUid: string, text: string) => void;
+  addManualItem: (input: { title: string; source: string; url: string; region: string; text: string }) => string;
   setDate: (value: string) => void;
   clear: () => void;
   markExported: () => void;
@@ -56,13 +57,13 @@ function normalizeQuality(item: ReportDraftItem): ReportDraftItem["sourceQuality
   return "missing";
 }
 
-function normalize(raw: unknown): ReportState {
+function normalize(raw: unknown, monitorKey: string): ReportState {
   if (!raw || typeof raw !== "object") return emptyState();
   const value = raw as Partial<ReportState>;
   const items = Array.isArray(value.items)
     ? value.items
         .filter((item): item is ReportDraftItem => Boolean(item && typeof item === "object" && typeof (item as ReportDraftItem).documentUid === "string"))
-        .slice(0, MAX_ITEMS)
+        .slice(0, monitorKey === "lukashenko" ? undefined : SEP_MAX_ITEMS)
         .map((item) => ({
           ...item,
           sourceQuality: normalizeQuality(item),
@@ -76,7 +77,7 @@ function normalize(raw: unknown): ReportState {
 }
 
 function loadLocal(monitorKey: string): ReportState {
-  try { return normalize(JSON.parse(localStorage.getItem(storageKey(monitorKey)) ?? "null")); }
+  try { return normalize(JSON.parse(localStorage.getItem(storageKey(monitorKey)) ?? "null"), monitorKey); }
   catch { return emptyState(); }
 }
 
@@ -105,7 +106,7 @@ export function ReportProvider({ children }: { children: ReactNode }) {
       if (cancelled) return;
       if (raw) {
         try {
-          const restored = normalize(JSON.parse(raw));
+          const restored = normalize(JSON.parse(raw), monitorKey);
           setState(restored);
           localStorage.setItem(storageKey(monitorKey), JSON.stringify(restored));
           void desktopApi.setSetting(settingKey(monitorKey), JSON.stringify(restored));
@@ -133,7 +134,7 @@ export function ReportProvider({ children }: { children: ReactNode }) {
 
   const toggle = useCallback(async (item: PublicationSummary) => {
     if (contains(item.documentUid)) { remove(item.documentUid); return; }
-    if (state.items.length >= MAX_ITEMS) throw new Error("REPORT_MAX_ITEMS");
+    if (monitorKey !== "lukashenko" && state.items.length >= SEP_MAX_ITEMS) throw new Error("REPORT_MAX_ITEMS");
     setBusyDocumentUid(item.documentUid);
     try {
       const editorial = await desktopApi.editorialSource(item.documentUid);
@@ -206,6 +207,32 @@ export function ReportProvider({ children }: { children: ReactNode }) {
     });
   }, [persist, state]);
 
+  const addManualItem = useCallback((input: { title: string; source: string; url: string; region: string; text: string }) => {
+    const title = input.title.trim();
+    const source = input.source.trim() || "Ручной материал";
+    const sourceText = cleanEditorialText(input.text);
+    if (!title || !sourceText) throw new Error("MANUAL_REPORT_ITEM_REQUIRED");
+    const documentUid = `manual:${Date.now()}:${Math.random().toString(36).slice(2, 9)}`;
+    const draft: ReportDraftItem = {
+      documentUid,
+      title,
+      url: input.url.trim(),
+      source,
+      publishedAt: null,
+      region: input.region.trim() || null,
+      locality: null,
+      excerpt: null,
+      score: null,
+      officialResponse: null,
+      sourceText,
+      sourceQuality: "full",
+      sourceOrigin: "manual",
+      editorialText: sourceText,
+    };
+    persist({ ...state, items: [...state.items, draft] });
+    return documentUid;
+  }, [persist, state]);
+
   const setDate = useCallback((date: string) => persist({ ...state, date }), [persist, state]);
   const clear = useCallback(() => persist({ ...state, date: state.date, items: [] }), [persist, state]);
   const markExported = useCallback(() => { persistRaw({ ...state, exportedRevision: state.revision }); }, [persistRaw, state]);
@@ -218,7 +245,7 @@ export function ReportProvider({ children }: { children: ReactNode }) {
     ...state,
     ready,
     busyDocumentUid,
-    maxItems: MAX_ITEMS,
+    maxItems: monitorKey === "lukashenko" ? null : SEP_MAX_ITEMS,
     fullTextCount,
     partialTextCount,
     missingFullTextCount,
@@ -231,10 +258,11 @@ export function ReportProvider({ children }: { children: ReactNode }) {
     resetText,
     useExcerpt,
     setManualFullText,
+    addManualItem,
     setDate,
     clear,
     markExported,
-  }), [state, ready, busyDocumentUid, fullTextCount, partialTextCount, missingFullTextCount, pendingCount, contains, toggle, remove, move, updateText, resetText, useExcerpt, setManualFullText, setDate, clear, markExported]);
+  }), [state, ready, busyDocumentUid, fullTextCount, partialTextCount, missingFullTextCount, pendingCount, contains, toggle, remove, move, updateText, resetText, useExcerpt, setManualFullText, addManualItem, setDate, clear, markExported, monitorKey]);
   return <ReportContext.Provider value={value}>{children}</ReportContext.Provider>;
 }
 
