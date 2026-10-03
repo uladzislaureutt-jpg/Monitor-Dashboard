@@ -84,7 +84,29 @@ fn sanitize_editorial_text(value: &str) -> String {
     normalized.trim().trim_end_matches('.').trim_end().to_string()
 }
 
-pub fn export_docx(path: &Path, date: &str, items: &[ReportExportItem]) -> Result<(), String> {
+
+fn paragraph_l_monitor(runs: &str) -> String {
+    format!("<w:p><w:pPr><w:jc w:val=\"both\"/><w:ind w:firstLine=\"720\"/></w:pPr>{runs}</w:p>")
+}
+
+fn sanitize_l_monitor_text(value: &str) -> String {
+    let base = sanitize_editorial_text(value);
+    let abbreviations = Regex::new(r"(?i)\b(тыс|млн|млрд|трлн)\.?(?=\s|$)").expect("valid abbreviation regex");
+    let with_abbreviations = abbreviations.replace_all(&base, "$1.");
+    let initials_pair = Regex::new(r"\b([А-ЯЁA-Z])\.\s+([А-ЯЁA-Z])\.").expect("valid initials regex");
+    let compact_pairs = initials_pair.replace_all(&with_abbreviations, "$1.$2.");
+    let initial_surname = Regex::new(r"\b([А-ЯЁA-Z])\.\s+([А-ЯЁA-Z][А-ЯЁа-яёA-Za-z-]+)").expect("valid initial surname regex");
+    initial_surname.replace_all(&compact_pairs, "$1.$2").to_string()
+}
+
+fn title_separator(title: &str) -> &'static str {
+    match title.chars().last() {
+        Some('.' | '!' | '?' | '…' | '»') => " ",
+        _ => ". ",
+    }
+}
+
+pub fn export_docx(path: &Path, date: &str, items: &[ReportExportItem], monitor_key: &str) -> Result<(), String> {
     if items.is_empty() { return Err("В обзор не добавлено ни одного материала.".to_string()); }
     if path.extension().and_then(|value| value.to_str()).map(|value| value.eq_ignore_ascii_case("docx")) != Some(true) {
         return Err("Файл отчёта должен иметь расширение .docx".to_string());
@@ -93,14 +115,38 @@ pub fn export_docx(path: &Path, date: &str, items: &[ReportExportItem]) -> Resul
     let file = File::create(path).map_err(|e| format!("Не удалось создать DOCX: {e}"))?;
     let mut zip = ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let is_l_monitor = monitor_key == "lukashenko";
 
     let mut body = String::new();
-    body.push_str(&paragraph(&run("Обзор критических материалов в СМИ", true, false, 32, None, false), "center", None));
-    body.push_str(&paragraph(&run(date.trim(), true, false, 32, None, false), "center", None));
-    body.push_str(&paragraph("", "both", None));
+    if !is_l_monitor {
+        body.push_str(&paragraph(&run("Обзор критических материалов в СМИ", true, false, 32, None, false), "center", None));
+        body.push_str(&paragraph(&run(date.trim(), true, false, 32, None, false), "center", None));
+        body.push_str(&paragraph("", "both", None));
+    }
 
     let mut hyperlink_rels = String::new();
-    for (index, item) in items.iter().enumerate() {
+    let mut next_rid = 2usize;
+    for item in items {
+        if is_l_monitor {
+            let cleaned_title = sanitize_l_monitor_text(item.title.trim());
+            let raw_text = item.text.trim();
+            let cleaned_text = if raw_text.is_empty() { String::new() } else { sanitize_l_monitor_text(raw_text) };
+
+            let mut runs = run(&source_label(&item.source), false, true, 32, None, false);
+            if !item.location.trim().is_empty() {
+                runs.push_str(&run(&format!(" ({})", item.location.trim()), false, false, 32, None, false));
+            }
+            runs.push_str(&run(": «", false, false, 32, None, false));
+            runs.push_str(&run(&cleaned_title, true, true, 32, None, false));
+            if !cleaned_text.is_empty() {
+                runs.push_str(&run(title_separator(&cleaned_title), false, false, 32, None, false));
+                runs.push_str(&run(&cleaned_text, false, false, 32, None, false));
+            }
+            runs.push_str(&run("».", false, false, 32, None, false));
+            body.push_str(&paragraph_l_monitor(&runs));
+            continue;
+        }
+
         let raw_text = if item.text.trim().is_empty() { item.title.trim() } else { item.text.trim() };
         let cleaned_text = sanitize_editorial_text(raw_text);
         let text = cleaned_text.as_str();
@@ -115,17 +161,25 @@ pub fn export_docx(path: &Path, date: &str, items: &[ReportExportItem]) -> Resul
         runs.push_str(&run("».", false, false, 32, None, false));
         body.push_str(&paragraph(&runs, "both", Some(709)));
 
-        let rid = format!("rId{}", index + 2);
-        let link_run = run(item.url.trim(), false, false, 24, Some("0563C1"), true);
-        let hyperlink = format!("<w:hyperlink r:id=\"{rid}\" w:history=\"1\">{link_run}</w:hyperlink>");
-        body.push_str(&paragraph(&hyperlink, "left", Some(709)));
+        if !item.url.trim().is_empty() {
+            let rid = format!("rId{next_rid}");
+            next_rid += 1;
+            let link_run = run(item.url.trim(), false, false, 24, Some("0563C1"), true);
+            let hyperlink = format!("<w:hyperlink r:id=\"{rid}\" w:history=\"1\">{link_run}</w:hyperlink>");
+            body.push_str(&paragraph(&hyperlink, "left", Some(709)));
+            hyperlink_rels.push_str(&format!("<Relationship Id=\"{rid}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"{}\" TargetMode=\"External\"/>", xml_attr(item.url.trim())));
+        }
         body.push_str(&paragraph("", "both", None));
-        hyperlink_rels.push_str(&format!("<Relationship Id=\"{rid}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"{}\" TargetMode=\"External\"/>", xml_attr(item.url.trim())));
     }
-    body.push_str("<w:sectPr><w:pgSz w:w=\"11906\" w:h=\"16838\"/><w:pgMar w:top=\"1134\" w:right=\"709\" w:bottom=\"1276\" w:left=\"1276\" w:header=\"708\" w:footer=\"708\" w:gutter=\"0\"/></w:sectPr>");
+
+    if is_l_monitor {
+        body.push_str("<w:sectPr><w:pgSz w:w=\"11906\" w:h=\"16838\"/><w:pgMar w:left=\"1276\" w:right=\"707\" w:gutter=\"0\" w:header=\"720\" w:top=\"1135\" w:footer=\"0\" w:bottom=\"851\"/><w:docGrid w:type=\"default\" w:linePitch=\"272\" w:charSpace=\"0\"/></w:sectPr>");
+    } else {
+        body.push_str("<w:sectPr><w:pgSz w:w=\"11906\" w:h=\"16838\"/><w:pgMar w:top=\"1134\" w:right=\"709\" w:bottom=\"1276\" w:left=\"1276\" w:header=\"708\" w:footer=\"708\" w:gutter=\"0\"/></w:sectPr>");
+    }
 
     let document = format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><w:body>{body}</w:body></w:document>");
-    let styles = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:styles xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii=\"Times New Roman\" w:hAnsi=\"Times New Roman\" w:eastAsia=\"Times New Roman\" w:cs=\"Times New Roman\"/><w:sz w:val=\"32\"/><w:szCs w:val=\"32\"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:before=\"0\" w:after=\"0\" w:line=\"240\" w:lineRule=\"auto\"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"Normal\"><w:name w:val=\"Normal\"/><w:qFormat/><w:rPr><w:rFonts w:ascii=\"Times New Roman\" w:hAnsi=\"Times New Roman\" w:eastAsia=\"Times New Roman\" w:cs=\"Times New Roman\"/><w:sz w:val=\"32\"/><w:szCs w:val=\"32\"/></w:rPr></w:style></w:styles>";
+    let styles = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:styles xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii=\"Times New Roman\" w:hAnsi=\"Times New Roman\" w:eastAsia=\"Times New Roman\" w:cs=\"Times New Roman\"/><w:sz w:val=\"32\"/><w:szCs w:val=\"32\"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr/></w:pPrDefault></w:docDefaults><w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"Normal\"><w:name w:val=\"Normal\"/><w:qFormat/><w:rPr><w:rFonts w:ascii=\"Times New Roman\" w:hAnsi=\"Times New Roman\" w:eastAsia=\"Times New Roman\" w:cs=\"Times New Roman\"/><w:sz w:val=\"32\"/><w:szCs w:val=\"32\"/></w:rPr></w:style></w:styles>";
     let root_rels = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/></Relationships>";
     let doc_rels = format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>{hyperlink_rels}</Relationships>");
     let content_types = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/><Override PartName=\"/word/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml\"/></Types>";
