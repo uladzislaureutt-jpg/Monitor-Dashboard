@@ -18,11 +18,14 @@ function aiCompressionRunsKey(documentUid: string) { return `ai_compression_runs
 export function ReportView() {
   const { locale } = useI18n();
   const report = useReportWorkspace();
+  const isLMonitor = desktopApi.activeMonitorKey() === "lukashenko";
   const [activeUid, setActiveUid] = useState<string | null>(report.items[0]?.documentUid ?? null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [manualOpen, setManualOpen] = useState(false);
   const [manualText, setManualText] = useState("");
+  const [manualItemOpen, setManualItemOpen] = useState(false);
+  const [manualItem, setManualItem] = useState({ title: "", source: "", region: "", url: "", text: "" });
   const [compressionMode, setCompressionMode] = useState<CompressionMode>("auto");
   const [aiBusy, setAiBusy] = useState(false);
   const [aiRuns, setAiRuns] = useState<number | null>(null);
@@ -31,7 +34,9 @@ export function ReportView() {
   const tx = {
     eyebrow: be ? "РЭДАКТАР АГЛЯДУ" : "РЕДАКТОР ОБЗОРА",
     title: be ? "Рабочая вобласць справаздачы" : "Рабочая область отчёта",
-    subtitle: be ? "Абярыце 5–8 матэрыялаў, праверце паўнату зыходнага тэксту, адрэдагуйце версію для агляду і выгрузіце DOCX." : "Выберите 5–8 материалов, проверьте полноту исходного текста, отредактируйте версию для обзора и выгрузите DOCX.",
+    subtitle: isLMonitor
+      ? (be ? "Абярыце матэрыялы патрэбнай глыбіні, праверце зыходны тэкст, адрэдагуйце версію для агляду і выгрузіце DOCX." : "Выберите материалы нужной глубины, проверьте исходный текст, отредактируйте версию для обзора и выгрузите DOCX.")
+      : (be ? "Абярыце 5–8 матэрыялаў, праверце паўнату зыходнага тэксту, адрэдагуйце версію для агляду і выгрузіце DOCX." : "Выберите 5–8 материалов, проверьте полноту исходного текста, отредактируйте версию для обзора и выгрузите DOCX."),
     count: be ? "Выбрана" : "Выбрано",
     clear: be ? "Ачысціць" : "Очистить",
     empty: be ? "Пакуль нічога не выбрана. Дадайце матэрыялы кнопкай «У агляд» у Архіве або Апошніх матэрыялах." : "Пока ничего не выбрано. Добавьте материалы кнопкой «В обзор» в Архиве или Последних материалах.",
@@ -50,7 +55,7 @@ export function ReportView() {
     exportHelp: be ? "Фармат паўтарае дасланыя ўзоры; пасля кожнага матэрыялу выводзіцца поўны URL публікацыі." : "Формат повторяет присланные образцы; после каждого материала выводится полный URL публикации.",
     date: be ? "Дата агляду" : "Дата обзора",
     saved: be ? "DOCX захаваны." : "DOCX сохранён.",
-    tooFew: be ? "Звычайны аб'ём — 5–8 матэрыялаў; экспарт даступны і для меншай колькасці." : "Обычный объём — 5–8 материалов; экспорт доступен и для меньшего количества.",
+    tooFew: isLMonitor ? "" : (be ? "Звычайны аб'ём — 5–8 матэрыялаў; экспарт даступны і для меншай колькасці." : "Обычный объём — 5–8 материалов; экспорт доступен и для меньшего количества."),
     integrity: be ? "Паўната тэкстаў" : "Полнота текстов",
     fullCount: be ? "поўных" : "полных",
     partialCount: be ? "частковых" : "частичных",
@@ -86,16 +91,25 @@ export function ReportView() {
     aiMaximumHelp: be ? "Максімальны AI-рэжым строга правяраецца ў дыяпазоне 40–60%." : "Максимальный AI-режим строго проверяется в диапазоне 40–60%.",
     aiExtractHelp: be ? "Рэжым «Экстракт» строга правяраецца ў дыяпазоне 60–80%; у выніку застаецца 20–40% зыходнага тэксту." : "Режим «Экстракт» строго проверяется в диапазоне 60–80%; в результате остаётся 20–40% исходного текста.",
     aiHelp: be ? "AI адпраўляе толькі поўны тэкст абранага матэрыялу. Лічбы, імёны і прамыя цытаты правяраюцца перад заменай." : "AI отправляет только полный текст выбранного материала. Числа, имена и прямые цитаты проверяются перед заменой.",
+    exactHelp: be ? "Толькі Exact: скарачэнне без перапісвання і без выкарыстання Groq." : "Только Exact: сокращение без переписывания и без использования Groq.",
+    addManualItem: be ? "Дадаць матэрыял уручную" : "Добавить материал вручную",
+    manualItemHelp: be ? "Для матэрыялаў па падпісцы або прапушчаных маніторынгам. Устаўце загаловак, выданне і тэкст з браўзера." : "Для материалов по подписке или пропущенных мониторингом. Вставьте заголовок, издание и текст из браузера.",
+    manualTitle: be ? "Загаловак" : "Заголовок",
+    manualSource: be ? "Крыніца / выданне" : "Источник / издание",
+    manualCountry: be ? "Краіна крыніцы" : "Страна источника",
+    manualUrl: "URL",
+    manualBody: be ? "Зыходны тэкст" : "Исходный текст",
+    add: be ? "Дадаць у агляд" : "Добавить в обзор",
   };
 
   useEffect(() => {
     setManualOpen(false);
     setManualText("");
-  }, [active?.documentUid]);
+  }, [active?.documentUid, isLMonitor]);
 
   useEffect(() => {
     let cancelled = false;
-    if (!active?.documentUid) { setAiRuns(0); return () => { cancelled = true; }; }
+    if (isLMonitor || !active?.documentUid) { setAiRuns(0); return () => { cancelled = true; }; }
     setAiRuns(null);
     desktopApi.getSetting(aiCompressionRunsKey(active.documentUid))
       .then((value) => {
@@ -165,6 +179,18 @@ export function ReportView() {
     } finally { setAiBusy(false); }
   }
 
+  function addManualReportItem() {
+    if (!manualItem.title.trim() || !manualItem.text.trim()) return;
+    try {
+      const uid = report.addManualItem(manualItem);
+      setActiveUid(uid);
+      setManualItem({ title: "", source: "", region: "", url: "", text: "" });
+      setManualItemOpen(false);
+      setError("");
+      setStatus(be ? "Матэрыял дададзены ў агляд." : "Материал добавлен в обзор.");
+    } catch (reason) { setError(String(reason)); }
+  }
+
   async function exportDocx() {
     if (!report.items.length) return;
     setError(""); setStatus("");
@@ -181,7 +207,7 @@ export function ReportView() {
         title: item.title,
         text: item.editorialText.trim() || item.sourceText.trim() || item.title,
         url: item.url,
-      })));
+      })), isLMonitor ? "lukashenko" : "social_economic");
       report.markExported();
       setStatus(tx.saved);
     } catch (reason) { setError(String(reason)); }
@@ -199,23 +225,24 @@ export function ReportView() {
       <div><b>{tx.integrity}: {report.fullTextCount}/{report.items.length}</b><span>{tx.fullCount}: {report.fullTextCount} · {tx.partialCount}: {report.partialTextCount} · {tx.missingCount}: {report.missingFullTextCount}</span></div>
       <p>{integrityClass === "ready" ? tx.allReady : tx.needsReview}</p>
     </section>}
-    <section className="report-toolbar panel"><div><b>{tx.count}: {report.items.length}/{report.maxItems}</b><span>{tx.tooFew}</span></div><div><span>{tx.exportHelp}</span>{report.items.length > 0 && <button className="ghost-button" onClick={() => { if (window.confirm(tx.clear + "?")) report.clear(); }}>{tx.clear}</button>}</div></section>
+    <section className="report-toolbar panel"><div><b>{tx.count}: {report.items.length}{report.maxItems !== null ? `/${report.maxItems}` : ""}</b>{tx.tooFew && <span>{tx.tooFew}</span>}</div><div>{isLMonitor && <button className="secondary-button" onClick={() => setManualItemOpen((value) => !value)}>{tx.addManualItem}</button>}<span>{tx.exportHelp}</span>{report.items.length > 0 && <button className="ghost-button" onClick={() => { if (window.confirm(tx.clear + "?")) report.clear(); }}>{tx.clear}</button>}</div></section>
+    {isLMonitor && manualItemOpen && <section className="panel report-add-manual"><div><b>{tx.addManualItem}</b><p>{tx.manualItemHelp}</p></div><div className="report-add-manual-grid"><label>{tx.manualTitle}<input value={manualItem.title} onChange={(e) => setManualItem({ ...manualItem, title: e.target.value })} /></label><label>{tx.manualSource}<input value={manualItem.source} onChange={(e) => setManualItem({ ...manualItem, source: e.target.value })} /></label><label>{tx.manualCountry}<input value={manualItem.region} onChange={(e) => setManualItem({ ...manualItem, region: e.target.value })} /></label><label>{tx.manualUrl}<input value={manualItem.url} onChange={(e) => setManualItem({ ...manualItem, url: e.target.value })} placeholder="https://…" /></label></div><label className="report-add-manual-text">{tx.manualBody}<textarea value={manualItem.text} onChange={(e) => setManualItem({ ...manualItem, text: e.target.value })} /></label><div className="report-add-manual-actions"><button className="primary-button" disabled={!manualItem.title.trim() || !manualItem.text.trim()} onClick={addManualReportItem}>{tx.add}</button><button className="ghost-button" onClick={() => setManualItemOpen(false)}>{tx.cancel}</button></div></section>}
     {!report.items.length ? <section className="panel empty-state report-empty">{tx.empty}</section> : <section className="report-workspace-grid">
       <aside className="panel report-basket">{report.items.map((item, index) => <article key={item.documentUid} className={active?.documentUid === item.documentUid ? "active" : ""} onClick={() => setActiveUid(item.documentUid)}><div className="report-basket-number">{index + 1}</div><div><div className="report-basket-source-row"><b>{item.source}</b><span className={`report-text-status ${item.sourceQuality}`} title={qualityLabel(item)}><i />{qualityShort(item)}</span></div><span>{item.title}</span></div><div className="report-order-actions"><button disabled={index === 0} onClick={(e) => { e.stopPropagation(); report.move(item.documentUid, -1); }}>{tx.up}</button><button disabled={index === report.items.length - 1} onClick={(e) => { e.stopPropagation(); report.move(item.documentUid, 1); }}>{tx.down}</button><button className="text-danger" onClick={(e) => { e.stopPropagation(); report.remove(item.documentUid); }}>{tx.remove}</button></div></article>)}</aside>
-      {active && <article className="panel report-editor"><div className="report-editor-head"><div><span className="source-chip">{active.source}</span><h3>{active.title}</h3><p>{[active.locality, active.region].filter(Boolean).join(" · ")}</p></div><button className="link-button" onClick={() => desktopApi.openUrl(active.url)}>{tx.open}</button></div>
+      {active && <article className="panel report-editor"><div className="report-editor-head"><div><span className="source-chip">{active.source}</span><h3>{active.title}</h3><p>{[active.locality, active.region].filter(Boolean).join(" · ")}</p></div>{active.url && <button className="link-button" onClick={() => desktopApi.openUrl(active.url)}>{tx.open}</button>}</div>
         <details className={`report-source-details quality-${active.sourceQuality}`} open><summary><span>{tx.original} · {qualityLabel(active)}</span><span className={`report-text-status ${active.sourceQuality}`}><i />{qualityShort(active)}</span></summary><div className="report-source-text">{active.sourceText}</div></details>
         {active.sourceQuality !== "full" && <div className="report-source-warning"><div><b>{qualityLabel(active)}</b><p>{tx.needsReview}</p></div><button className="secondary-button small-button" onClick={() => { setManualOpen((value) => !value); if (!manualText) setManualText(""); }}>{active.sourceQuality === "partial" ? tx.replaceFull : tx.pasteFull}</button></div>}
         {manualOpen && active.sourceQuality !== "full" && <div className="report-manual-source"><p>{tx.pasteHelp}</p><textarea value={manualText} onChange={(e) => setManualText(e.target.value)} placeholder={tx.pastePlaceholder} /><div><button className="primary-button small-button" disabled={!manualText.trim()} onClick={saveManualFullText}>{tx.saveManual}</button><button className="ghost-button small-button" onClick={() => { setManualOpen(false); setManualText(""); }}>{tx.cancel}</button></div></div>}
         <div className={`report-compression-panel ${active.sourceQuality !== "full" ? "disabled" : ""}`}>
-          <div className="report-compression-head"><div><b>{tx.compression}</b><span>{tx.aiHelp}</span></div><label><select value={compressionMode} onChange={(e) => setCompressionMode(e.target.value as CompressionMode)} disabled={active.sourceQuality !== "full" || aiBusy}><option value="auto">{tx.compressionAuto}</option><option value="light">{tx.compressionLight}</option><option value="standard">{tx.compressionStandard}</option><option value="maximum">{tx.compressionMaximum}</option><option value="extract">{tx.compressionExtract}</option></select></label></div>
-          <div className="report-compression-actions"><button className="secondary-button small-button" disabled={active.sourceQuality !== "full" || aiBusy} onClick={applyExactCompression}>{tx.exact}</button><button className="primary-button small-button" disabled={active.sourceQuality !== "full" || aiBusy || aiLimitReached || aiRuns === null} onClick={applyAiCompression}>{aiBusy ? tx.aiRunning : tx.ai}</button><span>{be ? "Бягучае скарачэнне" : "Текущее сокращение"}: {compressionReduction(active.sourceText, active.editorialText)}%</span><span>{tx.aiLimit}: {aiRuns ?? "…"}/{MAX_AI_COMPRESSION_RUNS}</span></div>
+          <div className="report-compression-head"><div><b>{isLMonitor ? tx.exact : tx.compression}</b><span>{isLMonitor ? tx.exactHelp : tx.aiHelp}</span></div><label><select value={compressionMode} onChange={(e) => setCompressionMode(e.target.value as CompressionMode)} disabled={active.sourceQuality !== "full" || aiBusy}><option value="auto">{tx.compressionAuto}</option><option value="light">{tx.compressionLight}</option><option value="standard">{tx.compressionStandard}</option><option value="maximum">{tx.compressionMaximum}</option><option value="extract">{tx.compressionExtract}</option></select></label></div>
+          <div className="report-compression-actions"><button className="secondary-button small-button" disabled={active.sourceQuality !== "full" || aiBusy} onClick={applyExactCompression}>{tx.exact}</button>{!isLMonitor && <button className="primary-button small-button" disabled={active.sourceQuality !== "full" || aiBusy || aiLimitReached || aiRuns === null} onClick={applyAiCompression}>{aiBusy ? tx.aiRunning : tx.ai}</button>}<span>{be ? "Бягучае скарачэнне" : "Текущее сокращение"}: {compressionReduction(active.sourceText, active.editorialText)}%</span>{!isLMonitor && <span>{tx.aiLimit}: {aiRuns ?? "…"}/{MAX_AI_COMPRESSION_RUNS}</span>}</div>
           {active.sourceQuality !== "full" && <p>{tx.compressionNeedsFull}</p>}
-          {maximumMode && <p>{tx.aiMaximumHelp}</p>}
-          {extractMode && <p>{tx.aiExtractHelp}</p>}
-          {aiLimitReached && <p>{tx.aiLimitReached}</p>}
+          {!isLMonitor && maximumMode && <p>{tx.aiMaximumHelp}</p>}
+          {!isLMonitor && extractMode && <p>{tx.aiExtractHelp}</p>}
+          {!isLMonitor && aiLimitReached && <p>{tx.aiLimitReached}</p>
         </div>
         <div className="report-editor-label"><b>{tx.editorial}</b><div><button className="ghost-button small-button" onClick={() => report.resetText(active.documentUid)}>{tx.reset}</button>{active.excerpt && <button className="ghost-button small-button" onClick={() => report.useExcerpt(active.documentUid)}>{tx.useExcerpt}</button>}</div></div>
-        <textarea className="report-editor-textarea" value={active.editorialText} onChange={(e) => report.updateText(active.documentUid, e.target.value)} />
+        <div className="report-editorial-compose"><div className="report-editorial-compose-title">{active.title}</div><textarea className="report-editor-textarea" value={active.editorialText} onChange={(e) => report.updateText(active.documentUid, e.target.value)} /></div>
       </article>}
     </section>}
   </div>;
