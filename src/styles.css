@@ -552,3 +552,68 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 .report-editorial-compose-title { padding: 12px 14px 8px; font: 700 15px/1.35 "Times New Roman", serif; color: #273844; }
 .report-editorial-compose .report-editor-textarea { border: 0; border-radius: 0; min-height: 330px; padding-top: 4px; font-family: "Times New Roman", serif; }
 @media(max-width:1050px){ .report-add-manual-grid { grid-template-columns: 1fr; } }
+
+
+/* 0.7.7 corrective — wider L-Monitor country treemap and photo strip */
+.persistent-country-scheme .geo-treemap-wrap { min-height: 390px; }
+.persistent-country-scheme .country-treemap {
+  width: min(100%, 790px);
+  aspect-ratio: 1.65 / 1;
+}
+.persistent-country-scheme .country-treemap .geo-tile {
+  padding: 3px 4px;
+  gap: 2px;
+}
+.persistent-country-scheme .country-treemap .geo-tile span {
+  white-space: normal;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  font-size: clamp(6px, .68vw, 10px);
+  line-height: 1.03;
+}
+.persistent-country-scheme .country-treemap .small-country-tile span {
+  font-size: clamp(5.5px, .58vw, 8px);
+}
+.persistent-country-scheme .country-treemap .small-country-tile b {
+  font-size: clamp(7px, .82vw, 13px);
+}
+.country-small-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 5px 10px;
+  margin: 8px auto 0;
+  max-width: 790px;
+  color: #765b58;
+  font-size: 8px;
+  line-height: 1.25;
+}
+.country-small-legend span {
+  display: inline-flex;
+  gap: 4px;
+  align-items: baseline;
+  white-space: nowrap;
+}
+.country-small-legend b { color: #5e1717; font-weight: 700; }
+
+.visual-stories-row {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 5px;
+  scrollbar-width: thin;
+}
+.visual-stories-row .visual-story {
+  flex: 0 0 clamp(180px, 22vw, 250px);
+  min-height: 150px;
+}
+.visual-stories-empty {
+  padding: 24px 18px;
+  border: 1px dashed #d9d1c7;
+  border-radius: 11px;
+  background: #faf7f2;
+  color: #827970;
+  font-size: 10px;
+  text-align: center;
+}
