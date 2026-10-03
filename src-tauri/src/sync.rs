@@ -37,6 +37,8 @@ struct GitHubArtifact {
 pub struct SyncResult {
     checked_artifacts: usize,
     latest_available_run: Option<i64>,
+    latest_remote_run: Option<i64>,
+    latest_imported_run: Option<i64>,
     imported_runs: Vec<i64>,
     skipped_dry_runs: Vec<i64>,
     already_present: usize,
@@ -133,6 +135,7 @@ pub fn sync_github(db_path: &Path, repository: &str, token: &str, monitor_key: &
     artifacts.sort_by_key(|(run, _)| *run);
     artifacts.dedup_by_key(|(run, _)| *run);
     let checked_artifacts = artifacts.len();
+    let latest_remote_run = artifacts.iter().map(|(run, _)| *run).max();
 
     let existing_runs: HashSet<i64> = db::list_runs(db_path, monitor_key)?
         .into_iter()
@@ -141,7 +144,6 @@ pub fn sync_github(db_path: &Path, repository: &str, token: &str, monitor_key: &
         .collect();
     let latest_imported_run = existing_runs.iter().copied().max();
     let known_dry_runs = db::sync_skipped_run_numbers(db_path, monitor_key)?;
-    let known_failed_artifacts = db::sync_failed_artifacts(db_path, monitor_key)?;
 
     let mut imported_runs = Vec::new();
     let mut skipped_dry_runs = Vec::new();
@@ -160,10 +162,6 @@ pub fn sync_github(db_path: &Path, repository: &str, token: &str, monitor_key: &
             skipped_dry_runs.push(run_number);
             continue;
         }
-        if known_failed_artifacts.get(&run_number) == Some(&artifact.id) {
-            continue;
-        }
-
         let mut request = client
             .get(&artifact.archive_download_url)
             .header("Accept", "application/vnd.github+json")
@@ -232,15 +230,18 @@ pub fn sync_github(db_path: &Path, repository: &str, token: &str, monitor_key: &
         }
     }
 
-    let latest_available_run = db::list_runs(db_path, monitor_key)?
+    let latest_imported_run = db::list_runs(db_path, monitor_key)?
         .into_iter()
         .filter(|run| run.monitor_key == monitor_key && run.dry_run != Some(true))
         .filter_map(|run| run.run_number)
         .max();
+    let latest_available_run = latest_imported_run;
 
     Ok(SyncResult {
         checked_artifacts,
         latest_available_run,
+        latest_remote_run,
+        latest_imported_run,
         imported_runs,
         skipped_dry_runs,
         already_present,
