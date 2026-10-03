@@ -141,7 +141,7 @@ export function DashboardView({
         <BreakdownPanel className="span-two wide-slot-sources" title={t("dashboard.sources")} subtitle={t("dashboard.sourcesHelp")} data={sourcesData?.sourceBreakdown ?? []} period={sourcesPeriod} onPeriodChange={setSourcesPeriod} sourceIcons />
       </> : <>
         <BreakdownPanel className="wide-slot-topics" title={t("dashboard.topics")} subtitle={t("dashboard.topicsHelp")} data={topicsData?.categoryBreakdown ?? []} period={topicsPeriod} onPeriodChange={setTopicsPeriod} labelKind="category" />
-        <BreakdownPanel className="wide-slot-geo" title={t("dashboard.geography")} subtitle={t("dashboard.geographyHelp")} data={geoData?.regionBreakdown ?? []} allowMap period={geoPeriod} onPeriodChange={setGeoPeriod} labelKind="region" />
+        <BreakdownPanel className="wide-slot-geo" title={t("dashboard.geography")} subtitle={t("dashboard.geographyHelp")} data={geoData?.regionBreakdown ?? []} allowMap initialMode="map" period={geoPeriod} onPeriodChange={setGeoPeriod} labelKind="region" />
         <BreakdownPanel className="wide-slot-sources" title={t("dashboard.sources")} subtitle={t("dashboard.sourcesHelp")} data={sourcesData?.sourceBreakdown ?? []} period={sourcesPeriod} onPeriodChange={setSourcesPeriod} sourceIcons />
         <div className="wide-slot-resonance"><ResonancePanel items={resonanceData?.resonanceItems ?? []} fallback={resonanceData?.resonanceFallback ?? false} period={resonancePeriod} onPeriodChange={setResonancePeriod} /></div>
       </>}
