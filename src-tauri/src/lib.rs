@@ -1,3 +1,4 @@
+mod browser_bridge;
 mod db;
 mod fulltext;
 mod importer;
@@ -7,6 +8,7 @@ mod sync;
 
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::{Arc, Mutex};
 
 use tauri::{Manager, State};
 
@@ -18,6 +20,7 @@ use models::{
 #[derive(Clone)]
 struct AppState {
     db_path: PathBuf,
+    browser_import: browser_bridge::SharedImport,
 }
 
 #[tauri::command]
@@ -128,6 +131,13 @@ fn hydrate_report_full_texts(
 }
 
 #[tauri::command]
+fn take_browser_import(state: State<'_, AppState>) -> Result<Option<browser_bridge::BrowserImportPayload>, String> {
+    state.browser_import.lock()
+        .map(|mut slot| slot.take())
+        .map_err(|_| "Не удалось прочитать импорт из браузера.".to_string())
+}
+
+#[tauri::command]
 fn export_report_docx(
     path: String,
     date: String,
@@ -205,7 +215,9 @@ pub fn run() {
             let app_data_dir = app.path().app_data_dir()?;
             let db_path = app_data_dir.join("monitor-dashboard.sqlite3");
             db::initialize_database(&db_path).map_err(std::io::Error::other)?;
-            app.manage(AppState { db_path });
+            let browser_import = Arc::new(Mutex::new(None));
+            browser_bridge::start(browser_import.clone());
+            app.manage(AppState { db_path, browser_import });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -219,6 +231,7 @@ pub fn run() {
             list_sources,
             get_editorial_source,
             hydrate_report_full_texts,
+            take_browser_import,
             export_report_docx,
             sync_github_artifacts,
             replace_moderation_snapshot,
