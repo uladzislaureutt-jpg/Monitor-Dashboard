@@ -537,3 +537,18 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
   line-height: 1.05;
 }
 .persistent-country-scheme .country-treemap .geo-tile b { font-size: clamp(8px, 1vw, 16px); }
+
+
+/* 0.7.7 — L-Monitor report editor */
+.report-add-manual { display: grid; gap: 12px; padding: 16px 18px; }
+.report-add-manual > div:first-child b { color: #27495c; font-size: 13px; }
+.report-add-manual > div:first-child p { margin: 4px 0 0; color: #746f69; font-size: 10px; line-height: 1.45; }
+.report-add-manual-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.report-add-manual label { display: grid; gap: 5px; color: #65727b; font-size: 9px; font-weight: 700; }
+.report-add-manual input { min-height: 38px; border: 1px solid #d8d0c4; border-radius: 9px; background: #fff; padding: 0 10px; color: #273844; }
+.report-add-manual-text textarea { width: 100%; min-height: 220px; resize: vertical; border: 1px solid #d8d0c4; border-radius: 10px; padding: 12px; background: #fff; color: #273844; font: 14px/1.5 "Times New Roman", serif; }
+.report-add-manual-actions { display: flex; gap: 8px; align-items: center; }
+.report-editorial-compose { border: 1px solid #d8d0c4; border-radius: 12px; overflow: hidden; background: #fff; }
+.report-editorial-compose-title { padding: 12px 14px 8px; font: 700 15px/1.35 "Times New Roman", serif; color: #273844; }
+.report-editorial-compose .report-editor-textarea { border: 0; border-radius: 0; min-height: 330px; padding-top: 4px; font-family: "Times New Roman", serif; }
+@media(max-width:1050px){ .report-add-manual-grid { grid-template-columns: 1fr; } }
