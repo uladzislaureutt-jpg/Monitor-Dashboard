@@ -174,16 +174,21 @@ export function CountryTreemap({ data }: { data: CountPoint[] }) {
   const tiles = binaryTreemap(items, { x: 0, y: 0, w: 100, h: 100 });
   const opacity = (count: number) => 0.15 + (count / max) * 0.75;
   const ariaLabel = locale === "be" ? "Краіны паходжання СМІ" : "Страны происхождения СМИ";
+  const smallTiles = tiles.filter((tile) => tile.w * tile.h < 240 || tile.w < 14 || tile.h < 11);
   return <div className="geo-treemap-wrap">
     <div className="geo-treemap country-treemap" role="img" aria-label={ariaLabel}>
       {tiles.map((tile) => {
         const strength = tile.count / max;
         const percent = total ? Math.round(tile.count / total * 100) : 0;
-        return <div key={tile.key} className={`geo-tile ${strength >= 0.48 ? "dense" : "light"}`} style={{ left: `${tile.x}%`, top: `${tile.y}%`, width: `${tile.w}%`, height: `${tile.h}%`, background: `rgba(174, 34, 34, ${opacity(tile.count)})` }} title={`${tile.label}: ${tile.count} (${percent}%)`}>
+        const small = smallTiles.some((item) => item.key === tile.key);
+        return <div key={tile.key} className={`geo-tile ${strength >= 0.48 ? "dense" : "light"} ${small ? "small-country-tile" : ""}`} style={{ left: `${tile.x}%`, top: `${tile.y}%`, width: `${tile.w}%`, height: `${tile.h}%`, background: `rgba(174, 34, 34, ${opacity(tile.count)})` }} title={`${tile.label}: ${tile.count} (${percent}%)`}>
           <span>{tile.label}</span><b>{tile.count}</b>
         </div>;
       })}
     </div>
+    {smallTiles.length > 0 && <div className="country-small-legend" aria-label={locale === "be" ? "Малыя краіны на схеме" : "Малые страны на схеме"}>
+      {smallTiles.map((tile) => <span key={`legend-${tile.key}`}><b>{tile.label}</b> {tile.count}</span>)}
+    </div>}
     <div className="map-footer"><span><i className="map-scale country-scale low" />{t("geo.less")}</span><span><i className="map-scale country-scale high" />{t("geo.more")}</span></div>
   </div>;
 }
