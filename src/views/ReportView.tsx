@@ -25,7 +25,7 @@ export function ReportView() {
   const [manualOpen, setManualOpen] = useState(false);
   const [manualText, setManualText] = useState("");
   const [manualItemOpen, setManualItemOpen] = useState(false);
-  const [manualItem, setManualItem] = useState({ title: "", source: "", region: "", url: "", text: "" });
+  const [manualItem, setManualItem] = useState({ title: "", source: "", region: "", url: "", text: "", quality: "full" as "full" | "partial" });
   const [browserImportBusy, setBrowserImportBusy] = useState(false);
   const [compressionMode, setCompressionMode] = useState<CompressionMode>("auto");
   const [aiBusy, setAiBusy] = useState(false);
@@ -97,6 +97,7 @@ export function ReportView() {
     browserImport: be ? "Атрымаць з браўзера" : "Получить из браузера",
     browserImportEmpty: be ? "Браўзер пакуль не перадаў матэрыял. Адкрыйце публікацыю, націсніце пашырэнне Monitor і паўтарыце." : "Браузер пока не передал материал. Откройте публикацию, нажмите расширение Monitor и повторите.",
     browserImportDone: be ? "Матэрыял з браўзера атрыманы. Праверце палі і дадайце яго ў агляд." : "Материал из браузера получен. Проверьте поля и добавьте его в обзор.",
+    browserPartial: be ? "Браўзер бачыць прыкметы paywall/падпіскі: тэкст пазначаны як частковы." : "Браузер видит признаки paywall/подписки: текст помечен как частичный.",
     manualItemHelp: be ? "Для матэрыялаў па падпісцы або прапушчаных маніторынгам. Устаўце загаловак, выданне і тэкст з браўзера." : "Для материалов по подписке или пропущенных мониторингом. Вставьте заголовок, издание и текст из браузера.",
     manualTitle: be ? "Загаловак" : "Заголовок",
     manualSource: be ? "Крыніца / выданне" : "Источник / издание",
@@ -207,6 +208,7 @@ export function ReportView() {
         region,
         url: payload.url,
         text: payload.text,
+        quality: payload.quality === "partial" ? "partial" : "full",
       });
       setManualItemOpen(true);
       setStatus(tx.browserImportDone);
@@ -222,7 +224,7 @@ export function ReportView() {
     try {
       const uid = report.addManualItem(manualItem);
       setActiveUid(uid);
-      setManualItem({ title: "", source: "", region: "", url: "", text: "" });
+      setManualItem({ title: "", source: "", region: "", url: "", text: "", quality: "full" });
       setManualItemOpen(false);
       setError("");
       setStatus(be ? "Матэрыял дададзены ў агляд." : "Материал добавлен в обзор.");
@@ -264,7 +266,7 @@ export function ReportView() {
       <p>{integrityClass === "ready" ? tx.allReady : tx.needsReview}</p>
     </section>}
     <section className="report-toolbar panel"><div><b>{tx.count}: {report.items.length}{report.maxItems !== null ? `/${report.maxItems}` : ""}</b>{tx.tooFew && <span>{tx.tooFew}</span>}</div><div>{isLMonitor && <><button className="primary-button" disabled={browserImportBusy} onClick={receiveBrowserImport}>{browserImportBusy ? "…" : tx.browserImport}</button><button className="secondary-button" onClick={() => setManualItemOpen((value) => !value)}>{tx.addManualItem}</button></>}<span>{tx.exportHelp}</span>{report.items.length > 0 && <button className="ghost-button" onClick={() => { if (window.confirm(tx.clear + "?")) report.clear(); }}>{tx.clear}</button>}</div></section>
-    {isLMonitor && manualItemOpen && <section className="panel report-add-manual"><div><b>{tx.addManualItem}</b><p>{tx.manualItemHelp}</p></div><div className="report-add-manual-grid"><label>{tx.manualTitle}<input value={manualItem.title} onChange={(e) => setManualItem({ ...manualItem, title: e.target.value })} /></label><label>{tx.manualSource}<input value={manualItem.source} onChange={(e) => setManualItem({ ...manualItem, source: e.target.value })} /></label><label>{tx.manualCountry}<input value={manualItem.region} onChange={(e) => setManualItem({ ...manualItem, region: e.target.value })} /></label><label>{tx.manualUrl}<input value={manualItem.url} onChange={(e) => setManualItem({ ...manualItem, url: e.target.value })} placeholder="https://…" /></label></div><label className="report-add-manual-text">{tx.manualBody}<textarea value={manualItem.text} onChange={(e) => setManualItem({ ...manualItem, text: e.target.value })} /></label><div className="report-add-manual-actions"><button className="primary-button" disabled={!manualItem.title.trim() || !manualItem.text.trim()} onClick={addManualReportItem}>{tx.add}</button><button className="ghost-button" onClick={() => setManualItemOpen(false)}>{tx.cancel}</button></div></section>}
+    {isLMonitor && manualItemOpen && <section className="panel report-add-manual"><div><b>{tx.addManualItem}</b><p>{tx.manualItemHelp}</p>{manualItem.quality === "partial" && <p className="browser-import-warning">{tx.browserPartial}</p>}</div><div className="report-add-manual-grid"><label>{tx.manualTitle}<input value={manualItem.title} onChange={(e) => setManualItem({ ...manualItem, title: e.target.value })} /></label><label>{tx.manualSource}<input value={manualItem.source} onChange={(e) => setManualItem({ ...manualItem, source: e.target.value })} /></label><label>{tx.manualCountry}<input value={manualItem.region} onChange={(e) => setManualItem({ ...manualItem, region: e.target.value })} /></label><label>{tx.manualUrl}<input value={manualItem.url} onChange={(e) => setManualItem({ ...manualItem, url: e.target.value })} placeholder="https://…" /></label></div><label className="report-add-manual-text">{tx.manualBody}<textarea value={manualItem.text} onChange={(e) => setManualItem({ ...manualItem, text: e.target.value })} /></label><div className="report-add-manual-actions"><button className="primary-button" disabled={!manualItem.title.trim() || !manualItem.text.trim()} onClick={addManualReportItem}>{tx.add}</button><button className="ghost-button" onClick={() => setManualItemOpen(false)}>{tx.cancel}</button></div></section>}
     {!report.items.length ? <section className="panel empty-state report-empty">{tx.empty}</section> : <section className="report-workspace-grid">
       <aside className="panel report-basket">{report.items.map((item, index) => <article key={item.documentUid} className={active?.documentUid === item.documentUid ? "active" : ""} onClick={() => setActiveUid(item.documentUid)}><div className="report-basket-number">{index + 1}</div><div><div className="report-basket-source-row"><b>{item.source}</b><span className={`report-text-status ${item.sourceQuality}`} title={qualityLabel(item)}><i />{qualityShort(item)}</span></div><span>{item.title}</span></div><div className="report-order-actions"><button disabled={index === 0} onClick={(e) => { e.stopPropagation(); report.move(item.documentUid, -1); }}>{tx.up}</button><button disabled={index === report.items.length - 1} onClick={(e) => { e.stopPropagation(); report.move(item.documentUid, 1); }}>{tx.down}</button><button className="text-danger" onClick={(e) => { e.stopPropagation(); report.remove(item.documentUid); }}>{tx.remove}</button></div></article>)}</aside>
       {active && <article className="panel report-editor"><div className="report-editor-head"><div><span className="source-chip">{active.source}</span><h3>{active.title}</h3><p>{[active.locality, active.region].filter(Boolean).join(" · ")}</p></div>{active.url && <button className="link-button" onClick={() => desktopApi.openUrl(active.url)}>{tx.open}</button>}</div>
