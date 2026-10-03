@@ -147,7 +147,7 @@ export function DashboardView({
       </>}
     </section>
 
-    <VisualStories items={data?.visuals ?? []} />
+    <VisualStories items={data?.visuals ?? []} maxItems={isLMonitor ? 8 : 4} showEmpty={isLMonitor} row={isLMonitor} />
     <section className="panel recent-panel">
       <div className="panel-head"><div><h3>{t("dashboard.recent")}</h3><p>{t("dashboard.recentHelp")}</p></div><button className="secondary-button" onClick={onOpenArchive}>{t("dashboard.openArchive")}</button></div>
       <div className="recent-list">
