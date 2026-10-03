@@ -179,7 +179,7 @@ export function CountryTreemap({ data }: { data: CountPoint[] }) {
       {tiles.map((tile) => {
         const strength = tile.count / max;
         const percent = total ? Math.round(tile.count / total * 100) : 0;
-        return <div key={tile.key} className={`geo-tile ${strength >= 0.48 ? "dense" : "light"}`} style={{ left: `${tile.x}%`, top: `${tile.y}%`, width: `${tile.w}%`, height: `${tile.h}%`, background: `rgba(47, 111, 152, ${opacity(tile.count)})` }} title={`${tile.label}: ${tile.count} (${percent}%)`}>
+        return <div key={tile.key} className={`geo-tile ${strength >= 0.48 ? "dense" : "light"}`} style={{ left: `${tile.x}%`, top: `${tile.y}%`, width: `${tile.w}%`, height: `${tile.h}%`, background: `rgba(174, 34, 34, ${opacity(tile.count)})` }} title={`${tile.label}: ${tile.count} (${percent}%)`}>
           <span>{tile.label}</span><b>{tile.count}</b>
         </div>;
       })}
