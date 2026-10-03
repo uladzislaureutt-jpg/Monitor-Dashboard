@@ -266,6 +266,13 @@ export type FullTextHydrationResult = {
   detail: string | null;
 };
 
+export type BrowserImportPayload = {
+  title: string;
+  source: string;
+  url: string;
+  text: string;
+};
+
 export type PublicationModerationFlag = {
   documentUid: string;
   userId: string;
