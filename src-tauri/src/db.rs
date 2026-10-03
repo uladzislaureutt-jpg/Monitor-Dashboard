@@ -506,7 +506,7 @@ pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i6
     let coverage_health = coverage_health_summary(&conn, monitor_key)?;
 
     let visuals_sql = format!(
-        "{} WHERE m.monitor_key=?1 AND {} AND NOT EXISTS (SELECT 1 FROM moderation_flags mf WHERE mf.monitor_key=m.monitor_key AND mf.document_uid=d.document_uid) AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid) AND NULLIF(TRIM(d.preview_image_url),'') IS NOT NULL ORDER BY COALESCE(datetime(d.published_at), datetime(d.last_seen_at), datetime(d.first_seen_at)) DESC, mi.id DESC LIMIT 4",
+        "{} WHERE m.monitor_key=?1 AND {} AND NOT EXISTS (SELECT 1 FROM moderation_flags mf WHERE mf.monitor_key=m.monitor_key AND mf.document_uid=d.document_uid) AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid) AND NULLIF(TRIM(d.preview_image_url),'') IS NOT NULL ORDER BY COALESCE(datetime(d.published_at), datetime(d.last_seen_at), datetime(d.first_seen_at)) DESC, mi.id DESC LIMIT 8",
         publication_select(), period
     );
     let mut visuals_stmt = conn.prepare(&visuals_sql).map_err(|e| format!("Не удалось подготовить визуальные материалы: {e}"))?;
