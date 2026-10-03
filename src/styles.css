@@ -810,3 +810,16 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
   .ui-wide-motion .dashboard-monitor .wide-slot-trend { grid-column: auto; }
   .ui-mode-panel { align-items: flex-start; flex-direction: column; }
 }
+
+.ui-wide-motion .rank-label:has(.source-mark) {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: visible;
+  white-space: nowrap;
+}
+.ui-wide-motion .rank-label:has(.source-mark) > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
