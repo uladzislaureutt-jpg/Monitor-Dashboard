@@ -294,6 +294,8 @@ export type SyncSettings = {
 export type SyncResult = {
   checkedArtifacts: number;
   latestAvailableRun: number | null;
+  latestRemoteRun: number | null;
+  latestImportedRun: number | null;
   importedRuns: number[];
   skippedDryRuns: number[];
   alreadyPresent: number;
