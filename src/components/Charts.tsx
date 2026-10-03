@@ -71,6 +71,11 @@ const SOURCE_ICON_ALIASES: Array<{ match: RegExp; path: string }> = [
   { match: /(deutsche welle|\bdw\b)/i, path: "/media-icons/deutschewelle.svg" },
   { match: /reuters|рейтер/i, path: "/media-icons/reuters.svg" },
   { match: /коммерсант|kommersant/i, path: "/media-icons/kommersant.svg" },
+  { match: /^(риа новости|ria novosti|ria\.ru)$/i, path: "/media-icons/ria-novosti.svg" },
+  { match: /^тасс$|^tass$/i, path: "/media-icons/tass.svg" },
+  { match: /интерфакс|interfax/i, path: "/media-icons/interfax.svg" },
+  { match: /известия|izvestia/i, path: "/media-icons/izvestia.svg" },
+  { match: /комсомольская правда|kp\.ru/i, path: "/media-icons/komsomolskaya-pravda.svg" },
 ];
 
 function sourceMark(label: string) {
