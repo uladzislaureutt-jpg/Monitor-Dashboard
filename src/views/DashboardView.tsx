@@ -38,7 +38,6 @@ export function DashboardView({
   onPeriodChange,
   loading,
   onOpenArchive,
-  wideUiEnabled,
 }: {
   monitorKey: MonitorKey;
   data: DashboardOverview | null;
@@ -46,7 +45,6 @@ export function DashboardView({
   onPeriodChange: (value: PeriodDays) => void;
   loading: boolean;
   onOpenArchive: () => void;
-  wideUiEnabled: boolean;
 }) {
   const { t, locale } = useI18n();
   const isLMonitor = monitorKey === "lukashenko";
@@ -81,7 +79,7 @@ export function DashboardView({
     return () => { cancelled = true; };
   }, [selectedTopicPoint]);
 
-  return <div className={`view-stack dashboard-monitor ${isLMonitor ? "dashboard-monitor-l" : "dashboard-monitor-sep"}`}>
+  return <div className="view-stack">
     <section className="view-heading dashboard-heading">
       <div>
         <div className="eyebrow dark">{isLMonitor ? "L-MONITOR" : t("dashboard.eyebrow")}</div>
@@ -104,7 +102,7 @@ export function DashboardView({
     </section>
 
     <section className="dashboard-grid">
-      <article className="panel chart-panel span-two wide-slot-trend">
+      <article className="panel chart-panel span-two">
         <div className="panel-head chart-head-with-mode">
           <div><h3>{t("dashboard.trend")}</h3><p>{isLMonitor ? (locale === "be" ? "Два патокі: унутраная павестка і знешняя палітыка." : "Два потока: внутренняя повестка и внешняя политика.") : t("dashboard.trendHelp")}</p></div>
           <div className="panel-control-stack trend-controls">
@@ -138,14 +136,14 @@ export function DashboardView({
         </>}
       </article>
 {isLMonitor ? <>
-        <div className="wide-slot-stories"><ResonancePanel title={locale === "be" ? "Сюжэты" : "Сюжеты"} subtitle={locale === "be" ? "Асноўная публікацыя і спіс іншых крыніц, якія асвятлялі той жа сюжэт." : "Основная публикация и список других источников, освещавших тот же сюжет."} items={[]} stories={resonanceData?.stories ?? []} fallback={false} period={resonancePeriod} onPeriodChange={setResonancePeriod} /></div>
-        <BreakdownPanel className="wide-slot-country" title={locale === "be" ? "Краіны паходжання крыніц" : "Страны происхождения источников"} subtitle={locale === "be" ? "Странавая прыналежнасць выданняў, якія апублікавалі матэрыялы. Схема паказвае маштаб кожнай краіны." : "Страновая принадлежность изданий, опубликовавших материалы. Схема показывает масштаб каждой страны."} data={geoData?.regionBreakdown ?? []} scheme="source_countries" initialMode="bars" controlsClassName="source-country-controls" period={geoPeriod} onPeriodChange={setGeoPeriod} persistentWorldMap={wideUiEnabled} />
-        <BreakdownPanel className="span-two wide-slot-sources" title={t("dashboard.sources")} subtitle={t("dashboard.sourcesHelp")} data={sourcesData?.sourceBreakdown ?? []} period={sourcesPeriod} onPeriodChange={setSourcesPeriod} sourceIcons={wideUiEnabled} />
+        <ResonancePanel title={locale === "be" ? "Сюжэты" : "Сюжеты"} subtitle={locale === "be" ? "Асноўная публікацыя і спіс іншых крыніц, якія асвятлялі той жа сюжэт." : "Основная публикация и список других источников, освещавших тот же сюжет."} items={[]} stories={resonanceData?.stories ?? []} fallback={false} period={resonancePeriod} onPeriodChange={setResonancePeriod} />
+        <BreakdownPanel title={locale === "be" ? "Краіны паходжання крыніц" : "Страны происхождения источников"} subtitle={locale === "be" ? "Странавая прыналежнасць выданняў, якія апублікавалі матэрыялы. Схема паказвае маштаб кожнай краіны." : "Страновая принадлежность изданий, опубликовавших материалы. Схема показывает масштаб каждой страны."} data={geoData?.regionBreakdown ?? []} scheme="source_countries" initialMode="bars" controlsClassName="source-country-controls" period={geoPeriod} onPeriodChange={setGeoPeriod} />
+        <BreakdownPanel className="span-two" title={t("dashboard.sources")} subtitle={t("dashboard.sourcesHelp")} data={sourcesData?.sourceBreakdown ?? []} period={sourcesPeriod} onPeriodChange={setSourcesPeriod} sourceIcons />
       </> : <>
-        <BreakdownPanel className="wide-slot-topics" title={t("dashboard.topics")} subtitle={t("dashboard.topicsHelp")} data={topicsData?.categoryBreakdown ?? []} period={topicsPeriod} onPeriodChange={setTopicsPeriod} labelKind="category" />
-        <BreakdownPanel className="wide-slot-geo" title={t("dashboard.geography")} subtitle={t("dashboard.geographyHelp")} data={geoData?.regionBreakdown ?? []} allowMap initialMode={wideUiEnabled ? "map" : "bars"} period={geoPeriod} onPeriodChange={setGeoPeriod} labelKind="region" />
-        <BreakdownPanel className="wide-slot-sources" title={t("dashboard.sources")} subtitle={t("dashboard.sourcesHelp")} data={sourcesData?.sourceBreakdown ?? []} period={sourcesPeriod} onPeriodChange={setSourcesPeriod} sourceIcons={wideUiEnabled} />
-        <div className="wide-slot-resonance"><ResonancePanel items={resonanceData?.resonanceItems ?? []} fallback={resonanceData?.resonanceFallback ?? false} period={resonancePeriod} onPeriodChange={setResonancePeriod} /></div>
+        <BreakdownPanel title={t("dashboard.topics")} subtitle={t("dashboard.topicsHelp")} data={topicsData?.categoryBreakdown ?? []} period={topicsPeriod} onPeriodChange={setTopicsPeriod} labelKind="category" />
+        <BreakdownPanel title={t("dashboard.geography")} subtitle={t("dashboard.geographyHelp")} data={geoData?.regionBreakdown ?? []} allowMap period={geoPeriod} onPeriodChange={setGeoPeriod} labelKind="region" />
+        <BreakdownPanel title={t("dashboard.sources")} subtitle={t("dashboard.sourcesHelp")} data={sourcesData?.sourceBreakdown ?? []} period={sourcesPeriod} onPeriodChange={setSourcesPeriod} sourceIcons />
+        <ResonancePanel items={resonanceData?.resonanceItems ?? []} fallback={resonanceData?.resonanceFallback ?? false} period={resonancePeriod} onPeriodChange={setResonancePeriod} />
       </>}
     </section>
 
