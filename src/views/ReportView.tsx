@@ -118,7 +118,7 @@ export function ReportView() {
       })
       .catch(() => { if (!cancelled) setAiRuns(0); });
     return () => { cancelled = true; };
-  }, [active?.documentUid]);
+  }, [active?.documentUid, isLMonitor]);
 
   function qualityLabel(item: ReportDraftItem) {
     if (item.sourceQuality === "full") return item.sourceOrigin === "manual" ? tx.manual : tx.full;
@@ -239,7 +239,7 @@ export function ReportView() {
           {active.sourceQuality !== "full" && <p>{tx.compressionNeedsFull}</p>}
           {!isLMonitor && maximumMode && <p>{tx.aiMaximumHelp}</p>}
           {!isLMonitor && extractMode && <p>{tx.aiExtractHelp}</p>}
-          {!isLMonitor && aiLimitReached && <p>{tx.aiLimitReached}</p>
+          {!isLMonitor && aiLimitReached && <p>{tx.aiLimitReached}</p>}
         </div>
         <div className="report-editor-label"><b>{tx.editorial}</b><div><button className="ghost-button small-button" onClick={() => report.resetText(active.documentUid)}>{tx.reset}</button>{active.excerpt && <button className="ghost-button small-button" onClick={() => report.useExcerpt(active.documentUid)}>{tx.useExcerpt}</button>}</div></div>
         <div className="report-editorial-compose"><div className="report-editorial-compose-title">{active.title}</div><textarea className="report-editor-textarea" value={active.editorialText} onChange={(e) => report.updateText(active.documentUid, e.target.value)} /></div>
