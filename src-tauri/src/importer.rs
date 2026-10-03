@@ -4,7 +4,7 @@ use std::io::{Cursor, Read, Seek};
 use std::path::Path;
 
 use jsonschema::validator_for;
-use rusqlite::{Connection, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use zip::ZipArchive;
