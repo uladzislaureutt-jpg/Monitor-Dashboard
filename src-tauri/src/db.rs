@@ -912,6 +912,18 @@ pub fn sync_skipped_run_numbers(path: &Path, monitor_key: &str) -> Result<HashSe
         .map_err(|e| format!("Не удалось собрать sync status: {e}"))
 }
 
+pub fn sync_dry_artifacts(path: &Path, monitor_key: &str) -> Result<HashMap<i64, u64>, String> {
+    let conn = open_database(path)?;
+    let mut stmt = conn
+        .prepare("SELECT run_number, artifact_id FROM sync_run_status WHERE monitor_key=?1 AND status='dry_run' AND artifact_id IS NOT NULL")
+        .map_err(|e| format!("Не удалось подготовить список dry-run sync status: {e}"))?;
+    let rows = stmt
+        .query_map(params![monitor_key], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)? as u64)))
+        .map_err(|e| format!("Не удалось прочитать список dry-run sync status: {e}"))?;
+    rows.collect::<Result<HashMap<_, _>, _>>()
+        .map_err(|e| format!("Не удалось собрать dry-run sync status: {e}"))
+}
+
 pub fn sync_failed_artifacts(path: &Path, monitor_key: &str) -> Result<HashMap<i64, u64>, String> {
     let conn = open_database(path)?;
     let mut stmt = conn
