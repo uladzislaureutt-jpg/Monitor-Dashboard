@@ -163,10 +163,11 @@ pub fn sync_github(db_path: &Path, repository: &str, token: &str, monitor_key: &
     let mut errors = Vec::new();
 
     for (run_number, artifact) in artifacts {
-        if existing_runs.contains(&run_number) {
-            already_present += 1;
-            continue;
-        }
+        // Older imported runs are immutable history and can be skipped cheaply.
+        // The latest imported run is intentionally rechecked: a production
+        // dashboard bundle may be rebuilt under the same run number, and the
+        // importer can then decide by external run key + bundle hash whether it
+        // is identical or must replace the stored snapshot.
         if latest_imported_run.is_some_and(|latest| run_number < latest) {
             continue;
         }
