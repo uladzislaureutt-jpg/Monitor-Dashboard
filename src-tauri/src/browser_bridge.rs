@@ -15,6 +15,8 @@ pub struct BrowserImportPayload {
     pub source: String,
     pub url: String,
     pub text: String,
+    #[serde(default)]
+    pub quality: Option<String>,
 }
 
 pub type SharedImport = Arc<Mutex<Option<BrowserImportPayload>>>;
