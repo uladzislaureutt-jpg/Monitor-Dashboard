@@ -155,7 +155,7 @@ pub fn sync_github(db_path: &Path, repository: &str, token: &str, monitor_key: &
         .filter_map(|run| run.run_number)
         .collect();
     let latest_imported_run = existing_runs.iter().copied().max();
-    let known_dry_runs = db::sync_skipped_run_numbers(db_path, monitor_key)?;
+    let known_dry_artifacts = db::sync_dry_artifacts(db_path, monitor_key)?;
 
     let mut imported_runs = Vec::new();
     let mut skipped_dry_runs = Vec::new();
@@ -170,7 +170,7 @@ pub fn sync_github(db_path: &Path, repository: &str, token: &str, monitor_key: &
         if latest_imported_run.is_some_and(|latest| run_number < latest) {
             continue;
         }
-        if known_dry_runs.contains(&run_number) {
+        if known_dry_artifacts.get(&run_number) == Some(&artifact.id) {
             skipped_dry_runs.push(run_number);
             continue;
         }
