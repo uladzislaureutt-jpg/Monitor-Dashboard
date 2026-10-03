@@ -26,6 +26,7 @@ export function ReportView() {
   const [manualText, setManualText] = useState("");
   const [manualItemOpen, setManualItemOpen] = useState(false);
   const [manualItem, setManualItem] = useState({ title: "", source: "", region: "", url: "", text: "" });
+  const [browserImportBusy, setBrowserImportBusy] = useState(false);
   const [compressionMode, setCompressionMode] = useState<CompressionMode>("auto");
   const [aiBusy, setAiBusy] = useState(false);
   const [aiRuns, setAiRuns] = useState<number | null>(null);
@@ -93,6 +94,9 @@ export function ReportView() {
     aiHelp: be ? "AI адпраўляе толькі поўны тэкст абранага матэрыялу. Лічбы, імёны і прамыя цытаты правяраюцца перад заменай." : "AI отправляет только полный текст выбранного материала. Числа, имена и прямые цитаты проверяются перед заменой.",
     exactHelp: be ? "Толькі Exact: скарачэнне без перапісвання і без выкарыстання Groq." : "Только Exact: сокращение без переписывания и без использования Groq.",
     addManualItem: be ? "Дадаць матэрыял уручную" : "Добавить материал вручную",
+    browserImport: be ? "Атрымаць з браўзера" : "Получить из браузера",
+    browserImportEmpty: be ? "Браўзер пакуль не перадаў матэрыял. Адкрыйце публікацыю, націсніце пашырэнне Monitor і паўтарыце." : "Браузер пока не передал материал. Откройте публикацию, нажмите расширение Monitor и повторите.",
+    browserImportDone: be ? "Матэрыял з браўзера атрыманы. Праверце палі і дадайце яго ў агляд." : "Материал из браузера получен. Проверьте поля и добавьте его в обзор.",
     manualItemHelp: be ? "Для матэрыялаў па падпісцы або прапушчаных маніторынгам. Устаўце загаловак, выданне і тэкст з браўзера." : "Для материалов по подписке или пропущенных мониторингом. Вставьте заголовок, издание и текст из браузера.",
     manualTitle: be ? "Загаловак" : "Заголовок",
     manualSource: be ? "Крыніца / выданне" : "Источник / издание",
@@ -179,6 +183,40 @@ export function ReportView() {
     } finally { setAiBusy(false); }
   }
 
+  async function receiveBrowserImport() {
+    if (browserImportBusy) return;
+    setBrowserImportBusy(true);
+    setError("");
+    setStatus("");
+    try {
+      const payload = await desktopApi.takeBrowserImport();
+      if (!payload) {
+        setError(tx.browserImportEmpty);
+        return;
+      }
+      let region = "";
+      try {
+        const sources = await desktopApi.sources(null);
+        const normalized = payload.source.trim().toLocaleLowerCase();
+        const known = sources.find((item) => item.name.trim().toLocaleLowerCase() === normalized);
+        region = known?.region || "";
+      } catch { /* source lookup is optional */ }
+      setManualItem({
+        title: payload.title,
+        source: payload.source,
+        region,
+        url: payload.url,
+        text: payload.text,
+      });
+      setManualItemOpen(true);
+      setStatus(tx.browserImportDone);
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setBrowserImportBusy(false);
+    }
+  }
+
   function addManualReportItem() {
     if (!manualItem.title.trim() || !manualItem.text.trim()) return;
     try {
@@ -225,7 +263,7 @@ export function ReportView() {
       <div><b>{tx.integrity}: {report.fullTextCount}/{report.items.length}</b><span>{tx.fullCount}: {report.fullTextCount} · {tx.partialCount}: {report.partialTextCount} · {tx.missingCount}: {report.missingFullTextCount}</span></div>
       <p>{integrityClass === "ready" ? tx.allReady : tx.needsReview}</p>
     </section>}
-    <section className="report-toolbar panel"><div><b>{tx.count}: {report.items.length}{report.maxItems !== null ? `/${report.maxItems}` : ""}</b>{tx.tooFew && <span>{tx.tooFew}</span>}</div><div>{isLMonitor && <button className="secondary-button" onClick={() => setManualItemOpen((value) => !value)}>{tx.addManualItem}</button>}<span>{tx.exportHelp}</span>{report.items.length > 0 && <button className="ghost-button" onClick={() => { if (window.confirm(tx.clear + "?")) report.clear(); }}>{tx.clear}</button>}</div></section>
+    <section className="report-toolbar panel"><div><b>{tx.count}: {report.items.length}{report.maxItems !== null ? `/${report.maxItems}` : ""}</b>{tx.tooFew && <span>{tx.tooFew}</span>}</div><div>{isLMonitor && <><button className="primary-button" disabled={browserImportBusy} onClick={receiveBrowserImport}>{browserImportBusy ? "…" : tx.browserImport}</button><button className="secondary-button" onClick={() => setManualItemOpen((value) => !value)}>{tx.addManualItem}</button></>}<span>{tx.exportHelp}</span>{report.items.length > 0 && <button className="ghost-button" onClick={() => { if (window.confirm(tx.clear + "?")) report.clear(); }}>{tx.clear}</button>}</div></section>
     {isLMonitor && manualItemOpen && <section className="panel report-add-manual"><div><b>{tx.addManualItem}</b><p>{tx.manualItemHelp}</p></div><div className="report-add-manual-grid"><label>{tx.manualTitle}<input value={manualItem.title} onChange={(e) => setManualItem({ ...manualItem, title: e.target.value })} /></label><label>{tx.manualSource}<input value={manualItem.source} onChange={(e) => setManualItem({ ...manualItem, source: e.target.value })} /></label><label>{tx.manualCountry}<input value={manualItem.region} onChange={(e) => setManualItem({ ...manualItem, region: e.target.value })} /></label><label>{tx.manualUrl}<input value={manualItem.url} onChange={(e) => setManualItem({ ...manualItem, url: e.target.value })} placeholder="https://…" /></label></div><label className="report-add-manual-text">{tx.manualBody}<textarea value={manualItem.text} onChange={(e) => setManualItem({ ...manualItem, text: e.target.value })} /></label><div className="report-add-manual-actions"><button className="primary-button" disabled={!manualItem.title.trim() || !manualItem.text.trim()} onClick={addManualReportItem}>{tx.add}</button><button className="ghost-button" onClick={() => setManualItemOpen(false)}>{tx.cancel}</button></div></section>}
     {!report.items.length ? <section className="panel empty-state report-empty">{tx.empty}</section> : <section className="report-workspace-grid">
       <aside className="panel report-basket">{report.items.map((item, index) => <article key={item.documentUid} className={active?.documentUid === item.documentUid ? "active" : ""} onClick={() => setActiveUid(item.documentUid)}><div className="report-basket-number">{index + 1}</div><div><div className="report-basket-source-row"><b>{item.source}</b><span className={`report-text-status ${item.sourceQuality}`} title={qualityLabel(item)}><i />{qualityShort(item)}</span></div><span>{item.title}</span></div><div className="report-order-actions"><button disabled={index === 0} onClick={(e) => { e.stopPropagation(); report.move(item.documentUid, -1); }}>{tx.up}</button><button disabled={index === report.items.length - 1} onClick={(e) => { e.stopPropagation(); report.move(item.documentUid, 1); }}>{tx.down}</button><button className="text-danger" onClick={(e) => { e.stopPropagation(); report.remove(item.documentUid); }}>{tx.remove}</button></div></article>)}</aside>
