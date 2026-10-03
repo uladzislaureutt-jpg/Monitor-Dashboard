@@ -271,6 +271,7 @@ export type BrowserImportPayload = {
   source: string;
   url: string;
   text: string;
+  quality?: "full" | "partial";
 };
 
 export type PublicationModerationFlag = {
