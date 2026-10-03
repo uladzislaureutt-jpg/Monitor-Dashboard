@@ -823,3 +823,36 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.source-logo {
+  display: inline-grid;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  margin-right: 7px;
+  border-radius: 5px;
+  background: #fff;
+  border: 1px solid #ddd7cf;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+.source-logo img {
+  max-width: 17px;
+  max-height: 17px;
+  width: auto;
+  height: auto;
+  display: block;
+  object-fit: contain;
+}
+.ui-wide-motion .rank-label:has(.source-logo) {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: visible;
+  white-space: nowrap;
+}
+.ui-wide-motion .rank-label:has(.source-logo) > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
