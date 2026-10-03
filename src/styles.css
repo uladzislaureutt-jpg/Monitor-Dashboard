@@ -521,3 +521,19 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 
 /* 0.6.2 — editorial compression */
 .report-compression-panel{margin-top:16px;padding:13px 14px;border:1px solid #d7dfdf;border-radius:13px;background:#f5f8f7}.report-compression-panel.disabled{background:#f5f2ed;border-color:#e1d8cf}.report-compression-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}.report-compression-head>div{min-width:0}.report-compression-head b,.report-compression-head span{display:block}.report-compression-head b{font-size:12px;color:#27495c}.report-compression-head span{margin-top:4px;font-size:9px;line-height:1.45;color:#748087;max-width:700px}.report-compression-head select{border:1px solid #cfd9da;border-radius:9px;background:#fff;padding:7px 9px;color:#40535e;font-size:9px}.report-compression-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}.report-compression-actions>span{margin-left:auto;color:#697981;font-size:8.5px}.report-compression-panel>p{margin:8px 0 0;color:#9a685c;font-size:8.5px}.report-compression-actions .primary-button:disabled,.report-compression-actions .secondary-button:disabled{opacity:.48}
+
+
+/* 0.7.7 — L-Monitor persistent source-country scheme */
+.persistent-country-scheme { margin-top: 14px; padding-top: 14px; border-top: 1px solid #eee3da; }
+.persistent-country-scheme .geo-treemap-wrap { min-height: 430px; }
+.persistent-country-scheme .country-treemap { width: min(100%, 640px); aspect-ratio: 1.22 / 1; }
+.persistent-country-scheme .country-treemap .geo-tile { padding: 2px; gap: 2px; }
+.persistent-country-scheme .country-treemap .geo-tile span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+  font-size: clamp(6px, .7vw, 10px);
+  line-height: 1.05;
+}
+.persistent-country-scheme .country-treemap .geo-tile b { font-size: clamp(8px, 1vw, 16px); }
