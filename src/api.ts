@@ -71,8 +71,8 @@ export const desktopApi = {
     invoke<EditorialSource | null>("get_editorial_source", { monitorKey: activeMonitorKey, documentUid }),
   hydrateReportFullTexts: (documentUids: string[]) =>
     invoke<FullTextHydrationResult[]>("hydrate_report_full_texts", { monitorKey: activeMonitorKey, documentUids }),
-  exportReport: (path: string, date: string, items: ReportExportItem[]) =>
-    invoke<void>("export_report_docx", { path, date, items }),
+  exportReport: (path: string, date: string, items: ReportExportItem[], monitorKey = activeMonitorKey) =>
+    invoke<void>("export_report_docx", { path, date, items, monitorKey }),
   syncGithub: (repository: string, token: string) =>
     invoke<SyncResult>("sync_github_artifacts", { repository, token, monitorKey: activeMonitorKey }),
   replaceModerationSnapshot: (snapshot: PublicationModerationSnapshot) =>
