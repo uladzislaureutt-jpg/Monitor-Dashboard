@@ -619,112 +619,7 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 }
 
 
-/* 0.7.11 — reversible wide 16:9 UI package.
-   Scoped under .ui-wide-motion so switching to .ui-legacy restores the previous layout. */
-.ui-wide-motion {
-  --motion-line: rgba(123, 192, 231, .16);
-  --motion-node: rgba(128, 205, 245, .28);
-}
-.ui-wide-motion .topbar,
-.ui-wide-motion .sidebar {
-  position: relative;
-  overflow: hidden;
-  isolation: isolate;
-}
-.ui-wide-motion .topbar > *,
-.ui-wide-motion .sidebar > * { position: relative; z-index: 2; }
-.ui-wide-motion .topbar::before,
-.ui-wide-motion .sidebar::before,
-.ui-wide-motion .topbar::after,
-.ui-wide-motion .sidebar::after {
-  content: "";
-  position: absolute;
-  pointer-events: none;
-  z-index: 1;
-}
-.ui-wide-motion .topbar::before {
-  inset: -90px -6% -90px 8%;
-  background:
-    radial-gradient(circle at 16% 56%, var(--motion-node) 0 1px, transparent 2px),
-    radial-gradient(circle at 38% 31%, rgba(137,205,241,.22) 0 1px, transparent 2px),
-    radial-gradient(circle at 72% 61%, rgba(137,205,241,.19) 0 1.2px, transparent 2.2px),
-    repeating-radial-gradient(ellipse at 64% 50%, transparent 0 72px, var(--motion-line) 73px 74px, transparent 75px 116px);
-  opacity: .62;
-  transform: translate3d(0,0,0);
-  animation: monitor-meridians-x 28s ease-in-out infinite alternate;
-}
-.ui-wide-motion .topbar::after {
-  inset: 0 0 0 34%;
-  background: linear-gradient(112deg, transparent 0 44%, rgba(255,255,255,.05) 49%, transparent 54% 100%);
-  animation: monitor-glint 17s ease-in-out infinite;
-}
-.ui-wide-motion .sidebar::before {
-  inset: -12% -95% -8% -60%;
-  background:
-    repeating-radial-gradient(ellipse at 48% 48%, transparent 0 78px, rgba(112,183,224,.12) 79px 80px, transparent 81px 130px);
-  opacity: .7;
-  animation: monitor-meridians-y 34s ease-in-out infinite alternate;
-}
-.ui-wide-motion .sidebar::after {
-  width: 180px;
-  height: 180px;
-  left: -72px;
-  top: 34%;
-  background:
-    radial-gradient(circle at 50% 50%, rgba(155,218,247,.28) 0 1.5px, transparent 2.5px),
-    radial-gradient(circle at 72% 28%, rgba(155,218,247,.18) 0 1px, transparent 2px),
-    linear-gradient(137deg, transparent 0 48%, rgba(164,220,248,.10) 49%, transparent 50%);
-  opacity: .75;
-  animation: monitor-shard-drift 22s ease-in-out infinite alternate;
-}
-@keyframes monitor-meridians-x {
-  from { transform: translate3d(-1.2%, -1px, 0) scale(1); opacity: .42; }
-  to { transform: translate3d(1.4%, 2px, 0) scale(1.015); opacity: .72; }
-}
-@keyframes monitor-meridians-y {
-  from { transform: translate3d(-3px, -1.5%, 0) rotate(-1deg); }
-  to { transform: translate3d(5px, 1.5%, 0) rotate(1deg); }
-}
-@keyframes monitor-glint {
-  0%, 18%, 100% { opacity: 0; transform: translateX(-18%); }
-  36% { opacity: .7; }
-  58% { opacity: 0; transform: translateX(32%); }
-}
-@keyframes monitor-shard-drift {
-  from { transform: translate3d(-4px,-8px,0) rotate(-4deg); opacity: .45; }
-  to { transform: translate3d(16px,18px,0) rotate(5deg); opacity: .82; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .ui-wide-motion .topbar::before,
-  .ui-wide-motion .sidebar::before,
-  .ui-wide-motion .topbar::after,
-  .ui-wide-motion .sidebar::after { animation: none !important; }
-}
-
-.ui-wide-motion .content {
-  max-width: none;
-  padding-left: clamp(20px, 2vw, 34px);
-  padding-right: clamp(20px, 2vw, 34px);
-}
-.ui-wide-motion .dashboard-monitor { max-width: 1920px; margin: 0 auto; }
-.ui-wide-motion .dashboard-monitor .dashboard-grid {
-  grid-template-columns: repeat(12, minmax(0,1fr));
-  align-items: stretch;
-}
-.ui-wide-motion .dashboard-monitor .wide-slot-trend { grid-column: 1 / -1; }
-.ui-wide-motion .dashboard-monitor-sep .wide-slot-topics { grid-column: span 5; }
-.ui-wide-motion .dashboard-monitor-sep .wide-slot-geo { grid-column: span 7; }
-.ui-wide-motion .dashboard-monitor-sep .wide-slot-sources { grid-column: span 5; }
-.ui-wide-motion .dashboard-monitor-sep .wide-slot-resonance { grid-column: span 7; min-width: 0; }
-.ui-wide-motion .dashboard-monitor-l .wide-slot-stories { grid-column: span 6; min-width: 0; }
-.ui-wide-motion .dashboard-monitor-l .wide-slot-country { grid-column: span 6; }
-.ui-wide-motion .dashboard-monitor-l .wide-slot-sources { grid-column: 1 / -1; }
-.ui-wide-motion .wide-slot-stories > .panel,
-.ui-wide-motion .wide-slot-resonance > .panel { height: 100%; box-sizing: border-box; }
-.ui-wide-motion .dashboard-monitor .panel,
-.ui-wide-motion .dashboard-monitor .kpi { box-shadow: 0 7px 20px rgba(43,48,51,.045); }
-.ui-wide-motion .dashboard-monitor .chart-panel { min-width: 0; }
-
+/* 0.7.13 — local static media icons, independent of wide UI */
 .source-mark {
   display: inline-grid;
   place-items: center;
@@ -741,89 +636,6 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
   flex: 0 0 auto;
   vertical-align: middle;
 }
-.bar-label:has(.source-mark) { display: flex; align-items: center; min-width: 0; }
-
-.belarus-map-wrap { min-height: 250px; display: grid; align-content: center; }
-.belarus-region-map { width: 100%; height: 245px; overflow: visible; }
-.belarus-map-outline { fill: #edf3f6; stroke: #cfdae0; stroke-width: 2; }
-.belarus-region-cell { stroke: rgba(255,255,255,.88); stroke-width: 3; transition: opacity .18s ease; }
-.belarus-region-cell:hover { opacity: .86; }
-.belarus-region-label { fill: #264b63; font-size: 8px; font-weight: 700; pointer-events: none; }
-.belarus-region-count { fill: #183d57; font-size: 12px; font-weight: 850; pointer-events: none; }
-.belarus-scale.low { background: #dcebf3; }
-.belarus-scale.high { background: #2f6f98; }
-
-.world-source-map {
-  min-height: 230px;
-  border: 1px solid #eee5da;
-  border-radius: 12px;
-  background: linear-gradient(180deg,#fbfaf7,#f5f2ec);
-  overflow: hidden;
-}
-.world-source-map svg { display: block; width: 100%; height: 230px; }
-.world-land path { fill: #dde2e3; stroke: #f7f7f5; stroke-width: 2; }
-.world-country-dot { fill: #2f6f98; stroke: rgba(255,255,255,.92); stroke-width: 2; }
-
-.ui-wide-motion .persistent-country-scheme.with-world-map {
-  display: grid;
-  grid-template-columns: minmax(0,.9fr) minmax(0,1.1fr);
-  gap: 12px;
-  align-items: start;
-}
-.ui-wide-motion .persistent-country-scheme.with-world-map .geo-treemap-wrap { min-height: 230px; }
-.ui-wide-motion .persistent-country-scheme.with-world-map .country-treemap {
-  width: 100%;
-  min-height: 230px;
-  aspect-ratio: 1.45 / 1;
-}
-.ui-wide-motion .country-small-legend { max-width: none; }
-
-.ui-mode-panel {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  padding: 14px 18px;
-}
-.ui-mode-panel > div { display: grid; gap: 4px; }
-.ui-mode-panel b { color: #183d57; font-size: 12px; }
-.ui-mode-panel span { color: #7d766e; font-size: 9px; line-height: 1.4; }
-
-@media (max-width: 1380px) {
-  .ui-wide-motion .dashboard-monitor-sep .wide-slot-topics,
-  .ui-wide-motion .dashboard-monitor-sep .wide-slot-geo,
-  .ui-wide-motion .dashboard-monitor-sep .wide-slot-sources,
-  .ui-wide-motion .dashboard-monitor-sep .wide-slot-resonance,
-  .ui-wide-motion .dashboard-monitor-l .wide-slot-stories,
-  .ui-wide-motion .dashboard-monitor-l .wide-slot-country { grid-column: span 6; }
-  .ui-wide-motion .persistent-country-scheme.with-world-map { grid-template-columns: 1fr; }
-}
-@media (max-width: 1050px) {
-  .ui-wide-motion .dashboard-monitor .dashboard-grid { grid-template-columns: 1fr; }
-  .ui-wide-motion .dashboard-monitor-sep .wide-slot-topics,
-  .ui-wide-motion .dashboard-monitor-sep .wide-slot-geo,
-  .ui-wide-motion .dashboard-monitor-sep .wide-slot-sources,
-  .ui-wide-motion .dashboard-monitor-sep .wide-slot-resonance,
-  .ui-wide-motion .dashboard-monitor-l .wide-slot-stories,
-  .ui-wide-motion .dashboard-monitor-l .wide-slot-country,
-  .ui-wide-motion .dashboard-monitor-l .wide-slot-sources,
-  .ui-wide-motion .dashboard-monitor .wide-slot-trend { grid-column: auto; }
-  .ui-mode-panel { align-items: flex-start; flex-direction: column; }
-}
-
-.ui-wide-motion .rank-label:has(.source-mark) {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  overflow: visible;
-  white-space: nowrap;
-}
-.ui-wide-motion .rank-label:has(.source-mark) > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .source-logo {
   display: inline-grid;
   place-items: center;
@@ -844,14 +656,16 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
   display: block;
   object-fit: contain;
 }
-.ui-wide-motion .rank-label:has(.source-logo) {
+.rank-label:has(.source-logo),
+.rank-label:has(.source-mark) {
   display: flex;
   align-items: center;
   min-width: 0;
   overflow: visible;
   white-space: nowrap;
 }
-.ui-wide-motion .rank-label:has(.source-logo) > span {
+.rank-label:has(.source-logo) > span,
+.rank-label:has(.source-mark) > span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
