@@ -340,7 +340,7 @@ fn ingest(conn: &Connection, input_path: &Path, parsed: ParsedBundle) -> Result<
     }
 
     let source_ids = ingest_sources(&tx, run_id, &parsed.manifest.monitor.key, &parsed.source_metrics)?;
-    ingest_publications(
+    let document_ids = ingest_publications(
         &tx,
         monitor_id,
         run_id,
@@ -350,10 +350,10 @@ fn ingest(conn: &Connection, input_path: &Path, parsed: ParsedBundle) -> Result<
         &parsed.publications,
     )?;
     if parsed.manifest.files.full_texts.is_some() {
-        ingest_full_texts(&tx, &parsed.full_texts)?;
+        ingest_full_texts(&tx, &parsed.full_texts, &document_ids)?;
     }
     if parsed.manifest.files.entities.is_some() {
-        ingest_entities(&tx, &parsed.publications, &parsed.entities)?;
+        ingest_entities(&tx, &parsed.publications, &parsed.entities, &document_ids)?;
     }
 
     write_import_log(
@@ -538,7 +538,8 @@ fn ingest_publications(
     observed_at: Option<&str>,
     source_ids: &HashMap<String, i64>,
     publications: &[PublicationRecord],
-) -> Result<(), String> {
+) -> Result<HashMap<String, i64>, String> {
+    let mut document_ids = HashMap::new();
     for item in publications {
         if item.monitor_key != monitor_key {
             return Err(format!("monitor_key публикации {} не совпадает с manifest", item.document_id));
@@ -550,44 +551,91 @@ fn ingest_publications(
         };
         let seen = observed_at.or(item.publication.published_at.as_deref());
 
-        tx.execute(
-            r#"
-            INSERT INTO documents(
-                document_uid, source_id, url, normalized_url, published_at, language, title,
-                title_generated, excerpt, text_length, preview_image_url, first_seen_at, last_seen_at
-            ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?12)
-            ON CONFLICT(document_uid) DO UPDATE SET
-                source_id=excluded.source_id,
-                url=excluded.url,
-                normalized_url=excluded.normalized_url,
-                published_at=COALESCE(excluded.published_at, documents.published_at),
-                language=COALESCE(excluded.language, documents.language),
-                title=excluded.title,
-                title_generated=excluded.title_generated,
-                excerpt=COALESCE(excluded.excerpt, documents.excerpt),
-                text_length=COALESCE(excluded.text_length, documents.text_length),
-                preview_image_url=COALESCE(excluded.preview_image_url, documents.preview_image_url),
-                last_seen_at=COALESCE(excluded.last_seen_at, documents.last_seen_at)
-            "#,
-            params![
-                item.document_id,
-                source_id,
-                item.publication.url,
-                item.publication.normalized_url,
-                item.publication.published_at,
-                item.source.language,
-                item.publication.title,
-                if item.publication.title_generated { 1_i64 } else { 0_i64 },
-                item.publication.excerpt,
-                item.publication.text_length,
-                item.publication.preview_image_url,
-                seen,
-            ],
-        )
-        .map_err(|e| format!("Не удалось записать document {}: {e}", item.document_id))?;
-        let document_db_id: i64 = tx
-            .query_row("SELECT id FROM documents WHERE document_uid=?1", params![item.document_id], |row| row.get(0))
-            .map_err(|e| format!("Не удалось найти document {}: {e}", item.document_id))?;
+        let existing_by_url: Option<i64> = tx
+            .query_row(
+                "SELECT id FROM documents WHERE normalized_url=?1",
+                params![item.publication.normalized_url],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("Не удалось проверить normalized_url {}: {e}", item.publication.normalized_url))?;
+
+        let document_db_id = if let Some(existing_id) = existing_by_url {
+            tx.execute(
+                r#"
+                UPDATE documents SET
+                    source_id=?2,
+                    url=?3,
+                    published_at=COALESCE(?4, published_at),
+                    language=COALESCE(?5, language),
+                    title=?6,
+                    title_generated=?7,
+                    excerpt=COALESCE(?8, excerpt),
+                    text_length=COALESCE(?9, text_length),
+                    preview_image_url=COALESCE(?10, preview_image_url),
+                    last_seen_at=COALESCE(?11, last_seen_at)
+                WHERE id=?1
+                "#,
+                params![
+                    existing_id,
+                    source_id,
+                    item.publication.url,
+                    item.publication.published_at,
+                    item.source.language,
+                    item.publication.title,
+                    if item.publication.title_generated { 1_i64 } else { 0_i64 },
+                    item.publication.excerpt,
+                    item.publication.text_length,
+                    item.publication.preview_image_url,
+                    seen,
+                ],
+            )
+            .map_err(|e| format!("Не удалось обновить document по normalized_url {}: {e}", item.publication.normalized_url))?;
+            existing_id
+        } else {
+            tx.execute(
+                r#"
+                INSERT INTO documents(
+                    document_uid, source_id, url, normalized_url, published_at, language, title,
+                    title_generated, excerpt, text_length, preview_image_url, first_seen_at, last_seen_at
+                ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?12)
+                ON CONFLICT(document_uid) DO UPDATE SET
+                    source_id=excluded.source_id,
+                    url=excluded.url,
+                    normalized_url=excluded.normalized_url,
+                    published_at=COALESCE(excluded.published_at, documents.published_at),
+                    language=COALESCE(excluded.language, documents.language),
+                    title=excluded.title,
+                    title_generated=excluded.title_generated,
+                    excerpt=COALESCE(excluded.excerpt, documents.excerpt),
+                    text_length=COALESCE(excluded.text_length, documents.text_length),
+                    preview_image_url=COALESCE(excluded.preview_image_url, documents.preview_image_url),
+                    last_seen_at=COALESCE(excluded.last_seen_at, documents.last_seen_at)
+                "#,
+                params![
+                    item.document_id,
+                    source_id,
+                    item.publication.url,
+                    item.publication.normalized_url,
+                    item.publication.published_at,
+                    item.source.language,
+                    item.publication.title,
+                    if item.publication.title_generated { 1_i64 } else { 0_i64 },
+                    item.publication.excerpt,
+                    item.publication.text_length,
+                    item.publication.preview_image_url,
+                    seen,
+                ],
+            )
+            .map_err(|e| format!("Не удалось записать document {}: {e}", item.document_id))?;
+            tx.query_row(
+                "SELECT id FROM documents WHERE document_uid=?1",
+                params![item.document_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("Не удалось найти document {}: {e}", item.document_id))?
+        };
+        document_ids.insert(item.document_id.clone(), document_db_id);
 
         tx.execute(
             r#"
@@ -697,11 +745,19 @@ fn ingest_publications(
             .map_err(|e| format!("Не удалось связать event и publication: {e}"))?;
         }
     }
-    Ok(())
+    Ok(document_ids)
 }
 
-fn ingest_full_texts(tx: &Transaction<'_>, full_texts: &[FullTextRecord]) -> Result<(), String> {
+fn ingest_full_texts(
+    tx: &Transaction<'_>,
+    full_texts: &[FullTextRecord],
+    document_ids: &HashMap<String, i64>,
+) -> Result<(), String> {
     for item in full_texts {
+        let document_db_id = document_ids
+            .get(&item.document_id)
+            .copied()
+            .ok_or_else(|| format!("Не найден document mapping для полного текста {}", item.document_id))?;
         let changed = tx.execute(
             r#"UPDATE documents SET
                 full_text=?2,
@@ -710,9 +766,9 @@ fn ingest_full_texts(tx: &Transaction<'_>, full_texts: &[FullTextRecord]) -> Res
                 full_text_extraction_strategy=?5,
                 full_text_transport=?6,
                 text_length=COALESCE(?7, text_length)
-               WHERE document_uid=?1"#,
+               WHERE id=?1"#,
             params![
-                item.document_id,
+                document_db_id,
                 item.text,
                 item.text_sha256,
                 item.quality,
@@ -732,11 +788,16 @@ fn ingest_entities(
     tx: &Transaction<'_>,
     publications: &[PublicationRecord],
     entities: &[EntityRecord],
+    document_ids: &HashMap<String, i64>,
 ) -> Result<(), String> {
     for publication in publications {
+        let document_db_id = document_ids
+            .get(&publication.document_id)
+            .copied()
+            .ok_or_else(|| format!("Не найден document mapping для сущностей {}", publication.document_id))?;
         tx.execute(
-            "DELETE FROM document_entities WHERE document_id=(SELECT id FROM documents WHERE document_uid=?1)",
-            params![publication.document_id],
+            "DELETE FROM document_entities WHERE document_id=?1",
+            params![document_db_id],
         ).map_err(|e| format!("Не удалось обновить сущности {}: {e}", publication.document_id))?;
     }
     for item in entities {
@@ -751,11 +812,10 @@ fn ingest_entities(
             params![item.normalized_name, item.entity_type],
             |row| row.get(0),
         ).map_err(|e| format!("Не удалось найти сущность {}: {e}", item.canonical_name))?;
-        let document_id: i64 = tx.query_row(
-            "SELECT id FROM documents WHERE document_uid=?1",
-            params![item.document_id],
-            |row| row.get(0),
-        ).map_err(|e| format!("Не удалось найти document {} для сущности: {e}", item.document_id))?;
+        let document_id = document_ids
+            .get(&item.document_id)
+            .copied()
+            .ok_or_else(|| format!("Не найден document mapping {} для сущности", item.document_id))?;
         tx.execute(
             r#"INSERT INTO document_entities(document_id, entity_id, mentions, confidence, method, surface_form)
                VALUES (?1,?2,?3,?4,?5,?6)
