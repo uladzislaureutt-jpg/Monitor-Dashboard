@@ -378,13 +378,22 @@ fn l_monitor_stories(
     for story_row in story_rows {
         let (event_id, story_title) = story_row
             .map_err(|e| format!("Не удалось прочитать сюжет L-Monitor: {e}"))?;
+        // L-Monitor story cards display the country of each publisher.
+        // Do not use e.event_region here: all members of one story share the same
+        // event row, so successive imports can legitimately update that shared
+        // field from another publisher and misattribute the representative.
+        let l_story_select = publication_select().replacen(
+            "            e.event_region,",
+            "            COALESCE(NULLIF(TRIM(s.configured_region),''), e.event_region),",
+            1,
+        );
         let member_sql = format!(
             "{} WHERE m.monitor_key=?1 AND {} AND e.id=?3 \
              AND NOT EXISTS (SELECT 1 FROM moderation_flags mf WHERE mf.monitor_key=m.monitor_key AND mf.document_uid=d.document_uid) \
              AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid) \
              ORDER BY CASE WHEN d.title=?4 THEN 0 ELSE 1 END, \
              COALESCE(mi.score,0) DESC, COALESCE(datetime(d.published_at),datetime(d.last_seen_at),datetime(d.first_seen_at)) DESC, mi.id DESC",
-            publication_select(), period
+            l_story_select, period
         );
         let mut member_stmt = conn.prepare(&member_sql)
             .map_err(|e| format!("Не удалось подготовить публикации сюжета: {e}"))?;
