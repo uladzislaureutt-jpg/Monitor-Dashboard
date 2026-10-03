@@ -65,6 +65,19 @@ fn artifact_run_number(name: &str, prefix: &str) -> Option<i64> {
     name.strip_prefix(prefix)?.parse::<i64>().ok()
 }
 
+fn keep_latest_artifact_per_run(artifacts: &mut Vec<(i64, GitHubArtifact)>) {
+    // GitHub can temporarily contain more than one artifact for the same logical
+    // monitor run after a corrected bundle is rebuilt. Prefer the newest
+    // artifact (higher immutable GitHub artifact ID) so a stale bundle cannot
+    // shadow its replacement.
+    artifacts.sort_by(|(run_a, artifact_a), (run_b, artifact_b)| {
+        run_a
+            .cmp(run_b)
+            .then_with(|| artifact_b.id.cmp(&artifact_a.id))
+    });
+    artifacts.dedup_by_key(|(run, _)| *run);
+}
+
 fn record_artifact_error(
     errors: &mut Vec<String>,
     db_path: &Path,
@@ -132,8 +145,7 @@ pub fn sync_github(db_path: &Path, repository: &str, token: &str, monitor_key: &
         }
     }
 
-    artifacts.sort_by_key(|(run, _)| *run);
-    artifacts.dedup_by_key(|(run, _)| *run);
+    keep_latest_artifact_per_run(&mut artifacts);
     let checked_artifacts = artifacts.len();
     let latest_remote_run = artifacts.iter().map(|(run, _)| *run).max();
 
@@ -247,4 +259,35 @@ pub fn sync_github(db_path: &Path, repository: &str, token: &str, monitor_key: &
         already_present,
         errors,
     })
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn artifact(id: u64, name: &str) -> GitHubArtifact {
+        GitHubArtifact {
+            id,
+            name: name.to_string(),
+            expired: false,
+            archive_download_url: format!("https://example.test/{id}.zip"),
+        }
+    }
+
+    #[test]
+    fn duplicate_run_prefers_newest_artifact() {
+        let mut artifacts = vec![
+            (137, artifact(11272837363, "dashboard-bundle-l-monitor-137")),
+            (136, artifact(11270000000, "dashboard-bundle-l-monitor-136")),
+            (137, artifact(11274343220, "dashboard-bundle-l-monitor-137")),
+        ];
+
+        keep_latest_artifact_per_run(&mut artifacts);
+
+        assert_eq!(artifacts.len(), 2);
+        assert_eq!(artifacts[0].0, 136);
+        assert_eq!(artifacts[1].0, 137);
+        assert_eq!(artifacts[1].1.id, 11274343220);
+    }
 }
