@@ -68,7 +68,7 @@ export function PublicationCard({ item, compact = false }: { item: PublicationSu
       </div>
       <div className="publication-actions">
         {item.seenInRuns > 1 && <span className="seen-count">{t("publication.inRuns", { count: item.seenInRuns })}</span>}
-        <button className={`secondary-button small-button report-select-button ${inReport ? "active" : ""}`} disabled={reportBusy || (!inReport && report.items.length >= report.maxItems)} onClick={toggleReport}>{reportBusy ? "…" : reportLabel}</button>
+        <button className={`secondary-button small-button report-select-button ${inReport ? "active" : ""}`} disabled={reportBusy || (!inReport && report.maxItems !== null && report.items.length >= report.maxItems)} onClick={toggleReport}>{reportBusy ? "…" : reportLabel}</button>
         <button className={`moderation-flag-button ${flags.length ? "active" : ""} ${ownFlag ? "own" : ""}`} disabled={moderationBusy} onClick={toggleFlag} title={flagTitle} aria-label={flagTitle}>🚩</button>
         {moderation.profile?.isAdmin && flags.length > 0 && <button className="link-button moderation-keep" disabled={moderationBusy} onClick={keepAsRelevant} title={t("moderation.keepHelp")}>{t("moderation.keep")}</button>}
         {moderation.profile?.isAdmin && <button className="link-button moderation-delete" disabled={moderationBusy} onClick={excludeAsIrrelevant} title={t("moderation.excludeHelp")}>{t("moderation.exclude")}</button>}
