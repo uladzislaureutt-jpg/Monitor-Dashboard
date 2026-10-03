@@ -98,12 +98,18 @@ export default function App() {
     syncBusyRef.current = true; setSyncBusy(true); if (!silent) { setError(""); setSyncWarning(""); }
     try {
       const result = await desktopApi.syncGithub(settings.repository.trim(), settings.token);
-      const latest = result.latestAvailableRun;
+      const latestImported = result.latestImportedRun ?? result.latestAvailableRun;
+      const latestRemote = result.latestRemoteRun;
+      const remoteIsSkippedDryRun = latestRemote != null && result.skippedDryRuns.includes(latestRemote);
       if (result.errors.length) {
         if (!silent) setSyncWarning(result.errors.join("\n"));
+      } else if (latestRemote != null && latestImported != null && latestRemote > latestImported && !remoteIsSkippedDryRun) {
+        if (!silent) setSyncWarning(locale === "be"
+          ? `На GitHub даступны запуск #${latestRemote}, лакальна імпартаваны #${latestImported}.`
+          : `На GitHub доступен запуск #${latestRemote}, локально импортирован #${latestImported}.`);
       }
-      if (latest != null) setSyncStatus({ kind: "upToDate", run: latest });
-      else if (result.errors.length) setSyncStatus({ kind: "configured" });
+      if (latestImported != null && (latestRemote == null || latestImported >= latestRemote || remoteIsSkippedDryRun)) setSyncStatus({ kind: "upToDate", run: latestImported });
+      else if (latestRemote != null || result.errors.length) setSyncStatus({ kind: "configured" });
       else setSyncStatus({ kind: "notFound" });
       if (result.importedRuns.length) {
         setMessage(t("sync.added", { runs: result.importedRuns.join(", ") }));
@@ -113,7 +119,7 @@ export default function App() {
       setSyncStatus({ kind: "configured" });
       if (!silent) setSyncWarning(String(reason));
     } finally { syncBusyRef.current = false; setSyncBusy(false); }
-  }, [period, refreshCore, refreshDashboard, t]);
+  }, [period, refreshCore, refreshDashboard, t, locale]);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,11 +157,17 @@ export default function App() {
     return () => window.removeEventListener("monitor:moderation-changed", onModeration);
   }, [period, refreshDashboard]);
   useEffect(() => {
-    if (!syncSettings.autoSync || !syncSettings.repository.trim()) return;
-    const start = window.setTimeout(() => performSync(syncSettings, true), 900);
-    const interval = window.setInterval(() => performSync(syncSettings, true), syncSettings.intervalMinutes * 60_000);
-    return () => { window.clearTimeout(start); window.clearInterval(interval); };
-  }, [syncSettings, performSync]);
+    if (!syncSettings.repository.trim()) return;
+    const checkOnOpen = monitorKey === "lukashenko" || syncSettings.autoSync;
+    const start = checkOnOpen ? window.setTimeout(() => performSync(syncSettings, true), 900) : undefined;
+    const interval = syncSettings.autoSync
+      ? window.setInterval(() => performSync(syncSettings, true), syncSettings.intervalMinutes * 60_000)
+      : undefined;
+    return () => {
+      if (start !== undefined) window.clearTimeout(start);
+      if (interval !== undefined) window.clearInterval(interval);
+    };
+  }, [monitorKey, syncSettings, performSync]);
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") { event.preventDefault(); setSearchOpen(true); window.setTimeout(() => searchRef.current?.focus(), 0); }
