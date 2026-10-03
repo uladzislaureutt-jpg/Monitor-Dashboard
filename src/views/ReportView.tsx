@@ -199,7 +199,10 @@ export function ReportView() {
       try {
         const sources = await desktopApi.sources(null);
         const normalized = payload.source.trim().toLocaleLowerCase();
-        const known = sources.find((item) => item.name.trim().toLocaleLowerCase() === normalized);
+        let host = "";
+        try { host = new URL(payload.url).hostname.replace(/^www\./, "").toLocaleLowerCase(); } catch { /* keep empty */ }
+        const known = sources.find((item) => item.name.trim().toLocaleLowerCase() === normalized)
+          ?? sources.find((item) => (item.domain || "").replace(/^www\./, "").toLocaleLowerCase() === host);
         region = known?.region || "";
       } catch { /* source lookup is optional */ }
       setManualItem({
