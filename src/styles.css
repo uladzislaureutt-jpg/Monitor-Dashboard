@@ -982,3 +982,26 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
   .admin-access-grid { grid-template-columns: 1fr; }
   .admin-user-row { align-items: flex-start; flex-wrap: wrap; }
 }
+
+
+.report-url-inline {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.report-url-inline.pending {
+  background: #eef4f7;
+  color: #4a6677;
+}
+.report-url-inline.success {
+  background: #edf7f1;
+  color: #356247;
+  border: 1px solid #d7e8dd;
+}
+.report-url-inline.error {
+  background: #fbefed;
+  color: #8b4a45;
+  border: 1px solid #efd7d3;
+}
