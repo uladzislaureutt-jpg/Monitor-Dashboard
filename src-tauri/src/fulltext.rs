@@ -437,7 +437,7 @@ pub fn fetch_known_source_article(db_path: &Path, url: &str) -> Result<KnownSour
             r#"
             SELECT title, full_text, full_text_quality
             FROM documents
-            WHERE TRIM(url)=TRIM(?1)
+            WHERE RTRIM(TRIM(url), '/') = RTRIM(TRIM(?1), '/')
               AND NULLIF(TRIM(COALESCE(full_text,'')),'') IS NOT NULL
             ORDER BY id DESC
             LIMIT 1
@@ -496,6 +496,51 @@ pub fn fetch_known_source_article(db_path: &Path, url: &str) -> Result<KnownSour
             }
         } else {
             direct_error = Some(format!("HTTP {}", response.status()));
+        }
+    }
+
+
+    // Nashaniva often exposes a cleaner public AMP page even when the canonical
+    // route is unstable for automated clients. Try the language-preserving AMP
+    // variants before falling back to curl/Edge.
+    if host == "nashaniva.com" || host.ends_with(".nashaniva.com") {
+        if let Some(article_id) = parsed.path_segments()
+            .and_then(|segments| segments.filter(|part| !part.trim().is_empty()).last())
+            .filter(|part| part.chars().all(|ch| ch.is_ascii_digit()))
+        {
+            let mut amp_urls = Vec::new();
+            let path = parsed.path().to_lowercase();
+            if path.starts_with("/ru/") {
+                amp_urls.push(format!("https://nashaniva.com/amp/ru/{article_id}"));
+            } else if path.starts_with("/en/") {
+                amp_urls.push(format!("https://nashaniva.com/amp/en/{article_id}"));
+            } else {
+                amp_urls.push(format!("https://nashaniva.com/amp/{article_id}"));
+                amp_urls.push(format!("https://nashaniva.com/amp/be/{article_id}"));
+            }
+            for amp_url in amp_urls {
+                if let Ok(mut response) = client.get(&amp_url)
+                    .header(reqwest::header::ACCEPT, "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5")
+                    .header(reqwest::header::ACCEPT_LANGUAGE, "be,ru;q=0.9,en;q=0.6")
+                    .header(reqwest::header::CACHE_CONTROL, "no-cache")
+                    .send()
+                {
+                    if response.status().is_success() {
+                        let mut bytes = Vec::new();
+                        if response.take(MAX_HTML_BYTES as u64 + 1).read_to_end(&mut bytes).is_ok() {
+                            if let Ok((title, text, strategy, paywall)) =
+                                extract_known_article_from_bytes(&bytes, &fallback_title, "nashaniva_amp")
+                            {
+                                return Ok(KnownSourceArticleResult {
+                                    title, source, region, url: parsed.to_string(), text,
+                                    quality: if paywall { "partial" } else { "full" }.to_string(),
+                                    strategy,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
