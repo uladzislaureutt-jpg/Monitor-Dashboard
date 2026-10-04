@@ -266,6 +266,16 @@ export type FullTextHydrationResult = {
   detail: string | null;
 };
 
+export type KnownSourceArticleResult = {
+  title: string;
+  source: string;
+  region: string | null;
+  url: string;
+  text: string;
+  quality: "full" | "partial";
+  strategy: string;
+};
+
 
 export type PublicationModerationFlag = {
   documentUid: string;
