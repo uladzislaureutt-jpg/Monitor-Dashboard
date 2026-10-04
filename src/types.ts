@@ -266,13 +266,6 @@ export type FullTextHydrationResult = {
   detail: string | null;
 };
 
-export type BrowserImportPayload = {
-  title: string;
-  source: string;
-  url: string;
-  text: string;
-  quality?: "full" | "partial";
-};
 
 export type PublicationModerationFlag = {
   documentUid: string;
