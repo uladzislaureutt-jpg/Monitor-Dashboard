@@ -14,6 +14,7 @@ import type {
   PublicationSummary,
   ReportExportItem,
   FullTextHydrationResult,
+  KnownSourceArticleResult,
 } from "./types";
 
 let activeMonitorKey = "social_economic";
@@ -71,6 +72,7 @@ export const desktopApi = {
     invoke<EditorialSource | null>("get_editorial_source", { monitorKey: activeMonitorKey, documentUid }),
   hydrateReportFullTexts: (documentUids: string[]) =>
     invoke<FullTextHydrationResult[]>("hydrate_report_full_texts", { monitorKey: activeMonitorKey, documentUids }),
+  fetchKnownSourceArticle: (url: string) => invoke<KnownSourceArticleResult>("fetch_known_source_article", { url }),
   readClipboardText: () => invoke<string>("read_clipboard_text"),
   exportReport: (path: string, date: string, items: ReportExportItem[], monitorKey = activeMonitorKey) =>
     invoke<void>("export_report_docx", { path, date, items, monitorKey }),
