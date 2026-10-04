@@ -206,6 +206,7 @@ export function ReportView() {
         quality: payload.quality,
       });
       setManualItemOpen(true);
+      setImportUrl("");
       setStatus(payload.quality === "partial" ? `${tx.importUrlDone} ${tx.importPartial}` : tx.importUrlDone);
     } catch (reason) {
       setError(String(reason));
