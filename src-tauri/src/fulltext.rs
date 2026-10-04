@@ -544,57 +544,104 @@ pub fn fetch_known_source_article(db_path: &Path, url: &str) -> Result<KnownSour
         }
     }
 
+    let mut fallback_urls = vec![parsed.to_string()];
+    if host == "nashaniva.com" || host.ends_with(".nashaniva.com") {
+        if let Some(article_id) = parsed.path_segments()
+            .and_then(|segments| segments.filter(|part| !part.trim().is_empty()).last())
+            .filter(|part| part.chars().all(|ch| ch.is_ascii_digit()))
+        {
+            let path = parsed.path().to_lowercase();
+            if path.starts_with("/ru/") {
+                fallback_urls.push(format!("https://nashaniva.com/amp/ru/{article_id}"));
+            } else if path.starts_with("/en/") {
+                fallback_urls.push(format!("https://nashaniva.com/amp/en/{article_id}"));
+            } else {
+                fallback_urls.push(format!("https://nashaniva.com/amp/{article_id}"));
+                fallback_urls.push(format!("https://nashaniva.com/amp/be/{article_id}"));
+                fallback_urls.push(format!("https://nashaniva.com/amp/ru/{article_id}"));
+            }
+        }
+    }
+    fallback_urls.sort();
+    fallback_urls.dedup();
+
     #[cfg(target_os = "windows")]
     {
-        let output = Command::new("curl.exe")
-            .args([
-                "--location","--compressed","--http1.1","--silent","--show-error","--fail",
-                "--connect-timeout","10","--max-time","25","--max-filesize","2500000",
-                "--user-agent",DESKTOP_UA,
-                "--header","Accept: text/html,application/xhtml+xml;q=0.9,*/*;q=0.5",
-                "--header","Accept-Language: ru-RU,ru;q=0.9,be;q=0.8,en;q=0.6",
-                "--header","Cache-Control: no-cache",
-                parsed.as_str(),
-            ]).output();
-        if let Ok(output) = output {
-            if output.status.success() && !output.stdout.is_empty() {
-                if let Ok((title, text, strategy, paywall)) = extract_known_article_from_bytes(&output.stdout, &fallback_title, "windows_curl") {
-                    return Ok(KnownSourceArticleResult {
-                        title, source, region, url: parsed.to_string(), text,
-                        quality: if paywall { "partial" } else { "full" }.to_string(),
-                        strategy,
-                    });
+        let mut diagnostics: Vec<String> = Vec::new();
+        for candidate_url in &fallback_urls {
+            let output = Command::new("curl.exe")
+                .args([
+                    "--location","--compressed","--http1.1","--silent","--show-error","--fail",
+                    "--connect-timeout","10","--max-time","25","--max-filesize","2500000",
+                    "--user-agent",DESKTOP_UA,
+                    "--header","Accept: text/html,application/xhtml+xml;q=0.9,*/*;q=0.5",
+                    "--header","Accept-Language: ru-RU,ru;q=0.9,be;q=0.8,en;q=0.6",
+                    "--header","Cache-Control: no-cache",
+                    candidate_url.as_str(),
+                ]).output();
+            match output {
+                Ok(output) if output.status.success() && !output.stdout.is_empty() => {
+                    match extract_known_article_from_bytes(&output.stdout, &fallback_title, "windows_curl") {
+                        Ok((title, text, strategy, paywall)) => {
+                            return Ok(KnownSourceArticleResult {
+                                title, source, region, url: parsed.to_string(), text,
+                                quality: if paywall { "partial" } else { "full" }.to_string(),
+                                strategy: format!("{strategy}:{}", candidate_url),
+                            });
+                        }
+                        Err(error) => diagnostics.push(format!("curl extract {}: {}", candidate_url, error)),
+                    }
                 }
+                Ok(output) => {
+                    let stderr = normalize_space(&String::from_utf8_lossy(&output.stderr));
+                    diagnostics.push(format!("curl {}: {}", candidate_url, if stderr.is_empty() { format!("exit {}", output.status.code().unwrap_or(-1)) } else { stderr }));
+                }
+                Err(error) => diagnostics.push(format!("curl start {}: {}", candidate_url, error)),
             }
         }
 
         if let Some(edge) = find_edge_executable() {
-            let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
-            let profile_dir = std::env::temp_dir().join(format!("monitor-edge-known-{}-{stamp}", std::process::id()));
-            let profile_arg = format!("--user-data-dir={}", profile_dir.to_string_lossy());
-            let ua_arg = "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0";
-            let output = Command::new(edge)
-                .args([
-                    "--headless=new","--disable-gpu","--disable-extensions","--no-first-run",
-                    "--no-default-browser-check","--disable-background-networking",
-                    "--disable-features=msEdgeFirstRunExperience","--virtual-time-budget=8000","--dump-dom",
-                ])
-                .arg(profile_arg).arg(ua_arg).arg(parsed.as_str()).output();
-            let _ = std::fs::remove_dir_all(&profile_dir);
-            if let Ok(output) = output {
-                if output.status.success() && !output.stdout.is_empty() {
-                    if let Ok((title, text, strategy, paywall)) = extract_known_article_from_bytes(&output.stdout, &fallback_title, "windows_edge_dom") {
-                        return Ok(KnownSourceArticleResult {
-                            title, source, region, url: parsed.to_string(), text,
-                            quality: if paywall { "partial" } else { "full" }.to_string(),
-                            strategy,
-                        });
+            for candidate_url in &fallback_urls {
+                let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
+                let profile_dir = std::env::temp_dir().join(format!("monitor-edge-known-{}-{stamp}", std::process::id()));
+                let profile_arg = format!("--user-data-dir={}", profile_dir.to_string_lossy());
+                let ua_arg = "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0";
+                let output = Command::new(&edge)
+                    .args([
+                        "--headless=new","--disable-gpu","--disable-extensions","--no-first-run",
+                        "--no-default-browser-check","--disable-background-networking",
+                        "--disable-features=msEdgeFirstRunExperience","--virtual-time-budget=10000","--dump-dom",
+                    ])
+                    .arg(profile_arg).arg(ua_arg).arg(candidate_url).output();
+                let _ = std::fs::remove_dir_all(&profile_dir);
+                match output {
+                    Ok(output) if output.status.success() && !output.stdout.is_empty() => {
+                        match extract_known_article_from_bytes(&output.stdout, &fallback_title, "windows_edge_dom") {
+                            Ok((title, text, strategy, paywall)) => {
+                                return Ok(KnownSourceArticleResult {
+                                    title, source, region, url: parsed.to_string(), text,
+                                    quality: if paywall { "partial" } else { "full" }.to_string(),
+                                    strategy: format!("{strategy}:{}", candidate_url),
+                                });
+                            }
+                            Err(error) => diagnostics.push(format!("edge extract {}: {}", candidate_url, error)),
+                        }
                     }
+                    Ok(output) => diagnostics.push(format!("edge {}: exit {}", candidate_url, output.status.code().unwrap_or(-1))),
+                    Err(error) => diagnostics.push(format!("edge start {}: {}", candidate_url, error)),
                 }
             }
         }
+
+        let detail = diagnostics.into_iter().take(4).collect::<Vec<_>>().join(" | ");
+        return Err(format!(
+            "Не удалось скачать материал автоматически{}{}. Используйте вставку из буфера.",
+            direct_error.map(|e| format!(" ({e})")).unwrap_or_default(),
+            if detail.is_empty() { String::new() } else { format!(" Диагностика: {detail}") }
+        ));
     }
 
+    #[cfg(not(target_os = "windows"))]
     Err(format!("Не удалось скачать материал автоматически{}. Используйте вставку из буфера.",
         direct_error.map(|e| format!(" ({e})")).unwrap_or_default()))
 }
