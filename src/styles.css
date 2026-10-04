@@ -672,3 +672,45 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 }
 
 
+
+
+.report-url-import {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px;
+}
+.report-url-import > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+.report-url-import > div:first-child b {
+  color: #183d57;
+  font-size: 13px;
+}
+.report-url-import > div:first-child span {
+  color: #827b73;
+  font-size: 10px;
+}
+.report-url-import-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+.report-url-import-row input {
+  min-width: 0;
+  border: 1px solid #d9cec1;
+  border-radius: 10px;
+  background: #fff;
+  padding: 11px 12px;
+  color: #173f59;
+  font: inherit;
+}
+.report-import-partial {
+  margin: 8px 0 0 !important;
+  color: #906317 !important;
+  font-weight: 700;
+}
+@media (max-width: 760px) {
+  .report-url-import-row { grid-template-columns: 1fr; }
+}
