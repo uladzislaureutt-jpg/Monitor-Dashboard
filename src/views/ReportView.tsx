@@ -103,6 +103,7 @@ export function ReportView() {
     importUrlPlaceholder: be ? "Устаўце спасылку на матэрыял…" : "Вставьте ссылку на материал…",
     importUrlHelp: be ? "Працуе для выданняў, якія ўжо ёсць у базе крыніц Monitor." : "Работает для изданий, которые уже есть в базе источников Monitor.",
     importUrlDone: be ? "Матэрыял спампаваны. Праверце загаловак, выданне, краіну і тэкст." : "Материал скачан. Проверьте заголовок, издание, страну и текст.",
+    importBrowser: be ? "HTTP-маршрут не спрацаваў. Monitor адкрывае старонку праз WebView2 і Readability…" : "HTTP-маршрут не сработал. Monitor открывает страницу через WebView2 и Readability…",
     importPartial: be ? "Атрымана толькі агульнадаступная частка матэрыялу." : "Получена только общедоступная часть материала.",
     clipboardImport: be ? "Уставіць з буфера" : "Вставить из буфера",
     clipboardEmpty: be ? "У буферы абмену няма тэксту." : "В буфере обмена нет текста.",
@@ -200,7 +201,13 @@ export function ReportView() {
     setError("");
     setStatus("");
     try {
-      const payload = await desktopApi.fetchKnownSourceArticle(importUrl.trim());
+      let payload;
+      try {
+        payload = await desktopApi.fetchKnownSourceArticle(importUrl.trim());
+      } catch {
+        setUrlImportMessage(tx.importBrowser);
+        payload = await desktopApi.fetchKnownSourceArticleBrowser(importUrl.trim());
+      }
       const uid = report.addManualItem({
         title: payload.title,
         source: payload.source,
