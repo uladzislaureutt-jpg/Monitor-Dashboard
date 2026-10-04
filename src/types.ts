@@ -187,8 +187,63 @@ export type WorkroomSession = {
 export type WorkroomProfile = {
   id: string;
   displayName: string;
+  email: string;
   isAdmin: boolean;
   nameConfirmed: boolean;
+  status: "active" | "suspended";
+  locale: "ru" | "be";
+};
+
+export type MonitorAccessState = {
+  monitorKey: "social_economic" | "lukashenko" | string;
+  enabled: boolean;
+  maintenanceMessageRu: string;
+  maintenanceMessageBe: string;
+};
+
+export type AccessRequestLocalState = {
+  requestId: string;
+  requestToken: string;
+  email: string;
+  displayName: string;
+  locale: "ru" | "be";
+};
+
+export type AdminAccessRequest = {
+  id: string;
+  displayName: string;
+  email: string;
+  locale: "ru" | "be";
+  status: "pending" | "approved" | "rejected";
+  requestedAt: string;
+  reviewedAt: string | null;
+  registeredAt: string | null;
+};
+
+export type AdminUser = {
+  id: string;
+  displayName: string;
+  email: string;
+  isAdmin: boolean;
+  status: "active" | "suspended";
+  locale: "ru" | "be";
+  createdAt: string;
+  lastSignInAt: string | null;
+};
+
+export type AdminAuditItem = {
+  id: number;
+  action: string;
+  targetUserId: string | null;
+  monitorKey: string | null;
+  createdAt: string;
+};
+
+export type AdminSnapshot = {
+  requests: AdminAccessRequest[];
+  users: AdminUser[];
+  monitors: MonitorAccessState[];
+  audit: AdminAuditItem[];
 };
 
 export type WorkroomMessage = {
