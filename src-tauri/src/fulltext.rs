@@ -430,7 +430,7 @@ pub fn fetch_known_source_article(db_path: &Path, url: &str) -> Result<KnownSour
     };
     let fallback_title = parsed.path_segments()
         .and_then(|segments| segments.filter(|part| !part.trim().is_empty()).last())
-        .map(|part| part.replace(['-', '_'], " "))
+        .map(|part| part.replace('-', " ").replace('_', " "))
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| source.clone());
 
