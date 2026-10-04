@@ -135,6 +135,11 @@ fn fetch_known_source_article(url: String, state: State<'_, AppState>) -> Result
 }
 
 #[tauri::command]
+fn open_article_browser(url: String, app: AppHandle) -> Result<(), String> {
+    browser_extract::open_visible_browser(app, &url)
+}
+
+#[tauri::command]
 async fn fetch_known_source_article_browser(
     url: String,
     app: AppHandle,
@@ -305,6 +310,7 @@ pub fn run() {
             hydrate_report_full_texts,
             fetch_known_source_article,
             fetch_known_source_article_browser,
+            open_article_browser,
             read_clipboard_text,
             call_supabase_edge,
             export_report_docx,
