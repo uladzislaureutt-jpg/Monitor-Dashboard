@@ -13,9 +13,12 @@ import {
   loadWorkroomConfig,
   requestMonitorAccess,
   requestPasswordRecovery,
+  requestExistingUserMagicLink,
   saveWorkroomSession,
+  setWorkroomPassword,
   signInWorkroom,
   updateWorkroomProfileLocale,
+  verifySupabaseAuthLink,
 } from "./workroom";
 
 type AccessContextValue = {
@@ -148,11 +151,13 @@ export function MonitorAccessProvider({ children }: { children: ReactNode }) {
 function AccessScreen({ onAuthenticated }: { onAuthenticated: (session: WorkroomSession, profile: WorkroomProfile, monitors: MonitorAccessState[]) => void }) {
   const { locale, setLocale } = useI18n();
   const config = loadWorkroomConfig();
-  const [mode, setMode] = useState<"login" | "request">("login");
+  const [mode, setMode] = useState<"login" | "request" | "set-password">("login");
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [authLink, setAuthLink] = useState("");
+  const [passwordFlow, setPasswordFlow] = useState<"bootstrap" | "recovery">("bootstrap");
   const [requestState, setRequestState] = useState(loadAccessRequest);
   const [requestStatus, setRequestStatus] = useState<"pending" | "approved" | "rejected" | null>(null);
   const [busy, setBusy] = useState(false);
@@ -176,7 +181,13 @@ function AccessScreen({ onAuthenticated }: { onAuthenticated: (session: Workroom
     check: be ? "Праверыць рашэнне" : "Проверить решение",
     create: be ? "Стварыць уліковы запіс" : "Создать учётную запись",
     forgot: be ? "Забылі пароль?" : "Забыли пароль?",
-    recovery: be ? "Спасылка для аднаўлення адпраўлена, калі адрас зарэгістраваны." : "Ссылка для восстановления отправлена, если адрес зарегистрирован.",
+    firstAdmin: be ? "Першасная настройка адміністратара" : "Первичная настройка администратора",
+    recovery: be ? "Ліст для аднаўлення адпраўлены. Адкрыйце яго, скапіруйце поўную спасылку і ўстаўце ніжэй." : "Письмо для восстановления отправлено. Откройте его, скопируйте полную ссылку и вставьте ниже.",
+    bootstrapSent: be ? "Ліст для пацверджання адпраўлены. Адкрыйце яго, скапіруйце поўную спасылку і ўстаўце ніжэй." : "Письмо для подтверждения отправлено. Откройте его, скопируйте полную ссылку и вставьте ниже.",
+    authLink: be ? "Спасылка з ліста" : "Ссылка из письма",
+    authLinkHelp: be ? "Устаўце сюды ўсю спасылку з ліста Supabase." : "Вставьте сюда всю ссылку из письма Supabase.",
+    setPassword: be ? "Задаць новы пароль" : "Задать новый пароль",
+    backLogin: be ? "Назад да ўваходу" : "Назад ко входу",
   };
 
   useEffect(() => {
@@ -247,11 +258,39 @@ function AccessScreen({ onAuthenticated }: { onAuthenticated: (session: Workroom
     finally { setBusy(false); }
   }
 
-  async function recover() {
+  async function startPasswordFlow(kind: "bootstrap" | "recovery") {
     if (!email.trim()) return;
+    setBusy(true); setError(""); setMessage("");
+    try {
+      if (kind === "bootstrap") await requestExistingUserMagicLink(config, email);
+      else await requestPasswordRecovery(config, email);
+      setPasswordFlow(kind);
+      setMode("set-password");
+      setMessage(kind === "bootstrap" ? tx.bootstrapSent : tx.recovery);
+    } catch (reason) { setError(String(reason)); }
+    finally { setBusy(false); }
+  }
+
+  async function finishPasswordFlow() {
+    if (!authLink.trim()) return;
+    if (password.length < 8 || !/[A-Za-zА-Яа-яЁёІіЎў]/.test(password) || !/\d/.test(password) || password !== confirm) {
+      setError(be ? "Пароль павінен мець не менш за 8 сімвалаў, літару і лічбу; абодва ўводы павінны супадаць." : "Пароль должен содержать не менее 8 символов, букву и цифру; оба ввода должны совпадать.");
+      return;
+    }
     setBusy(true); setError("");
-    try { await requestPasswordRecovery(config, email); setMessage(tx.recovery); }
-    catch (reason) { setError(String(reason)); }
+    try {
+      const verified = await verifySupabaseAuthLink(config, authLink);
+      const active = await setWorkroomPassword(config, verified, password);
+      const identity = await getWorkroomProfile(config, active);
+      if (identity.profile.status !== "active") {
+        clearWorkroomSession();
+        setError(be ? "Доступ прыпынены адміністратарам." : "Доступ приостановлен администратором.");
+        return;
+      }
+      const access = await listMonitorAccess(config, identity.session);
+      saveWorkroomSession(access.session);
+      onAuthenticated(access.session, identity.profile, access.monitors);
+    } catch (reason) { setError(String(reason)); }
     finally { setBusy(false); }
   }
 
@@ -272,7 +311,16 @@ function AccessScreen({ onAuthenticated }: { onAuthenticated: (session: Workroom
         <label>{tx.email}<input value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" /></label>
         <label>{tx.password}<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" onKeyDown={(e) => { if (e.key === "Enter") void login(); }} /></label>
         <button className="primary-button" disabled={busy} onClick={login}>{busy ? "…" : tx.login}</button>
-        <button className="link-button access-forgot" disabled={busy || !email.trim()} onClick={recover}>{tx.forgot}</button>
+        <button className="link-button access-forgot" disabled={busy || !email.trim()} onClick={() => void startPasswordFlow("recovery")}>{tx.forgot}</button>
+        <button className="link-button access-first-admin" disabled={busy || !email.trim()} onClick={() => void startPasswordFlow("bootstrap")}>{tx.firstAdmin}</button>
+      </div>}
+      {mode === "set-password" && !requestState && <div className="access-form">
+        <div className="access-request-state approved">{message || (passwordFlow === "bootstrap" ? tx.bootstrapSent : tx.recovery)}</div>
+        <label>{tx.authLink}<textarea className="access-link-input" value={authLink} onChange={(e) => setAuthLink(e.target.value)} placeholder={tx.authLinkHelp} rows={4} /></label>
+        <label>{tx.password}<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" /></label>
+        <label>{tx.confirm}<input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" /></label>
+        <button className="primary-button" disabled={busy || !authLink.trim()} onClick={finishPasswordFlow}>{busy ? "…" : tx.setPassword}</button>
+        <button className="secondary-button" disabled={busy} onClick={() => { setMode("login"); setAuthLink(""); setPassword(""); setConfirm(""); setMessage(""); setError(""); }}>{tx.backLogin}</button>
       </div>}
       {(mode === "request" || requestState) && <div className="access-form">
         {!requestState && <><label>{tx.name}<input value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={80} /></label><label>{tx.email}<input value={email} onChange={(e) => setEmail(e.target.value)} /></label><button className="primary-button" disabled={busy || displayName.trim().length < 2 || !email.includes("@")} onClick={submitRequest}>{busy ? "…" : tx.send}</button></>}
