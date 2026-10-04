@@ -129,6 +129,11 @@ fn hydrate_report_full_texts(
 }
 
 #[tauri::command]
+fn fetch_known_source_article(url: String, state: State<'_, AppState>) -> Result<fulltext::KnownSourceArticleResult, String> {
+    fulltext::fetch_known_source_article(&state.db_path, &url)
+}
+
+#[tauri::command]
 fn read_clipboard_text(app: AppHandle) -> Result<String, String> {
     app.clipboard().read_text().map_err(|e| format!("Не удалось прочитать буфер обмена: {e}"))
 }
@@ -226,6 +231,7 @@ pub fn run() {
             list_sources,
             get_editorial_source,
             hydrate_report_full_texts,
+            fetch_known_source_article,
             read_clipboard_text,
             export_report_docx,
             sync_github_artifacts,
