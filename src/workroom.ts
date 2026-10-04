@@ -272,6 +272,16 @@ export async function updateWorkroomProfileName(config: WorkroomConfig, session:
   return { profile, session: active };
 }
 
+export async function updateWorkroomProfileLocale(config: WorkroomConfig, session: WorkroomSession, locale: "ru" | "be") {
+  const params = new URLSearchParams({ id: `eq.${session.userId}` });
+  const { session: active } = await apiRequest(config, session, `/rest/v1/monitor_profiles?${params.toString()}`, {
+    method: "PATCH",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify({ locale }),
+  });
+  return active;
+}
+
 export async function listWorkroomMessages(config: WorkroomConfig, session: WorkroomSession) {
   const params = new URLSearchParams({
     select: "id,room_key,kind,author_id,author_name,text,publication_title,publication_url,pinned,created_at,updated_at",
