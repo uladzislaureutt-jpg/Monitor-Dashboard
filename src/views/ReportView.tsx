@@ -25,7 +25,9 @@ export function ReportView() {
   const [manualOpen, setManualOpen] = useState(false);
   const [manualText, setManualText] = useState("");
   const [manualItemOpen, setManualItemOpen] = useState(false);
-  const [manualItem, setManualItem] = useState({ title: "", source: "", region: "", text: "" });
+  const [manualItem, setManualItem] = useState({ title: "", source: "", region: "", text: "", url: "", quality: "full" as "full" | "partial" });
+  const [importUrl, setImportUrl] = useState("");
+  const [urlImportBusy, setUrlImportBusy] = useState(false);
   const [clipboardBusy, setClipboardBusy] = useState(false);
   const [compressionMode, setCompressionMode] = useState<CompressionMode>("auto");
   const [aiBusy, setAiBusy] = useState(false);
@@ -95,6 +97,11 @@ export function ReportView() {
     aiHelp: be ? "AI адпраўляе толькі поўны тэкст абранага матэрыялу. Лічбы, імёны і прамыя цытаты правяраюцца перад заменай." : "AI отправляет только полный текст выбранного материала. Числа, имена и прямые цитаты проверяются перед заменой.",
     exactHelp: be ? "Толькі Exact: скарачэнне без перапісвання і без выкарыстання Groq." : "Только Exact: сокращение без переписывания и без использования Groq.",
     addManualItem: be ? "Дадаць матэрыял уручную" : "Добавить материал вручную",
+    importByUrl: be ? "Спампаваць матэрыял" : "Скачать материал",
+    importUrlPlaceholder: be ? "Устаўце спасылку на матэрыял…" : "Вставьте ссылку на материал…",
+    importUrlHelp: be ? "Працуе для выданняў, якія ўжо ёсць у базе крыніц Monitor." : "Работает для изданий, которые уже есть в базе источников Monitor.",
+    importUrlDone: be ? "Матэрыял спампаваны. Праверце загаловак, выданне, краіну і тэкст." : "Материал скачан. Проверьте заголовок, издание, страну и текст.",
+    importPartial: be ? "Атрымана толькі агульнадаступная частка матэрыялу." : "Получена только общедоступная часть материала.",
     clipboardImport: be ? "Уставіць з буфера" : "Вставить из буфера",
     clipboardEmpty: be ? "У буферы абмену няма тэксту." : "В буфере обмена нет текста.",
     clipboardDone: be ? "Тэкст з буфера ўстаўлены. Дадайце загаловак, выданне і пры неабходнасці краіну." : "Текст из буфера вставлен. Добавьте заголовок, издание и при необходимости страну.",
@@ -183,6 +190,30 @@ export function ReportView() {
     } finally { setAiBusy(false); }
   }
 
+  async function fetchManualByUrl() {
+    if (urlImportBusy || !importUrl.trim()) return;
+    setUrlImportBusy(true);
+    setError("");
+    setStatus("");
+    try {
+      const payload = await desktopApi.fetchKnownSourceArticle(importUrl.trim());
+      setManualItem({
+        title: payload.title,
+        source: payload.source,
+        region: payload.region || "",
+        text: payload.text,
+        url: payload.url,
+        quality: payload.quality,
+      });
+      setManualItemOpen(true);
+      setStatus(payload.quality === "partial" ? `${tx.importUrlDone} ${tx.importPartial}` : tx.importUrlDone);
+    } catch (reason) {
+      setError(String(reason));
+    } finally {
+      setUrlImportBusy(false);
+    }
+  }
+
   async function pasteManualFromClipboard() {
     if (clipboardBusy) return;
     setClipboardBusy(true);
@@ -194,7 +225,7 @@ export function ReportView() {
         setError(tx.clipboardEmpty);
         return;
       }
-      setManualItem((current) => ({ ...current, text }));
+      setManualItem((current) => ({ ...current, text, url: "", quality: "full" }));
       setManualItemOpen(true);
       setStatus(tx.clipboardDone);
     } catch (reason) {
@@ -209,7 +240,7 @@ export function ReportView() {
     try {
       const uid = report.addManualItem(manualItem);
       setActiveUid(uid);
-      setManualItem({ title: "", source: "", region: "", text: "" });
+      setManualItem({ title: "", source: "", region: "", text: "", url: "", quality: "full" });
       setManualItemOpen(false);
       setError("");
       setStatus(be ? "Матэрыял дададзены ў агляд." : "Материал добавлен в обзор.");
@@ -252,8 +283,9 @@ export function ReportView() {
       <div><b>{tx.integrity}: {report.fullTextCount}/{report.items.length}</b><span>{tx.fullCount}: {report.fullTextCount} · {tx.partialCount}: {report.partialTextCount} · {tx.missingCount}: {report.missingFullTextCount}</span></div>
       <p>{integrityClass === "ready" ? tx.allReady : tx.needsReview}</p>
     </section>}
-    <section className="report-toolbar panel"><div><b>{tx.count}: {report.items.length}{report.maxItems !== null ? `/${report.maxItems}` : ""}</b>{tx.tooFew && <span>{tx.tooFew}</span>}</div><div>{isLMonitor && <><button className="primary-button" disabled={clipboardBusy} onClick={pasteManualFromClipboard}>{clipboardBusy ? "…" : tx.clipboardImport}</button><button className="secondary-button" onClick={() => setManualItemOpen((value) => !value)}>{tx.addManualItem}</button></>}<span>{tx.exportHelp}</span>{report.items.length > 0 && <button className="ghost-button" onClick={() => { if (window.confirm(tx.clear + "?")) report.clear(); }}>{tx.clear}</button>}</div></section>
-    {isLMonitor && manualItemOpen && <section className="panel report-add-manual"><div><b>{tx.addManualItem}</b><p>{tx.manualItemHelp}</p></div><div className="report-add-manual-grid"><label>{tx.manualTitle}<input value={manualItem.title} onChange={(e) => setManualItem({ ...manualItem, title: e.target.value })} /></label><label>{tx.manualSource}<input value={manualItem.source} onChange={(e) => setManualItem({ ...manualItem, source: e.target.value })} /></label><label>{tx.manualCountry}<input value={manualItem.region} onChange={(e) => setManualItem({ ...manualItem, region: e.target.value })} /></label></div><label className="report-add-manual-text">{tx.manualBody}<textarea value={manualItem.text} onChange={(e) => setManualItem({ ...manualItem, text: e.target.value })} /></label><div className="report-add-manual-actions"><button className="primary-button" disabled={!manualItem.title.trim() || !manualItem.text.trim()} onClick={addManualReportItem}>{tx.add}</button><button className="ghost-button" onClick={() => setManualItemOpen(false)}>{tx.cancel}</button></div></section>}
+    <section className="report-toolbar panel"><div><b>{tx.count}: {report.items.length}{report.maxItems !== null ? `/${report.maxItems}` : ""}</b>{tx.tooFew && <span>{tx.tooFew}</span>}</div><div>{isLMonitor && <><button className="secondary-button" disabled={clipboardBusy} onClick={pasteManualFromClipboard}>{clipboardBusy ? "…" : tx.clipboardImport}</button><button className="secondary-button" onClick={() => setManualItemOpen((value) => !value)}>{tx.addManualItem}</button></>}<span>{tx.exportHelp}</span>{report.items.length > 0 && <button className="ghost-button" onClick={() => { if (window.confirm(tx.clear + "?")) report.clear(); }}>{tx.clear}</button>}</div></section>
+    {isLMonitor && <section className="panel report-url-import"><div><b>{tx.importByUrl}</b><span>{tx.importUrlHelp}</span></div><div className="report-url-import-row"><input value={importUrl} onChange={(e) => setImportUrl(e.target.value)} placeholder={tx.importUrlPlaceholder} onKeyDown={(e) => { if (e.key === "Enter") void fetchManualByUrl(); }} /><button className="primary-button" disabled={!importUrl.trim() || urlImportBusy} onClick={fetchManualByUrl}>{urlImportBusy ? "…" : tx.importByUrl}</button></div></section>
+    {isLMonitor && manualItemOpen && <section className="panel report-add-manual"><div><b>{tx.addManualItem}</b><p>{tx.manualItemHelp}</p>{manualItem.quality === "partial" && <p className="report-import-partial">{tx.importPartial}</p>}</div><div className="report-add-manual-grid"><label>{tx.manualTitle}<input value={manualItem.title} onChange={(e) => setManualItem({ ...manualItem, title: e.target.value })} /></label><label>{tx.manualSource}<input value={manualItem.source} onChange={(e) => setManualItem({ ...manualItem, source: e.target.value })} /></label><label>{tx.manualCountry}<input value={manualItem.region} onChange={(e) => setManualItem({ ...manualItem, region: e.target.value })} /></label></div><label className="report-add-manual-text">{tx.manualBody}<textarea value={manualItem.text} onChange={(e) => setManualItem({ ...manualItem, text: e.target.value })} /></label><div className="report-add-manual-actions"><button className="primary-button" disabled={!manualItem.title.trim() || !manualItem.text.trim()} onClick={addManualReportItem}>{tx.add}</button><button className="ghost-button" onClick={() => setManualItemOpen(false)}>{tx.cancel}</button></div></section>}
     {!report.items.length ? <section className="panel empty-state report-empty">{tx.empty}</section> : <section className="report-workspace-grid">
       <aside className="panel report-basket">{report.items.map((item, index) => <article key={item.documentUid} className={active?.documentUid === item.documentUid ? "active" : ""} onClick={() => setActiveUid(item.documentUid)}><div className="report-basket-number">{index + 1}</div><div><div className="report-basket-source-row"><b>{item.source}</b><span className={`report-text-status ${item.sourceQuality}`} title={qualityLabel(item)}><i />{qualityShort(item)}</span></div><span>{item.title}</span></div><div className="report-order-actions"><button disabled={index === 0} onClick={(e) => { e.stopPropagation(); report.move(item.documentUid, -1); }}>{tx.up}</button><button disabled={index === report.items.length - 1} onClick={(e) => { e.stopPropagation(); report.move(item.documentUid, 1); }}>{tx.down}</button><button className="text-danger" onClick={(e) => { e.stopPropagation(); report.remove(item.documentUid); }}>{tx.remove}</button></div></article>)}</aside>
       {active && <article className="panel report-editor"><div className="report-editor-head"><div><span className="source-chip">{active.source}</span><h3>{active.title}</h3><p>{[active.locality, active.region].filter(Boolean).join(" · ")}</p></div>{active.url && <button className="link-button" onClick={() => desktopApi.openUrl(active.url)}>{tx.open}</button>}</div>
