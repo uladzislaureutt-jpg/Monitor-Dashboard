@@ -15,6 +15,7 @@ import {
   requestPasswordRecovery,
   saveWorkroomSession,
   signInWorkroom,
+  updateWorkroomProfileLocale,
 } from "./workroom";
 
 type AccessContextValue = {
@@ -22,6 +23,7 @@ type AccessContextValue = {
   session: WorkroomSession;
   monitors: MonitorAccessState[];
   refreshAccess: () => Promise<void>;
+  setPreferredLocale: (locale: "ru" | "be") => Promise<void>;
   logout: () => void;
 };
 
@@ -99,6 +101,30 @@ export function MonitorAccessProvider({ children }: { children: ReactNode }) {
     const timer = window.setInterval(() => { void refreshAccess(session); }, 30_000);
     return () => window.clearInterval(timer);
   }, [session?.userId]);
+  useEffect(() => {
+    const onSessionChanged = () => {
+      const current = localStorage.getItem("monitor-workroom-network-session-v1");
+      if (!current) {
+        setSession(null);
+        setProfile(null);
+        setMonitors([]);
+      }
+    };
+    window.addEventListener("monitor:workroom-session-changed", onSessionChanged);
+    return () => window.removeEventListener("monitor:workroom-session-changed", onSessionChanged);
+  }, []);
+
+  async function setPreferredLocale(nextLocale: "ru" | "be") {
+    setLocale(nextLocale);
+    if (!session) return;
+    try {
+      const active = await updateWorkroomProfileLocale(loadWorkroomConfig(), session, nextLocale);
+      setSession(active);
+      saveWorkroomSession(active);
+      setProfile((current) => current ? { ...current, locale: nextLocale } : current);
+    } catch { /* local language switch remains available */ }
+  }
+
 
   function logout() {
     clearWorkroomSession();
@@ -115,7 +141,7 @@ export function MonitorAccessProvider({ children }: { children: ReactNode }) {
   }} />;
   if (profile.status !== "active") return <div className="access-shell"><div className="access-card suspended-card"><div className="brand-mark large">M</div><h1>{locale === "be" ? "Доступ прыпынены" : "Доступ приостановлен"}</h1><p>{locale === "be" ? "Доступ да Monitor прыпынены адміністратарам." : "Доступ к Monitor приостановлен администратором."}</p><button className="primary-button" onClick={logout}>{locale === "be" ? "Выйсці" : "Выйти"}</button></div></div>;
 
-  const value: AccessContextValue = { profile, session, monitors, refreshAccess: () => refreshAccess(session), logout };
+  const value: AccessContextValue = { profile, session, monitors, refreshAccess: () => refreshAccess(session), setPreferredLocale, logout };
   return <AccessContext.Provider value={value}>{children}</AccessContext.Provider>;
 }
 
