@@ -395,3 +395,27 @@ pub async fn extract_with_real_edge(app: AppHandle, url: &str) -> Result<Browser
     let _ = child.kill();
     Err(format!("REAL_EDGE_FAILED: {last_error}"))
 }
+
+
+pub fn open_real_edge_browser(app: AppHandle, url: &str) -> Result<(), String> {
+    let parsed = reqwest::Url::parse(url).map_err(|e| format!("Некорректный URL: {e}"))?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("Разрешены только http/https URL.".to_string());
+    }
+    let edge = find_edge_executable().ok_or_else(|| "Microsoft Edge не найден.".to_string())?;
+    let profile_dir = app.path().app_data_dir()
+        .map_err(|e| format!("Не удалось определить каталог приложения: {e}"))?
+        .join("article-edge-profile");
+    let profile_arg = format!("--user-data-dir={}", profile_dir.to_string_lossy());
+    std::process::Command::new(edge)
+        .args([
+            profile_arg.as_str(),
+            "--new-window",
+            "--no-first-run",
+            "--no-default-browser-check",
+        ])
+        .arg(parsed.as_str())
+        .spawn()
+        .map_err(|e| format!("Не удалось открыть Microsoft Edge: {e}"))?;
+    Ok(())
+}
