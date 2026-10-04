@@ -154,6 +154,7 @@ export function ReportView() {
   }
 
   function aiModeLabel(mode: Exclude<CompressionMode, "auto">) {
+    if (mode === "light") return be ? "Лёгкая" : "Лёгкая";
     if (mode === "maximum") return be ? "Максімальная" : "Максимальная";
     if (mode === "extract") return "Экстракт";
     return be ? "Стандарт" : "Стандарт";
