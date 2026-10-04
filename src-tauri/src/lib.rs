@@ -136,7 +136,7 @@ fn fetch_known_source_article(url: String, state: State<'_, AppState>) -> Result
 
 #[tauri::command]
 fn open_article_browser(url: String, app: AppHandle) -> Result<(), String> {
-    browser_extract::open_visible_browser(app, &url)
+    browser_extract::open_real_edge_browser(app, &url)
 }
 
 #[tauri::command]
