@@ -1,4 +1,3 @@
-mod browser_bridge;
 mod db;
 mod fulltext;
 mod importer;
@@ -8,9 +7,9 @@ mod sync;
 
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::{Arc, Mutex};
 
-use tauri::{Manager, State};
+use tauri::{AppHandle, Manager, State};
+use tauri_plugin_clipboard_manager::ClipboardExt;
 
 use models::{
     ArchiveFacets, ArchivePage, DashboardOverview, DatabaseStats, EditorialSource, ImportResult, PublicationSummary, RunSummary,
@@ -20,7 +19,6 @@ use models::{
 #[derive(Clone)]
 struct AppState {
     db_path: PathBuf,
-    browser_import: browser_bridge::SharedImport,
 }
 
 #[tauri::command]
@@ -131,10 +129,8 @@ fn hydrate_report_full_texts(
 }
 
 #[tauri::command]
-fn take_browser_import(state: State<'_, AppState>) -> Result<Option<browser_bridge::BrowserImportPayload>, String> {
-    state.browser_import.lock()
-        .map(|mut slot| slot.take())
-        .map_err(|_| "Не удалось прочитать импорт из браузера.".to_string())
+fn read_clipboard_text(app: AppHandle) -> Result<String, String> {
+    app.clipboard().read_text().map_err(|e| format!("Не удалось прочитать буфер обмена: {e}"))
 }
 
 #[tauri::command]
@@ -211,13 +207,12 @@ fn open_external_url(url: String) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;
             let db_path = app_data_dir.join("monitor-dashboard.sqlite3");
             db::initialize_database(&db_path).map_err(std::io::Error::other)?;
-            let browser_import = Arc::new(Mutex::new(None));
-            browser_bridge::start(browser_import.clone());
-            app.manage(AppState { db_path, browser_import });
+            app.manage(AppState { db_path });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -231,7 +226,7 @@ pub fn run() {
             list_sources,
             get_editorial_source,
             hydrate_report_full_texts,
-            take_browser_import,
+            read_clipboard_text,
             export_report_docx,
             sync_github_artifacts,
             replace_moderation_snapshot,
