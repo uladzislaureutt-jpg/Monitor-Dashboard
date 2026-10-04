@@ -139,6 +139,51 @@ fn read_clipboard_text(app: AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn call_supabase_edge(
+    base_url: String,
+    anon_key: String,
+    slug: String,
+    access_token: Option<String>,
+    body: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let parsed = reqwest::Url::parse(base_url.trim())
+        .map_err(|e| format!("Некорректный Supabase URL: {e}"))?;
+    if parsed.scheme() != "https" {
+        return Err("Supabase Edge Functions разрешены только по HTTPS.".to_string());
+    }
+    let host = parsed.host_str().unwrap_or_default().to_lowercase();
+    if !host.ends_with(".supabase.co") {
+        return Err("Разрешён только домен Supabase.".to_string());
+    }
+    if slug.is_empty() || !slug.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-') {
+        return Err("Некорректное имя Edge Function.".to_string());
+    }
+    let base = base_url.trim().trim_end_matches('/');
+    let url = format!("{base}/functions/v1/{slug}");
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("Не удалось создать HTTP-клиент: {e}"))?;
+    let mut request = client.post(url)
+        .header("apikey", anon_key.trim())
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .json(&body);
+    if let Some(token) = access_token.filter(|value| !value.trim().is_empty()) {
+        request = request.bearer_auth(token);
+    }
+    let response = request.send().map_err(|e| format!("EDGE_NETWORK: {e}"))?;
+    let status = response.status();
+    let text = response.text().map_err(|e| format!("EDGE_RESPONSE: {e}"))?;
+    if !status.is_success() {
+        return Err(format!("EDGE_{}: {}", status.as_u16(), text));
+    }
+    if text.trim().is_empty() {
+        return Ok(serde_json::Value::Null);
+    }
+    serde_json::from_str(&text).map_err(|e| format!("EDGE_JSON: {e}; body={text}"))
+}
+
+#[tauri::command]
 fn export_report_docx(
     path: String,
     date: String,
@@ -233,6 +278,7 @@ pub fn run() {
             hydrate_report_full_texts,
             fetch_known_source_article,
             read_clipboard_text,
+            call_supabase_edge,
             export_report_docx,
             sync_github_artifacts,
             replace_moderation_snapshot,
