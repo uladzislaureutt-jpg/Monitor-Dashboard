@@ -1,4 +1,4 @@
-export type CompressionMode = "auto" | "standard" | "maximum" | "extract";
+export type CompressionMode = "auto" | "light" | "standard" | "maximum" | "extract";
 
 function normalize(value: string) {
   return value.replace(/\s+/g, " ").trim();
@@ -13,6 +13,8 @@ export function splitEditorialSentences(value: string) {
 }
 
 export function effectiveCompressionMode(_text: string, mode: CompressionMode): Exclude<CompressionMode, "auto"> {
+  // "light" remains accepted only for backward compatibility with the SEP AI service.
+  // Exact UI never offers it and Auto never selects it.
   return mode === "auto" ? "standard" : mode;
 }
 
@@ -38,8 +40,8 @@ export function exactCompress(text: string, mode: CompressionMode = "auto") {
   const effective = effectiveCompressionMode(source, mode);
   if (!source || sentences.length <= 3) return { text: source, reductionPct: 0, mode: effective };
 
-  const targetRatio = effective === "standard" ? 0.72 : effective === "maximum" ? 0.50 : 0.30;
-  const minimumRatio = effective === "standard" ? 0.60 : effective === "maximum" ? 0.40 : 0.20;
+  const targetRatio = effective === "light" ? 0.93 : effective === "standard" ? 0.72 : effective === "maximum" ? 0.50 : 0.30;
+  const minimumRatio = effective === "light" ? 0.86 : effective === "standard" ? 0.60 : effective === "maximum" ? 0.40 : 0.20;
   const selected = new Set(sentences.map((_, index) => index));
   let selectedChars = sentences.reduce((sum, sentence) => sum + sentence.length + 1, 0);
   const removable = sentences
@@ -71,8 +73,10 @@ export function compressionRange(mode: Exclude<CompressionMode, "auto">, profile
   if (profile === "l") {
     if (mode === "maximum") return { min: 50, max: 70 };
     if (mode === "extract") return { min: 70, max: 90 };
+    if (mode === "light") return { min: 3, max: 14 };
     return { min: 30, max: 50 };
   }
+  if (mode === "light") return { min: 3, max: 14 };
   if (mode === "maximum") return { min: 40, max: 60 };
   if (mode === "extract") return { min: 60, max: 80 };
   return { min: 18, max: 42 };
@@ -84,8 +88,8 @@ export function exactCompressForProfile(text: string, mode: CompressionMode = "a
   const sentences = splitEditorialSentences(source);
   const effective = effectiveCompressionMode(source, mode);
   if (!source || sentences.length <= 3) return { text: source, reductionPct: 0, mode: effective };
-  const targetRatio = effective === "standard" ? 0.60 : effective === "maximum" ? 0.40 : 0.20;
-  const minimumRatio = effective === "standard" ? 0.50 : effective === "maximum" ? 0.30 : 0.10;
+  const targetRatio = effective === "light" ? 0.93 : effective === "standard" ? 0.60 : effective === "maximum" ? 0.40 : 0.20;
+  const minimumRatio = effective === "light" ? 0.86 : effective === "standard" ? 0.50 : effective === "maximum" ? 0.30 : 0.10;
   const selected = new Set(sentences.map((_, index) => index));
   let selectedChars = sentences.reduce((sum, sentence) => sum + sentence.length + 1, 0);
   const removable = sentences
