@@ -428,6 +428,40 @@ pub fn fetch_known_source_article(db_path: &Path, url: &str) -> Result<KnownSour
     let Some((source, region, _domain)) = known_source_for_host(db_path, host)? else {
         return Err("Источник с таким доменом отсутствует в локальной базе Monitor. Используйте вставку из буфера.".to_string());
     };
+
+    // Fast path: if this exact publication already exists in the local archive,
+    // reuse its title/full text instead of downloading it again.
+    {
+        let conn = open_database(db_path)?;
+        let local = conn.query_row(
+            r#"
+            SELECT title, full_text, full_text_quality
+            FROM documents
+            WHERE TRIM(url)=TRIM(?1)
+              AND NULLIF(TRIM(COALESCE(full_text,'')),'') IS NOT NULL
+            ORDER BY id DESC
+            LIMIT 1
+            "#,
+            params![parsed.as_str()],
+            |row| Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            )),
+        ).optional().map_err(|e| format!("Не удалось проверить локальный архив: {e}"))?;
+        if let Some((title, text, quality_hint)) = local {
+            let partial = quality_hint.as_deref().is_some_and(|value| value.to_lowercase().contains("partial"));
+            return Ok(KnownSourceArticleResult {
+                title,
+                source,
+                region,
+                url: parsed.to_string(),
+                text,
+                quality: if partial { "partial" } else { "full" }.to_string(),
+                strategy: "local_archive".to_string(),
+            });
+        }
+    }
     let fallback_title = parsed.path_segments()
         .and_then(|segments| segments.filter(|part| !part.trim().is_empty()).last())
         .map(|part| part.replace('-', " ").replace('_', " "))
