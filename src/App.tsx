@@ -54,7 +54,7 @@ function loadSyncSettings(): MonitorSyncSettings {
 }
 
 export default function App() {
-  const { t, locale, setLocale } = useI18n();
+  const { t, locale } = useI18n();
   const report = useReportWorkspace();
   const access = useMonitorAccess();
   const [appVersion, setAppVersion] = useState("—");
