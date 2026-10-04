@@ -4,7 +4,7 @@ import { desktopApi } from "../api";
 import { useI18n } from "../i18n";
 import { useReportWorkspace } from "../reportWorkspace";
 import type { ReportDraftItem } from "../types";
-import { compressionReduction, exactCompress, type CompressionMode } from "../editorialCompression";
+import { compressionReduction, exactCompressForProfile, type CompressionMode } from "../editorialCompression";
 import { aiCompress } from "../editorialAi";
 
 function prettyDate(value: string) {
@@ -25,8 +25,8 @@ export function ReportView() {
   const [manualOpen, setManualOpen] = useState(false);
   const [manualText, setManualText] = useState("");
   const [manualItemOpen, setManualItemOpen] = useState(false);
-  const [manualItem, setManualItem] = useState({ title: "", source: "", region: "", url: "", text: "", quality: "full" as "full" | "partial" });
-  const [browserImportBusy, setBrowserImportBusy] = useState(false);
+  const [manualItem, setManualItem] = useState({ title: "", source: "", region: "", text: "" });
+  const [clipboardBusy, setClipboardBusy] = useState(false);
   const [compressionMode, setCompressionMode] = useState<CompressionMode>("auto");
   const [aiBusy, setAiBusy] = useState(false);
   const [aiRuns, setAiRuns] = useState<number | null>(null);
@@ -72,10 +72,9 @@ export function ReportView() {
     manualSaved: be ? "Поўны тэкст захаваны ў рабочай падборцы." : "Полный текст сохранён в рабочей подборке.",
     compression: be ? "Кампрэсія" : "Компрессия",
     compressionAuto: be ? "Аўта" : "Авто",
-    compressionLight: be ? "Лёгкая 5–10%" : "Лёгкая 5–10%",
-    compressionStandard: be ? "Стандарт 20–40%" : "Стандарт 20–40%",
-    compressionMaximum: be ? "Максімальная 40–60%" : "Максимальная 40–60%",
-    compressionExtract: be ? "Экстракт 60–80%" : "Экстракт 60–80%",
+    compressionStandard: isLMonitor ? (be ? "Стандарт 30–50%" : "Стандарт 30–50%") : (be ? "Стандарт 20–40%" : "Стандарт 20–40%"),
+    compressionMaximum: isLMonitor ? (be ? "Максімальная 50–70%" : "Максимальная 50–70%") : (be ? "Максімальная 40–60%" : "Максимальная 40–60%"),
+    compressionExtract: isLMonitor ? (be ? "Экстракт 70–90%" : "Экстракт 70–90%") : (be ? "Экстракт 60–80%" : "Экстракт 60–80%"),
     exact: be ? "Exact · без перапісвання" : "Exact · без переписывания",
     ai: be ? "AI · GPT-OSS 120B" : "AI · GPT-OSS 120B",
     aiRunning: be ? "AI апрацоўвае…" : "AI обрабатывает…",
@@ -94,15 +93,13 @@ export function ReportView() {
     aiHelp: be ? "AI адпраўляе толькі поўны тэкст абранага матэрыялу. Лічбы, імёны і прамыя цытаты правяраюцца перад заменай." : "AI отправляет только полный текст выбранного материала. Числа, имена и прямые цитаты проверяются перед заменой.",
     exactHelp: be ? "Толькі Exact: скарачэнне без перапісвання і без выкарыстання Groq." : "Только Exact: сокращение без переписывания и без использования Groq.",
     addManualItem: be ? "Дадаць матэрыял уручную" : "Добавить материал вручную",
-    browserImport: be ? "Атрымаць з браўзера" : "Получить из браузера",
-    browserImportEmpty: be ? "Браўзер пакуль не перадаў матэрыял. Адкрыйце публікацыю, націсніце пашырэнне Monitor і паўтарыце." : "Браузер пока не передал материал. Откройте публикацию, нажмите расширение Monitor и повторите.",
-    browserImportDone: be ? "Матэрыял з браўзера атрыманы. Праверце палі і дадайце яго ў агляд." : "Материал из браузера получен. Проверьте поля и добавьте его в обзор.",
-    browserPartial: be ? "Браўзер бачыць прыкметы paywall/падпіскі: тэкст пазначаны як частковы." : "Браузер видит признаки paywall/подписки: текст помечен как частичный.",
+    clipboardImport: be ? "Уставіць з буфера" : "Вставить из буфера",
+    clipboardEmpty: be ? "У буферы абмену няма тэксту." : "В буфере обмена нет текста.",
+    clipboardDone: be ? "Тэкст з буфера ўстаўлены. Дадайце загаловак, выданне і пры неабходнасці краіну." : "Текст из буфера вставлен. Добавьте заголовок, издание и при необходимости страну.",
     manualItemHelp: be ? "Для матэрыялаў па падпісцы або прапушчаных маніторынгам. Устаўце загаловак, выданне і тэкст з браўзера." : "Для материалов по подписке или пропущенных мониторингом. Вставьте заголовок, издание и текст из браузера.",
     manualTitle: be ? "Загаловак" : "Заголовок",
     manualSource: be ? "Крыніца / выданне" : "Источник / издание",
     manualCountry: be ? "Краіна крыніцы" : "Страна источника",
-    manualUrl: "URL",
     manualBody: be ? "Зыходны тэкст" : "Исходный текст",
     add: be ? "Дадаць у агляд" : "Добавить в обзор",
   };
@@ -148,14 +145,13 @@ export function ReportView() {
 
   function applyExactCompression() {
     if (!active || active.sourceQuality !== "full") return;
-    const result = exactCompress(active.sourceText, compressionMode);
+    const result = exactCompressForProfile(active.sourceText, compressionMode, isLMonitor ? "l" : "sep");
     report.updateText(active.documentUid, result.text);
     setError("");
     setStatus(`${tx.exactDone} ${be ? "Скарачэнне" : "Сокращение"}: ${result.reductionPct}%.`);
   }
 
   function aiModeLabel(mode: Exclude<CompressionMode, "auto">) {
-    if (mode === "light") return be ? "Лёгкая" : "Лёгкая";
     if (mode === "maximum") return be ? "Максімальная" : "Максимальная";
     if (mode === "extract") return "Экстракт";
     return be ? "Стандарт" : "Стандарт";
@@ -184,41 +180,24 @@ export function ReportView() {
     } finally { setAiBusy(false); }
   }
 
-  async function receiveBrowserImport() {
-    if (browserImportBusy) return;
-    setBrowserImportBusy(true);
+  async function pasteManualFromClipboard() {
+    if (clipboardBusy) return;
+    setClipboardBusy(true);
     setError("");
     setStatus("");
     try {
-      const payload = await desktopApi.takeBrowserImport();
-      if (!payload) {
-        setError(tx.browserImportEmpty);
+      const text = (await desktopApi.readClipboardText()).trim();
+      if (!text) {
+        setError(tx.clipboardEmpty);
         return;
       }
-      let region = "";
-      try {
-        const sources = await desktopApi.sources(null);
-        const normalized = payload.source.trim().toLocaleLowerCase();
-        let host = "";
-        try { host = new URL(payload.url).hostname.replace(/^www\./, "").toLocaleLowerCase(); } catch { /* keep empty */ }
-        const known = sources.find((item) => item.name.trim().toLocaleLowerCase() === normalized)
-          ?? sources.find((item) => (item.domain || "").replace(/^www\./, "").toLocaleLowerCase() === host);
-        region = known?.region || "";
-      } catch { /* source lookup is optional */ }
-      setManualItem({
-        title: payload.title,
-        source: payload.source,
-        region,
-        url: payload.url,
-        text: payload.text,
-        quality: payload.quality === "partial" ? "partial" : "full",
-      });
+      setManualItem((current) => ({ ...current, text }));
       setManualItemOpen(true);
-      setStatus(tx.browserImportDone);
+      setStatus(tx.clipboardDone);
     } catch (reason) {
       setError(String(reason));
     } finally {
-      setBrowserImportBusy(false);
+      setClipboardBusy(false);
     }
   }
 
@@ -227,7 +206,7 @@ export function ReportView() {
     try {
       const uid = report.addManualItem(manualItem);
       setActiveUid(uid);
-      setManualItem({ title: "", source: "", region: "", url: "", text: "", quality: "full" });
+      setManualItem({ title: "", source: "", region: "", text: "" });
       setManualItemOpen(false);
       setError("");
       setStatus(be ? "Матэрыял дададзены ў агляд." : "Материал добавлен в обзор.");
@@ -239,7 +218,9 @@ export function ReportView() {
     setError(""); setStatus("");
     const path = await save({
       title: tx.export,
-      defaultPath: `Обзор_критических_материалов_${safeFilenameDate(report.date)}.docx`,
+      defaultPath: isLMonitor
+        ? `Дополнения_в_обзор_СМИ_${safeFilenameDate(report.date)}.docx`
+        : `Обзор_критических_материалов_${safeFilenameDate(report.date)}.docx`,
       filters: [{ name: "Word DOCX", extensions: ["docx"] }],
     });
     if (!path) return;
@@ -268,8 +249,8 @@ export function ReportView() {
       <div><b>{tx.integrity}: {report.fullTextCount}/{report.items.length}</b><span>{tx.fullCount}: {report.fullTextCount} · {tx.partialCount}: {report.partialTextCount} · {tx.missingCount}: {report.missingFullTextCount}</span></div>
       <p>{integrityClass === "ready" ? tx.allReady : tx.needsReview}</p>
     </section>}
-    <section className="report-toolbar panel"><div><b>{tx.count}: {report.items.length}{report.maxItems !== null ? `/${report.maxItems}` : ""}</b>{tx.tooFew && <span>{tx.tooFew}</span>}</div><div>{isLMonitor && <><button className="primary-button" disabled={browserImportBusy} onClick={receiveBrowserImport}>{browserImportBusy ? "…" : tx.browserImport}</button><button className="secondary-button" onClick={() => setManualItemOpen((value) => !value)}>{tx.addManualItem}</button></>}<span>{tx.exportHelp}</span>{report.items.length > 0 && <button className="ghost-button" onClick={() => { if (window.confirm(tx.clear + "?")) report.clear(); }}>{tx.clear}</button>}</div></section>
-    {isLMonitor && manualItemOpen && <section className="panel report-add-manual"><div><b>{tx.addManualItem}</b><p>{tx.manualItemHelp}</p>{manualItem.quality === "partial" && <p className="browser-import-warning">{tx.browserPartial}</p>}</div><div className="report-add-manual-grid"><label>{tx.manualTitle}<input value={manualItem.title} onChange={(e) => setManualItem({ ...manualItem, title: e.target.value })} /></label><label>{tx.manualSource}<input value={manualItem.source} onChange={(e) => setManualItem({ ...manualItem, source: e.target.value })} /></label><label>{tx.manualCountry}<input value={manualItem.region} onChange={(e) => setManualItem({ ...manualItem, region: e.target.value })} /></label><label>{tx.manualUrl}<input value={manualItem.url} onChange={(e) => setManualItem({ ...manualItem, url: e.target.value })} placeholder="https://…" /></label></div><label className="report-add-manual-text">{tx.manualBody}<textarea value={manualItem.text} onChange={(e) => setManualItem({ ...manualItem, text: e.target.value })} /></label><div className="report-add-manual-actions"><button className="primary-button" disabled={!manualItem.title.trim() || !manualItem.text.trim()} onClick={addManualReportItem}>{tx.add}</button><button className="ghost-button" onClick={() => setManualItemOpen(false)}>{tx.cancel}</button></div></section>}
+    <section className="report-toolbar panel"><div><b>{tx.count}: {report.items.length}{report.maxItems !== null ? `/${report.maxItems}` : ""}</b>{tx.tooFew && <span>{tx.tooFew}</span>}</div><div>{isLMonitor && <><button className="primary-button" disabled={clipboardBusy} onClick={pasteManualFromClipboard}>{clipboardBusy ? "…" : tx.clipboardImport}</button><button className="secondary-button" onClick={() => setManualItemOpen((value) => !value)}>{tx.addManualItem}</button></>}<span>{tx.exportHelp}</span>{report.items.length > 0 && <button className="ghost-button" onClick={() => { if (window.confirm(tx.clear + "?")) report.clear(); }}>{tx.clear}</button>}</div></section>
+    {isLMonitor && manualItemOpen && <section className="panel report-add-manual"><div><b>{tx.addManualItem}</b><p>{tx.manualItemHelp}</p></div><div className="report-add-manual-grid"><label>{tx.manualTitle}<input value={manualItem.title} onChange={(e) => setManualItem({ ...manualItem, title: e.target.value })} /></label><label>{tx.manualSource}<input value={manualItem.source} onChange={(e) => setManualItem({ ...manualItem, source: e.target.value })} /></label><label>{tx.manualCountry}<input value={manualItem.region} onChange={(e) => setManualItem({ ...manualItem, region: e.target.value })} /></label></div><label className="report-add-manual-text">{tx.manualBody}<textarea value={manualItem.text} onChange={(e) => setManualItem({ ...manualItem, text: e.target.value })} /></label><div className="report-add-manual-actions"><button className="primary-button" disabled={!manualItem.title.trim() || !manualItem.text.trim()} onClick={addManualReportItem}>{tx.add}</button><button className="ghost-button" onClick={() => setManualItemOpen(false)}>{tx.cancel}</button></div></section>}
     {!report.items.length ? <section className="panel empty-state report-empty">{tx.empty}</section> : <section className="report-workspace-grid">
       <aside className="panel report-basket">{report.items.map((item, index) => <article key={item.documentUid} className={active?.documentUid === item.documentUid ? "active" : ""} onClick={() => setActiveUid(item.documentUid)}><div className="report-basket-number">{index + 1}</div><div><div className="report-basket-source-row"><b>{item.source}</b><span className={`report-text-status ${item.sourceQuality}`} title={qualityLabel(item)}><i />{qualityShort(item)}</span></div><span>{item.title}</span></div><div className="report-order-actions"><button disabled={index === 0} onClick={(e) => { e.stopPropagation(); report.move(item.documentUid, -1); }}>{tx.up}</button><button disabled={index === report.items.length - 1} onClick={(e) => { e.stopPropagation(); report.move(item.documentUid, 1); }}>{tx.down}</button><button className="text-danger" onClick={(e) => { e.stopPropagation(); report.remove(item.documentUid); }}>{tx.remove}</button></div></article>)}</aside>
       {active && <article className="panel report-editor"><div className="report-editor-head"><div><span className="source-chip">{active.source}</span><h3>{active.title}</h3><p>{[active.locality, active.region].filter(Boolean).join(" · ")}</p></div>{active.url && <button className="link-button" onClick={() => desktopApi.openUrl(active.url)}>{tx.open}</button>}</div>
@@ -277,7 +258,7 @@ export function ReportView() {
         {active.sourceQuality !== "full" && <div className="report-source-warning"><div><b>{qualityLabel(active)}</b><p>{tx.needsReview}</p></div><button className="secondary-button small-button" onClick={() => { setManualOpen((value) => !value); if (!manualText) setManualText(""); }}>{active.sourceQuality === "partial" ? tx.replaceFull : tx.pasteFull}</button></div>}
         {manualOpen && active.sourceQuality !== "full" && <div className="report-manual-source"><p>{tx.pasteHelp}</p><textarea value={manualText} onChange={(e) => setManualText(e.target.value)} placeholder={tx.pastePlaceholder} /><div><button className="primary-button small-button" disabled={!manualText.trim()} onClick={saveManualFullText}>{tx.saveManual}</button><button className="ghost-button small-button" onClick={() => { setManualOpen(false); setManualText(""); }}>{tx.cancel}</button></div></div>}
         <div className={`report-compression-panel ${active.sourceQuality !== "full" ? "disabled" : ""}`}>
-          <div className="report-compression-head"><div><b>{isLMonitor ? tx.exact : tx.compression}</b><span>{isLMonitor ? tx.exactHelp : tx.aiHelp}</span></div><label><select value={compressionMode} onChange={(e) => setCompressionMode(e.target.value as CompressionMode)} disabled={active.sourceQuality !== "full" || aiBusy}><option value="auto">{tx.compressionAuto}</option><option value="light">{tx.compressionLight}</option><option value="standard">{tx.compressionStandard}</option><option value="maximum">{tx.compressionMaximum}</option><option value="extract">{tx.compressionExtract}</option></select></label></div>
+          <div className="report-compression-head"><div><b>{isLMonitor ? tx.exact : tx.compression}</b><span>{isLMonitor ? tx.exactHelp : tx.aiHelp}</span></div><label><select value={compressionMode} onChange={(e) => setCompressionMode(e.target.value as CompressionMode)} disabled={active.sourceQuality !== "full" || aiBusy}><option value="auto">{tx.compressionAuto}</option><option value="standard">{tx.compressionStandard}</option><option value="maximum">{tx.compressionMaximum}</option><option value="extract">{tx.compressionExtract}</option></select></label></div>
           <div className="report-compression-actions"><button className="secondary-button small-button" disabled={active.sourceQuality !== "full" || aiBusy} onClick={applyExactCompression}>{tx.exact}</button>{!isLMonitor && <button className="primary-button small-button" disabled={active.sourceQuality !== "full" || aiBusy || aiLimitReached || aiRuns === null} onClick={applyAiCompression}>{aiBusy ? tx.aiRunning : tx.ai}</button>}<span>{be ? "Бягучае скарачэнне" : "Текущее сокращение"}: {compressionReduction(active.sourceText, active.editorialText)}%</span>{!isLMonitor && <span>{tx.aiLimit}: {aiRuns ?? "…"}/{MAX_AI_COMPRESSION_RUNS}</span>}</div>
           {active.sourceQuality !== "full" && <p>{tx.compressionNeedsFull}</p>}
           {!isLMonitor && maximumMode && <p>{tx.aiMaximumHelp}</p>}
