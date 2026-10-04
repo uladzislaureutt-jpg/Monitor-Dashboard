@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useI18n } from "./i18n";
 import type { MonitorAccessState, WorkroomProfile, WorkroomSession } from "./types";
 import {
@@ -115,7 +115,7 @@ export function MonitorAccessProvider({ children }: { children: ReactNode }) {
   }} />;
   if (profile.status !== "active") return <div className="access-shell"><div className="access-card suspended-card"><div className="brand-mark large">M</div><h1>{locale === "be" ? "Доступ прыпынены" : "Доступ приостановлен"}</h1><p>{locale === "be" ? "Доступ да Monitor прыпынены адміністратарам." : "Доступ к Monitor приостановлен администратором."}</p><button className="primary-button" onClick={logout}>{locale === "be" ? "Выйсці" : "Выйти"}</button></div></div>;
 
-  const value = useMemo<AccessContextValue>(() => ({ profile, session, monitors, refreshAccess: () => refreshAccess(session), logout }), [profile, session, monitors]);
+  const value: AccessContextValue = { profile, session, monitors, refreshAccess: () => refreshAccess(session), logout };
   return <AccessContext.Provider value={value}>{children}</AccessContext.Provider>;
 }
 
