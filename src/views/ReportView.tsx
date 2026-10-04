@@ -28,6 +28,8 @@ export function ReportView() {
   const [manualItem, setManualItem] = useState({ title: "", source: "", region: "", text: "", url: "", quality: "full" as "full" | "partial" });
   const [importUrl, setImportUrl] = useState("");
   const [urlImportBusy, setUrlImportBusy] = useState(false);
+  const [urlImportMessage, setUrlImportMessage] = useState("");
+  const [urlImportError, setUrlImportError] = useState("");
   const [clipboardBusy, setClipboardBusy] = useState(false);
   const [compressionMode, setCompressionMode] = useState<CompressionMode>("auto");
   const [aiBusy, setAiBusy] = useState(false);
@@ -193,11 +195,13 @@ export function ReportView() {
   async function fetchManualByUrl() {
     if (urlImportBusy || !importUrl.trim()) return;
     setUrlImportBusy(true);
+    setUrlImportError("");
+    setUrlImportMessage("");
     setError("");
     setStatus("");
     try {
       const payload = await desktopApi.fetchKnownSourceArticle(importUrl.trim());
-      setManualItem({
+      const uid = report.addManualItem({
         title: payload.title,
         source: payload.source,
         region: payload.region || "",
@@ -205,11 +209,12 @@ export function ReportView() {
         url: payload.url,
         quality: payload.quality,
       });
-      setManualItemOpen(true);
+      setActiveUid(uid);
       setImportUrl("");
-      setStatus(payload.quality === "partial" ? `${tx.importUrlDone} ${tx.importPartial}` : tx.importUrlDone);
+      setManualItemOpen(false);
+      setUrlImportMessage(payload.quality === "partial" ? `${tx.importUrlDone} ${tx.importPartial}` : tx.importUrlDone);
     } catch (reason) {
-      setError(String(reason));
+      setUrlImportError(String(reason));
     } finally {
       setUrlImportBusy(false);
     }
@@ -285,7 +290,7 @@ export function ReportView() {
       <p>{integrityClass === "ready" ? tx.allReady : tx.needsReview}</p>
     </section>}
     <section className="report-toolbar panel"><div><b>{tx.count}: {report.items.length}{report.maxItems !== null ? `/${report.maxItems}` : ""}</b>{tx.tooFew && <span>{tx.tooFew}</span>}</div><div>{isLMonitor && <><button className="secondary-button" disabled={clipboardBusy} onClick={pasteManualFromClipboard}>{clipboardBusy ? "…" : tx.clipboardImport}</button><button className="secondary-button" onClick={() => setManualItemOpen((value) => !value)}>{tx.addManualItem}</button></>}<span>{tx.exportHelp}</span>{report.items.length > 0 && <button className="ghost-button" onClick={() => { if (window.confirm(tx.clear + "?")) report.clear(); }}>{tx.clear}</button>}</div></section>
-    {isLMonitor && <section className="panel report-url-import"><div><b>{tx.importByUrl}</b><span>{tx.importUrlHelp}</span></div><div className="report-url-import-row"><input value={importUrl} onChange={(e) => setImportUrl(e.target.value)} placeholder={tx.importUrlPlaceholder} onKeyDown={(e) => { if (e.key === "Enter") void fetchManualByUrl(); }} /><button className="primary-button" disabled={!importUrl.trim() || urlImportBusy} onClick={fetchManualByUrl}>{urlImportBusy ? "…" : tx.importByUrl}</button></div></section>}
+    {isLMonitor && <section className="panel report-url-import"><div><b>{tx.importByUrl}</b><span>{tx.importUrlHelp}</span></div><div className="report-url-import-row"><input value={importUrl} onChange={(e) => { setImportUrl(e.target.value); setUrlImportError(""); setUrlImportMessage(""); }} placeholder={tx.importUrlPlaceholder} onKeyDown={(e) => { if (e.key === "Enter") void fetchManualByUrl(); }} /><button className="primary-button" disabled={!importUrl.trim() || urlImportBusy} onClick={fetchManualByUrl}>{urlImportBusy ? "…" : tx.importByUrl}</button></div>{urlImportBusy && <div className="report-url-inline pending">{be ? "Загрузка і вылучэнне асноўнага тэксту…" : "Загрузка и извлечение основного текста…"}</div>}{urlImportMessage && <div className="report-url-inline success">{urlImportMessage}</div>}{urlImportError && <div className="report-url-inline error">{urlImportError}</div>}</section>}
     {isLMonitor && manualItemOpen && <section className="panel report-add-manual"><div><b>{tx.addManualItem}</b><p>{tx.manualItemHelp}</p>{manualItem.quality === "partial" && <p className="report-import-partial">{tx.importPartial}</p>}</div><div className="report-add-manual-grid"><label>{tx.manualTitle}<input value={manualItem.title} onChange={(e) => setManualItem({ ...manualItem, title: e.target.value })} /></label><label>{tx.manualSource}<input value={manualItem.source} onChange={(e) => setManualItem({ ...manualItem, source: e.target.value })} /></label><label>{tx.manualCountry}<input value={manualItem.region} onChange={(e) => setManualItem({ ...manualItem, region: e.target.value })} /></label></div><label className="report-add-manual-text">{tx.manualBody}<textarea value={manualItem.text} onChange={(e) => setManualItem({ ...manualItem, text: e.target.value })} /></label><div className="report-add-manual-actions"><button className="primary-button" disabled={!manualItem.title.trim() || !manualItem.text.trim()} onClick={addManualReportItem}>{tx.add}</button><button className="ghost-button" onClick={() => setManualItemOpen(false)}>{tx.cancel}</button></div></section>}
     {!report.items.length ? <section className="panel empty-state report-empty">{tx.empty}</section> : <section className="report-workspace-grid">
       <aside className="panel report-basket">{report.items.map((item, index) => <article key={item.documentUid} className={active?.documentUid === item.documentUid ? "active" : ""} onClick={() => setActiveUid(item.documentUid)}><div className="report-basket-number">{index + 1}</div><div><div className="report-basket-source-row"><b>{item.source}</b><span className={`report-text-status ${item.sourceQuality}`} title={qualityLabel(item)}><i />{qualityShort(item)}</span></div><span>{item.title}</span></div><div className="report-order-actions"><button disabled={index === 0} onClick={(e) => { e.stopPropagation(); report.move(item.documentUid, -1); }}>{tx.up}</button><button disabled={index === report.items.length - 1} onClick={(e) => { e.stopPropagation(); report.move(item.documentUid, 1); }}>{tx.down}</button><button className="text-danger" onClick={(e) => { e.stopPropagation(); report.remove(item.documentUid); }}>{tx.remove}</button></div></article>)}</aside>
