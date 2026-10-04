@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import type { DatabaseStats, RunSummary, SyncSettings } from "../types";
+import type { AdminSnapshot, DatabaseStats, RunSummary, SyncSettings } from "../types";
 import { useI18n } from "../i18n";
+import { useMonitorAccess } from "../access";
+import { adminAccessAction, getAdminSnapshot, loadWorkroomConfig } from "../workroom";
 
 export function DataView({
   stats,
@@ -23,14 +25,70 @@ export function DataView({
   syncBusy: boolean;
   syncStatus: string;
 }) {
-  const { t, formatLocale } = useI18n();
+  const { t, formatLocale, locale } = useI18n();
+  const access = useMonitorAccess();
+  const [adminSnapshot, setAdminSnapshot] = useState<AdminSnapshot | null>(null);
+  const [adminBusy, setAdminBusy] = useState(false);
+  const [adminError, setAdminError] = useState("");
+  const be = locale === "be";
+  const atx = {
+    title: be ? "Карыстальнікі і доступ" : "Пользователи и доступ",
+    pending: be ? "Запыты на доступ" : "Запросы на доступ",
+    approve: be ? "Дазволіць" : "Разрешить",
+    reject: be ? "Адхіліць" : "Отклонить",
+    users: be ? "Карыстальнікі" : "Пользователи",
+    access: be ? "Доступ" : "Доступ",
+    admin: be ? "Адміністратар" : "Администратор",
+    active: be ? "актыўны" : "активен",
+    suspended: be ? "прыпынены" : "приостановлен",
+    lastLogin: be ? "Апошні ўваход" : "Последний вход",
+    monitors: be ? "Даступнасць маніторынгаў" : "Доступность мониторингов",
+    works: be ? "Працуе" : "Работает",
+    maintenance: be ? "Тэхнічныя работы" : "Технические работы",
+    noRequests: be ? "Няма запытаў, якія чакаюць рашэння." : "Нет запросов, ожидающих решения.",
+    refresh: be ? "Абнавіць" : "Обновить",
+  };
   const latest = runs[0] ?? null;
   const productionRuns = runs.filter((run) => run.dryRun === false).length;
   const [form, setForm] = useState(syncSettings);
   useEffect(() => setForm(syncSettings), [syncSettings]);
+  useEffect(() => {
+    if (!access.profile.isAdmin) return;
+    let cancelled = false;
+    getAdminSnapshot(loadWorkroomConfig(), access.session).then(({ snapshot }) => {
+      if (!cancelled) setAdminSnapshot(snapshot);
+    }).catch((reason) => { if (!cancelled) setAdminError(String(reason)); });
+    return () => { cancelled = true; };
+  }, [access.profile.isAdmin, access.session.userId]);
   const formatDate = (value: string | null) => { if (!value) return "—"; const parsed = new Date(value); return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString(formatLocale); };
   const formatMode = (value: boolean | null) => value === true ? t("data.modeDry") : value === false ? t("data.modeProduction") : t("data.modeUnknown");
+  async function refreshAdmin() {
+    if (!access.profile.isAdmin) return;
+    setAdminBusy(true); setAdminError("");
+    try {
+      const { snapshot } = await getAdminSnapshot(loadWorkroomConfig(), access.session);
+      setAdminSnapshot(snapshot);
+      await access.refreshAccess();
+    } catch (reason) { setAdminError(String(reason)); }
+    finally { setAdminBusy(false); }
+  }
+  async function adminAction(body: Record<string, unknown>) {
+    setAdminBusy(true); setAdminError("");
+    try {
+      await adminAccessAction(loadWorkroomConfig(), access.session, body);
+      await refreshAdmin();
+    } catch (reason) { setAdminError(String(reason)); setAdminBusy(false); }
+  }
   return <div className="view-stack">
+    {access.profile.isAdmin && <section className="panel admin-access-panel">
+      <div className="panel-head"><div><h3>{atx.title}</h3><p>{be ? "Одобрение новых операторов, роли и режим технических работ." : "Одобрение новых операторов, роли и режим технических работ."}</p></div><button className="secondary-button" disabled={adminBusy} onClick={refreshAdmin}>{adminBusy ? "…" : atx.refresh}</button></div>
+      {adminError && <div className="notice error">{adminError}</div>}
+      <div className="admin-access-grid">
+        <div className="admin-access-block"><h4>{atx.pending}</h4>{(adminSnapshot?.requests.filter((item) => item.status === "pending").length ?? 0) === 0 ? <p className="muted">{atx.noRequests}</p> : adminSnapshot?.requests.filter((item) => item.status === "pending").map((item) => <div className="admin-request-row" key={item.id}><div><b>{item.displayName}</b><span>{item.email} · {item.locale.toUpperCase()}</span></div><div><button className="primary-button small-button" disabled={adminBusy} onClick={() => adminAction({ action: "review_request", request_id: item.id, decision: "approved" })}>{atx.approve}</button><button className="ghost-button small-button" disabled={adminBusy} onClick={() => adminAction({ action: "review_request", request_id: item.id, decision: "rejected" })}>{atx.reject}</button></div></div>)}</div>
+        <div className="admin-access-block"><h4>{atx.monitors}</h4>{adminSnapshot?.monitors.map((item) => <div className="admin-monitor-row" key={item.monitorKey}><div><b>{item.monitorKey === "social_economic" ? "SEP-Monitor" : item.monitorKey === "lukashenko" ? "L-Monitor" : item.monitorKey}</b><span>{item.enabled ? atx.works : atx.maintenance}</span></div><label className="toggle-label"><input type="checkbox" checked={item.enabled} disabled={adminBusy} onChange={(e) => adminAction({ action: "set_monitor", monitor_key: item.monitorKey, enabled: e.target.checked, maintenance_message_ru: item.maintenanceMessageRu, maintenance_message_be: item.maintenanceMessageBe })} /><span>{item.enabled ? atx.works : atx.maintenance}</span></label></div>)}</div>
+      </div>
+      <div className="admin-user-list"><h4>{atx.users}</h4>{adminSnapshot?.users.map((item) => <div className="admin-user-row" key={item.id}><div className="admin-user-main"><b>{item.displayName}</b><span>{item.email} · {item.status === "active" ? atx.active : atx.suspended}{item.lastSignInAt ? ` · ${atx.lastLogin}: ${formatDate(item.lastSignInAt)}` : ""}</span></div><label><input type="checkbox" checked={item.status === "active"} disabled={adminBusy || item.id === access.profile.id} onChange={(e) => adminAction({ action: "set_user_access", user_id: item.id, enabled: e.target.checked })} />{atx.access}</label><label><input type="checkbox" checked={item.isAdmin} disabled={adminBusy && item.id === access.profile.id} onChange={(e) => adminAction({ action: "set_admin", user_id: item.id, is_admin: e.target.checked })} />{atx.admin}</label></div>)}</div>
+    </section>}
     <section className="hero data-hero"><div><div className="eyebrow">{t("data.eyebrow")}</div><h2>{t("data.title")}</h2><p>{t("data.subtitle")}</p></div><button className="import-button" onClick={onImport} disabled={busy}>{busy ? t("data.importing") : t("data.import")}</button></section>
     <section className="panel sync-panel">
       <div className="panel-head"><div><h3>{t("data.syncTitle")}</h3><p>{t("data.syncHelp")}</p></div><span className={`sync-state ${syncBusy ? "working" : ""}`}>{syncBusy ? t("data.syncing") : syncStatus || t("status.notConfigured")}</span></div>
