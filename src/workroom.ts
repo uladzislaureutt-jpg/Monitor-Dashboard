@@ -7,6 +7,9 @@ import type {
   PublicationModerationFlag,
   PublicationModerationExclusion,
   PublicationModerationSnapshot,
+  AccessRequestLocalState,
+  AdminSnapshot,
+  MonitorAccessState,
 } from "./types";
 
 const CONFIG_KEY = "monitor-workroom-network-config-v1";
@@ -20,6 +23,7 @@ const DEFAULT_WORKROOM_CONFIG: WorkroomConfig = {
 };
 const CACHE_PREFIX = "monitor-workroom-message-cache-v1";
 const READ_PREFIX = "monitor-workroom-last-read-v1";
+const ACCESS_REQUEST_KEY = "monitor-access-request-v1";
 
 function normalizeBaseUrl(value: string) {
   return value.trim().replace(/\/+$/, "");
@@ -239,18 +243,22 @@ async function apiRequest(
 
 export async function getWorkroomProfile(config: WorkroomConfig, session: WorkroomSession) {
   const params = new URLSearchParams({
-    select: "id,display_name,is_admin,name_confirmed",
+    select: "id,display_name,email,is_admin,name_confirmed,status,locale",
     id: `eq.${session.userId}`,
     limit: "1",
   });
   const { payload, session: active } = await apiRequest(config, session, `/rest/v1/monitor_profiles?${params.toString()}`);
   const rows = Array.isArray(payload) ? payload as Array<Record<string, unknown>> : [];
   const row = rows[0];
+  if (!row) throw new Error("PROFILE_NOT_FOUND");
   const profile: WorkroomProfile = {
     id: session.userId,
-    displayName: row?.display_name ? String(row.display_name) : session.email,
-    isAdmin: Boolean(row?.is_admin),
-    nameConfirmed: Boolean(row?.name_confirmed),
+    displayName: row.display_name ? String(row.display_name) : session.email,
+    email: row.email ? String(row.email) : session.email,
+    isAdmin: Boolean(row.is_admin),
+    nameConfirmed: Boolean(row.name_confirmed),
+    status: row.status === "suspended" ? "suspended" : "active",
+    locale: row.locale === "be" ? "be" : "ru",
   };
   return { profile, session: active };
 }
@@ -260,7 +268,7 @@ export async function updateWorkroomProfileName(config: WorkroomConfig, session:
   const params = new URLSearchParams({ id: `eq.${session.userId}` });
   const { payload, session: active } = await apiRequest(config, session, `/rest/v1/monitor_profiles?${params.toString()}`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify({ display_name: value, name_confirmed: true }) });
   const rows = Array.isArray(payload) ? payload as Array<Record<string, unknown>> : []; const row=rows[0];
-  const profile: WorkroomProfile = { id: session.userId, displayName: row?.display_name ? String(row.display_name) : value, isAdmin: Boolean(row?.is_admin), nameConfirmed: Boolean(row?.name_confirmed ?? true) };
+  const profile: WorkroomProfile = { id: session.userId, displayName: row?.display_name ? String(row.display_name) : value, email: row?.email ? String(row.email) : session.email, isAdmin: Boolean(row?.is_admin), nameConfirmed: Boolean(row?.name_confirmed ?? true), status: row?.status === "suspended" ? "suspended" : "active", locale: row?.locale === "be" ? "be" : "ru" };
   return { profile, session: active };
 }
 
@@ -390,4 +398,146 @@ export async function excludePublication(config: WorkroomConfig, session: Workro
     body: JSON.stringify({ room_key: config.roomKey, monitor_key: monitorKey, document_uid: documentUid, excluded_by: cleared.session.userId }),
   });
   return clearPublicationFlags(config, active, documentUid, monitorKey);
+}
+
+
+function randomRequestToken() {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+export function loadAccessRequest(): AccessRequestLocalState | null {
+  return parseJson<AccessRequestLocalState>(localStorage.getItem(ACCESS_REQUEST_KEY));
+}
+
+export function clearAccessRequest() {
+  localStorage.removeItem(ACCESS_REQUEST_KEY);
+}
+
+async function edgeRequest(config: WorkroomConfig, slug: string, body: unknown, session?: WorkroomSession | null) {
+  assertConfigured(config);
+  const active = session ? await ensureWorkroomSession(config, session) : null;
+  const response = await fetch(`${normalizeBaseUrl(config.url)}/functions/v1/${slug}`, {
+    method: "POST",
+    headers: {
+      apikey: config.anonKey,
+      "Content-Type": "application/json",
+      ...(active ? { Authorization: `Bearer ${active.accessToken}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+  const payload = await readResponse(response);
+  if (!response.ok) {
+    const detail = typeof payload === "string" ? payload : JSON.stringify(payload);
+    throw new Error(`EDGE_${response.status}: ${detail}`);
+  }
+  return { payload: payload as Record<string, unknown>, session: active };
+}
+
+export async function requestMonitorAccess(config: WorkroomConfig, displayName: string, email: string, locale: "ru" | "be") {
+  const requestToken = randomRequestToken();
+  const { payload } = await edgeRequest(config, "monitor-access", {
+    action: "request",
+    display_name: displayName.trim(),
+    email: email.trim().toLowerCase(),
+    locale,
+    request_token: requestToken,
+  });
+  const state: AccessRequestLocalState = {
+    requestId: String(payload.request_id ?? ""),
+    requestToken,
+    email: email.trim().toLowerCase(),
+    displayName: displayName.trim(),
+    locale,
+  };
+  if (!state.requestId) throw new Error("ACCESS_REQUEST_INVALID_RESPONSE");
+  localStorage.setItem(ACCESS_REQUEST_KEY, JSON.stringify(state));
+  return state;
+}
+
+export async function checkMonitorAccessRequest(config: WorkroomConfig, state: AccessRequestLocalState) {
+  const { payload } = await edgeRequest(config, "monitor-access", {
+    action: "status",
+    request_id: state.requestId,
+    request_token: state.requestToken,
+  });
+  return {
+    status: String(payload.status ?? "pending") as "pending" | "approved" | "rejected",
+    registered: Boolean(payload.registered),
+  };
+}
+
+export async function completeMonitorRegistration(config: WorkroomConfig, state: AccessRequestLocalState, password: string) {
+  await edgeRequest(config, "monitor-access", {
+    action: "complete",
+    request_id: state.requestId,
+    request_token: state.requestToken,
+    password,
+  });
+  clearAccessRequest();
+}
+
+export async function requestPasswordRecovery(config: WorkroomConfig, email: string) {
+  await authRequest(config, "/auth/v1/recover", { email: email.trim().toLowerCase() });
+}
+
+function monitorAccessFromRow(row: Record<string, unknown>): MonitorAccessState {
+  return {
+    monitorKey: String(row.monitor_key ?? ""),
+    enabled: Boolean(row.enabled),
+    maintenanceMessageRu: String(row.maintenance_message_ru ?? "Технические работы"),
+    maintenanceMessageBe: String(row.maintenance_message_be ?? "Тэхнічныя работы"),
+  };
+}
+
+export async function listMonitorAccess(config: WorkroomConfig, session: WorkroomSession) {
+  const params = new URLSearchParams({
+    select: "monitor_key,enabled,maintenance_message_ru,maintenance_message_be",
+    order: "monitor_key.asc",
+  });
+  const { payload, session: active } = await apiRequest(config, session, `/rest/v1/monitor_access?${params.toString()}`);
+  return {
+    monitors: (Array.isArray(payload) ? payload : []).map((row) => monitorAccessFromRow(row as Record<string, unknown>)),
+    session: active,
+  };
+}
+
+export async function adminAccessAction(config: WorkroomConfig, session: WorkroomSession, body: Record<string, unknown>) {
+  const { payload, session: active } = await edgeRequest(config, "monitor-admin", body, session);
+  return { payload, session: active! };
+}
+
+export async function getAdminSnapshot(config: WorkroomConfig, session: WorkroomSession) {
+  const { payload, session: active } = await adminAccessAction(config, session, { action: "list" });
+  const requests = (Array.isArray(payload.requests) ? payload.requests : []).map((row: any) => ({
+    id: String(row.id),
+    displayName: String(row.display_name ?? ""),
+    email: String(row.email ?? ""),
+    locale: row.locale === "be" ? "be" as const : "ru" as const,
+    status: (row.status === "approved" || row.status === "rejected" ? row.status : "pending") as "pending" | "approved" | "rejected",
+    requestedAt: String(row.requested_at ?? ""),
+    reviewedAt: row.reviewed_at ? String(row.reviewed_at) : null,
+    registeredAt: row.registered_at ? String(row.registered_at) : null,
+  }));
+  const users = (Array.isArray(payload.users) ? payload.users : []).map((row: any) => ({
+    id: String(row.id),
+    displayName: String(row.display_name ?? ""),
+    email: String(row.email ?? ""),
+    isAdmin: Boolean(row.is_admin),
+    status: row.status === "suspended" ? "suspended" as const : "active" as const,
+    locale: row.locale === "be" ? "be" as const : "ru" as const,
+    createdAt: String(row.created_at ?? ""),
+    lastSignInAt: row.last_sign_in_at ? String(row.last_sign_in_at) : null,
+  }));
+  const monitors = (Array.isArray(payload.monitors) ? payload.monitors : []).map((row: any) => monitorAccessFromRow(row));
+  const audit = (Array.isArray(payload.audit) ? payload.audit : []).map((row: any) => ({
+    id: Number(row.id),
+    action: String(row.action ?? ""),
+    targetUserId: row.target_user_id ? String(row.target_user_id) : null,
+    monitorKey: row.monitor_key ? String(row.monitor_key) : null,
+    createdAt: String(row.created_at ?? ""),
+  }));
+  const snapshot: AdminSnapshot = { requests, users, monitors, audit };
+  return { snapshot, session: active };
 }
