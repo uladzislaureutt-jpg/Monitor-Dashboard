@@ -22,6 +22,18 @@ pub struct FullTextHydrationResult {
     pub detail: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnownSourceArticleResult {
+    pub title: String,
+    pub source: String,
+    pub region: Option<String>,
+    pub url: String,
+    pub text: String,
+    pub quality: String,
+    pub strategy: String,
+}
+
 fn normalize_space(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -120,6 +132,49 @@ fn json_ld_body(html: &str) -> Option<String> {
         }
     }
     None
+}
+
+
+fn html_title(html: &str) -> Option<String> {
+    for key in ["og:title", "twitter:title"] {
+        let pattern = format!(r#"(?is)<meta[^>]+(?:property|name)\s*=\s*["']{}["'][^>]+content\s*=\s*["']([^"']+)["']"#, regex::escape(key));
+        if let Ok(re) = Regex::new(&pattern) {
+            if let Some(value) = re.captures(html).and_then(|m| m.get(1)) {
+                let title = normalize_space(&decode_entities(value.as_str()));
+                if !title.is_empty() { return Some(title); }
+            }
+        }
+        let reverse = format!(r#"(?is)<meta[^>]+content\s*=\s*["']([^"']+)["'][^>]+(?:property|name)\s*=\s*["']{}["']"#, regex::escape(key));
+        if let Ok(re) = Regex::new(&reverse) {
+            if let Some(value) = re.captures(html).and_then(|m| m.get(1)) {
+                let title = normalize_space(&decode_entities(value.as_str()));
+                if !title.is_empty() { return Some(title); }
+            }
+        }
+    }
+    let h1 = Regex::new(r"(?is)<h1\b[^>]*>(.*?)</h1>").ok()?;
+    if let Some(value) = h1.captures(html).and_then(|m| m.get(1)) {
+        let title = clean_fragment(value.as_str());
+        if !title.is_empty() { return Some(title); }
+    }
+    let title_re = Regex::new(r"(?is)<title\b[^>]*>(.*?)</title>").ok()?;
+    title_re.captures(html).and_then(|m| m.get(1)).map(|v| clean_fragment(v.as_str())).filter(|v| !v.is_empty())
+}
+
+fn has_paywall_marker(html: &str) -> bool {
+    let lower = html.to_lowercase();
+    ["paywall", "subscription", "subscriber-only", "доступ по подписке", "только для подписчиков", "оформить подписку", "па падпісцы"]
+        .iter()
+        .any(|marker| lower.contains(marker))
+}
+
+fn extract_known_article_from_bytes(bytes: &[u8], fallback_title: &str, transport: &str) -> Result<(String, String, String, bool), String> {
+    let capped = if bytes.len() > MAX_HTML_BYTES { &bytes[..MAX_HTML_BYTES] } else { bytes };
+    let html = String::from_utf8_lossy(capped);
+    let title = html_title(&html).unwrap_or_else(|| fallback_title.to_string());
+    let (text, strategy) = extract_article_text(&html, &title)
+        .ok_or_else(|| "Текст не удалось выделить из HTML-страницы.".to_string())?;
+    Ok((title, text, format!("{transport}:{strategy}"), has_paywall_marker(&html)))
 }
 
 fn longest_tag_block(html: &str, tag: &str) -> Option<String> {
@@ -345,6 +400,124 @@ fn fetch_text(client: &Client, url: &str, title: &str) -> Result<(String, String
         return Ok(value);
     }
     fetch_with_edge(url, title).map_err(|edge| format!("Не удалось получить полный текст автоматически: {edge}"))
+}
+
+
+fn known_source_for_host(db_path: &Path, host: &str) -> Result<Option<(String, Option<String>, String)>, String> {
+    let conn = open_database(db_path)?;
+    let mut stmt = conn.prepare(
+        "SELECT canonical_name, configured_region, domain FROM sources WHERE NULLIF(TRIM(domain),'') IS NOT NULL"
+    ).map_err(|e| format!("Не удалось прочитать каталог источников: {e}"))?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?, row.get::<_, String>(2)?))
+    }).map_err(|e| format!("Не удалось прочитать каталог источников: {e}"))?;
+    let host = host.trim().trim_start_matches("www.").to_lowercase();
+    for row in rows {
+        let (name, region, domain) = row.map_err(|e| format!("Ошибка каталога источников: {e}"))?;
+        let domain_norm = domain.trim().trim_start_matches("www.").to_lowercase();
+        if !domain_norm.is_empty() && (host == domain_norm || host.ends_with(&format!(".{domain_norm}"))) {
+            return Ok(Some((name, region, domain_norm)));
+        }
+    }
+    Ok(None)
+}
+
+pub fn fetch_known_source_article(db_path: &Path, url: &str) -> Result<KnownSourceArticleResult, String> {
+    let parsed = safe_public_url(url)?;
+    let host = parsed.host_str().unwrap_or_default();
+    let Some((source, region, _domain)) = known_source_for_host(db_path, host)? else {
+        return Err("Источник с таким доменом отсутствует в локальной базе Monitor. Используйте вставку из буфера.".to_string());
+    };
+    let fallback_title = parsed.path_segments()
+        .and_then(|segments| segments.filter(|part| !part.trim().is_empty()).last())
+        .map(|part| part.replace(['-', '_'], " "))
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| source.clone());
+
+    let client = Client::builder()
+        .timeout(Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .user_agent(DESKTOP_UA)
+        .build()
+        .map_err(|e| format!("Не удалось создать HTTP-клиент: {e}"))?;
+
+    let request = client.get(parsed.clone())
+        .header(reqwest::header::ACCEPT, "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5")
+        .header(reqwest::header::ACCEPT_LANGUAGE, "ru-RU,ru;q=0.9,be;q=0.8,en;q=0.6")
+        .header(reqwest::header::CACHE_CONTROL, "no-cache")
+        .send();
+
+    let mut direct_error = None;
+    if let Ok(mut response) = request {
+        if response.status().is_success() {
+            let mut bytes = Vec::new();
+            response.take(MAX_HTML_BYTES as u64 + 1).read_to_end(&mut bytes)
+                .map_err(|e| format!("Чтение ответа: {e}"))?;
+            if let Ok((title, text, strategy, paywall)) = extract_known_article_from_bytes(&bytes, &fallback_title, "reqwest") {
+                return Ok(KnownSourceArticleResult {
+                    title, source, region, url: parsed.to_string(), text,
+                    quality: if paywall { "partial" } else { "full" }.to_string(),
+                    strategy,
+                });
+            }
+        } else {
+            direct_error = Some(format!("HTTP {}", response.status()));
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let output = Command::new("curl.exe")
+            .args([
+                "--location","--compressed","--http1.1","--silent","--show-error","--fail",
+                "--connect-timeout","10","--max-time","25","--max-filesize","2500000",
+                "--user-agent",DESKTOP_UA,
+                "--header","Accept: text/html,application/xhtml+xml;q=0.9,*/*;q=0.5",
+                "--header","Accept-Language: ru-RU,ru;q=0.9,be;q=0.8,en;q=0.6",
+                "--header","Cache-Control: no-cache",
+                parsed.as_str(),
+            ]).output();
+        if let Ok(output) = output {
+            if output.status.success() && !output.stdout.is_empty() {
+                if let Ok((title, text, strategy, paywall)) = extract_known_article_from_bytes(&output.stdout, &fallback_title, "windows_curl") {
+                    return Ok(KnownSourceArticleResult {
+                        title, source, region, url: parsed.to_string(), text,
+                        quality: if paywall { "partial" } else { "full" }.to_string(),
+                        strategy,
+                    });
+                }
+            }
+        }
+
+        if let Some(edge) = find_edge_executable() {
+            let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
+            let profile_dir = std::env::temp_dir().join(format!("monitor-edge-known-{}-{stamp}", std::process::id()));
+            let profile_arg = format!("--user-data-dir={}", profile_dir.to_string_lossy());
+            let ua_arg = "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0";
+            let output = Command::new(edge)
+                .args([
+                    "--headless=new","--disable-gpu","--disable-extensions","--no-first-run",
+                    "--no-default-browser-check","--disable-background-networking",
+                    "--disable-features=msEdgeFirstRunExperience","--virtual-time-budget=8000","--dump-dom",
+                ])
+                .arg(profile_arg).arg(ua_arg).arg(parsed.as_str()).output();
+            let _ = std::fs::remove_dir_all(&profile_dir);
+            if let Ok(output) = output {
+                if output.status.success() && !output.stdout.is_empty() {
+                    if let Ok((title, text, strategy, paywall)) = extract_known_article_from_bytes(&output.stdout, &fallback_title, "windows_edge_dom") {
+                        return Ok(KnownSourceArticleResult {
+                            title, source, region, url: parsed.to_string(), text,
+                            quality: if paywall { "partial" } else { "full" }.to_string(),
+                            strategy,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    Err(format!("Не удалось скачать материал автоматически{}. Используйте вставку из буфера.",
+        direct_error.map(|e| format!(" ({e})")).unwrap_or_default()))
 }
 
 pub fn hydrate_selected(
