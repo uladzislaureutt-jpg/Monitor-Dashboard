@@ -1026,3 +1026,19 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
   font: 11px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
   overflow-wrap: anywhere;
 }
+
+
+.report-url-browser-actions {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.report-url-browser-actions span {
+  flex: 1;
+  min-width: 260px;
+  color: #7b5d58;
+  font-size: 9px;
+  line-height: 1.4;
+}
