@@ -672,13 +672,3 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 }
 
 
-/* 0.7.15 — Browser Import */
-.browser-import-warning {
-  margin: 8px 0 0 !important;
-  padding: 8px 10px;
-  border: 1px solid #e4d4ae;
-  border-radius: 9px;
-  background: #fff8e8;
-  color: #8b651f !important;
-  font-weight: 700;
-}
