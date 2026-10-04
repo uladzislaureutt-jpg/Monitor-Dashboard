@@ -403,7 +403,7 @@ fn fetch_text(client: &Client, url: &str, title: &str) -> Result<(String, String
 }
 
 
-fn known_source_for_host(db_path: &Path, host: &str) -> Result<Option<(String, Option<String>, String)>, String> {
+pub(crate) fn known_source_for_host(db_path: &Path, host: &str) -> Result<Option<(String, Option<String>, String)>, String> {
     let conn = open_database(db_path)?;
     let mut stmt = conn.prepare(
         "SELECT canonical_name, configured_region, domain FROM sources WHERE NULLIF(TRIM(domain),'') IS NOT NULL"
