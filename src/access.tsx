@@ -280,7 +280,15 @@ function AccessScreen({ onAuthenticated }: { onAuthenticated: (session: Workroom
     setBusy(true); setError("");
     try {
       const verified = await verifySupabaseAuthLink(config, authLink);
-      const active = await setWorkroomPassword(config, verified, password);
+      let active = verified;
+      try {
+        active = await setWorkroomPassword(config, verified, password);
+      } catch (reason) {
+        const detail = String(reason);
+        // Supabase returns same_password when the requested password is already
+        // the account's current password. Treat that as a successful bootstrap.
+        if (!detail.includes("same_password")) throw reason;
+      }
       const identity = await getWorkroomProfile(config, active);
       if (identity.profile.status !== "active") {
         clearWorkroomSession();
@@ -289,6 +297,7 @@ function AccessScreen({ onAuthenticated }: { onAuthenticated: (session: Workroom
       }
       const access = await listMonitorAccess(config, identity.session);
       saveWorkroomSession(access.session);
+      setMessage("");
       onAuthenticated(access.session, identity.profile, access.monitors);
     } catch (reason) { setError(String(reason)); }
     finally { setBusy(false); }
@@ -305,7 +314,7 @@ function AccessScreen({ onAuthenticated }: { onAuthenticated: (session: Workroom
       <div className="access-language"><button className={locale === "ru" ? "active" : ""} onClick={() => setLocale("ru")}>РУ</button><button className={locale === "be" ? "active" : ""} onClick={() => setLocale("be")}>БЕЛ</button></div>
       <h1>{tx.title}</h1><p>{tx.subtitle}</p>
       {!requestState && <div className="access-tabs"><button className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}>{tx.login}</button><button className={mode === "request" ? "active" : ""} onClick={() => setMode("request")}>{tx.request}</button></div>}
-      {message && <div className="notice success">{message}</div>}
+      {message && mode !== "set-password" && <div className="notice success">{message}</div>}
       {error && <div className="notice error">{error}</div>}
       {mode === "login" && !requestState && <div className="access-form">
         <label>{tx.email}<input value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" /></label>
