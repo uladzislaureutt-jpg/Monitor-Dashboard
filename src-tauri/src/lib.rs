@@ -166,6 +166,29 @@ async fn fetch_known_source_article_browser(
 }
 
 #[tauri::command]
+async fn fetch_known_source_article_edge(
+    url: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<fulltext::KnownSourceArticleResult, String> {
+    let parsed = reqwest::Url::parse(url.trim()).map_err(|e| format!("Некорректный URL: {e}"))?;
+    let host = parsed.host_str().unwrap_or_default();
+    let Some((source, region, _domain)) = fulltext::known_source_for_host(&state.db_path, host)? else {
+        return Err("Источник с таким доменом отсутствует в локальной базе Monitor. Используйте вставку из буфера.".to_string());
+    };
+    let extracted = browser_extract::extract_with_real_edge(app, parsed.as_str()).await?;
+    Ok(fulltext::KnownSourceArticleResult {
+        title: if extracted.title.trim().is_empty() { source.clone() } else { extracted.title },
+        source,
+        region,
+        url: parsed.to_string(),
+        text: extracted.text_content,
+        quality: "full".to_string(),
+        strategy: "real_edge_readability".to_string(),
+    })
+}
+
+#[tauri::command]
 fn read_clipboard_text(app: AppHandle) -> Result<String, String> {
     app.clipboard().read_text().map_err(|e| format!("Не удалось прочитать буфер обмена: {e}"))
 }
@@ -310,6 +333,7 @@ pub fn run() {
             hydrate_report_full_texts,
             fetch_known_source_article,
             fetch_known_source_article_browser,
+            fetch_known_source_article_edge,
             open_article_browser,
             read_clipboard_text,
             call_supabase_edge,
