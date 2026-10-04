@@ -73,7 +73,6 @@ export const desktopApi = {
   hydrateReportFullTexts: (documentUids: string[]) =>
     invoke<FullTextHydrationResult[]>("hydrate_report_full_texts", { monitorKey: activeMonitorKey, documentUids }),
   fetchKnownSourceArticle: (url: string) => invoke<KnownSourceArticleResult>("fetch_known_source_article", { url }),
-  fetchKnownSourceArticleBrowser: (url: string) => invoke<KnownSourceArticleResult>("fetch_known_source_article_browser", { url }),
   fetchKnownSourceArticleEdge: (url: string) => invoke<KnownSourceArticleResult>("fetch_known_source_article_edge", { url }),
   openArticleBrowser: (url: string) => invoke<void>("open_article_browser", { url }),
   readClipboardText: () => invoke<string>("read_clipboard_text"),
