@@ -199,6 +199,54 @@ export async function signInWorkroom(config: WorkroomConfig, email: string, pass
   return session;
 }
 
+export async function requestExistingUserMagicLink(config: WorkroomConfig, email: string) {
+  await authRequest(config, "/auth/v1/otp", {
+    email: email.trim().toLowerCase(),
+    create_user: false,
+  });
+}
+
+function parseSupabaseAuthLink(link: string) {
+  let url: URL;
+  try { url = new URL(link.trim()); }
+  catch { throw new Error("AUTH_LINK_INVALID"); }
+  const tokenHash = url.searchParams.get("token_hash") || url.searchParams.get("token") || "";
+  const type = url.searchParams.get("type") || "";
+  if (!tokenHash || !["magiclink", "recovery", "email"].includes(type)) throw new Error("AUTH_LINK_INVALID");
+  return { tokenHash, type };
+}
+
+export async function verifySupabaseAuthLink(config: WorkroomConfig, link: string) {
+  const { tokenHash, type } = parseSupabaseAuthLink(link);
+  const payload = await authRequest(config, "/auth/v1/verify", {
+    token_hash: tokenHash,
+    type,
+  });
+  const session = sessionFromAuth(payload);
+  if (!session.accessToken || !session.refreshToken || !session.userId) throw new Error("AUTH_INVALID_RESPONSE");
+  saveWorkroomSession(session);
+  return session;
+}
+
+export async function setWorkroomPassword(config: WorkroomConfig, session: WorkroomSession, password: string) {
+  const active = await ensureWorkroomSession(config, session);
+  const response = await fetch(`${normalizeBaseUrl(config.url)}/auth/v1/user`, {
+    method: "PUT",
+    headers: {
+      apikey: config.anonKey,
+      Authorization: `Bearer ${active.accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ password }),
+  });
+  const payload = await readResponse(response);
+  if (!response.ok) {
+    const detail = typeof payload === "string" ? payload : JSON.stringify(payload);
+    throw new Error(`AUTH_${response.status}: ${detail}`);
+  }
+  return active;
+}
+
 async function refreshSession(config: WorkroomConfig, session: WorkroomSession) {
   const payload = await authRequest(config, "/auth/v1/token?grant_type=refresh_token", { refresh_token: session.refreshToken });
   const next = sessionFromAuth(payload);
