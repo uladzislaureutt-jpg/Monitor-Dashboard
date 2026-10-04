@@ -476,21 +476,14 @@ export function clearAccessRequest() {
 async function edgeRequest(config: WorkroomConfig, slug: string, body: unknown, session?: WorkroomSession | null) {
   assertConfigured(config);
   const active = session ? await ensureWorkroomSession(config, session) : null;
-  const response = await fetch(`${normalizeBaseUrl(config.url)}/functions/v1/${slug}`, {
-    method: "POST",
-    headers: {
-      apikey: config.anonKey,
-      "Content-Type": "application/json",
-      ...(active ? { Authorization: `Bearer ${active.accessToken}` } : {}),
-    },
-    body: JSON.stringify(body),
+  const payload = await invoke<Record<string, unknown>>("call_supabase_edge", {
+    baseUrl: normalizeBaseUrl(config.url),
+    anonKey: config.anonKey,
+    slug,
+    accessToken: active?.accessToken ?? null,
+    body,
   });
-  const payload = await readResponse(response);
-  if (!response.ok) {
-    const detail = typeof payload === "string" ? payload : JSON.stringify(payload);
-    throw new Error(`EDGE_${response.status}: ${detail}`);
-  }
-  return { payload: payload as Record<string, unknown>, session: active };
+  return { payload, session: active };
 }
 
 export async function requestMonitorAccess(config: WorkroomConfig, displayName: string, email: string, locale: "ru" | "be") {
