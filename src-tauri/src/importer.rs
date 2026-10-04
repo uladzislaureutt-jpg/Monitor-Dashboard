@@ -566,7 +566,12 @@ fn ingest_publications(
                 UPDATE documents SET
                     source_id=?2,
                     url=?3,
-                    published_at=COALESCE(?4, published_at),
+                    published_at=CASE
+                        WHEN ?4 IS NULL OR TRIM(?4)='' THEN published_at
+                        WHEN published_at IS NULL OR TRIM(published_at)='' THEN ?4
+                        WHEN datetime(?4) < datetime(published_at) THEN ?4
+                        ELSE published_at
+                    END,
                     language=COALESCE(?5, language),
                     title=?6,
                     title_generated=?7,
@@ -603,7 +608,12 @@ fn ingest_publications(
                     source_id=excluded.source_id,
                     url=excluded.url,
                     normalized_url=excluded.normalized_url,
-                    published_at=COALESCE(excluded.published_at, documents.published_at),
+                    published_at=CASE
+                        WHEN excluded.published_at IS NULL OR TRIM(excluded.published_at)='' THEN documents.published_at
+                        WHEN documents.published_at IS NULL OR TRIM(documents.published_at)='' THEN excluded.published_at
+                        WHEN datetime(excluded.published_at) < datetime(documents.published_at) THEN excluded.published_at
+                        ELSE documents.published_at
+                    END,
                     language=COALESCE(excluded.language, documents.language),
                     title=excluded.title,
                     title_generated=excluded.title_generated,
