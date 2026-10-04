@@ -1005,3 +1005,24 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
   color: #8b4a45;
   border: 1px solid #efd7d3;
 }
+
+
+.access-first-admin {
+  margin-top: -4px;
+  justify-self: center;
+  color: #2f6584;
+  font-weight: 700;
+}
+.access-link-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 92px;
+  resize: vertical;
+  border: 1px solid #d9cec1;
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px 12px;
+  color: #173f59;
+  font: 11px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
