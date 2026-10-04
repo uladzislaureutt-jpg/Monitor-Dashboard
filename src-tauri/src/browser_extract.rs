@@ -353,6 +353,8 @@ pub async fn extract_with_real_edge(app: AppHandle, url: &str) -> Result<Browser
             "--new-window",
             "--no-first-run",
             "--no-default-browser-check",
+            "--disable-background-mode",
+            "--remote-allow-origins=*",
         ])
         .arg(parsed.as_str())
         .spawn()
@@ -364,6 +366,7 @@ pub async fn extract_with_real_edge(app: AppHandle, url: &str) -> Result<Browser
         .map_err(|e| format!("Не удалось создать локальный DevTools-клиент: {e}"))?;
 
     let list_url = format!("http://127.0.0.1:{port}/json/list");
+    let wanted_host = parsed.host_str().unwrap_or_default().to_lowercase();
     let deadline = std::time::Instant::now() + Duration::from_secs(45);
     let expression = readability_eval_expression();
     let mut last_error = "Edge ещё загружает страницу.".to_string();
@@ -376,8 +379,16 @@ pub async fn extract_with_real_edge(app: AppHandle, url: &str) -> Result<Browser
         };
         let Some(targets) = targets else { continue; };
         let target = targets.iter().find(|item| {
-            item.get("type").and_then(|v| v.as_str()) == Some("page")
-                && item.get("url").and_then(|v| v.as_str()).is_some()
+            if item.get("type").and_then(|v| v.as_str()) != Some("page") {
+                return false;
+            }
+            let Some(target_url) = item.get("url").and_then(|v| v.as_str()) else {
+                return false;
+            };
+            reqwest::Url::parse(target_url)
+                .ok()
+                .and_then(|value| value.host_str().map(|host| host.to_lowercase()))
+                .is_some_and(|host| host == wanted_host || host.ends_with(&format!(".{wanted_host}")) || wanted_host.ends_with(&format!(".{host}")))
         });
         let Some(target) = target else { continue; };
         let Some(ws_url) = target.get("webSocketDebuggerUrl").and_then(|v| v.as_str()) else { continue; };
@@ -413,6 +424,7 @@ pub fn open_real_edge_browser(app: AppHandle, url: &str) -> Result<(), String> {
             "--new-window",
             "--no-first-run",
             "--no-default-browser-check",
+            "--disable-background-mode",
         ])
         .arg(parsed.as_str())
         .spawn()
