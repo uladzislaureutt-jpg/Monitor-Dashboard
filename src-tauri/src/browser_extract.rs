@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::mpsc;
 use std::time::Duration;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -20,6 +20,7 @@ pub struct BrowserExtractedArticle {
     pub published_time: Option<String>,
     pub site_name: Option<String>,
     pub byline: Option<String>,
+    pub page_url: Option<String>,
 }
 
 fn extraction_script() -> String {
@@ -58,7 +59,8 @@ fn extraction_script() -> String {
         textContent: article.textContent.trim(),
         publishedTime: article.publishedTime || null,
         siteName: article.siteName || null,
-        byline: article.byline || null
+        byline: article.byline || null,
+        pageUrl: location.href || null
       });
     } catch (error) {
       send("error", String(error && error.message ? error.message : error));
@@ -153,8 +155,33 @@ pub async fn extract_with_webview2(app: AppHandle, url: &str) -> Result<BrowserE
                     return Err(format!("Readability: {detail}"));
                 }
                 let value = envelope.get("value").cloned().unwrap_or(serde_json::Value::Null);
-                return serde_json::from_value::<BrowserExtractedArticle>(value)
-                    .map_err(|e| format!("Не удалось разобрать результат Readability: {e}"));
+                let article = serde_json::from_value::<BrowserExtractedArticle>(value)
+                    .map_err(|e| format!("Не удалось разобрать результат Readability: {e}"))?;
+                let title_lc = article.title.to_lowercase();
+                let text_lc = article.text_content.to_lowercase();
+                let page_url_lc = article.page_url.clone().unwrap_or_default().to_lowercase();
+                let browser_error = [
+                    "не удается открыть эту страницу",
+                    "не удаётся открыть эту страницу",
+                    "не удается получить доступ к сайту",
+                    "не удаётся получить доступ к сайту",
+                    "подключение было сброшено",
+                    "this page isn’t working",
+                    "this page isn't working",
+                    "this site can’t be reached",
+                    "this site can't be reached",
+                    "hmmm… can't reach this page",
+                    "err_connection_reset",
+                    "err_name_not_resolved",
+                    "err_timed_out",
+                ].iter().any(|needle| title_lc.contains(needle) || text_lc.contains(needle))
+                    || page_url_lc.starts_with("edge-error:")
+                    || page_url_lc.starts_with("chrome-error:")
+                    || page_url_lc.contains("chromewebdata");
+                if browser_error {
+                    return Err("BROWSER_PAGE_ERROR: WebView2 открыл служебную страницу ошибки, а не публикацию.".to_string());
+                }
+                return Ok(article);
             }
             if expected_total.is_some_and(|total| total > 200) {
                 return Err("Слишком большой ответ WebView2.".to_string());
@@ -166,4 +193,33 @@ pub async fn extract_with_webview2(app: AppHandle, url: &str) -> Result<BrowserE
 
     let _ = window.close();
     result
+}
+
+
+pub fn open_visible_browser(app: AppHandle, url: &str) -> Result<(), String> {
+    let parsed = reqwest::Url::parse(url).map_err(|e| format!("Некорректный URL: {e}"))?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("Разрешены только http/https URL.".to_string());
+    }
+    let label = format!(
+        "article-browser-visible-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    );
+    let profile_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Не удалось определить каталог приложения: {e}"))?
+        .join("article-browser-profile");
+    WebviewWindowBuilder::new(&app, label, WebviewUrl::External(parsed))
+        .title("Monitor · браузер")
+        .visible(true)
+        .inner_size(1200.0, 850.0)
+        .data_directory(profile_dir)
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.0.0")
+        .build()
+        .map_err(|e| format!("Не удалось открыть браузер Monitor: {e}"))?;
+    Ok(())
 }
