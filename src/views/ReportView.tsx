@@ -104,6 +104,7 @@ export function ReportView() {
     importUrlHelp: be ? "Працуе для выданняў, якія ўжо ёсць у базе крыніц Monitor." : "Работает для изданий, которые уже есть в базе источников Monitor.",
     importUrlDone: be ? "Матэрыял спампаваны. Праверце загаловак, выданне, краіну і тэкст." : "Материал скачан. Проверьте заголовок, издание, страну и текст.",
     importBrowser: be ? "HTTP-маршрут не спрацаваў. Monitor адкрывае старонку праз WebView2 і Readability…" : "HTTP-маршрут не сработал. Monitor открывает страницу через WebView2 и Readability…",
+    importEdge: be ? "WebView2 не атрымаў публікацыю. Monitor адкрывае яе ў звычайным Microsoft Edge; пры неабходнасці прайдзіце cookies/уваход — тэкст будзе вылучаны аўтаматычна." : "WebView2 не получил публикацию. Monitor открывает её в обычном Microsoft Edge; при необходимости пройдите cookies/вход — текст будет извлечён автоматически.",
     openBrowser: be ? "Адкрыць у браўзеры Monitor" : "Открыть в браузере Monitor",
     browserHelp: be ? "Калі сайт патрабуе cookies, уваход або праверку, адкрыйце яго ў браўзеры Monitor, прайдзіце неабходныя крокі, закрыйце акно і паўтарыце загрузку." : "Если сайт требует cookies, вход или проверку, откройте его в браузере Monitor, пройдите нужные шаги, закройте окно и повторите загрузку.",
     importPartial: be ? "Атрымана толькі агульнадаступная частка матэрыялу." : "Получена только общедоступная часть материала.",
@@ -208,7 +209,12 @@ export function ReportView() {
         payload = await desktopApi.fetchKnownSourceArticle(importUrl.trim());
       } catch {
         setUrlImportMessage(tx.importBrowser);
-        payload = await desktopApi.fetchKnownSourceArticleBrowser(importUrl.trim());
+        try {
+          payload = await desktopApi.fetchKnownSourceArticleBrowser(importUrl.trim());
+        } catch {
+          setUrlImportMessage(tx.importEdge);
+          payload = await desktopApi.fetchKnownSourceArticleEdge(importUrl.trim());
+        }
       }
       const uid = report.addManualItem({
         title: payload.title,
