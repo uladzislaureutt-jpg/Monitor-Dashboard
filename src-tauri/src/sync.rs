@@ -263,6 +263,218 @@ pub fn sync_github(db_path: &Path, repository: &str, token: &str, monitor_key: &
 }
 
 
+#[derive(Debug, Deserialize)]
+struct ServerArtifactList {
+    artifacts: Vec<ServerArtifact>,
+    latest_remote_run: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ServerArtifact {
+    id: u64,
+    name: String,
+    run_number: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct ServerDownload {
+    artifact_id: u64,
+    run_number: i64,
+    zip_base64: String,
+}
+
+fn validate_supabase_base_url(value: &str) -> Result<String, String> {
+    let parsed = reqwest::Url::parse(value.trim())
+        .map_err(|e| format!("Некорректный Supabase URL: {e}"))?;
+    if parsed.scheme() != "https" {
+        return Err("Supabase sync разрешён только по HTTPS.".to_string());
+    }
+    let host = parsed.host_str().unwrap_or_default().to_lowercase();
+    if !host.ends_with(".supabase.co") {
+        return Err("Разрешён только домен Supabase.".to_string());
+    }
+    Ok(value.trim().trim_end_matches('/').to_string())
+}
+
+fn server_post_json<T: for<'de> Deserialize<'de>>(
+    client: &Client,
+    base_url: &str,
+    anon_key: &str,
+    access_token: &str,
+    body: serde_json::Value,
+) -> Result<T, String> {
+    let url = format!("{base_url}/functions/v1/monitor-sync");
+    let response = client
+        .post(url)
+        .header("apikey", anon_key.trim())
+        .bearer_auth(access_token.trim())
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .json(&body)
+        .send()
+        .map_err(|e| format!("Не удалось обратиться к серверу синхронизации: {e}"))?;
+    let status = response.status();
+    let text = response.text().map_err(|e| format!("Не удалось прочитать ответ сервера синхронизации: {e}"))?;
+    if !status.is_success() {
+        return Err(format!("SERVER_SYNC_{}: {}", status.as_u16(), text));
+    }
+    serde_json::from_str(&text).map_err(|e| format!("Сервер синхронизации вернул неожиданный JSON: {e}; body={text}"))
+}
+
+pub fn sync_server(
+    db_path: &Path,
+    base_url: &str,
+    anon_key: &str,
+    access_token: &str,
+    monitor_key: &str,
+) -> Result<SyncResult, String> {
+    if anon_key.trim().is_empty() || access_token.trim().is_empty() {
+        return Err("Для серверной синхронизации требуется активная Supabase-сессия.".to_string());
+    }
+    let base_url = validate_supabase_base_url(base_url)?;
+    let prefix = artifact_prefix(monitor_key)?;
+    let client = Client::builder()
+        .user_agent("Monitor-Dashboard/0.7.37")
+        .timeout(Duration::from_secs(90))
+        .build()
+        .map_err(|e| format!("Не удалось создать server sync client: {e}"))?;
+
+    let payload: ServerArtifactList = server_post_json(
+        &client,
+        &base_url,
+        anon_key,
+        access_token,
+        serde_json::json!({ "action": "list", "monitor_key": monitor_key }),
+    )?;
+
+    let mut artifacts: Vec<(i64, ServerArtifact)> = payload.artifacts.into_iter()
+        .filter(|artifact| artifact_run_number(&artifact.name, prefix) == Some(artifact.run_number))
+        .map(|artifact| (artifact.run_number, artifact))
+        .collect();
+    artifacts.sort_by_key(|(run, _)| *run);
+
+    let checked_artifacts = artifacts.len();
+    let latest_remote_run = payload.latest_remote_run.or_else(|| artifacts.iter().map(|(run, _)| *run).max());
+
+    let existing_runs: HashSet<i64> = db::list_runs(db_path, monitor_key)?
+        .into_iter()
+        .filter(|run| run.monitor_key == monitor_key)
+        .filter_map(|run| run.run_number)
+        .collect();
+    let latest_imported_run = existing_runs.iter().copied().max();
+    let known_dry_artifacts = db::sync_dry_artifacts(db_path, monitor_key)?;
+
+    let mut imported_runs = Vec::new();
+    let mut skipped_dry_runs = Vec::new();
+    let mut already_present = 0usize;
+    let mut errors = Vec::new();
+
+    for (run_number, artifact) in artifacts {
+        if latest_imported_run.is_some_and(|latest| run_number < latest) {
+            continue;
+        }
+        if known_dry_artifacts.get(&run_number) == Some(&artifact.id) {
+            skipped_dry_runs.push(run_number);
+            continue;
+        }
+
+        let download: ServerDownload = match server_post_json(
+            &client,
+            &base_url,
+            anon_key,
+            access_token,
+            serde_json::json!({
+                "action": "download",
+                "monitor_key": monitor_key,
+                "artifact_id": artifact.id,
+            }),
+        ) {
+            Ok(value) => value,
+            Err(error) => {
+                record_artifact_error(&mut errors, db_path, monitor_key, run_number, artifact.id, error);
+                continue;
+            }
+        };
+        if download.artifact_id != artifact.id || download.run_number != run_number {
+            record_artifact_error(
+                &mut errors,
+                db_path,
+                monitor_key,
+                run_number,
+                artifact.id,
+                "server returned mismatched artifact metadata".to_string(),
+            );
+            continue;
+        }
+
+        use base64::Engine as _;
+        let bytes = match base64::engine::general_purpose::STANDARD.decode(download.zip_base64.as_bytes()) {
+            Ok(value) => value,
+            Err(error) => {
+                record_artifact_error(&mut errors, db_path, monitor_key, run_number, artifact.id, format!("invalid base64 artifact: {error}"));
+                continue;
+            }
+        };
+        let temp_path = std::env::temp_dir().join(format!(
+            "monitor-dashboard-server-artifact-{}-{}.zip",
+            artifact.id, run_number
+        ));
+        if let Err(error) = fs::write(&temp_path, &bytes) {
+            record_artifact_error(&mut errors, db_path, monitor_key, run_number, artifact.id, format!("cannot write temporary ZIP: {error}"));
+            continue;
+        }
+
+        let inspection = importer::inspect_bundle(&temp_path);
+        let outcome = match inspection {
+            Ok(meta) => {
+                if meta.monitor_key != monitor_key {
+                    Err(format!("unexpected monitor_key={}", meta.monitor_key))
+                } else if meta.run_number.is_some() && meta.run_number != Some(run_number) {
+                    Err(format!("artifact name says run {run_number}, bundle says run {:?}", meta.run_number))
+                } else if meta.dry_run == Some(true) {
+                    db::mark_sync_dry_run(db_path, monitor_key, run_number, artifact.id)?;
+                    skipped_dry_runs.push(run_number);
+                    Ok(None)
+                } else {
+                    importer::import_bundle(db_path, &temp_path).map(Some)
+                }
+            }
+            Err(error) => Err(error),
+        };
+
+        let _ = fs::remove_file(&temp_path);
+        match outcome {
+            Ok(Some(result)) => {
+                db::clear_sync_status(db_path, monitor_key, run_number)?;
+                if result.status == "imported" || result.status == "replaced" {
+                    imported_runs.push(run_number);
+                } else {
+                    already_present += 1;
+                }
+            }
+            Ok(None) => {}
+            Err(error) => record_artifact_error(&mut errors, db_path, monitor_key, run_number, artifact.id, error),
+        }
+    }
+
+    let latest_imported_run = db::list_runs(db_path, monitor_key)?
+        .into_iter()
+        .filter(|run| run.monitor_key == monitor_key && run.dry_run != Some(true))
+        .filter_map(|run| run.run_number)
+        .max();
+
+    Ok(SyncResult {
+        checked_artifacts,
+        latest_available_run: latest_imported_run,
+        latest_remote_run,
+        latest_imported_run,
+        imported_runs,
+        skipped_dry_runs,
+        already_present,
+        errors,
+    })
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
