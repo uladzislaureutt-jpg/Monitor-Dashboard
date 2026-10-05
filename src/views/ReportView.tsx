@@ -342,8 +342,8 @@ export function ReportView() {
           {!isLMonitor && extractMode && <p>{tx.aiExtractHelp}</p>}
           {!isLMonitor && aiLimitReached && <p>{tx.aiLimitReached}</p>}
         </div>
-        <div className="report-editor-label"><b>{tx.editorial}</b><div><button className="ghost-button small-button" onClick={() => report.resetText(active.documentUid)}>{tx.reset}</button>{active.excerpt && <button className="ghost-button small-button" onClick={() => report.useExcerpt(active.documentUid)}>{tx.useExcerpt}</button>}</div></div>
-        <div className="report-editorial-compose"><div className="report-editorial-compose-title">{active.title}</div><textarea className="report-editor-textarea" value={active.editorialText} onChange={(e) => report.updateText(active.documentUid, e.target.value)} /></div>
+        <div className="report-editor-label"><b>{tx.editorial}</b><div><span className="report-text-length">{active.editorialText.length.toLocaleString()} {be ? "сімвалаў" : "символов"} · {active.editorialText.split(/\\n+/).filter(Boolean).length} {be ? "абзацаў" : "абзацев"}</span><button className="ghost-button small-button" onClick={() => report.resetText(active.documentUid)}>{tx.reset}</button>{active.excerpt && <button className="ghost-button small-button" onClick={() => report.useExcerpt(active.documentUid)}>{tx.useExcerpt}</button>}</div></div>
+        <div className="report-editorial-compose"><div className="report-editorial-compose-title">{active.title}</div><textarea className="report-editor-textarea" value={active.editorialText} onChange={(e) => report.updateText(active.documentUid, e.target.value)} /><div className="report-editorial-tail-hint">{be ? "Перад экспартам праверце канец тэксту: поле пракручваецца." : "Перед экспортом проверьте конец текста: поле прокручивается."}</div></div>
       </article>}
     </section>}
   </div>;
