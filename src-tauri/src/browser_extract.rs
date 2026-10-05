@@ -30,15 +30,7 @@ fn find_edge_executable() -> Option<std::path::PathBuf> {
     candidates.into_iter().find(|path| path.is_file())
 }
 
-fn free_local_port() -> Result<u16, String> {
-    let listener = std::net::TcpListener::bind(("127.0.0.1", 0))
-        .map_err(|e| format!("Не удалось подобрать локальный DevTools-порт: {e}"))?;
-    let port = listener.local_addr()
-        .map_err(|e| format!("Не удалось определить локальный DevTools-порт: {e}"))?
-        .port();
-    drop(listener);
-    Ok(port)
-}
+const EDGE_DEVTOOLS_PORT: u16 = 9333;
 
 fn readability_eval_expression() -> String {
     let body = r#"
@@ -133,10 +125,10 @@ pub async fn extract_with_real_edge(app: AppHandle, url: &str) -> Result<Browser
     }
 
     let edge = find_edge_executable().ok_or_else(|| "Microsoft Edge не найден.".to_string())?;
-    let port = free_local_port()?;
+    let port = EDGE_DEVTOOLS_PORT;
     let profile_dir = app.path().app_data_dir()
         .map_err(|e| format!("Не удалось определить каталог приложения: {e}"))?
-        .join("article-edge-profile");
+        .join("article-edge-debug-profile-v2");
 
     let remote_arg = format!("--remote-debugging-port={port}");
     let profile_arg = format!("--user-data-dir={}", profile_dir.to_string_lossy());
@@ -201,7 +193,7 @@ pub async fn extract_with_real_edge(app: AppHandle, url: &str) -> Result<Browser
     }
 
     let _ = child.kill();
-    Err(format!("EDGE_IMPORT_FAILED: {last_error}"))
+    Err(format!("EDGE_IMPORT_FAILED: {last_error}. DevTools endpoint: http://127.0.0.1:{port}/json/list"))
 }
 
 pub fn open_real_edge_browser(app: AppHandle, url: &str) -> Result<(), String> {
@@ -213,16 +205,18 @@ pub fn open_real_edge_browser(app: AppHandle, url: &str) -> Result<(), String> {
     let edge = find_edge_executable().ok_or_else(|| "Microsoft Edge не найден.".to_string())?;
     let profile_dir = app.path().app_data_dir()
         .map_err(|e| format!("Не удалось определить каталог приложения: {e}"))?
-        .join("article-edge-profile");
+        .join("article-edge-debug-profile-v2");
     let profile_arg = format!("--user-data-dir={}", profile_dir.to_string_lossy());
 
     std::process::Command::new(edge)
         .args([
+            format!("--remote-debugging-port={EDGE_DEVTOOLS_PORT}").as_str(),
             profile_arg.as_str(),
             "--new-window",
             "--no-first-run",
             "--no-default-browser-check",
             "--disable-background-mode",
+            "--remote-allow-origins=*",
         ])
         .arg(parsed.as_str())
         .spawn()
