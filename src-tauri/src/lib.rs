@@ -1,4 +1,3 @@
-mod browser_extract;
 mod db;
 mod fulltext;
 mod importer;
@@ -135,36 +134,21 @@ fn fetch_known_source_article(url: String, state: State<'_, AppState>) -> Result
 }
 
 #[tauri::command]
-fn open_article_browser(url: String, app: AppHandle) -> Result<(), String> {
-    browser_extract::open_real_edge_browser(app, &url)
-}
-
-#[tauri::command]
-async fn fetch_known_source_article_edge(
+fn resolve_known_source_article(
     url: String,
-    app: AppHandle,
     state: State<'_, AppState>,
-) -> Result<fulltext::KnownSourceArticleResult, String> {
-    let parsed = reqwest::Url::parse(url.trim()).map_err(|e| format!("Некорректный URL: {e}"))?;
-    let host = parsed.host_str().unwrap_or_default();
-    let Some((source, region, _domain)) = fulltext::known_source_for_host(&state.db_path, host)? else {
-        return Err("Источник с таким доменом отсутствует в локальной базе Monitor. Используйте вставку из буфера.".to_string());
-    };
-    let extracted = browser_extract::extract_with_real_edge(app, parsed.as_str()).await?;
-    Ok(fulltext::KnownSourceArticleResult {
-        title: if extracted.title.trim().is_empty() { source.clone() } else { extracted.title },
-        source,
-        region,
-        url: parsed.to_string(),
-        text: extracted.text_content,
-        quality: "full".to_string(),
-        strategy: "real_edge_readability".to_string(),
-    })
+) -> Result<fulltext::KnownSourceMetadataResult, String> {
+    fulltext::resolve_known_source(&state.db_path, &url)
 }
 
 #[tauri::command]
 fn read_clipboard_text(app: AppHandle) -> Result<String, String> {
     app.clipboard().read_text().map_err(|e| format!("Не удалось прочитать буфер обмена: {e}"))
+}
+
+#[tauri::command]
+fn write_clipboard_text(text: String, app: AppHandle) -> Result<(), String> {
+    app.clipboard().write_text(text).map_err(|e| format!("Не удалось записать в буфер обмена: {e}"))
 }
 
 #[tauri::command]
@@ -306,9 +290,9 @@ pub fn run() {
             get_editorial_source,
             hydrate_report_full_texts,
             fetch_known_source_article,
-            fetch_known_source_article_edge,
-            open_article_browser,
+            resolve_known_source_article,
             read_clipboard_text,
+            write_clipboard_text,
             call_supabase_edge,
             export_report_docx,
             sync_github_artifacts,
