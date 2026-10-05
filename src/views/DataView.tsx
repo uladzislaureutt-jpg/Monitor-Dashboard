@@ -14,6 +14,7 @@ export function DataView({
   onSyncNow,
   syncBusy,
   syncStatus,
+  serverManaged,
 }: {
   stats: DatabaseStats | null;
   runs: RunSummary[];
@@ -24,6 +25,7 @@ export function DataView({
   onSyncNow: (value: SyncSettings) => void;
   syncBusy: boolean;
   syncStatus: string;
+  serverManaged: boolean;
 }) {
   const { t, formatLocale, locale } = useI18n();
   const access = useMonitorAccess();
@@ -93,12 +95,14 @@ export function DataView({
     <section className="panel sync-panel">
       <div className="panel-head"><div><h3>{t("data.syncTitle")}</h3><p>{t("data.syncHelp")}</p></div><span className={`sync-state ${syncBusy ? "working" : ""}`}>{syncBusy ? t("data.syncing") : syncStatus || t("status.notConfigured")}</span></div>
       <div className="sync-form">
-        <label><span>{t("data.repository")}</span><input value={form.repository} onChange={(event) => setForm({ ...form, repository: event.target.value })} placeholder="owner/SE-monitor" /></label>
-        <label><span>{t("data.token")}</span><input type="password" value={form.token} onChange={(event) => setForm({ ...form, token: event.target.value })} placeholder="github_pat_…" autoComplete="off" /></label>
+        {serverManaged ? <div className="sync-server-managed"><b>{be ? "Серверная сінхранізацыя" : "Серверная синхронизация"}</b><span>{be ? "GitHub-токен захоўваецца ў Supabase і не перадаецца на гэты камп’ютар." : "GitHub-токен хранится в Supabase и не передаётся на этот компьютер."}</span></div> : <>
+          <label><span>{t("data.repository")}</span><input value={form.repository} onChange={(event) => setForm({ ...form, repository: event.target.value })} placeholder="owner/repository" /></label>
+          <label><span>{t("data.token")}</span><input type="password" value={form.token} onChange={(event) => setForm({ ...form, token: event.target.value })} placeholder="github_pat_…" autoComplete="off" /></label>
+        </>}
         <label className="sync-interval"><span>{t("data.interval")}</span><select value={form.intervalMinutes} onChange={(event) => setForm({ ...form, intervalMinutes: Number(event.target.value) })}><option value={15}>{t("data.minutes", { count: 15 })}</option><option value={30}>{t("data.minutes", { count: 30 })}</option><option value={60}>{t("data.minutes", { count: 60 })}</option></select></label>
         <label className="toggle-label"><input type="checkbox" checked={form.autoSync} onChange={(event) => setForm({ ...form, autoSync: event.target.checked })} /><span>{t("data.automatic")}</span></label>
         <button className="secondary-button" onClick={() => onSaveSyncSettings(form)}>{t("data.save")}</button>
-        <button className="primary-button" onClick={() => { onSaveSyncSettings(form); onSyncNow(form); }} disabled={syncBusy || !form.repository.trim()}>{syncBusy ? t("data.checking") : t("data.syncNow")}</button>
+        <button className="primary-button" onClick={() => { onSaveSyncSettings(form); onSyncNow(form); }} disabled={syncBusy || (!serverManaged && !form.repository.trim())}>{syncBusy ? t("data.checking") : t("data.syncNow")}</button>
       </div>
       <div className="sync-note">{t("data.syncNote")}</div>
     </section>
