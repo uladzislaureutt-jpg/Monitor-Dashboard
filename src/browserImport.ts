@@ -79,6 +79,43 @@ function pruneNavigationAndRecommendationBlocks(root: HTMLElement) {
   }
 }
 
+function normalizeTailMarker(value: string) {
+  return compactText(value).toLocaleLowerCase()
+    .replace(/[«»"'“”„:;.!?…()[\]{}]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const tailMarkers = [
+  "сейчас читают", "сейчас читают также", "сейчас читают:",
+  "цяпер чытаюць", "цяпер чытаюць таксама",
+  "зараз читають", "читайте також", "читайте еще", "читайте ещё",
+  "популярное", "популярныя", "папулярнае", "популярні",
+  "рекомендуем", "рекомендуем также", "рекомендуем прочитать",
+  "ещё по теме", "еще по теме", "по теме", "также по теме",
+  "related", "related articles", "related stories", "recommended",
+  "recommended for you", "more stories", "more from", "read more",
+  "you may also like", "most read", "most popular",
+  "powiązane", "czytaj także", "czytaj również", "polecamy", "najczęściej czytane",
+].map(normalizeTailMarker);
+
+function trimServiceTail(blocks: string[]) {
+  let cumulative = 0;
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    const normalized = normalizeTailMarker(block);
+    const isMarker = block.length <= 90 && tailMarkers.includes(normalized);
+    const following = blocks.slice(index + 1);
+    const hasFeedAfter = following.length >= 3 && following.slice(0, 8).filter((item) => item.length <= 260).length >= 3;
+
+    // Only cut after a substantial article body. This prevents false positives
+    // when an article itself starts with words such as "Related" or "По теме".
+    if (isMarker && cumulative >= 500 && hasFeedAfter) return blocks.slice(0, index);
+    cumulative += block.length;
+  }
+  return blocks;
+}
+
 function textFromReadableHtml(content: string) {
   const parsed = new DOMParser().parseFromString(`<!doctype html><body><main id="monitor-readable">${content}</main></body>`, "text/html");
   const root = parsed.getElementById("monitor-readable");
@@ -89,10 +126,11 @@ function textFromReadableHtml(content: string) {
   const blocks = Array.from(root.querySelectorAll("p,blockquote,h2,h3,h4,li"))
     .map((node) => compactText(node.textContent || ""))
     .filter((text) => text.length >= 2);
+  const articleBlocks = trimServiceTail(blocks);
 
   // Prefer paragraph-aware reconstruction. If the page has unusual markup and
   // Readability returned no normal blocks, retain its cleaned text as fallback.
-  const result = blocks.join("\n\n");
+  const result = articleBlocks.join("\n\n");
   return compactText(result || root.textContent || "");
 }
 
