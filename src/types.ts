@@ -331,6 +331,12 @@ export type KnownSourceArticleResult = {
   strategy: string;
 };
 
+export type KnownSourceMetadataResult = {
+  source: string;
+  region: string | null;
+  url: string;
+};
+
 
 export type PublicationModerationFlag = {
   documentUid: string;
