@@ -13,8 +13,8 @@ export function splitEditorialSentences(value: string) {
 }
 
 export function effectiveCompressionMode(_text: string, mode: CompressionMode): Exclude<CompressionMode, "auto"> {
-  // "light" remains accepted only for backward compatibility with the SEP AI service.
-  // Exact UI never offers it and Auto never selects it.
+  // "light" is the L-Monitor Exact minimum mode (20–30%).
+  // SEP keeps accepting it for backward compatibility with the AI service; Auto never selects it.
   return mode === "auto" ? "standard" : mode;
 }
 
