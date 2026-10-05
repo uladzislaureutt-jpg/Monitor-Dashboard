@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { desktopApi } from "../api";
+import { MONITOR_BOOKMARKLET, parseBrowserCapture } from "../browserImport";
 import { useI18n } from "../i18n";
 import { useReportWorkspace } from "../reportWorkspace";
 import type { ReportDraftItem } from "../types";
@@ -31,6 +32,7 @@ export function ReportView() {
   const [urlImportMessage, setUrlImportMessage] = useState("");
   const [urlImportError, setUrlImportError] = useState("");
   const [clipboardBusy, setClipboardBusy] = useState(false);
+  const [bookmarkletOpen, setBookmarkletOpen] = useState(false);
   const [compressionMode, setCompressionMode] = useState<CompressionMode>("auto");
   const [aiBusy, setAiBusy] = useState(false);
   const [aiRuns, setAiRuns] = useState<number | null>(null);
@@ -103,13 +105,16 @@ export function ReportView() {
     importUrlPlaceholder: be ? "Устаўце спасылку на матэрыял…" : "Вставьте ссылку на материал…",
     importUrlHelp: be ? "Працуе для выданняў, якія ўжо ёсць у базе крыніц Monitor." : "Работает для изданий, которые уже есть в базе источников Monitor.",
     importUrlDone: be ? "Матэрыял спампаваны. Праверце загаловак, выданне, краіну і тэкст." : "Материал скачан. Проверьте заголовок, издание, страну и текст.",
-    importEdge: be ? "HTTP-маршрут не спрацаваў. Monitor адкрывае публікацыю ў Microsoft Edge і спрабуе вылучыць асноўны тэкст аўтаматычна." : "HTTP-маршрут не сработал. Monitor открывает публикацию в Microsoft Edge и пытается автоматически извлечь основной текст.",
-    openBrowser: be ? "Адкрыць у браўзеры Monitor" : "Открыть в браузере Monitor",
-    browserHelp: be ? "Калі сайт патрабуе cookies, уваход або праверку, адкрыйце яго ў браўзеры Monitor, прайдзіце неабходныя крокі, закрыйце акно і паўтарыце загрузку." : "Если сайт требует cookies, вход или проверку, откройте его в браузере Monitor, пройдите нужные шаги, закройте окно и повторите загрузку.",
+    importEdge: be ? "Аўтаматычна атрымаць старонку не ўдалося. Адкрыйце яе ў звычайным браўзеры, націсніце закладку «→ Monitor», затым вярніцеся сюды." : "Автоматически получить страницу не удалось. Откройте её в обычном браузере, нажмите закладку «→ Monitor», затем вернитесь сюда.",
+    openBrowser: be ? "Адкрыць у звычайным браўзеры" : "Открыть в обычном браузере",
+    browserHelp: be ? "У браўзеры працуюць вашы cookies, уваход, падпіска і VPN. Пасля загрузкі старонкі націсніце «→ Monitor», затым «Уставіць з браўзера»." : "В браузере работают ваши cookies, вход, подписка и VPN. После загрузки страницы нажмите «→ Monitor», затем «Вставить из браузера».",
     importPartial: be ? "Атрымана толькі агульнадаступная частка матэрыялу." : "Получена только общедоступная часть материала.",
-    clipboardImport: be ? "Уставіць з буфера" : "Вставить из буфера",
-    clipboardEmpty: be ? "У буферы абмену няма тэксту." : "В буфере обмена нет текста.",
-    clipboardDone: be ? "Тэкст з буфера ўстаўлены. Дадайце загаловак, выданне і пры неабходнасці краіну." : "Текст из буфера вставлен. Добавьте заголовок, издание и при необходимости страну.",
+    clipboardImport: be ? "Уставіць з браўзера" : "Вставить из браузера",
+    clipboardEmpty: be ? "У буферы абмену няма старонкі Monitor." : "В буфере обмена нет страницы Monitor.",
+    clipboardDone: be ? "Старонка з браўзера апрацавана і дададзена ў агляд." : "Страница из браузера обработана и добавлена в обзор.",
+    bookmarkletHelp: be ? "Як падключыць закладку «→ Monitor»" : "Как подключить закладку «→ Monitor»",
+    bookmarkletCopy: be ? "Скапіяваць код закладкі" : "Скопировать код закладки",
+    bookmarkletCopied: be ? "Код закладкі скапіяваны. Стварыце новую закладку ў браўзеры і ўстаўце код у поле URL." : "Код закладки скопирован. Создайте новую закладку в браузере и вставьте код в поле URL.",
     manualItemHelp: be ? "Для матэрыялаў па падпісцы або прапушчаных маніторынгам. Устаўце загаловак, выданне і тэкст з браўзера." : "Для материалов по подписке или пропущенных мониторингом. Вставьте заголовок, издание и текст из браузера.",
     manualTitle: be ? "Загаловак" : "Заголовок",
     manualSource: be ? "Крыніца / выданне" : "Источник / издание",
@@ -203,13 +208,7 @@ export function ReportView() {
     setError("");
     setStatus("");
     try {
-      let payload;
-      try {
-        payload = await desktopApi.fetchKnownSourceArticle(importUrl.trim());
-      } catch {
-        setUrlImportMessage(tx.importEdge);
-        payload = await desktopApi.fetchKnownSourceArticleEdge(importUrl.trim());
-      }
+      const payload = await desktopApi.fetchKnownSourceArticle(importUrl.trim());
       const uid = report.addManualItem({
         title: payload.title,
         source: payload.source,
@@ -234,19 +233,47 @@ export function ReportView() {
     setClipboardBusy(true);
     setError("");
     setStatus("");
+    setUrlImportError("");
     try {
-      const text = (await desktopApi.readClipboardText()).trim();
-      if (!text) {
-        setError(tx.clipboardEmpty);
-        return;
-      }
-      setManualItem((current) => ({ ...current, text, url: "", quality: "full" }));
-      setManualItemOpen(true);
-      setStatus(tx.clipboardDone);
+      const raw = (await desktopApi.readClipboardText()).trim();
+      if (!raw) throw new Error("BROWSER_CAPTURE_INVALID");
+      const capture = parseBrowserCapture(raw);
+      const source = await desktopApi.resolveKnownSource(capture.url);
+      const uid = report.addManualItem({
+        title: capture.title || source.source,
+        source: source.source,
+        region: source.region || "",
+        text: capture.text,
+        url: source.url || capture.url,
+        quality: "full",
+      });
+      setActiveUid(uid);
+      setImportUrl("");
+      setManualItemOpen(false);
+      setUrlImportMessage(tx.clipboardDone);
     } catch (reason) {
-      setError(String(reason));
+      const message = String(reason);
+      if (message.includes("BROWSER_CAPTURE_INVALID")) {
+        setUrlImportError(be ? "Буфер не змяшчае старонку, перададзеную закладкай «→ Monitor»." : "В буфере нет страницы, переданной закладкой «→ Monitor».");
+      } else if (message.includes("BROWSER_CAPTURE_TOO_LARGE")) {
+        setUrlImportError(be ? "Старонка занадта вялікая для імпарту праз буфер." : "Страница слишком большая для импорта через буфер.");
+      } else if (message.includes("BROWSER_CAPTURE_READABILITY_EMPTY")) {
+        setUrlImportError(be ? "Readability не змог вылучыць асноўны тэкст. Выкарыстоўвайце ручную ўстаўку." : "Readability не смог выделить основной текст. Используйте ручную вставку.");
+      } else {
+        setUrlImportError(message);
+      }
     } finally {
       setClipboardBusy(false);
+    }
+  }
+
+  async function copyBookmarklet() {
+    try {
+      await desktopApi.writeClipboardText(MONITOR_BOOKMARKLET);
+      setError("");
+      setStatus(tx.bookmarkletCopied);
+    } catch (reason) {
+      setError(String(reason));
     }
   }
 
@@ -299,7 +326,7 @@ export function ReportView() {
       <p>{integrityClass === "ready" ? tx.allReady : tx.needsReview}</p>
     </section>}
     <section className="report-toolbar panel"><div><b>{tx.count}: {report.items.length}{report.maxItems !== null ? `/${report.maxItems}` : ""}</b>{tx.tooFew && <span>{tx.tooFew}</span>}</div><div>{isLMonitor && <><button className="secondary-button" disabled={clipboardBusy} onClick={pasteManualFromClipboard}>{clipboardBusy ? "…" : tx.clipboardImport}</button><button className="secondary-button" onClick={() => setManualItemOpen((value) => !value)}>{tx.addManualItem}</button></>}<span>{tx.exportHelp}</span>{report.items.length > 0 && <button className="ghost-button" onClick={() => { if (window.confirm(tx.clear + "?")) report.clear(); }}>{tx.clear}</button>}</div></section>
-    {isLMonitor && <section className="panel report-url-import"><div><b>{tx.importByUrl}</b><span>{tx.importUrlHelp}</span></div><div className="report-url-import-row"><input value={importUrl} onChange={(e) => { setImportUrl(e.target.value); setUrlImportError(""); setUrlImportMessage(""); }} placeholder={tx.importUrlPlaceholder} onKeyDown={(e) => { if (e.key === "Enter") void fetchManualByUrl(); }} /><button className="primary-button" disabled={!importUrl.trim() || urlImportBusy} onClick={fetchManualByUrl}>{urlImportBusy ? "…" : tx.importByUrl}</button></div>{urlImportBusy && <div className="report-url-inline pending">{be ? "Загрузка і вылучэнне асноўнага тэксту…" : "Загрузка и извлечение основного текста…"}</div>}{urlImportMessage && <div className="report-url-inline success">{urlImportMessage}</div>}{urlImportError && <div className="report-url-inline error"><div>{urlImportError}</div><div className="report-url-browser-actions"><button className="secondary-button small-button" disabled={!importUrl.trim()} onClick={() => void desktopApi.openArticleBrowser(importUrl.trim())}>{tx.openBrowser}</button><span>{tx.browserHelp}</span></div></div>}</section>}
+    {isLMonitor && <section className="panel report-url-import"><div><b>{tx.importByUrl}</b><span>{tx.importUrlHelp}</span></div><div className="report-url-import-row"><input value={importUrl} onChange={(e) => { setImportUrl(e.target.value); setUrlImportError(""); setUrlImportMessage(""); }} placeholder={tx.importUrlPlaceholder} onKeyDown={(e) => { if (e.key === "Enter") void fetchManualByUrl(); }} /><button className="primary-button" disabled={!importUrl.trim() || urlImportBusy} onClick={fetchManualByUrl}>{urlImportBusy ? "…" : tx.importByUrl}</button></div>{urlImportBusy && <div className="report-url-inline pending">{be ? "Загрузка і вылучэнне асноўнага тэксту…" : "Загрузка и извлечение основного текста…"}</div>}{urlImportMessage && <div className="report-url-inline success">{urlImportMessage}</div>}{urlImportError && <div className="report-url-inline error"><div>{urlImportError}</div><div className="report-url-browser-actions"><button className="secondary-button small-button" disabled={!importUrl.trim()} onClick={() => void desktopApi.openUrl(importUrl.trim())}>{tx.openBrowser}</button><button className="primary-button small-button" disabled={clipboardBusy} onClick={() => void pasteManualFromClipboard()}>{clipboardBusy ? "…" : tx.clipboardImport}</button><span>{tx.browserHelp}</span></div></div>}<div className="report-bookmarklet-toggle"><button className="ghost-button small-button" onClick={() => setBookmarkletOpen((value) => !value)}>{tx.bookmarkletHelp}</button></div>{bookmarkletOpen && <div className="report-bookmarklet-help"><b>→ Monitor</b><p>{be ? "1. Пакажыце панэль закладак Ctrl+Shift+B. 2. Стварыце новую закладку з назвай «→ Monitor». 3. Скапіруйце код ніжэй і ўстаўце яго ў поле URL закладкі. Пасля гэтага на любой адкрытай публікацыі дастаткова націснуць гэтую закладку." : "1. Покажите панель закладок Ctrl+Shift+B. 2. Создайте новую закладку с именем «→ Monitor». 3. Скопируйте код ниже и вставьте его в поле URL закладки. После этого на любой открытой публикации достаточно нажать эту закладку."}</p><button className="secondary-button small-button" onClick={() => void copyBookmarklet()}>{tx.bookmarkletCopy}</button></div>}</section>}
     {isLMonitor && manualItemOpen && <section className="panel report-add-manual"><div><b>{tx.addManualItem}</b><p>{tx.manualItemHelp}</p>{manualItem.quality === "partial" && <p className="report-import-partial">{tx.importPartial}</p>}</div><div className="report-add-manual-grid"><label>{tx.manualTitle}<input value={manualItem.title} onChange={(e) => setManualItem({ ...manualItem, title: e.target.value })} /></label><label>{tx.manualSource}<input value={manualItem.source} onChange={(e) => setManualItem({ ...manualItem, source: e.target.value })} /></label><label>{tx.manualCountry}<input value={manualItem.region} onChange={(e) => setManualItem({ ...manualItem, region: e.target.value })} /></label></div><label className="report-add-manual-text">{tx.manualBody}<textarea value={manualItem.text} onChange={(e) => setManualItem({ ...manualItem, text: e.target.value })} /></label><div className="report-add-manual-actions"><button className="primary-button" disabled={!manualItem.title.trim() || !manualItem.text.trim()} onClick={addManualReportItem}>{tx.add}</button><button className="ghost-button" onClick={() => setManualItemOpen(false)}>{tx.cancel}</button></div></section>}
     {!report.items.length ? <section className="panel empty-state report-empty">{tx.empty}</section> : <section className="report-workspace-grid">
       <aside className="panel report-basket">{report.items.map((item, index) => <article key={item.documentUid} className={active?.documentUid === item.documentUid ? "active" : ""} onClick={() => setActiveUid(item.documentUid)}><div className="report-basket-number">{index + 1}</div><div><div className="report-basket-source-row"><b>{item.source}</b><span className={`report-text-status ${item.sourceQuality}`} title={qualityLabel(item)}><i />{qualityShort(item)}</span></div><span>{item.title}</span></div><div className="report-order-actions"><button disabled={index === 0} onClick={(e) => { e.stopPropagation(); report.move(item.documentUid, -1); }}>{tx.up}</button><button disabled={index === report.items.length - 1} onClick={(e) => { e.stopPropagation(); report.move(item.documentUid, 1); }}>{tx.down}</button><button className="text-danger" onClick={(e) => { e.stopPropagation(); report.remove(item.documentUid); }}>{tx.remove}</button></div></article>)}</aside>
