@@ -207,10 +207,11 @@ pub fn open_real_edge_browser(app: AppHandle, url: &str) -> Result<(), String> {
         .map_err(|e| format!("Не удалось определить каталог приложения: {e}"))?
         .join("article-edge-debug-profile-v2");
     let profile_arg = format!("--user-data-dir={}", profile_dir.to_string_lossy());
+    let remote_arg = format!("--remote-debugging-port={EDGE_DEVTOOLS_PORT}");
 
     std::process::Command::new(edge)
         .args([
-            format!("--remote-debugging-port={EDGE_DEVTOOLS_PORT}").as_str(),
+            remote_arg.as_str(),
             profile_arg.as_str(),
             "--new-window",
             "--no-first-run",
