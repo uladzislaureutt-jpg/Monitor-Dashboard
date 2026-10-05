@@ -1,14 +1,16 @@
 {
   "name": "monitor-dashboard",
   "private": true,
-  "version": "0.7.31",
+  "version": "0.7.32",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "node scripts/prepare-readability.mjs",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "pretauri": "node scripts/prepare-readability.mjs",
     "tauri": "tauri",
+    "precheck": "node scripts/prepare-readability.mjs",
     "check": "tsc --noEmit"
   },
   "dependencies": {
