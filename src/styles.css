@@ -1080,3 +1080,7 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 @media (max-width: 760px) {
   .report-url-browser-actions span { min-width: 100%; }
 }
+
+
+/* 0.7.33 — make hidden editorial tails visible to the operator */
+.report-text-length{color:#7c756e;font-size:8.5px;font-weight:600;white-space:nowrap}.report-editorial-tail-hint{padding:7px 12px 9px;border-top:1px solid #eee7de;background:#fbf8f3;color:#877f76;font-size:8px}
