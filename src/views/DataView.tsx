@@ -102,7 +102,7 @@ export function DataView({
         <label className="sync-interval"><span>{t("data.interval")}</span><select value={form.intervalMinutes} onChange={(event) => setForm({ ...form, intervalMinutes: Number(event.target.value) })}><option value={15}>{t("data.minutes", { count: 15 })}</option><option value={30}>{t("data.minutes", { count: 30 })}</option><option value={60}>{t("data.minutes", { count: 60 })}</option></select></label>
         <label className="toggle-label"><input type="checkbox" checked={form.autoSync} onChange={(event) => setForm({ ...form, autoSync: event.target.checked })} /><span>{t("data.automatic")}</span></label>
         <button className="secondary-button" onClick={() => onSaveSyncSettings(form)}>{t("data.save")}</button>
-        <button className="primary-button" onClick={() => { onSaveSyncSettings(form); onSyncNow(form); }} disabled={syncBusy || (!serverManaged && !form.repository.trim())}>{syncBusy ? t("data.checking") : t("data.syncNow")}</button>
+        <button className="primary-button" onClick={() => { onSaveSyncSettings(form); onSyncNow(form); }} disabled={syncBusy}>{syncBusy ? t("data.checking") : t("data.syncNow")}</button>
       </div>
       <div className="sync-note">{t("data.syncNote")}</div>
     </section>
