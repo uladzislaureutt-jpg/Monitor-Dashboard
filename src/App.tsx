@@ -38,8 +38,9 @@ function normalizeSyncSettings(parsed: unknown): SyncSettings {
 function normalizeMonitorSyncSettings(parsed: unknown): MonitorSyncSettings {
   const value = parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : {};
   const hasMonitorKeys = "social_economic" in value || "lukashenko" in value;
+  const social = normalizeSyncSettings(hasMonitorKeys ? value.social_economic : value);
   return {
-    social_economic: normalizeSyncSettings(hasMonitorKeys ? value.social_economic : value),
+    social_economic: { ...social, repository: "", token: "" },
     lukashenko: {
       ...DEFAULT_L_SYNC,
       ...normalizeSyncSettings(hasMonitorKeys ? value.lukashenko : DEFAULT_L_SYNC),
@@ -138,7 +139,8 @@ export default function App() {
           const next = normalizeMonitorSyncSettings(JSON.parse(stored));
           localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(next));
           setSyncSettingsByMonitor(next);
-          setSyncStatus({ kind: next[monitorKey].repository ? "configured" : "notConfigured" });
+          setSyncStatus({ kind: monitorKey === "social_economic" || next[monitorKey].repository ? "configured" : "notConfigured" });
+          void desktopApi.setSetting(SYNC_PERSIST_KEY, JSON.stringify(next));
           return;
         } catch { /* fall through to local migration */ }
       }
@@ -154,7 +156,7 @@ export default function App() {
   }, [syncWarning]);
   useEffect(() => { refreshCore().catch((reason) => setError(String(reason))); }, [refreshCore]);
   useEffect(() => {
-    setSyncStatus({ kind: syncSettings.repository ? "configured" : "notConfigured" });
+    setSyncStatus({ kind: monitorKey === "social_economic" || syncSettings.repository ? "configured" : "notConfigured" });
   }, [monitorKey, syncSettings.repository]);
   useEffect(() => { refreshDashboard(period); }, [period, monitorKey, refreshDashboard]);
   useEffect(() => {
