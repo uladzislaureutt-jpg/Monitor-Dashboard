@@ -238,13 +238,24 @@ export function ReportView() {
       const raw = (await desktopApi.readClipboardText()).trim();
       if (!raw) throw new Error("BROWSER_CAPTURE_INVALID");
       const capture = parseBrowserCapture(raw);
-      const source = await desktopApi.resolveKnownSource(capture.url);
+      let resolvedSource: { source: string; region: string | null; url: string } | null = null;
+      try {
+        resolvedSource = await desktopApi.resolveKnownSource(capture.url);
+      } catch {
+        // Browser import must also work for publications absent from the local
+        // monitoring catalogue. The catalogue enriches metadata; it is not an
+        // allow-list for a page the user explicitly opened and captured.
+      }
+      const capturedUrl = new URL(capture.url);
+      const host = capturedUrl.hostname.replace(/^www\./i, "");
+      const fallbackSource = (capture.siteName || host).trim();
+      const fallbackRegion = /(?:^|\.)by$/i.test(host) ? "Беларусь" : "";
       const uid = report.addManualItem({
-        title: capture.title || source.source,
-        source: source.source,
-        region: source.region || "",
+        title: capture.title || resolvedSource?.source || fallbackSource,
+        source: resolvedSource?.source || fallbackSource,
+        region: resolvedSource?.region || fallbackRegion,
         text: capture.text,
-        url: source.url || capture.url,
+        url: resolvedSource?.url || capture.url,
         quality: "full",
       });
       setActiveUid(uid);
