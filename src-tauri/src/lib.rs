@@ -217,6 +217,17 @@ fn sync_github_artifacts(
 }
 
 #[tauri::command]
+fn sync_server_artifacts(
+    base_url: String,
+    anon_key: String,
+    access_token: String,
+    monitor_key: String,
+    state: State<'_, AppState>,
+) -> Result<sync::SyncResult, String> {
+    sync::sync_server(&state.db_path, &base_url, &anon_key, &access_token, &monitor_key)
+}
+
+#[tauri::command]
 fn replace_moderation_snapshot(
     monitor_key: String,
     flags: Vec<ModerationFlagInput>,
@@ -296,6 +307,7 @@ pub fn run() {
             call_supabase_edge,
             export_report_docx,
             sync_github_artifacts,
+            sync_server_artifacts,
             replace_moderation_snapshot,
             get_app_setting,
             set_app_setting,
