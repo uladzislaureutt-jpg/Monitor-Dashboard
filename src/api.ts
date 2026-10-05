@@ -15,6 +15,7 @@ import type {
   ReportExportItem,
   FullTextHydrationResult,
   KnownSourceArticleResult,
+  KnownSourceMetadataResult,
 } from "./types";
 
 let activeMonitorKey = "social_economic";
@@ -73,9 +74,9 @@ export const desktopApi = {
   hydrateReportFullTexts: (documentUids: string[]) =>
     invoke<FullTextHydrationResult[]>("hydrate_report_full_texts", { monitorKey: activeMonitorKey, documentUids }),
   fetchKnownSourceArticle: (url: string) => invoke<KnownSourceArticleResult>("fetch_known_source_article", { url }),
-  fetchKnownSourceArticleEdge: (url: string) => invoke<KnownSourceArticleResult>("fetch_known_source_article_edge", { url }),
-  openArticleBrowser: (url: string) => invoke<void>("open_article_browser", { url }),
+  resolveKnownSource: (url: string) => invoke<KnownSourceMetadataResult>("resolve_known_source_article", { url }),
   readClipboardText: () => invoke<string>("read_clipboard_text"),
+  writeClipboardText: (text: string) => invoke<void>("write_clipboard_text", { text }),
   exportReport: (path: string, date: string, items: ReportExportItem[], monitorKey = activeMonitorKey) =>
     invoke<void>("export_report_docx", { path, date, items, monitorKey }),
   syncGithub: (repository: string, token: string) =>
