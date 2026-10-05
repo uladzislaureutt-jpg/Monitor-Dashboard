@@ -1042,3 +1042,41 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
   font-size: 9px;
   line-height: 1.4;
 }
+
+
+/* 0.7.32 — browser-to-Monitor clipboard import */
+.report-bookmarklet-toggle {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 2px;
+}
+.report-bookmarklet-help {
+  display: grid;
+  gap: 8px;
+  margin-top: 2px;
+  padding: 12px 14px;
+  border: 1px solid #ded6cc;
+  border-radius: 11px;
+  background: #faf7f2;
+}
+.report-bookmarklet-help b {
+  color: #183d57;
+  font-size: 12px;
+}
+.report-bookmarklet-help p {
+  margin: 0;
+  color: #716b64;
+  font-size: 9px;
+  line-height: 1.55;
+  max-width: 820px;
+}
+.report-bookmarklet-help button {
+  justify-self: start;
+}
+.report-url-browser-actions .primary-button,
+.report-url-browser-actions .secondary-button {
+  flex: 0 0 auto;
+}
+@media (max-width: 760px) {
+  .report-url-browser-actions span { min-width: 100%; }
+}
