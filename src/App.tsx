@@ -44,6 +44,8 @@ function normalizeMonitorSyncSettings(parsed: unknown): MonitorSyncSettings {
     lukashenko: {
       ...DEFAULT_L_SYNC,
       ...normalizeSyncSettings(hasMonitorKeys ? value.lukashenko : DEFAULT_L_SYNC),
+      repository: "",
+      token: "",
     },
   };
 }
@@ -95,16 +97,11 @@ export default function App() {
   }, []);
 
   const performSync = useCallback(async (settings: SyncSettings, silent = false) => {
-    const serverManaged = monitorKey === "social_economic";
-    if ((!serverManaged && !settings.repository.trim()) || syncBusyRef.current) {
-      if (!serverManaged && !settings.repository.trim()) setSyncStatus({ kind: "notConfigured" });
-      return;
-    }
+    if (syncBusyRef.current) return;
     syncBusyRef.current = true; setSyncBusy(true); if (!silent) { setError(""); setSyncWarning(""); }
     try {
-      const result = serverManaged
-        ? await desktopApi.syncServer(loadWorkroomConfig().url, loadWorkroomConfig().anonKey, access.session.accessToken)
-        : await desktopApi.syncGithub(settings.repository.trim(), settings.token);
+      const workroomConfig = loadWorkroomConfig();
+      const result = await desktopApi.syncServer(workroomConfig.url, workroomConfig.anonKey, access.session.accessToken);
       const latestImported = result.latestImportedRun ?? result.latestAvailableRun;
       const latestRemote = result.latestRemoteRun;
       const remoteIsSkippedDryRun = latestRemote != null && result.skippedDryRuns.includes(latestRemote);
@@ -139,7 +136,7 @@ export default function App() {
           const next = normalizeMonitorSyncSettings(JSON.parse(stored));
           localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(next));
           setSyncSettingsByMonitor(next);
-          setSyncStatus({ kind: monitorKey === "social_economic" || next[monitorKey].repository ? "configured" : "notConfigured" });
+          setSyncStatus({ kind: "configured" });
           void desktopApi.setSetting(SYNC_PERSIST_KEY, JSON.stringify(next));
           return;
         } catch { /* fall through to local migration */ }
@@ -156,7 +153,7 @@ export default function App() {
   }, [syncWarning]);
   useEffect(() => { refreshCore().catch((reason) => setError(String(reason))); }, [refreshCore]);
   useEffect(() => {
-    setSyncStatus({ kind: monitorKey === "social_economic" || syncSettings.repository ? "configured" : "notConfigured" });
+    setSyncStatus({ kind: "configured" });
   }, [monitorKey, syncSettings.repository]);
   useEffect(() => { refreshDashboard(period); }, [period, monitorKey, refreshDashboard]);
   useEffect(() => {
@@ -165,8 +162,6 @@ export default function App() {
     return () => window.removeEventListener("monitor:moderation-changed", onModeration);
   }, [period, refreshDashboard]);
   useEffect(() => {
-    const serverManaged = monitorKey === "social_economic";
-    if (!serverManaged && !syncSettings.repository.trim()) return;
     const checkOnOpen = monitorKey === "lukashenko" || syncSettings.autoSync;
     const start = checkOnOpen ? window.setTimeout(() => performSync(syncSettings, true), 900) : undefined;
     const interval = syncSettings.autoSync
@@ -257,7 +252,7 @@ export default function App() {
       </div>
     </header>
     <div className="layout"><aside className="sidebar"><div className="nav-label">{t("nav.label")}</div>{nav.slice(0, 5).map((item) => <button key={item.key} className={`nav-item ${view === item.key ? "active" : ""}`} onClick={() => navigate(item.key)}><span className="nav-icon">{item.icon}</span><span>{item.label}{item.key === "report" && report.pendingCount > 0 && <span className="report-count-badge">{report.pendingCount}</span>}</span></button>)}<button className={`nav-item workroom-nav ${workroomOpen ? "active" : ""}`} onClick={() => setWorkroomOpen((value) => !value)}><span className="nav-icon">◌</span><span className="workroom-nav-label">{t("nav.workroom")}</span>{workroomUnread > 0 && <span className="workroom-unread">{workroomUnread > 99 ? "99+" : workroomUnread}</span>}</button>{access.profile.isAdmin && nav.slice(5).map((item) => <button key={item.key} className={`nav-item ${view === item.key ? "active" : ""}`} onClick={() => navigate(item.key)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}<div className="sidebar-spacer" />{access.profile.isAdmin ? <button className="side-status side-status-button" onClick={() => navigate("data")} title={t("data.syncNow")}><span className={`status-dot ${syncBusy ? "pulse" : ""}`} /><div><b>{syncSettings.autoSync ? t("sync.autoLabel") : t("status.localDb")}</b><small>{syncSettings.autoSync && syncSettings.repository ? (syncStatusText || t("status.ready")) : dashboard ? t("status.stats", { docs: dashboard.publications, sources: dashboard.activeSources }) : t("status.initializing")}</small></div></button> : <div className="side-status"><span className="status-dot" /><div><b>{t("status.localDb")}</b><small>{dashboard ? t("status.stats", { docs: dashboard.publications, sources: dashboard.activeSources }) : t("status.initializing")}</small></div></div>}</aside>
-      <main className="content">{message && <div className="notice success global-notice"><span>{message}</span><button onClick={() => setMessage("")}>×</button></div>}{error && <div className="notice error global-notice"><span>{error}</span><button onClick={() => setError("")}>×</button></div>}{syncWarning && <div className="notice error global-notice"><span>{syncWarning}</span><button onClick={() => setSyncWarning("")}>×</button></div>}{monitorBlocked ? <section className="maintenance-screen panel"><div className="brand-mark large">M</div><h2>{maintenanceMessage}</h2><p>{locale === "be" ? "Маніторынг часова недаступны для аператараў." : "Мониторинг временно недоступен для операторов."}</p></section> : <>{view === "dashboard" && <DashboardView key={monitorKey} monitorKey={monitorKey} data={dashboard} period={period} onPeriodChange={setPeriod} loading={dashboardLoading} onOpenArchive={() => navigate("archive")} />}{view === "archive" && <ArchiveView key={monitorKey} initialQuery={archiveSeed} />}{view === "report" && <ReportView key={monitorKey} />}{view === "analytics" && <AnalyticsView key={monitorKey} data={dashboard} period={period} onPeriodChange={setPeriod} />}{view === "sources" && <SourcesView key={monitorKey} />}{view === "data" && access.profile.isAdmin && <DataView key={monitorKey} stats={stats} runs={runs.filter((run) => run.monitorKey === monitorKey)} busy={busy} onImport={importBundle} syncSettings={syncSettings} onSaveSyncSettings={saveSyncSettings} onSyncNow={(value) => performSync(value)} syncBusy={syncBusy} syncStatus={syncStatusText} serverManaged={monitorKey === "social_economic"} />}</>}</main>
+      <main className="content">{message && <div className="notice success global-notice"><span>{message}</span><button onClick={() => setMessage("")}>×</button></div>}{error && <div className="notice error global-notice"><span>{error}</span><button onClick={() => setError("")}>×</button></div>}{syncWarning && <div className="notice error global-notice"><span>{syncWarning}</span><button onClick={() => setSyncWarning("")}>×</button></div>}{monitorBlocked ? <section className="maintenance-screen panel"><div className="brand-mark large">M</div><h2>{maintenanceMessage}</h2><p>{locale === "be" ? "Маніторынг часова недаступны для аператараў." : "Мониторинг временно недоступен для операторов."}</p></section> : <>{view === "dashboard" && <DashboardView key={monitorKey} monitorKey={monitorKey} data={dashboard} period={period} onPeriodChange={setPeriod} loading={dashboardLoading} onOpenArchive={() => navigate("archive")} />}{view === "archive" && <ArchiveView key={monitorKey} initialQuery={archiveSeed} />}{view === "report" && <ReportView key={monitorKey} />}{view === "analytics" && <AnalyticsView key={monitorKey} data={dashboard} period={period} onPeriodChange={setPeriod} />}{view === "sources" && <SourcesView key={monitorKey} />}{view === "data" && access.profile.isAdmin && <DataView key={monitorKey} stats={stats} runs={runs.filter((run) => run.monitorKey === monitorKey)} busy={busy} onImport={importBundle} syncSettings={syncSettings} onSaveSyncSettings={saveSyncSettings} onSyncNow={(value) => performSync(value)} syncBusy={syncBusy} syncStatus={syncStatusText} serverManaged={true} />}</>}</main>
     </div>
     <SearchOverlay key={monitorKey} query={globalQuery} open={searchOpen} onClose={() => setSearchOpen(false)} onShowArchive={showArchiveForSearch} /><WorkroomDrawer open={workroomOpen} onClose={() => setWorkroomOpen(false)} onUnreadChange={setWorkroomUnread} />
   </div>;
