@@ -1088,3 +1088,7 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 
 /* 0.7.39 — L-Monitor source sorting */
 .sources-sort-control{display:grid;gap:4px;min-width:150px}.sources-sort-control>span{font-size:8px;font-weight:700;color:#7a746d;text-transform:uppercase;letter-spacing:.04em}.sources-sort-control select{min-height:34px;border:1px solid #d6cec4;border-radius:9px;background:#fff;padding:6px 9px;color:#294656;font-size:10px}
+
+
+/* 0.7.40 — editorial spellcheck + local lint */
+.report-lint-panel{margin-top:10px;border:1px solid #ddd5ca;border-radius:12px;background:#fcfaf7;overflow:hidden}.report-lint-head{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:10px 12px;border-bottom:1px solid #e8e1d8}.report-lint-head b{font-size:10px;color:#27485d}.report-lint-head span{font-size:8.5px;color:#7d766e}.report-lint-list{display:grid;max-height:220px;overflow:auto}.report-lint-list button{display:grid;gap:3px;text-align:left;border:0;border-top:1px solid #eee8e1;background:#fff;padding:9px 12px;cursor:pointer}.report-lint-list button:first-child{border-top:0}.report-lint-list button:hover{background:#f6f2ec}.report-lint-list b{font-size:9.5px;color:#7b4f2e}.report-lint-list span{font-size:8.5px;color:#6f6a64;line-height:1.4}
