@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { desktopApi } from "../api";
 import { MONITOR_BOOKMARKLET, parseBrowserCapture } from "../browserImport";
@@ -15,6 +15,64 @@ function prettyDate(value: string) {
 function safeFilenameDate(value: string) { return value.split("-").reverse().join("_"); }
 const MAX_AI_COMPRESSION_RUNS = 2;
 function aiCompressionRunsKey(documentUid: string) { return `ai_compression_runs:${documentUid}`; }
+
+
+type EditorialLintIssue = {
+  id: string;
+  start: number;
+  end: number;
+  messageRu: string;
+  messageBe: string;
+  excerpt: string;
+};
+
+function excerptAround(text: string, start: number, end: number) {
+  const from = Math.max(0, start - 28);
+  const to = Math.min(text.length, Math.max(end, start + 1) + 34);
+  return `${from > 0 ? "…" : ""}${text.slice(from, to).replace(/\s+/g, " ")}${to < text.length ? "…" : ""}`;
+}
+
+function lintEditorialText(text: string): EditorialLintIssue[] {
+  const issues: EditorialLintIssue[] = [];
+  const add = (start: number, end: number, ru: string, be: string) => {
+    issues.push({ id: `${start}:${end}:${issues.length}`, start, end, messageRu: ru, messageBe: be, excerpt: excerptAround(text, start, end) });
+  };
+
+  for (const match of text.matchAll(/ {2,}/g)) {
+    const start = match.index ?? 0;
+    add(start, start + match[0].length, "Лишний пробел", "Лішні прабел");
+  }
+  for (const match of text.matchAll(/\s+([,;:!?])/g)) {
+    const start = match.index ?? 0;
+    add(start, start + match[0].length, `Пробел перед знаком «${match[1]}»`, `Прабел перад знакам «${match[1]}»`);
+  }
+  for (const match of text.matchAll(/([,;:!?])([\p{L}])/gu)) {
+    const start = (match.index ?? 0) + match[1].length;
+    add(start, start + match[2].length, `Возможно, нужен пробел после «${match[1]}»`, `Магчыма, патрэбны прабел пасля «${match[1]}»`);
+  }
+  for (const match of text.matchAll(/([,;:!?])\1+/g)) {
+    const start = match.index ?? 0;
+    add(start, start + match[0].length, "Повтор знака препинания", "Паўтор знака прыпынку");
+  }
+  for (const match of text.matchAll(/\b([\p{L}]{2,})\s+\1\b/giu)) {
+    const start = match.index ?? 0;
+    add(start, start + match[0].length, `Повтор слова «${match[1]}»`, `Паўтор слова «${match[1]}»`);
+  }
+  for (const match of text.matchAll(/["“”„][^\n"]{1,160}["“”„]/g)) {
+    const start = match.index ?? 0;
+    add(start, start + match[0].length, "Проверьте кавычки: в обзоре используются « »", "Праверце двукоссе: у аглядзе выкарыстоўваюцца « »");
+  }
+
+  const opens = (text.match(/«/g) ?? []).length;
+  const closes = (text.match(/»/g) ?? []).length;
+  if (opens !== closes) add(0, Math.min(text.length, 1), "Несбалансированные кавычки « »", "Незбалансаванае двукоссе « »");
+
+  const roundOpen = (text.match(/\(/g) ?? []).length;
+  const roundClose = (text.match(/\)/g) ?? []).length;
+  if (roundOpen !== roundClose) add(0, Math.min(text.length, 1), "Несбалансированные круглые скобки", "Незбалансаваныя круглыя дужкі");
+
+  return issues.slice(0, 60);
+}
 
 export function ReportView() {
   const { locale } = useI18n();
@@ -36,6 +94,8 @@ export function ReportView() {
   const [compressionMode, setCompressionMode] = useState<CompressionMode>("auto");
   const [aiBusy, setAiBusy] = useState(false);
   const [aiRuns, setAiRuns] = useState<number | null>(null);
+  const [lintIssues, setLintIssues] = useState<EditorialLintIssue[]>([]);
+  const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const active = useMemo(() => report.items.find((item) => item.documentUid === activeUid) ?? report.items[0] ?? null, [report.items, activeUid]);
   const be = locale === "be";
   const tx = {
@@ -128,6 +188,26 @@ export function ReportView() {
     setManualOpen(false);
     setManualText("");
   }, [active?.documentUid, isLMonitor]);
+
+  useEffect(() => {
+    setLintIssues([]);
+  }, [active?.documentUid]);
+
+  function runEditorialLint() {
+    if (!active) return;
+    const issues = lintEditorialText(active.editorialText);\n    setLintIssues(issues);\n    setError("");\n    setStatus(issues.length ? "" : (be ? "Лакальная праверка не знайшла заўваг." : "Локальная проверка не нашла замечаний."));
+  }
+
+  function focusLintIssue(issue: EditorialLintIssue) {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    editor.setSelectionRange(issue.start, issue.end);
+    const lineHeight = 24;
+    const before = active?.editorialText.slice(0, issue.start) ?? "";
+    const line = before.split("\n").length - 1;
+    editor.scrollTop = Math.max(0, line * lineHeight - editor.clientHeight / 3);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -354,8 +434,10 @@ export function ReportView() {
           {!isLMonitor && extractMode && <p>{tx.aiExtractHelp}</p>}
           {!isLMonitor && aiLimitReached && <p>{tx.aiLimitReached}</p>}
         </div>
-        <div className="report-editor-label"><b>{tx.editorial}</b><div><span className="report-text-length">{active.editorialText.length.toLocaleString()} {be ? "сімвалаў" : "символов"} · {active.editorialText.split(/\\n+/).filter(Boolean).length} {be ? "абзацаў" : "абзацев"}</span><button className="ghost-button small-button" onClick={() => report.resetText(active.documentUid)}>{tx.reset}</button>{active.excerpt && <button className="ghost-button small-button" onClick={() => report.useExcerpt(active.documentUid)}>{tx.useExcerpt}</button>}</div></div>
-        <div className="report-editorial-compose"><div className="report-editorial-compose-title">{active.title}</div><textarea className="report-editor-textarea" value={active.editorialText} onChange={(e) => report.updateText(active.documentUid, e.target.value)} /><div className="report-editorial-tail-hint">{be ? "Перад экспартам праверце канец тэксту: поле пракручваецца." : "Перед экспортом проверьте конец текста: поле прокручивается."}</div></div>
+        <div className="report-editor-label"><b>{tx.editorial}</b><div><span className="report-text-length">{active.editorialText.length.toLocaleString()} {be ? "сімвалаў" : "символов"} · {active.editorialText.split(/\\n+/).filter(Boolean).length} {be ? "абзацаў" : "абзацев"}</span><button className="ghost-button small-button" onClick={runEditorialLint}>{be ? "Праверыць тэкст" : "Проверить текст"}</button><button className="ghost-button small-button" onClick={() => report.resetText(active.documentUid)}>{tx.reset}</button>{active.excerpt && <button className="ghost-button small-button" onClick={() => report.useExcerpt(active.documentUid)}>{tx.useExcerpt}</button>}</div></div>
+        <div className="report-editorial-compose"><div className="report-editorial-compose-title">{active.title}</div><textarea ref={editorRef} className="report-editor-textarea" lang={be ? "be" : "ru"} spellCheck={true} value={active.editorialText} onChange={(e) => { report.updateText(active.documentUid, e.target.value); if (lintIssues.length) setLintIssues([]); }} /><div className="report-editorial-tail-hint">{be ? "Арфаграфія правяраецца сродкамі WebView2. Перад экспартам праверце канец тэксту." : "Орфография проверяется средствами WebView2. Перед экспортом проверьте конец текста."}</div></div>
+        {lintIssues.length > 0 && <div className="report-lint-panel"><div className="report-lint-head"><b>{be ? `Заўвагі: ${lintIssues.length}` : `Замечания: ${lintIssues.length}`}</b><span>{be ? "Націсніце на заўвагу, каб перайсці да месца ў тэксце." : "Нажмите на замечание, чтобы перейти к месту в тексте."}</span></div><div className="report-lint-list">{lintIssues.map((issue)=><button key={issue.id} type="button" onClick={()=>focusLintIssue(issue)}><b>{be ? issue.messageBe : issue.messageRu}</b><span>{issue.excerpt}</span></button>)}</div></div>}
+        {lintIssues.length === 0 && status === "__lint_clean__" && null}
       </article>}
     </section>}
   </div>;
