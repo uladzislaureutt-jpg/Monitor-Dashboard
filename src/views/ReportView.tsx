@@ -63,9 +63,23 @@ function lintEditorialText(text: string): EditorialLintIssue[] {
     add(start, start + match[0].length, "Проверьте кавычки: в обзоре используются « »", "Праверце двукоссе: у аглядзе выкарыстоўваюцца « »");
   }
 
-  const opens = (text.match(/«/g) ?? []).length;
-  const closes = (text.match(/»/g) ?? []).length;
-  if (opens !== closes) add(0, Math.min(text.length, 1), "Несбалансированные кавычки « »", "Незбалансаванае двукоссе « »");
+  const quoteStack: number[] = [];
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === "«") {
+      quoteStack.push(index);
+      continue;
+    }
+    if (char === "»") {
+      const openIndex = quoteStack.pop();
+      if (openIndex == null) {
+        add(index, index + 1, "Закрывающая кавычка » без открывающей «", "Закрываючае двукоссе » без адкрываючага «");
+      }
+    }
+  }
+  for (const openIndex of quoteStack) {
+    add(openIndex, openIndex + 1, "Открывающая кавычка « без закрывающей »", "Адкрываючае двукоссе « без закрываючага »");
+  }
 
   const roundOpen = (text.match(/\(/g) ?? []).length;
   const roundClose = (text.match(/\)/g) ?? []).length;
