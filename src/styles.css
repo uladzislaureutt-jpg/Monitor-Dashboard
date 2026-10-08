@@ -1084,3 +1084,7 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 
 /* 0.7.33 — make hidden editorial tails visible to the operator */
 .report-text-length{color:#7c756e;font-size:8.5px;font-weight:600;white-space:nowrap}.report-editorial-tail-hint{padding:7px 12px 9px;border-top:1px solid #eee7de;background:#fbf8f3;color:#877f76;font-size:8px}
+
+
+/* 0.7.39 — L-Monitor source sorting */
+.sources-sort-control{display:grid;gap:4px;min-width:150px}.sources-sort-control>span{font-size:8px;font-weight:700;color:#7a746d;text-transform:uppercase;letter-spacing:.04em}.sources-sort-control select{min-height:34px;border:1px solid #d6cec4;border-radius:9px;background:#fff;padding:6px 9px;color:#294656;font-size:10px}
