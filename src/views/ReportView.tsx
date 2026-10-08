@@ -195,7 +195,10 @@ export function ReportView() {
 
   function runEditorialLint() {
     if (!active) return;
-    const issues = lintEditorialText(active.editorialText);\n    setLintIssues(issues);\n    setError("");\n    setStatus(issues.length ? "" : (be ? "Лакальная праверка не знайшла заўваг." : "Локальная проверка не нашла замечаний."));
+    const issues = lintEditorialText(active.editorialText);
+    setLintIssues(issues);
+    setError("");
+    setStatus(issues.length ? "" : (be ? "Лакальная праверка не знайшла заўваг." : "Локальная проверка не нашла замечаний."));
   }
 
   function focusLintIssue(issue: EditorialLintIssue) {
