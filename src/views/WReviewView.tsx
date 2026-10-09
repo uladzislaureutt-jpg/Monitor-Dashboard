@@ -252,7 +252,7 @@ export function WReviewView() {
   const densityOptions = <><option value="minimum">{be ? "мінімум" : "минимум"}</option><option value="moderate">{be ? "умерана" : "умеренно"}</option><option value="many">{be ? "многа" : "много"}</option></>;
 
   return <div className="view-stack w-review">
-    <section className="view-heading"><div><div className="eyebrow dark">W-REVIEW</div><h2>{be ? "Рабочы агляд па адвольным сюжэце" : "Рабочий обзор по произвольному сюжету"}</h2><p>{be ? "Збярыце да 20 публікацый і сфарміруйце абагульнены погляд на медыяполе." : "Соберите до 20 публикаций и сформируйте обобщённый взгляд на медиаполе."}</p></div><div className="w-review-metrics"><b>{state.items.length}/{MAX_ITEMS}</b><span>~{estimateTokens(totalChars).toLocaleString()} input tokens</span></div></section>
+    <section className="view-heading"><div><div className="eyebrow dark">W-REVIEW</div><h2>{be ? "Папярэдні агляд" : "Предварительный обзор"}</h2><p>{be ? "Збярыце да 20 публікацый і сфарміруйце абагульнены погляд на медыяполе." : "Соберите до 20 публикаций и сформируйте обобщённый взгляд на медиаполе."}</p></div><div className="w-review-metrics"><b>{state.items.length}/{MAX_ITEMS}</b><span>~{estimateTokens(totalChars).toLocaleString()} input tokens</span></div></section>
     {message && <div className="notice success">{message}</div>}{error && <div className="notice error">{error}</div>}
 
     <section className="panel w-review-import"><div className="panel-head"><div><h3>{be ? "Дадаць матэрыялы" : "Добавить материалы"}</h3><p>{be ? "Прамая загрузка, закладка → Monitor або ручны ўвод." : "Прямая загрузка, закладка → Monitor или ручной ввод."}</p></div></div>
