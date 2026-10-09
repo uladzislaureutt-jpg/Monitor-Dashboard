@@ -12,6 +12,7 @@ import { AnalyticsView } from "./views/AnalyticsView";
 import { SourcesView } from "./views/SourcesView";
 import { DataView } from "./views/DataView";
 import { ReportView } from "./views/ReportView";
+import { WReviewView } from "./views/WReviewView";
 import { useReportWorkspace } from "./reportWorkspace";
 import { useMonitorAccess } from "./access";
 import { loadWorkroomConfig } from "./workroom";
@@ -64,6 +65,7 @@ export default function App() {
   const [appVersion, setAppVersion] = useState("—");
   const [view, setView] = useState<ViewKey>("dashboard");
   const [monitorKey, setMonitorKey] = useState<MonitorKey>("social_economic");
+  const [wReviewOpen, setWReviewOpen] = useState(false);
   const [stats, setStats] = useState<DatabaseStats | null>(null);
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [dashboard, setDashboard] = useState<DashboardOverview | null>(null);
@@ -207,13 +209,15 @@ export default function App() {
   function showArchiveForSearch(query: string) { setArchiveSeed(query); setGlobalQuery(query); setSearchOpen(false); setView("archive"); }
   function navigate(next: ViewKey) {
     if ((next === "data" || next === "sources") && !access.profile.isAdmin) return;
+    setWReviewOpen(false);
     setView(next);
     if (next !== "archive") setArchiveSeed("");
   }
   function switchMonitor(next: MonitorKey) {
     const state = access.monitors.find((item) => item.monitorKey === next);
     if (!access.profile.isAdmin && state && !state.enabled) return;
-    if (next === monitorKey) return;
+    if (next === monitorKey && !wReviewOpen) return;
+    setWReviewOpen(false);
     desktopApi.setActiveMonitorKey(next);
     setMonitorKey(next);
     setGlobalQuery(""); setArchiveSeed(""); setView("dashboard");
@@ -247,12 +251,13 @@ export default function App() {
         <div className="module-switch" role="group" aria-label="Выбор мониторинга">
           <button disabled={!access.profile.isAdmin && access.monitors.find((item) => item.monitorKey === "social_economic")?.enabled === false} title={!access.profile.isAdmin && access.monitors.find((item) => item.monitorKey === "social_economic")?.enabled === false ? (locale === "be" ? "Тэхнічныя работы" : "Технические работы") : ""} className={monitorKey === "social_economic" ? "active" : ""} onClick={() => switchMonitor("social_economic")}>SEP-Monitor</button>
           <button disabled={!access.profile.isAdmin && access.monitors.find((item) => item.monitorKey === "lukashenko")?.enabled === false} title={!access.profile.isAdmin && access.monitors.find((item) => item.monitorKey === "lukashenko")?.enabled === false ? (locale === "be" ? "Тэхнічныя работы" : "Технические работы") : ""} className={monitorKey === "lukashenko" ? "active" : ""} onClick={() => switchMonitor("lukashenko")}>L-Monitor</button>
+          {access.profile.isAdmin && <button className={wReviewOpen ? "active" : ""} onClick={() => { setWReviewOpen(true); setWorkroomOpen(false); }}>W-Review</button>}
         </div>
         <button className="account-button" onClick={access.logout} title={locale === "be" ? "Выйсці" : "Выйти"}><span>{access.profile.displayName}</span><small>{access.profile.isAdmin ? (locale === "be" ? "адміністратар" : "администратор") : (locale === "be" ? "аператар" : "оператор")}</small></button>
       </div>
     </header>
     <div className="layout"><aside className="sidebar"><div className="nav-label">{t("nav.label")}</div>{nav.filter((item) => item.key !== "data" && (item.key !== "sources" || access.profile.isAdmin)).map((item) => <button key={item.key} className={`nav-item ${view === item.key ? "active" : ""}`} onClick={() => navigate(item.key)}><span className="nav-icon">{item.icon}</span><span>{item.label}{item.key === "report" && report.pendingCount > 0 && <span className="report-count-badge">{report.pendingCount}</span>}</span></button>)}<button className={`nav-item workroom-nav ${workroomOpen ? "active" : ""}`} onClick={() => setWorkroomOpen((value) => !value)}><span className="nav-icon">◌</span><span className="workroom-nav-label">{t("nav.workroom")}</span>{workroomUnread > 0 && <span className="workroom-unread">{workroomUnread > 99 ? "99+" : workroomUnread}</span>}</button>{access.profile.isAdmin && nav.filter((item) => item.key === "data").map((item) => <button key={item.key} className={`nav-item ${view === item.key ? "active" : ""}`} onClick={() => navigate(item.key)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}<div className="sidebar-spacer" />{access.profile.isAdmin ? <button className="side-status side-status-button" onClick={() => navigate("data")} title={t("data.syncNow")}><span className={`status-dot ${syncBusy ? "pulse" : ""}`} /><div><b>{syncSettings.autoSync ? t("sync.autoLabel") : t("status.localDb")}</b><small>{syncSettings.autoSync && syncSettings.repository ? (syncStatusText || t("status.ready")) : dashboard ? t("status.stats", { docs: dashboard.publications, sources: dashboard.activeSources }) : t("status.initializing")}</small></div></button> : <div className="side-status"><span className="status-dot" /><div><b>{t("status.localDb")}</b><small>{dashboard ? t("status.stats", { docs: dashboard.publications, sources: dashboard.activeSources }) : t("status.initializing")}</small></div></div>}</aside>
-      <main className="content">{message && <div className="notice success global-notice"><span>{message}</span><button onClick={() => setMessage("")}>×</button></div>}{error && <div className="notice error global-notice"><span>{error}</span><button onClick={() => setError("")}>×</button></div>}{syncWarning && <div className="notice error global-notice"><span>{syncWarning}</span><button onClick={() => setSyncWarning("")}>×</button></div>}{monitorBlocked ? <section className="maintenance-screen panel"><div className="brand-mark large">M</div><h2>{maintenanceMessage}</h2><p>{locale === "be" ? "Маніторынг часова недаступны для аператараў." : "Мониторинг временно недоступен для операторов."}</p></section> : <>{view === "dashboard" && <DashboardView key={monitorKey} monitorKey={monitorKey} data={dashboard} period={period} onPeriodChange={setPeriod} loading={dashboardLoading} onOpenArchive={() => navigate("archive")} />}{view === "archive" && <ArchiveView key={monitorKey} initialQuery={archiveSeed} />}{view === "report" && <ReportView key={monitorKey} />}{view === "analytics" && <AnalyticsView key={monitorKey} data={dashboard} period={period} onPeriodChange={setPeriod} />}{view === "sources" && access.profile.isAdmin && <SourcesView key={monitorKey} />}{view === "data" && access.profile.isAdmin && <DataView key={monitorKey} stats={stats} runs={runs.filter((run) => run.monitorKey === monitorKey)} busy={busy} onImport={importBundle} syncSettings={syncSettings} onSaveSyncSettings={saveSyncSettings} onSyncNow={(value) => performSync(value)} syncBusy={syncBusy} syncStatus={syncStatusText} />}</>}</main>
+      <main className="content">{wReviewOpen && access.profile.isAdmin ? <WReviewView /> : <>{message && <div className="notice success global-notice"><span>{message}</span><button onClick={() => setMessage("")}>×</button></div>}{error && <div className="notice error global-notice"><span>{error}</span><button onClick={() => setError("")}>×</button></div>}{syncWarning && <div className="notice error global-notice"><span>{syncWarning}</span><button onClick={() => setSyncWarning("")}>×</button></div>}{monitorBlocked ? <section className="maintenance-screen panel"><div className="brand-mark large">M</div><h2>{maintenanceMessage}</h2><p>{locale === "be" ? "Маніторынг часова недаступны для аператараў." : "Мониторинг временно недоступен для операторов."}</p></section> : <>{view === "dashboard" && <DashboardView key={monitorKey} monitorKey={monitorKey} data={dashboard} period={period} onPeriodChange={setPeriod} loading={dashboardLoading} onOpenArchive={() => navigate("archive")} />}{view === "archive" && <ArchiveView key={monitorKey} initialQuery={archiveSeed} />}{view === "report" && <ReportView key={monitorKey} />}{view === "analytics" && <AnalyticsView key={monitorKey} data={dashboard} period={period} onPeriodChange={setPeriod} />}{view === "sources" && access.profile.isAdmin && <SourcesView key={monitorKey} />}{view === "data" && access.profile.isAdmin && <DataView key={monitorKey} stats={stats} runs={runs.filter((run) => run.monitorKey === monitorKey)} busy={busy} onImport={importBundle} syncSettings={syncSettings} onSaveSyncSettings={saveSyncSettings} onSyncNow={(value) => performSync(value)} syncBusy={syncBusy} syncStatus={syncStatusText} />}</>}</>}</>}</main>
     </div>
     <SearchOverlay key={monitorKey} query={globalQuery} open={searchOpen} onClose={() => setSearchOpen(false)} onShowArchive={showArchiveForSearch} /><WorkroomDrawer open={workroomOpen} onClose={() => setWorkroomOpen(false)} onUnreadChange={setWorkroomUnread} />
   </div>;
