@@ -4,7 +4,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 use regex::Regex;
-use zip::ZipWriter;
+use zip::{ZipArchive, ZipWriter};
 use zip::write::SimpleFileOptions;
 
 #[derive(Debug, Deserialize)]
@@ -147,6 +147,53 @@ fn title_separator(title: &str) -> &'static str {
     }
 }
 
+
+
+fn decode_word_xml(value: &str) -> String {
+    value
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
+}
+
+pub fn extract_w_review_sample(path: &Path) -> Result<String, String> {
+    let extension = path.extension().and_then(|value| value.to_str()).unwrap_or_default().to_lowercase();
+    if extension == "txt" {
+        let text = fs::read_to_string(path).map_err(|e| format!("Не удалось прочитать TXT-образец: {e}"))?;
+        let clean = text.trim().to_string();
+        if clean.is_empty() { return Err("Образец пуст.".to_string()); }
+        return Ok(clean);
+    }
+    if extension != "docx" {
+        return Err("Для образцов W-Review поддерживаются DOCX и TXT.".to_string());
+    }
+
+    let file = File::open(path).map_err(|e| format!("Не удалось открыть DOCX-образец: {e}"))?;
+    let mut archive = ZipArchive::new(file).map_err(|e| format!("Некорректный DOCX-образец: {e}"))?;
+    let mut document = archive.by_name("word/document.xml").map_err(|e| format!("В DOCX нет word/document.xml: {e}"))?;
+    let mut xml = String::new();
+    use std::io::Read;
+    document.read_to_string(&mut xml).map_err(|e| format!("Не удалось прочитать XML DOCX: {e}"))?;
+
+    let paragraph_re = Regex::new(r"(?s)<w:p\b[^>]*>(.*?)</w:p>").expect("valid paragraph regex");
+    let text_re = Regex::new(r"(?s)<w:t(?:\s[^>]*)?>(.*?)</w:t>").expect("valid text regex");
+    let mut paragraphs = Vec::new();
+    for paragraph in paragraph_re.captures_iter(&xml) {
+        let inner = paragraph.get(1).map(|value| value.as_str()).unwrap_or("");
+        let mut text = String::new();
+        for part in text_re.captures_iter(inner) {
+            if let Some(value) = part.get(1) { text.push_str(&decode_word_xml(value.as_str())); }
+        }
+        let clean = text.replace('\u{00A0}', " ").trim().to_string();
+        if !clean.is_empty() { paragraphs.push(clean); }
+    }
+    let result = paragraphs.join("\n\n");
+    if result.trim().is_empty() { return Err("В DOCX-образце не найден текст.".to_string()); }
+    if result.chars().count() > 30000 { return Err("Один образец W-Review не должен превышать 30 000 знаков.".to_string()); }
+    Ok(result)
+}
 
 pub fn export_w_review_docx(path: &Path, text: &str) -> Result<(), String> {
     if text.trim().is_empty() { return Err("Итоговый текст W-Review пуст.".to_string()); }
