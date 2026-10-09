@@ -89,6 +89,47 @@ fn paragraph_l_monitor(runs: &str) -> String {
     format!("<w:p><w:pPr><w:jc w:val=\"both\"/><w:ind w:firstLine=\"720\"/></w:pPr>{runs}</w:p>")
 }
 
+
+fn run_w_review(text: &str, bold: bool, italic: bool) -> String {
+    let mut props = String::from("<w:rFonts w:ascii=\"Arial\" w:hAnsi=\"Arial\" w:eastAsia=\"Arial\" w:cs=\"Arial\"/><w:spacing w:val=\"-6\"/><w:sz w:val=\"32\"/><w:szCs w:val=\"32\"/>");
+    if bold { props.push_str("<w:b/><w:bCs/>"); }
+    if italic { props.push_str("<w:i/><w:iCs/>"); }
+    format!("<w:r><w:rPr>{props}</w:rPr><w:t xml:space=\"preserve\">{}</w:t></w:r>", xml_text(text))
+}
+
+fn paragraph_w_review(runs: &str) -> String {
+    format!("<w:p><w:pPr><w:jc w:val=\"both\"/><w:ind w:firstLine=\"720\" w:right=\"0\"/></w:pPr>{runs}</w:p>")
+}
+
+fn w_review_runs(text: &str, first_paragraph: bool) -> String {
+    let mut result = String::new();
+    let mut cursor = 0usize;
+
+    if first_paragraph && text.starts_with('«') {
+        if let Some(close) = text.find('»') {
+            let end = close + '»'.len_utf8();
+            result.push_str(&run_w_review(&text[..end], true, true));
+            cursor = end;
+        }
+    }
+
+    let parenthetical = Regex::new(r#"\((?:\s*«[^»]+»\s*,?)+\)"#).expect("valid W-Review sources regex");
+    for mat in parenthetical.find_iter(&text[cursor..]) {
+        let start = cursor + mat.start();
+        let end = cursor + mat.end();
+        if start > cursor { result.push_str(&run_w_review(&text[cursor..start], false, false)); }
+        result.push_str(&run_w_review(&text[start..end], false, true));
+        cursor = end;
+    }
+    if cursor < text.len() {
+        result.push_str(&run_w_review(&text[cursor..], false, false));
+    }
+    if result.is_empty() {
+        result.push_str(&run_w_review(text, false, false));
+    }
+    result
+}
+
 fn sanitize_l_monitor_text(value: &str) -> String {
     let base = sanitize_editorial_text(value);
     let abbreviations = Regex::new(r"(?i)\b(тыс|млн|млрд|трлн)\.?(\s|$)").expect("valid abbreviation regex");
@@ -104,6 +145,46 @@ fn title_separator(title: &str) -> &'static str {
         Some('.' | '!' | '?' | '…' | '»') => " ",
         _ => ". ",
     }
+}
+
+
+pub fn export_w_review_docx(path: &Path, text: &str) -> Result<(), String> {
+    if text.trim().is_empty() { return Err("Итоговый текст W-Review пуст.".to_string()); }
+    if path.extension().and_then(|value| value.to_str()).map(|value| value.eq_ignore_ascii_case("docx")) != Some(true) {
+        return Err("Файл W-Review должен иметь расширение .docx".to_string());
+    }
+    if let Some(parent) = path.parent() { fs::create_dir_all(parent).map_err(|e| format!("Не удалось создать каталог W-Review: {e}"))?; }
+    let file = File::create(path).map_err(|e| format!("Не удалось создать DOCX W-Review: {e}"))?;
+    let mut zip = ZipWriter::new(file);
+    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+
+    let cleaned = sanitize_l_monitor_text(text);
+    let blocks = Regex::new(r"\n\s*\n+").expect("valid paragraph split regex");
+    let mut body = String::new();
+    for (index, block) in blocks.split(&cleaned).map(str::trim).filter(|value| !value.is_empty()).enumerate() {
+        let runs = w_review_runs(block, index == 0);
+        body.push_str(&paragraph_w_review(&runs));
+    }
+    body.push_str("<w:sectPr><w:type w:val=\"nextPage\"/><w:pgSz w:w=\"11906\" w:h=\"16838\"/><w:pgMar w:left=\"1260\" w:right=\"747\" w:gutter=\"0\" w:header=\"0\" w:top=\"1418\" w:footer=\"0\" w:bottom=\"851\"/><w:pgNumType w:fmt=\"decimal\"/><w:docGrid w:type=\"default\" w:linePitch=\"360\" w:charSpace=\"0\"/></w:sectPr>");
+
+    let document = format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><w:body>{body}</w:body></w:document>");
+    let styles = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:styles xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii=\"Arial\" w:hAnsi=\"Arial\" w:eastAsia=\"Arial\" w:cs=\"Arial\"/><w:spacing w:val=\"-6\"/><w:sz w:val=\"32\"/><w:szCs w:val=\"32\"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr/></w:pPrDefault></w:docDefaults><w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"Normal\"><w:name w:val=\"Normal\"/><w:qFormat/><w:rPr><w:rFonts w:ascii=\"Arial\" w:hAnsi=\"Arial\" w:eastAsia=\"Arial\" w:cs=\"Arial\"/><w:spacing w:val=\"-6\"/><w:sz w:val=\"32\"/><w:szCs w:val=\"32\"/></w:rPr></w:style></w:styles>";
+    let root_rels = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/></Relationships>";
+    let doc_rels = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/></Relationships>";
+    let content_types = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/><Override PartName=\"/word/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml\"/></Types>";
+
+    for (name, content) in [
+        ("[Content_Types].xml", content_types.to_string()),
+        ("_rels/.rels", root_rels.to_string()),
+        ("word/document.xml", document),
+        ("word/styles.xml", styles.to_string()),
+        ("word/_rels/document.xml.rels", doc_rels.to_string()),
+    ] {
+        zip.start_file(name, options).map_err(|e| format!("Не удалось создать часть DOCX {name}: {e}"))?;
+        zip.write_all(content.as_bytes()).map_err(|e| format!("Не удалось записать часть DOCX {name}: {e}"))?;
+    }
+    zip.finish().map_err(|e| format!("Не удалось завершить DOCX W-Review: {e}"))?;
+    Ok(())
 }
 
 pub fn export_docx(path: &Path, date: &str, items: &[ReportExportItem], monitor_key: &str) -> Result<(), String> {
