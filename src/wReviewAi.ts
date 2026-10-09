@@ -1,6 +1,12 @@
 import { ensureWorkroomSession, loadWorkroomConfig, loadWorkroomSession } from "./workroom";
 
 export type WUsage = { promptTokens: number; completionTokens: number; totalTokens: number };
+export type WDensity = "minimum" | "moderate" | "many";
+export type WEditorialTrend = { id: string; title: string; summary: string; sources: string[] };
+export type WEditorialMap = {
+  trends: WEditorialTrend[];
+  inventory: { quotes: number; headlines: number; experts: number };
+};
 
 async function call(body: Record<string, unknown>) {
   const config = loadWorkroomConfig();
@@ -44,7 +50,39 @@ export async function wStyleProfile(samples: string[]) {
   return { styleProfile: String(payload.style_profile || ""), model: String(payload.model || "openai/gpt-oss-20b"), usage: usage(payload.usage) };
 }
 
-export async function wSynthesize(input: { task: string; targetChars: number; model: "openai/gpt-oss-120b" | "openai/gpt-oss-20b"; evidenceCards: string[]; styleProfile: string }) {
+export async function wEditorialMap(input: { task: string; evidenceCards: string[] }) {
+  const payload = await call({ action: "editorial_map", task: input.task, evidence_cards: input.evidenceCards });
+  const raw = payload.editorial_map || {};
+  const trends = Array.isArray(raw.trends) ? raw.trends.slice(0, 4).map((item: any, index: number) => ({
+    id: String(item?.id || `trend-${index + 1}`),
+    title: String(item?.title || "").trim(),
+    summary: String(item?.summary || "").trim(),
+    sources: Array.isArray(item?.sources) ? item.sources.map((value: unknown) => String(value)).filter(Boolean) : [],
+  })).filter((item: WEditorialTrend) => item.title) : [];
+  const inventory = raw.inventory || {};
+  return {
+    editorialMap: {
+      trends,
+      inventory: {
+        quotes: Math.max(0, Number(inventory.quotes || 0)),
+        headlines: Math.max(0, Number(inventory.headlines || 0)),
+        experts: Math.max(0, Number(inventory.experts || 0)),
+      },
+    } satisfies WEditorialMap,
+    model: String(payload.model || "openai/gpt-oss-20b"),
+    usage: usage(payload.usage),
+  };
+}
+
+export async function wSynthesize(input: {
+  task: string;
+  targetChars: number;
+  model: "openai/gpt-oss-120b" | "openai/gpt-oss-20b";
+  evidenceCards: string[];
+  styleProfile: string;
+  trends: WEditorialTrend[];
+  density: { quotes: WDensity; headlines: WDensity; experts: WDensity };
+}) {
   const payload = await call({
     action: "synthesize",
     task: input.task,
@@ -52,6 +90,8 @@ export async function wSynthesize(input: { task: string; targetChars: number; mo
     model: input.model,
     evidence_cards: input.evidenceCards,
     style_profile: input.styleProfile,
+    trends: input.trends,
+    density: input.density,
   });
   return { reviewText: String(payload.review_text || ""), model: String(payload.model || input.model), usage: usage(payload.usage) };
 }
