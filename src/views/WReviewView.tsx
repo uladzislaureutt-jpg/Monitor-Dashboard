@@ -6,6 +6,8 @@ import { exactCompressForProfile, type CompressionMode } from "../editorialCompr
 import { wEvidence, wStyleProfile, wSynthesize, type WUsage } from "../wReviewAi";
 import { useI18n } from "../i18n";
 
+const W_CONTRACT_VERSION = 2;
+
 type WItem = {
   id: string;
   title: string;
@@ -15,6 +17,7 @@ type WItem = {
   sourceText: string;
   editorialText: string;
   evidence: string;
+  evidenceContract?: number;
 };
 
 type WState = {
@@ -24,12 +27,13 @@ type WState = {
   model: "openai/gpt-oss-120b" | "openai/gpt-oss-20b";
   samples: string[];
   styleProfile: string;
+  styleContract?: number;
   reviewText: string;
 };
 
 const STORAGE_KEY = "monitor-w-review-v1";
 const MAX_ITEMS = 20;
-const EMPTY: WState = { items: [], task: "", targetChars: 5000, model: "openai/gpt-oss-120b", samples: [], styleProfile: "", reviewText: "" };
+const EMPTY: WState = { items: [], task: "", targetChars: 5000, model: "openai/gpt-oss-120b", samples: [], styleProfile: "", styleContract: W_CONTRACT_VERSION, reviewText: "" };
 
 function loadState(): WState {
   try {
@@ -42,6 +46,7 @@ function loadState(): WState {
       model: raw.model === "openai/gpt-oss-20b" ? "openai/gpt-oss-20b" : "openai/gpt-oss-120b",
       samples: Array.isArray(raw.samples) ? raw.samples.map(String).slice(0, 5) : [],
       styleProfile: String(raw.styleProfile || "").slice(0, 6000),
+      styleContract: Number(raw.styleContract || 0),
       reviewText: String(raw.reviewText || ""),
     };
   } catch { return EMPTY; }
@@ -70,13 +75,13 @@ export function WReviewView() {
 
   const active = state.items.find((item) => item.id === activeId) ?? state.items[0] ?? null;
   const totalChars = useMemo(() => state.items.reduce((sum, item) => sum + item.editorialText.length, 0), [state.items]);
-  const prepared = state.items.filter((item) => item.evidence.trim()).length;
+  const prepared = state.items.filter((item) => item.evidence.trim() && item.evidenceContract === W_CONTRACT_VERSION).length;
 
   function addItem(input: { title: string; source: string; region?: string; url?: string; text: string }) {
     if (state.items.length >= MAX_ITEMS) throw new Error("W_REVIEW_MAX_ITEMS");
     const text = input.text.trim();
     if (!input.title.trim() || !text) throw new Error("W_REVIEW_ITEM_REQUIRED");
-    const next: WItem = { id: id(), title: input.title.trim(), source: input.source.trim() || "Источник", region: input.region?.trim() || "", url: input.url?.trim() || "", sourceText: text, editorialText: text, evidence: "" };
+    const next: WItem = { id: id(), title: input.title.trim(), source: input.source.trim() || "Источник", region: input.region?.trim() || "", url: input.url?.trim() || "", sourceText: text, editorialText: text, evidence: "", evidenceContract: 0 };
     setState((current) => ({ ...current, items: [...current.items, next], reviewText: "" }));
     setActiveId(next.id);
   }
@@ -137,10 +142,10 @@ export function WReviewView() {
       let total: WUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
       const next = [...state.items];
       for (let i = 0; i < next.length; i += 1) {
-        if (next[i].evidence.trim()) continue;
+        if (next[i].evidence.trim() && next[i].evidenceContract === W_CONTRACT_VERSION) continue;
         if (next[i].editorialText.length > 24000) throw new Error(`Материал ${i + 1} длиннее 24 000 знаков. Сократите его Exact или вручную.`);
         const result = await wEvidence({ title: next[i].title, source: next[i].source, text: next[i].editorialText });
-        next[i] = { ...next[i], evidence: result.evidence };
+        next[i] = { ...next[i], evidence: result.evidence, evidenceContract: W_CONTRACT_VERSION };
         total = { promptTokens: total.promptTokens + result.usage.promptTokens, completionTokens: total.completionTokens + result.usage.completionTokens, totalTokens: total.totalTokens + result.usage.totalTokens };
         setState((current) => ({ ...current, items: [...next] }));
       }
@@ -156,7 +161,7 @@ export function WReviewView() {
     setBusy("style"); setError(""); setMessage("");
     try {
       const result = await wStyleProfile(samples);
-      setState((current) => ({ ...current, styleProfile: result.styleProfile }));
+      setState((current) => ({ ...current, styleProfile: result.styleProfile, styleContract: W_CONTRACT_VERSION }));
       setUsage((current) => ({ promptTokens: current.promptTokens + result.usage.promptTokens, completionTokens: current.completionTokens + result.usage.completionTokens, totalTokens: current.totalTokens + result.usage.totalTokens }));
       setMessage(be ? "Профіль стылю абноўлены." : "Профиль стиля обновлён.");
     } catch (reason) { setError(String(reason)); }
@@ -168,7 +173,7 @@ export function WReviewView() {
     if (prepared !== state.items.length) { setError(be ? "Спачатку падрыхтуйце Evidence Cards для ўсіх матэрыялаў." : "Сначала подготовьте Evidence Cards для всех материалов."); return; }
     setBusy("synthesize"); setError(""); setMessage("");
     try {
-      const result = await wSynthesize({ task: state.task, targetChars: state.targetChars, model: state.model, evidenceCards: state.items.map((item) => `ИСТОЧНИК: «${item.source}»\nЗАГОЛОВОК: ${item.title}\n${item.evidence}`), styleProfile: state.styleProfile });
+      const result = await wSynthesize({ task: state.task, targetChars: state.targetChars, model: state.model, evidenceCards: state.items.map((item) => `ИСТОЧНИК: «${item.source}»\nЗАГОЛОВОК: ${item.title}\n${item.evidence}`), styleProfile: state.styleContract === W_CONTRACT_VERSION ? state.styleProfile : "" });
       setState((current) => ({ ...current, reviewText: result.reviewText }));
       setUsage((current) => ({ promptTokens: current.promptTokens + result.usage.promptTokens, completionTokens: current.completionTokens + result.usage.completionTokens, totalTokens: current.totalTokens + result.usage.totalTokens }));
       setMessage(be ? "Агляд сфарміраваны." : "Обзор сформирован.");
@@ -194,13 +199,13 @@ export function WReviewView() {
     </section>
 
     <section className="w-review-grid">
-      <aside className="panel w-review-pool"><div className="panel-head"><div><h3>{be?"Пул матэрыялаў":"Пул материалов"}</h3><p>{prepared}/{state.items.length} Evidence Cards</p></div></div>{state.items.length===0?<p className="muted">{be?"Пакуль пуста.":"Пока пусто."}</p>:state.items.map((item,index)=><button key={item.id} className={`w-review-item ${active?.id===item.id?"active":""}`} onClick={()=>setActiveId(item.id)}><span>P{String(index+1).padStart(2,"0")}</span><div><b>{item.title}</b><small>{item.source}{item.evidence?" · ✓ Evidence":""}</small></div></button>)}</aside>
+      <aside className="panel w-review-pool"><div className="panel-head"><div><h3>{be?"Пул матэрыялаў":"Пул материалов"}</h3><p>{prepared}/{state.items.length} Evidence Cards</p></div></div>{state.items.length===0?<p className="muted">{be?"Пакуль пуста.":"Пока пусто."}</p>:state.items.map((item,index)=><button key={item.id} className={`w-review-item ${active?.id===item.id?"active":""}`} onClick={()=>setActiveId(item.id)}><span>P{String(index+1).padStart(2,"0")}</span><div><b>{item.title}</b><small>{item.source}{item.evidence&&item.evidenceContract===W_CONTRACT_VERSION?" · ✓ Evidence":item.evidence?" · ↻ Evidence":""}</small></div></button>)}</aside>
       <div className="panel w-review-editor">{active?<><div className="panel-head"><div><h3>{active.title}</h3><p>{active.source}{active.region?` · ${active.region}`:""}</p></div><button className="ghost-button small-button" onClick={()=>{setState((current)=>({...current,items:current.items.filter((item)=>item.id!==active.id),reviewText:""}));}}>{be?"Выдаліць":"Удалить"}</button></div><div className="w-review-exact"><select value={compressionMode} onChange={(e)=>setCompressionMode(e.target.value as CompressionMode)}><option value="light">20–30%</option><option value="standard">30–50%</option><option value="maximum">50–70%</option><option value="extract">70–90%</option></select><button className="secondary-button small-button" onClick={exact}>Exact</button><button className="ghost-button small-button" onClick={()=>updateItem(active.id,{editorialText:active.sourceText})}>{be?"Вярнуць зыходны":"Вернуть исходный"}</button></div><textarea className="report-editor-textarea" lang={be?"be":"ru"} spellCheck={true} value={active.editorialText} onChange={(e)=>updateItem(active.id,{editorialText:e.target.value})}/>{active.evidence&&<details className="w-review-evidence"><summary>Evidence Card</summary><p>{active.evidence}</p></details>}</>:<div className="report-empty">{be?"Выберыце матэрыял.":"Выберите материал."}</div>}</div>
     </section>
 
     <section className="panel w-review-task"><div className="panel-head"><div><h3>{be?"Заданне і параметры":"Задание и параметры"}</h3><p>{be?"Заданне да 500 знакаў; пастаянныя правілы захоўваюцца ў сістэмным кантракце." : "Задание до 500 знаков; постоянные правила хранятся в системном контракте."}</p></div></div><textarea maxLength={500} value={state.task} onChange={(e)=>setState({...state,task:e.target.value})} placeholder={be?"Што менавіта трэба прааналізаваць, на чым зрабіць акцэнт…":"Что именно нужно проанализировать, на чем сделать акцент…"}/><div className="w-review-controls"><span>{state.task.length}/500</span><label>{be?"Аб'ём":"Объём"}<select value={state.targetChars} onChange={(e)=>setState({...state,targetChars:Number(e.target.value)})}><option value={3000}>3 000</option><option value={5000}>5 000</option><option value={8000}>8 000</option><option value={12000}>12 000</option></select></label><label>{be?"Мадэль":"Модель"}<select value={state.model} onChange={(e)=>setState({...state,model:e.target.value as WState["model"]})}><option value="openai/gpt-oss-120b">GPT-OSS 120B</option><option value="openai/gpt-oss-20b">GPT-OSS 20B</option></select></label><button className="secondary-button" disabled={busy!==""||!state.items.length} onClick={prepareEvidence}>{busy==="evidence"?"…":be?"Падрыхтаваць Evidence":"Подготовить Evidence"}</button></div></section>
 
-    <section className="panel w-review-style"><div className="panel-head"><div><h3>{be?"Узоры стылю":"Образцы стиля"}</h3><p>{be?"Да 5 вашых гатовых аглядаў. У кожны новы запыт перадаецца толькі кампактны Style Profile." : "До 5 ваших готовых обзоров. В каждый новый запрос передаётся только компактный Style Profile."}</p></div><span className="badge">{state.samples.length}/5</span></div><textarea value={sampleText} onChange={(e)=>setSampleText(e.target.value)} placeholder={be?"Устаўце адзін гатовы аўтарскі агляд…":"Вставьте один готовый авторский обзор…"}/><div className="w-review-controls"><button className="secondary-button" disabled={!sampleText.trim()||state.samples.length>=5} onClick={()=>{setState({...state,samples:[...state.samples,sampleText.trim()]});setSampleText("")}}>{be?"Дадаць узор":"Добавить образец"}</button><button className="primary-button" disabled={busy!==""||!state.samples.length} onClick={buildStyleProfile}>{busy==="style"?"…":be?"Абнавіць профіль стылю":"Обновить профиль стиля"}</button></div>{state.styleProfile&&<details className="w-review-evidence"><summary>Style Profile</summary><p>{state.styleProfile}</p></details>}</section>
+    <section className="panel w-review-style"><div className="panel-head"><div><h3>{be?"Узоры стылю":"Образцы стиля"}</h3><p>{be?"Да 5 вашых гатовых аглядаў. У кожны новы запыт перадаецца толькі кампактны Style Profile." : "До 5 ваших готовых обзоров. В каждый новый запрос передаётся только компактный Style Profile."}</p></div><span className="badge">{state.samples.length}/5</span></div><textarea value={sampleText} onChange={(e)=>setSampleText(e.target.value)} placeholder={be?"Устаўце адзін гатовы аўтарскі агляд…":"Вставьте один готовый авторский обзор…"}/><div className="w-review-controls"><button className="secondary-button" disabled={!sampleText.trim()||state.samples.length>=5} onClick={()=>{setState({...state,samples:[...state.samples,sampleText.trim()]});setSampleText("")}}>{be?"Дадаць узор":"Добавить образец"}</button><button className="primary-button" disabled={busy!==""||!state.samples.length} onClick={buildStyleProfile}>{busy==="style"?"…":be?"Абнавіць профіль стылю":"Обновить профиль стиля"}</button></div>{state.styleProfile&&<details className="w-review-evidence"><summary>Style Profile{state.styleContract===W_CONTRACT_VERSION?"":" · требуется обновить"}</summary><p>{state.styleProfile}</p></details>}</section>
 
     <section className="panel w-review-final"><div className="panel-head"><div><h3>{be?"Выніковы агляд":"Итоговый обзор"}</h3><p>{be?"AI выкарыстоўвае толькі Evidence Cards, заданне і Style Profile." : "AI использует только Evidence Cards, задание и Style Profile."}</p></div><div className="w-review-controls"><button className="primary-button" disabled={busy!==""||!state.items.length||prepared!==state.items.length||!state.task.trim()} onClick={synthesize}>{busy==="synthesize"?"…":be?"Сфарміраваць агляд":"Сформировать обзор"}</button><button className="secondary-button" disabled={!state.reviewText.trim()} onClick={exportDocx}>DOCX</button></div></div><textarea className="report-editor-textarea w-review-final-text" lang={be?"be":"ru"} spellCheck={true} value={state.reviewText} onChange={(e)=>setState({...state,reviewText:e.target.value})} placeholder={be?"Тут з'явіцца выніковы агляд…":"Здесь появится итоговый обзор…"}/><div className="w-review-usage">{be?"Сімвалаў":"Символов"}: {state.reviewText.length.toLocaleString()} · {be?"Выкарыстана токенаў у гэтай сесіі":"Использовано токенов в этой сессии"}: {usage.totalTokens.toLocaleString()}</div></section>
   </div>;
