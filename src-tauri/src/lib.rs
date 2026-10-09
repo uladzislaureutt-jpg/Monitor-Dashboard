@@ -212,6 +212,11 @@ fn export_w_review_docx(path: String, text: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn extract_w_review_sample(path: String) -> Result<String, String> {
+    report::extract_w_review_sample(&PathBuf::from(path))
+}
+
+#[tauri::command]
 fn sync_github_artifacts(
     repository: String,
     token: String,
@@ -312,6 +317,7 @@ pub fn run() {
             call_supabase_edge,
             export_report_docx,
             export_w_review_docx,
+            extract_w_review_sample,
             sync_github_artifacts,
             sync_server_artifacts,
             replace_moderation_snapshot,
