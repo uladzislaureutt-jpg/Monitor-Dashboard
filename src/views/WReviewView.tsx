@@ -3,7 +3,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { desktopApi } from "../api";
 import { MONITOR_BOOKMARKLET, parseBrowserCapture } from "../browserImport";
 import { exactCompressForProfile, type CompressionMode } from "../editorialCompression";
-import { wEditorialMap, wEvidence, wStyleProfile, wSynthesize, type WDensity, type WEditorialMap, type WUsage } from "../wReviewAi";
+import { wEditorialMap, wEvidence, wStyleProfile, wSynthesize, type WDensity, type WEditorialMap, type WEditorialTrend, type WUsage } from "../wReviewAi";
 import { useI18n } from "../i18n";
 
 const W_CONTRACT_VERSION = 3;
