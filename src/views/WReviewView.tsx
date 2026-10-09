@@ -180,8 +180,8 @@ export function WReviewView() {
     if (!state.reviewText.trim()) return;
     const path = await save({ title: "W-Review DOCX", defaultPath: "W-Review.docx", filters: [{ name: "Word", extensions: ["docx"] }] });
     if (!path) return;
-    await desktopApi.exportReport(path, new Date().toISOString().slice(0, 10), [{ source: "W-Review", location: "", title: state.task.trim().slice(0, 180) || "W-Review", text: state.reviewText.trim(), url: "" }], "lukashenko");
-    setMessage(be ? "DOCX захаваны. Гэта часовы нейтральны фармат да падключэння эталоннага шаблону." : "DOCX сохранён. Это временный нейтральный формат до подключения эталонного шаблона.");
+    await desktopApi.exportWReview(path, state.reviewText.trim());
+    setMessage(be ? "DOCX захаваны ў фармаце W-Review." : "DOCX сохранён в формате W-Review.");
   }
 
   return <div className="view-stack w-review">
