@@ -168,7 +168,7 @@ export function WReviewView() {
     if (prepared !== state.items.length) { setError(be ? "Спачатку падрыхтуйце Evidence Cards для ўсіх матэрыялаў." : "Сначала подготовьте Evidence Cards для всех материалов."); return; }
     setBusy("synthesize"); setError(""); setMessage("");
     try {
-      const result = await wSynthesize({ task: state.task, targetChars: state.targetChars, model: state.model, evidenceCards: state.items.map((item) => item.evidence), styleProfile: state.styleProfile });
+      const result = await wSynthesize({ task: state.task, targetChars: state.targetChars, model: state.model, evidenceCards: state.items.map((item) => `ИСТОЧНИК: «${item.source}»\nЗАГОЛОВОК: ${item.title}\n${item.evidence}`), styleProfile: state.styleProfile });
       setState((current) => ({ ...current, reviewText: result.reviewText }));
       setUsage((current) => ({ promptTokens: current.promptTokens + result.usage.promptTokens, completionTokens: current.completionTokens + result.usage.completionTokens, totalTokens: current.totalTokens + result.usage.totalTokens }));
       setMessage(be ? "Агляд сфарміраваны." : "Обзор сформирован.");
