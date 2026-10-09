@@ -50,7 +50,7 @@ function loadState(): WState {
       typeof sample === "string"
         ? { id: id("sample"), name: `Образец ${index + 1}`, text: sample }
         : { id: String(sample?.id || id("sample")), name: String(sample?.name || `Образец ${index + 1}`), text: String(sample?.text || "") }
-    ).filter((sample) => sample.text.trim());
+    ).filter((sample: WSample) => sample.text.trim());
     return {
       items: Array.isArray(raw.items) ? raw.items.slice(0, MAX_ITEMS) : [],
       task: String(raw.task || "").slice(0, 500),
@@ -186,7 +186,7 @@ export function WReviewView() {
     setBusy("map"); setError(""); setMessage("");
     try {
       const result = await wEditorialMap({ task: state.task, evidenceCards: evidenceCards() });
-      setState((current) => ({ ...current, editorialMap: result.editorialMap, mapContract: W_CONTRACT_VERSION, selectedTrendIds: result.editorialMap.trends.map((trend) => trend.id), reviewText: "" }));
+      setState((current) => ({ ...current, editorialMap: result.editorialMap, mapContract: W_CONTRACT_VERSION, selectedTrendIds: result.editorialMap.trends.map((trend: WEditorialTrend) => trend.id), reviewText: "" }));
       addUsage(result.usage);
       setMessage(be ? "Тэндэнцыі выяўлены. Праверце, ці ўсе яны патрэбныя ў аглядзе." : "Тенденции выявлены. Проверьте, все ли они нужны в обзоре.");
     } catch (reason) { setError(String(reason)); } finally { setBusy(""); }
