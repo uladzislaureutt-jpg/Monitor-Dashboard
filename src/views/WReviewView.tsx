@@ -77,7 +77,7 @@ function loadState(): WState {
   } catch { return EMPTY; }
 }
 
-export function WReviewView({ section = "review" }: { section?: "review" | "style" }) {
+export function WReviewView({ section = "review", onCloseStyle }: { section?: "review" | "style"; onCloseStyle?: () => void }) {
   const { locale } = useI18n();
   const be = locale === "be";
   const [state, setState] = useState<WState>(loadState);
@@ -264,6 +264,25 @@ export function WReviewView({ section = "review" }: { section?: "review" | "styl
     } catch (reason) { setError(String(reason)); } finally { setAnalysisText(""); setBusy(""); }
   }
 
+  function clearPool() {
+    if (!state.items.length) return;
+    setState((current) => ({
+      ...current,
+      items: [],
+      task: "",
+      editorialMap: null,
+      mapContract: 0,
+      selectedTrendIds: [],
+      reviewText: "",
+      sectionTitles: [],
+      boldPhrases: [],
+    }));
+    setActiveId(null);
+    setAnalysisText("");
+    setError("");
+    setMessage(be ? "Пул матэрыялаў ачышчаны." : "Пул материалов очищен.");
+  }
+
   async function importSamples() {
     if (state.samples.length >= MAX_SAMPLES) return;
     const selected = await open({
@@ -332,7 +351,7 @@ export function WReviewView({ section = "review" }: { section?: "review" | "styl
   const densityOptions = <><option value="minimum">{be ? "мінімум" : "минимум"}</option><option value="moderate">{be ? "умерана" : "умеренно"}</option><option value="many">{be ? "многа" : "много"}</option><option value="all">{be ? "усе знойдзеныя" : "все найденные"}</option></>;
   if (section === "style") {
     return <div className="view-stack w-review w-review-style-page">
-      <section className="view-heading"><div><div className="eyebrow dark">W-REVIEW</div><h2>{be ? "Аўтарскі стыль" : "Авторский стиль"}</h2><p>{be ? "Дадайце да 5 узораў DOCX/TXT і стварыце профіль, які будзе выкарыстоўвацца ў наступных аглядах." : "Добавьте до 5 образцов DOCX/TXT и создайте профиль, который будет использоваться в следующих обзорах."}</p></div><span className={`badge ${styleReady?"ready":""}`}>{styleReady?"✓":state.samples.length+"/"+MAX_SAMPLES}</span></section>
+      <section className="view-heading"><div><div className="eyebrow dark">W-REVIEW</div><h2>{be ? "Аўтарскі стыль" : "Авторский стиль"}</h2><p>{be ? "Дадайце да 5 узораў DOCX/TXT і стварыце профіль, які будзе выкарыстоўвацца ў наступных аглядах." : "Добавьте до 5 образцов DOCX/TXT и создайте профиль, который будет использоваться в следующих обзорах."}</p></div><div className="w-review-style-heading-actions"><span className={`badge ${styleReady?"ready":""}`}>{styleReady?"✓":state.samples.length+"/"+MAX_SAMPLES}</span><button className="ghost-button w-review-close-button" onClick={onCloseStyle} aria-label={be?"Закрыць аўтарскі стыль":"Закрыть авторский стиль"} title={be?"Закрыць":"Закрыть"}>×</button></div></section>
       {message && <div className="notice success">{message}</div>}{error && <div className="notice error">{error}</div>}
       <section className="panel w-review-style"><div className="panel-head"><div><h3>{be?"Узоры і профіль":"Образцы и профиль"}</h3><p>{be?"Профіль можна выкарыстоўваць для многіх аглядаў без пераліку." : "Профиль можно использовать для многих обзоров без пересчёта."}</p></div></div>
         <div className="w-review-controls"><button className="secondary-button" disabled={busy!==""||state.samples.length>=MAX_SAMPLES} onClick={importSamples}>{busy==="sample"?"…":be?"Дадаць DOCX/TXT":"Добавить DOCX/TXT"}</button><button className="primary-button" disabled={busy!==""||!state.samples.length} onClick={buildStyleProfile}>{busy==="style"?"…":styleReady?(be?"Абнавіць профіль":"Обновить профиль"):(be?"Стварыць профіль стылю":"Создать профиль стиля")}</button></div>
@@ -360,7 +379,7 @@ export function WReviewView({ section = "review" }: { section?: "review" | "styl
     <section className="panel w-review-task"><div className="panel-head"><div><h3>{be?"2. Заданне":"2. Задание"}</h3><p>{be?"Да 500 знакаў — тэма і патрэбныя акцэнты.":"До 500 знаков — тема и нужные акценты."}</p></div></div><textarea maxLength={500} value={state.task} onChange={(e)=>setState((current)=>invalidateMap({...current,task:e.target.value}))} placeholder={be?"Што прааналізаваць і на чым зрабіць акцэнт…":"Что проанализировать и на чем сделать акцент…"}/><div className="w-review-controls"><span>{state.task.length}/500</span></div></section>
 
     <section className="w-review-grid">
-      <aside className="panel w-review-pool"><div className="panel-head"><div><h3>{be?"Пул матэрыялаў":"Пул материалов"}</h3><p>{state.items.length ? (prepared === state.items.length ? (be?"усе матэрыялы гатовыя да аналізу":"все материалы проанализированы") : (be?`прааналізавана ${prepared} з ${state.items.length}`:`проанализировано ${prepared} из ${state.items.length}`)) : (be?"пакуль пуста":"пока пусто")}</p></div></div>
+      <aside className="panel w-review-pool"><div className="panel-head"><div><h3>{be?"Пул матэрыялаў":"Пул материалов"}</h3><p>{state.items.length ? (prepared === state.items.length ? (be?"усе матэрыялы гатовыя да аналізу":"все материалы проанализированы") : (be?`прааналізавана ${prepared} з ${state.items.length}`:`проанализировано ${prepared} из ${state.items.length}`)) : (be?"пакуль пуста":"пока пусто")}</p></div><button className="ghost-button small-button" disabled={busy!==""||!state.items.length} onClick={clearPool}>{be?"Ачысціць":"Очистить"}</button></div>
         {state.items.map((item,index)=><button key={item.id} className={`w-review-item ${active?.id===item.id?"active":""}`} onClick={()=>setActiveId(item.id)}><span>P{String(index+1).padStart(2,"0")}</span><div><b>{item.title}</b><small>{item.source}{item.evidence&&item.evidenceContract===W_CONTRACT_VERSION?" · ✓":""}</small></div></button>)}
         <div className="w-review-pool-action"><button className="primary-button" disabled={busy!==""||!state.items.length} onClick={analyzePool}>{analysisButtonText}</button>{busy==="analyze"&&<small>{analysisText}</small>}{!state.task.trim()&&state.items.length>0&&<small>{be?"Для аналізу спачатку запоўніце заданне вышэй.":"Для анализа сначала заполните задание выше."}</small>}</div>
       </aside>
