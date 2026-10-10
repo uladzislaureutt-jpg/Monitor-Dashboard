@@ -2,8 +2,6 @@ name: Build Monitor Dashboard Windows x64
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
 
 permissions:
   contents: read
