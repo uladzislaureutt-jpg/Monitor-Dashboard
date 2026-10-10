@@ -9,8 +9,9 @@ import { useI18n } from "../i18n";
 const W_CONTRACT_VERSION = 4;
 const MAX_ITEMS = 20;
 const MAX_SAMPLES = 5;
-const BATCH_MAX_ITEMS = 4;
-const BATCH_MAX_CHARS = 13_500;
+const BATCH_MAX_ITEMS = 20;
+const BATCH_MAX_CHARS = 120_000;
+const MAX_ITEM_CHARS = 24_000;
 
 type WItem = {
   id: string; title: string; source: string; region: string; url: string;
@@ -185,7 +186,7 @@ export function WReviewView() {
     let chars = 0;
     for (const entry of pending) {
       const len = entry.item.editorialText.length;
-      if (len > BATCH_MAX_CHARS) throw new Error(`Материал «${entry.item.title}» длиннее ${BATCH_MAX_CHARS.toLocaleString()} знаков. Сократите его Exact или вручную.`);
+      if (len > MAX_ITEM_CHARS) throw new Error(`Материал «${entry.item.title}» длиннее ${MAX_ITEM_CHARS.toLocaleString()} знаков. Сократите его Exact или вручную.`);
       if (current.length && (current.length >= BATCH_MAX_ITEMS || chars + len > BATCH_MAX_CHARS)) {
         batches.push(current); current = []; chars = 0;
       }
@@ -219,7 +220,7 @@ export function WReviewView() {
         addUsage(result.usage);
         setAnalysisText(be ? `Аналіз матэрыялаў: ${done} з ${next.length}` : `Анализ материалов: ${done} из ${next.length}`);
       }
-      if (done !== next.length) throw new Error(`Не удалось подготовить анализ для всех материалов: ${done}/${next.length}`);
+      if (done !== next.length) { const missing = next.filter((item) => !(item.evidence.trim() && item.evidenceContract === W_CONTRACT_VERSION)).map((item) => item.title).slice(0, 4); throw new Error(`Проанализировано ${done} из ${next.length}. Не обработаны: ${missing.join("; ")}${next.length - done > missing.length ? "…" : ""}. Нажмите «Проанализировать пул» ещё раз — готовые материалы повторно не обрабатываются.`); }
       setAnalysisText(be ? "Вызначаю тэндэнцыі медыяполя…" : "Выявляю тенденции медиаполя…");
       const mapResult = await wEditorialMap(
         { task: state.task, evidenceCards: evidenceCards(next) },
