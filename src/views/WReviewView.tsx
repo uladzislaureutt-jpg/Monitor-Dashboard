@@ -43,7 +43,7 @@ const EMPTY: WState = {
 
 function id(prefix = "w") { return `${prefix}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`; }
 function estimateTokens(chars: number) { return Math.max(0, Math.round(chars / 3.2)); }
-function densityValue(value: unknown): WDensity { return value === "minimum" || value === "many" ? value : "moderate"; }
+function densityValue(value: unknown): WDensity { return value === "minimum" || value === "many" || value === "all" ? value : "moderate"; }
 
 function loadState(): WState {
   try {
@@ -77,7 +77,7 @@ function loadState(): WState {
   } catch { return EMPTY; }
 }
 
-export function WReviewView() {
+export function WReviewView({ section = "review" }: { section?: "review" | "style" }) {
   const { locale } = useI18n();
   const be = locale === "be";
   const [state, setState] = useState<WState>(loadState);
@@ -202,7 +202,6 @@ export function WReviewView() {
 
   async function analyzePool() {
     if (!state.items.length) { setError(be ? "Спачатку дадайце матэрыялы." : "Сначала добавьте материалы."); return; }
-    if (!state.task.trim()) { setError(be ? "Запоўніце заданне для агляду." : "Заполните задание для обзора."); return; }
     setBusy("analyze"); setError(""); setMessage("");
     const next = [...state.items];
     try {
@@ -329,7 +328,19 @@ export function WReviewView() {
     setMessage(be ? "DOCX захаваны ў фармаце W-Review." : "DOCX сохранён в формате W-Review.");
   }
 
-  const densityOptions = <><option value="minimum">{be ? "мінімум" : "минимум"}</option><option value="moderate">{be ? "умерана" : "умеренно"}</option><option value="many">{be ? "многа" : "много"}</option></>;
+  const densityOptions = <><option value="minimum">{be ? "мінімум" : "минимум"}</option><option value="moderate">{be ? "умерана" : "умеренно"}</option><option value="many">{be ? "многа" : "много"}</option><option value="all">{be ? "усе знойдзеныя" : "все найденные"}</option></>;
+  if (section === "style") {
+    return <div className="view-stack w-review w-review-style-page">
+      <section className="view-heading"><div><div className="eyebrow dark">W-REVIEW</div><h2>{be ? "Аўтарскі стыль" : "Авторский стиль"}</h2><p>{be ? "Дадайце да 5 узораў DOCX/TXT і стварыце профіль, які будзе выкарыстоўвацца ў наступных аглядах." : "Добавьте до 5 образцов DOCX/TXT и создайте профиль, который будет использоваться в следующих обзорах."}</p></div><span className={`badge ${styleReady?"ready":""}`}>{styleReady?"✓":state.samples.length+"/"+MAX_SAMPLES}</span></section>
+      {message && <div className="notice success">{message}</div>}{error && <div className="notice error">{error}</div>}
+      <section className="panel w-review-style"><div className="panel-head"><div><h3>{be?"Узоры і профіль":"Образцы и профиль"}</h3><p>{be?"Профіль можна выкарыстоўваць для многіх аглядаў без пераліку." : "Профиль можно использовать для многих обзоров без пересчёта."}</p></div></div>
+        <div className="w-review-controls"><button className="secondary-button" disabled={busy!==""||state.samples.length>=MAX_SAMPLES} onClick={importSamples}>{busy==="sample"?"…":be?"Дадаць DOCX/TXT":"Добавить DOCX/TXT"}</button><button className="primary-button" disabled={busy!==""||!state.samples.length} onClick={buildStyleProfile}>{busy==="style"?"…":styleReady?(be?"Абнавіць профіль":"Обновить профиль"):(be?"Стварыць профіль стылю":"Создать профиль стиля")}</button></div>
+        {state.samples.length>0&&<div className="w-review-samples">{state.samples.map((sample)=><div key={sample.id}><span>{sample.name}</span><button className="ghost-button small-button" onClick={()=>setState((current)=>({...current,samples:current.samples.filter((item)=>item.id!==sample.id),styleContract:0,reviewText:""}))}>×</button></div>)}</div>}
+        {styleReady&&<p className="w-review-style-ready">{be?"✓ Профіль стылю гатовы":"✓ Профиль стиля готов"}</p>}
+      </section>
+    </div>;
+  }
+
   const analysisButtonText = busy === "analyze"
     ? (analysisText || (be ? "Аналізую…" : "Анализирую…"))
     : mapReady
@@ -345,12 +356,10 @@ export function WReviewView() {
       {manualOpen&&<div className="w-review-manual"><input placeholder={be?"Загаловак":"Заголовок"} value={manual.title} onChange={(e)=>setManual({...manual,title:e.target.value})}/><input placeholder={be?"Крыніца":"Источник"} value={manual.source} onChange={(e)=>setManual({...manual,source:e.target.value})}/><input placeholder={be?"Краіна / рэгіён":"Страна / регион"} value={manual.region} onChange={(e)=>setManual({...manual,region:e.target.value})}/><input placeholder="URL" value={manual.url} onChange={(e)=>setManual({...manual,url:e.target.value})}/><textarea placeholder={be?"Тэкст публікацыі":"Текст публикации"} value={manual.text} onChange={(e)=>setManual({...manual,text:e.target.value})}/><button className="primary-button" onClick={()=>{try{addItem(manual);setManual({title:"",source:"",region:"",url:"",text:""});setManualOpen(false)}catch(reason){setError(String(reason))}}}>{be?"Дадаць":"Добавить"}</button></div>}
     </section>
 
-    <section className="panel w-review-task"><div className="panel-head"><div><h3>{be?"2. Заданне":"2. Задание"}</h3><p>{be?"Да 500 знакаў — тэма і патрэбныя акцэнты.":"До 500 знаков — тема и нужные акценты."}</p></div></div><textarea maxLength={500} value={state.task} onChange={(e)=>setState((current)=>invalidateMap({...current,task:e.target.value}))} placeholder={be?"Што прааналізаваць і на чым зрабіць акцэнт…":"Что проанализировать и на чем сделать акцент…"}/><div className="w-review-controls"><span>{state.task.length}/500</span></div></section>
-
     <section className="w-review-grid">
       <aside className="panel w-review-pool"><div className="panel-head"><div><h3>{be?"Пул матэрыялаў":"Пул материалов"}</h3><p>{state.items.length ? (prepared === state.items.length ? (be?"усе матэрыялы гатовыя да аналізу":"все материалы проанализированы") : (be?`прааналізавана ${prepared} з ${state.items.length}`:`проанализировано ${prepared} из ${state.items.length}`)) : (be?"пакуль пуста":"пока пусто")}</p></div></div>
         {state.items.map((item,index)=><button key={item.id} className={`w-review-item ${active?.id===item.id?"active":""}`} onClick={()=>setActiveId(item.id)}><span>P{String(index+1).padStart(2,"0")}</span><div><b>{item.title}</b><small>{item.source}{item.evidence&&item.evidenceContract===W_CONTRACT_VERSION?" · ✓":""}</small></div></button>)}
-        <div className="w-review-pool-action"><button className="primary-button" disabled={busy!==""||!state.items.length} onClick={analyzePool}>{analysisButtonText}</button>{busy==="analyze"&&<small>{analysisText}</small>}{!state.task.trim()&&state.items.length>0&&<small>{be?"Для аналізу спачатку запоўніце заданне вышэй.":"Для анализа сначала заполните задание выше."}</small>}</div>
+        <div className="w-review-pool-action"><button className="primary-button" disabled={busy!==""||!state.items.length} onClick={analyzePool}>{analysisButtonText}</button>{busy==="analyze"&&<small>{analysisText}</small>}</div>
       </aside>
       <div className="panel w-review-editor">{active?<><div className="panel-head"><div><h3>{active.title}</h3><p>{active.source}{active.region?` · ${active.region}`:""}</p></div><button className="ghost-button small-button" onClick={()=>setState((current)=>invalidateMap({...current,items:current.items.filter((item)=>item.id!==active.id)}))}>{be?"Выдаліць":"Удалить"}</button></div><div className="w-review-exact"><select value={compressionMode} onChange={(e)=>setCompressionMode(e.target.value as CompressionMode)}><option value="light">20–30%</option><option value="standard">30–50%</option><option value="maximum">50–70%</option><option value="extract">70–90%</option></select><button className="secondary-button small-button" onClick={exact}>Exact</button><button className="ghost-button small-button" onClick={()=>updateItem(active.id,{editorialText:active.sourceText})}>{be?"Вярнуць зыходны":"Вернуть исходный"}</button></div><textarea className="report-editor-textarea" lang={be?"be":"ru"} spellCheck={true} value={active.editorialText} onChange={(e)=>updateItem(active.id,{editorialText:e.target.value})}/></>:<div className="report-empty">{be?"Выберыце матэрыял.":"Выберите материал."}</div>}</div>
     </section>
@@ -365,13 +374,9 @@ export function WReviewView() {
       </div>
     </section>}
 
-    <section className="panel w-review-style"><div className="panel-head"><div><h3>{be?"Аўтарскі стыль":"Авторский стиль"}</h3><p>{be?"Да 5 DOCX/TXT. Профіль можна выкарыстоўваць для многіх аглядаў без пераліку." : "До 5 DOCX/TXT. Профиль можно использовать для многих обзоров без пересчёта."}</p></div><span className={`badge ${styleReady?"ready":""}`}>{styleReady?"✓":state.samples.length+"/"+MAX_SAMPLES}</span></div>
-      <div className="w-review-controls"><button className="secondary-button" disabled={busy!==""||state.samples.length>=MAX_SAMPLES} onClick={importSamples}>{busy==="sample"?"…":be?"Дадаць DOCX/TXT":"Добавить DOCX/TXT"}</button><button className="primary-button" disabled={busy!==""||!state.samples.length} onClick={buildStyleProfile}>{busy==="style"?"…":styleReady?(be?"Абнавіць профіль":"Обновить профиль"):(be?"Стварыць профіль стылю":"Создать профиль стиля")}</button></div>
-      {state.samples.length>0&&<div className="w-review-samples">{state.samples.map((sample)=><div key={sample.id}><span>{sample.name}</span><button className="ghost-button small-button" onClick={()=>setState((current)=>({...current,samples:current.samples.filter((item)=>item.id!==sample.id),styleContract:0,reviewText:""}))}>×</button></div>)}</div>}
-      {styleReady&&<p className="w-review-style-ready">{be?"✓ Профіль стылю гатовы":"✓ Профиль стиля готов"}</p>}
-    </section>
+    <section className="panel w-review-task"><div className="panel-head"><div><h3>{be?"4. Заданне":"4. Задание"}</h3><p>{be?"Да 500 знакаў — удакладніце, што падкрэсліць у выніковым аглядзе.":"До 500 знаков — уточните, что подчеркнуть в итоговом обзоре."}</p></div></div><textarea maxLength={500} value={state.task} onChange={(e)=>setState((current)=>({...current,task:e.target.value,reviewText:"",sectionTitles:[],boldPhrases:[]}))} placeholder={be?"Што асабліва падкрэсліць у выніковым аглядзе…":"Что особенно подчеркнуть в итоговом обзоре…"}/><div className="w-review-controls"><span>{state.task.length}/500</span></div></section>
 
-    <section className="panel w-review-final"><div className="panel-head"><div><h3>{be?"4. Выніковы агляд":"4. Итоговый обзор"}</h3><p>{be?"AI будуе тэкст па выбраных тэндэнцыях.":"AI строит текст по выбранным тенденциям."}</p></div></div>
+    <section className="panel w-review-final"><div className="panel-head"><div><h3>{be?"5. Выніковы агляд":"5. Итоговый обзор"}</h3><p>{be?"AI будуе тэкст па выбраных тэндэнцыях.":"AI строит текст по выбранным тенденциям."}</p></div></div>
       <div className="w-review-readiness"><span className={prepared===state.items.length&&state.items.length?"ready":""}>{prepared===state.items.length&&state.items.length?"✓":"○"} {be?"Матэрыялы прааналізаваны":"Материалы проанализированы"}</span><span className={selectedTrends.length?"ready":""}>{selectedTrends.length?"✓":"○"} {be?"Тэндэнцыі выбраны":"Тенденции выбраны"}</span><span className={state.task.trim()?"ready":""}>{state.task.trim()?"✓":"○"} {be?"Заданне запоўнена":"Задание заполнено"}</span><span className={styleReady?"ready optional": "optional"}>{styleReady?"✓":"○"} {be?"Профіль стылю":"Профиль стиля"} ({be?"неабавязкова":"необязательно"})</span></div>
       <div className="w-review-final-actions"><label className="w-review-length-control"><span>{be?"Аб\’ём, знакаў":"Объём, знаков"}</span><select value={state.targetChars} onChange={(e)=>setState({...state,targetChars:Number(e.target.value),reviewText:"",sectionTitles:[],boldPhrases:[]})}><option value={1000}>1 000</option><option value={2000}>2 000</option><option value={3000}>3 000</option><option value={6000}>6 000</option><option value={12000}>12 000</option></select></label><button className="primary-button" disabled={busy!==""||!reviewReady} onClick={synthesize}>{busy==="synthesize"?"…":be?"Сфарміраваць агляд":"Сформировать обзор"}</button><button className="secondary-button" disabled={!state.reviewText.trim()} onClick={exportDocx}>DOCX</button></div>
       <textarea className="report-editor-textarea w-review-final-text" lang={be?"be":"ru"} spellCheck={true} value={state.reviewText} onChange={(e)=>setState({...state,reviewText:e.target.value})} placeholder={be?"Тут з'явіцца выніковы агляд…":"Здесь появится итоговый обзор…"}/>
