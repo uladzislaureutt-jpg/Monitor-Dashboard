@@ -36,7 +36,7 @@ type WState = {
 
 const STORAGE_KEY = "monitor-w-review-v1";
 const EMPTY: WState = {
-  items: [], task: "", targetChars: 5000, samples: [], styleProfile: "", styleContract: 0,
+  items: [], task: "", targetChars: 3000, samples: [], styleProfile: "", styleContract: 0,
   editorialMap: null, mapContract: 0, selectedTrendIds: [],
   density: { quotes: "moderate", headlines: "moderate", experts: "moderate" }, reviewText: "", sectionTitles: [], boldPhrases: [],
 };
@@ -212,7 +212,7 @@ export function WReviewView() {
       for (const batch of batches) {
         const result = await wEvidenceBatch(
           batch.map(({ item }) => ({ title: item.title, source: item.source, text: item.editorialText })),
-          (seconds) => setAnalysisText(be ? `Ліміт Groq. Працяг аўтаматычна праз ~${seconds} с…` : `Лимит Groq. Продолжение автоматически через ~${seconds} с…`)
+          (seconds) => setAnalysisText(be ? `Ліміт AI. Працяг аўтаматычна праз ~${seconds} с…` : `Лимит AI. Продолжение автоматически через ~${seconds} с…`)
         );
         for (const card of result.cards) {
           const target = batch[card.index];
@@ -228,7 +228,7 @@ export function WReviewView() {
       setAnalysisText(be ? "Вызначаю тэндэнцыі медыяполя…" : "Выявляю тенденции медиаполя…");
       const mapResult = await wEditorialMap(
         { task: state.task, evidenceCards: evidenceCards(next) },
-        (seconds) => setAnalysisText(be ? `Ліміт Groq. Карта працягнецца праз ~${seconds} с…` : `Лимит Groq. Карта продолжится автоматически через ~${seconds} с…`)
+        (seconds) => setAnalysisText(be ? `Ліміт AI. Карта працягнецца праз ~${seconds} с…` : `Лимит AI. Карта продолжится автоматически через ~${seconds} с…`)
       );
       addUsage(mapResult.usage);
       setState((currentState) => ({
@@ -253,7 +253,7 @@ export function WReviewView() {
     try {
       const result = await wEditorialMap(
         { task: state.task, evidenceCards: evidenceCards(state.items) },
-        (seconds) => setAnalysisText(be ? `Ліміт Groq. Працяг праз ~${seconds} с…` : `Лимит Groq. Продолжение через ~${seconds} с…`)
+        (seconds) => setAnalysisText(be ? `Ліміт AI. Працяг праз ~${seconds} с…` : `Лимит AI. Продолжение через ~${seconds} с…`)
       );
       addUsage(result.usage);
       setState((current) => ({
