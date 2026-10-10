@@ -90,45 +90,96 @@ fn paragraph_l_monitor(runs: &str) -> String {
 }
 
 
-fn run_w_review(text: &str, bold: bool, italic: bool) -> String {
+fn run_w_review(text: &str, bold: bool, italic: bool, underline: bool) -> String {
     let mut props = String::from("<w:rFonts w:ascii=\"Arial\" w:hAnsi=\"Arial\" w:eastAsia=\"Arial\" w:cs=\"Arial\"/><w:spacing w:val=\"-6\"/><w:sz w:val=\"32\"/><w:szCs w:val=\"32\"/>");
     if bold { props.push_str("<w:b/><w:bCs/>"); }
     if italic { props.push_str("<w:i/><w:iCs/>"); }
+    if underline { props.push_str("<w:u w:val=\"single\"/>"); }
     format!("<w:r><w:rPr>{props}</w:rPr><w:t xml:space=\"preserve\">{}</w:t></w:r>", xml_text(text))
 }
 
-fn paragraph_w_review(runs: &str) -> String {
-    format!("<w:p><w:pPr><w:jc w:val=\"both\"/><w:ind w:firstLine=\"720\" w:right=\"0\"/></w:pPr>{runs}</w:p>")
+fn paragraph_w_review(runs: &str, heading: bool) -> String {
+    let indent = if heading { "" } else { "<w:ind w:firstLine=\"720\" w:right=\"0\"/>" };
+    format!("<w:p><w:pPr><w:jc w:val=\"both\"/>{indent}</w:pPr>{runs}</w:p>")
 }
 
-fn w_review_runs(text: &str, first_paragraph: bool) -> String {
-    let mut result = String::new();
-    let mut cursor = 0usize;
+fn first_char_upper(value: &str) -> String {
+    let mut chars = value.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
+fn w_review_source_ranges(text: &str, source_names: &[String]) -> Vec<(usize, usize)> {
+    let mut ranges = Vec::new();
+    for source in source_names {
+        let clean = source.trim().trim_matches('«').trim_matches('»').trim();
+        if clean.is_empty() { continue; }
+        let variants = [clean.to_string(), first_char_upper(clean)];
+        for variant in variants {
+            let pattern = format!(r"(?i)«{}»", regex::escape(&variant));
+            if let Ok(re) = Regex::new(&pattern) {
+                for mat in re.find_iter(text) { ranges.push((mat.start(), mat.end())); }
+            }
+        }
+    }
+    ranges.sort_unstable();
+    ranges.dedup();
+    ranges
+}
+
+fn w_review_exact_ranges(text: &str, phrases: &[String]) -> Vec<(usize, usize)> {
+    let mut ranges = Vec::new();
+    for phrase in phrases {
+        let needle = phrase.trim();
+        if needle.is_empty() { continue; }
+        let mut offset = 0usize;
+        while let Some(found) = text[offset..].find(needle) {
+            let start = offset + found;
+            let end = start + needle.len();
+            ranges.push((start, end));
+            offset = end;
+            if offset >= text.len() { break; }
+        }
+    }
+    ranges
+}
+
+fn range_contains(ranges: &[(usize, usize)], start: usize, end: usize) -> bool {
+    ranges.iter().any(|(a, b)| start >= *a && end <= *b)
+}
+
+fn w_review_runs(text: &str, first_paragraph: bool, source_names: &[String], bold_phrases: &[String]) -> String {
+    let source_ranges = w_review_source_ranges(text, source_names);
+    let mut bold_ranges = w_review_exact_ranges(text, bold_phrases);
 
     if first_paragraph && text.starts_with('«') {
         if let Some(close) = text.find('»') {
-            let end = close + '»'.len_utf8();
-            result.push_str(&run_w_review(&text[..end], true, true));
-            cursor = end;
+            bold_ranges.push((0, close + '»'.len_utf8()));
         }
     }
 
-    let parenthetical = Regex::new(r#"\((?:\s*«[^»]+»\s*,?)+\)"#).expect("valid W-Review sources regex");
-    for mat in parenthetical.find_iter(&text[cursor..]) {
-        let start = cursor + mat.start();
-        let end = cursor + mat.end();
-        if start > cursor { result.push_str(&run_w_review(&text[cursor..start], false, false)); }
-        result.push_str(&run_w_review(&text[start..end], false, true));
-        cursor = end;
+    let mut cuts = vec![0usize, text.len()];
+    for (a, b) in source_ranges.iter().chain(bold_ranges.iter()) {
+        cuts.push(*a); cuts.push(*b);
     }
-    if cursor < text.len() {
-        result.push_str(&run_w_review(&text[cursor..], false, false));
+    cuts.sort_unstable();
+    cuts.dedup();
+
+    let mut result = String::new();
+    for pair in cuts.windows(2) {
+        let start = pair[0]; let end = pair[1];
+        if start >= end { continue; }
+        let slice = &text[start..end];
+        let bold = range_contains(&bold_ranges, start, end);
+        let italic = range_contains(&source_ranges, start, end);
+        result.push_str(&run_w_review(slice, bold, italic, false));
     }
-    if result.is_empty() {
-        result.push_str(&run_w_review(text, false, false));
-    }
+    if result.is_empty() { result.push_str(&run_w_review(text, false, false, false)); }
     result
 }
+
 
 fn sanitize_l_monitor_text(value: &str) -> String {
     let base = sanitize_editorial_text(value);
@@ -195,7 +246,7 @@ pub fn extract_w_review_sample(path: &Path) -> Result<String, String> {
     Ok(result)
 }
 
-pub fn export_w_review_docx(path: &Path, text: &str) -> Result<(), String> {
+pub fn export_w_review_docx(path: &Path, text: &str, source_names: &[String], section_titles: &[String], bold_phrases: &[String]) -> Result<(), String> {
     if text.trim().is_empty() { return Err("Итоговый текст W-Review пуст.".to_string()); }
     if path.extension().and_then(|value| value.to_str()).map(|value| value.eq_ignore_ascii_case("docx")) != Some(true) {
         return Err("Файл W-Review должен иметь расширение .docx".to_string());
@@ -205,12 +256,20 @@ pub fn export_w_review_docx(path: &Path, text: &str) -> Result<(), String> {
     let mut zip = ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
-    let cleaned = sanitize_l_monitor_text(text);
+    let cleaned = sanitize_l_monitor_text(text).replace("**", "").replace("__", "");
     let blocks = Regex::new(r"\n\s*\n+").expect("valid paragraph split regex");
     let mut body = String::new();
-    for (index, block) in blocks.split(&cleaned).map(str::trim).filter(|value| !value.is_empty()).enumerate() {
-        let runs = w_review_runs(block, index == 0);
-        body.push_str(&paragraph_w_review(&runs));
+    let mut prose_index = 0usize;
+    for block in blocks.split(&cleaned).map(str::trim).filter(|value| !value.is_empty()) {
+        let is_heading = section_titles.iter().any(|title| title.trim() == block);
+        if is_heading {
+            let runs = run_w_review(block, false, true, true);
+            body.push_str(&paragraph_w_review(&runs, true));
+        } else {
+            let runs = w_review_runs(block, prose_index == 0, source_names, bold_phrases);
+            body.push_str(&paragraph_w_review(&runs, false));
+            prose_index += 1;
+        }
     }
     body.push_str("<w:sectPr><w:type w:val=\"nextPage\"/><w:pgSz w:w=\"11906\" w:h=\"16838\"/><w:pgMar w:left=\"1260\" w:right=\"747\" w:gutter=\"0\" w:header=\"0\" w:top=\"1418\" w:footer=\"0\" w:bottom=\"851\"/><w:pgNumType w:fmt=\"decimal\"/><w:docGrid w:type=\"default\" w:linePitch=\"360\" w:charSpace=\"0\"/></w:sectPr>");
 
