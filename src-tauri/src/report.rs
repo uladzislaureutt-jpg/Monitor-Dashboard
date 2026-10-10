@@ -152,7 +152,8 @@ fn range_contains(ranges: &[(usize, usize)], start: usize, end: usize) -> bool {
 
 fn w_review_runs(text: &str, first_paragraph: bool, source_names: &[String], bold_phrases: &[String]) -> String {
     let source_ranges = w_review_source_ranges(text, source_names);
-    let mut bold_ranges = w_review_exact_ranges(text, bold_phrases);
+    let normalized_bold_phrases: Vec<String> = bold_phrases.iter().map(|phrase| sanitize_l_monitor_text(phrase).replace("**", "").replace("__", "")).collect();
+    let mut bold_ranges = w_review_exact_ranges(text, &normalized_bold_phrases);
 
     if first_paragraph && text.starts_with('«') {
         if let Some(close) = text.find('»') {
@@ -173,7 +174,7 @@ fn w_review_runs(text: &str, first_paragraph: bool, source_names: &[String], bol
         if start >= end { continue; }
         let slice = &text[start..end];
         let bold = range_contains(&bold_ranges, start, end);
-        let italic = range_contains(&source_ranges, start, end);
+        let italic = bold || range_contains(&source_ranges, start, end);
         result.push_str(&run_w_review(slice, bold, italic, false));
     }
     if result.is_empty() { result.push_str(&run_w_review(text, false, false, false)); }
