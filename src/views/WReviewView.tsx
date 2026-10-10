@@ -30,13 +30,15 @@ type WState = {
   selectedTrendIds: string[];
   density: { quotes: WDensity; headlines: WDensity; experts: WDensity };
   reviewText: string;
+  sectionTitles: string[];
+  boldPhrases: string[];
 };
 
 const STORAGE_KEY = "monitor-w-review-v1";
 const EMPTY: WState = {
   items: [], task: "", targetChars: 5000, samples: [], styleProfile: "", styleContract: 0,
   editorialMap: null, mapContract: 0, selectedTrendIds: [],
-  density: { quotes: "moderate", headlines: "moderate", experts: "moderate" }, reviewText: "",
+  density: { quotes: "moderate", headlines: "moderate", experts: "moderate" }, reviewText: "", sectionTitles: [], boldPhrases: [],
 };
 
 function id(prefix = "w") { return `${prefix}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`; }
@@ -56,7 +58,7 @@ function loadState(): WState {
     return {
       items: Array.isArray(raw.items) ? raw.items.slice(0, MAX_ITEMS) : [],
       task: String(raw.task || "").slice(0, 500),
-      targetChars: [3000, 5000, 8000, 12000].includes(Number(raw.targetChars)) ? Number(raw.targetChars) : 5000,
+      targetChars: [1000, 2000, 3000, 6000, 12000].includes(Number(raw.targetChars)) ? Number(raw.targetChars) : 3000,
       samples,
       styleProfile: String(raw.styleProfile || "").slice(0, 10000),
       styleContract: Number(raw.styleContract || 0),
@@ -69,6 +71,8 @@ function loadState(): WState {
         experts: densityValue(raw.density?.experts),
       },
       reviewText: String(raw.reviewText || ""),
+      sectionTitles: Array.isArray(raw.sectionTitles) ? raw.sectionTitles.map(String).slice(0, 5) : [],
+      boldPhrases: Array.isArray(raw.boldPhrases) ? raw.boldPhrases.map(String).slice(0, 4) : [],
     };
   } catch { return EMPTY; }
 }
@@ -100,7 +104,7 @@ export function WReviewView() {
   const reviewReady = state.items.length > 0 && prepared === state.items.length && mapReady && selectedTrends.length > 0 && state.task.trim().length > 0;
 
   function invalidateMap(current: WState): WState {
-    return { ...current, editorialMap: null, mapContract: 0, selectedTrendIds: [], reviewText: "" };
+    return { ...current, editorialMap: null, mapContract: 0, selectedTrendIds: [], reviewText: "", sectionTitles: [], boldPhrases: [] };
   }
   function addUsage(next: WUsage) {
     setUsage((current) => ({
@@ -309,8 +313,9 @@ export function WReviewView() {
         styleProfile: styleReady ? state.styleProfile : "",
         trends: selectedTrends,
         density: state.density,
+        sourceNames: Array.from(new Set(state.items.map((item) => item.source.trim()).filter(Boolean))),
       }, (seconds) => setMessage(be ? `Ліміт Groq. Генерацыя працягнецца праз ~${seconds} с…` : `Лимит Groq. Генерация продолжится автоматически через ~${seconds} с…`));
-      setState((current) => ({ ...current, reviewText: result.reviewText }));
+      setState((current) => ({ ...current, reviewText: result.reviewText, sectionTitles: result.sectionTitles, boldPhrases: result.boldPhrases }));
       addUsage(result.usage);
       setMessage(be ? "Агляд сфарміраваны." : "Обзор сформирован.");
     } catch (reason) { setError(String(reason)); } finally { setBusy(""); }
@@ -320,7 +325,7 @@ export function WReviewView() {
     if (!state.reviewText.trim()) return;
     const path = await save({ title: "W-Review DOCX", defaultPath: "W-Review.docx", filters: [{ name: "Word", extensions: ["docx"] }] });
     if (!path) return;
-    await desktopApi.exportWReview(path, state.reviewText.trim());
+    await desktopApi.exportWReview(path, state.reviewText.trim(), Array.from(new Set(state.items.map((item) => item.source.trim()).filter(Boolean))), state.sectionTitles, state.boldPhrases);
     setMessage(be ? "DOCX захаваны ў фармаце W-Review." : "DOCX сохранён в формате W-Review.");
   }
 
@@ -340,7 +345,7 @@ export function WReviewView() {
       {manualOpen&&<div className="w-review-manual"><input placeholder={be?"Загаловак":"Заголовок"} value={manual.title} onChange={(e)=>setManual({...manual,title:e.target.value})}/><input placeholder={be?"Крыніца":"Источник"} value={manual.source} onChange={(e)=>setManual({...manual,source:e.target.value})}/><input placeholder={be?"Краіна / рэгіён":"Страна / регион"} value={manual.region} onChange={(e)=>setManual({...manual,region:e.target.value})}/><input placeholder="URL" value={manual.url} onChange={(e)=>setManual({...manual,url:e.target.value})}/><textarea placeholder={be?"Тэкст публікацыі":"Текст публикации"} value={manual.text} onChange={(e)=>setManual({...manual,text:e.target.value})}/><button className="primary-button" onClick={()=>{try{addItem(manual);setManual({title:"",source:"",region:"",url:"",text:""});setManualOpen(false)}catch(reason){setError(String(reason))}}}>{be?"Дадаць":"Добавить"}</button></div>}
     </section>
 
-    <section className="panel w-review-task"><div className="panel-head"><div><h3>{be?"2. Заданне":"2. Задание"}</h3><p>{be?"Да 500 знакаў — тэма і патрэбныя акцэнты.":"До 500 знаков — тема и нужные акценты."}</p></div></div><textarea maxLength={500} value={state.task} onChange={(e)=>setState((current)=>invalidateMap({...current,task:e.target.value}))} placeholder={be?"Што прааналізаваць і на чым зрабіць акцэнт…":"Что проанализировать и на чем сделать акцент…"}/><div className="w-review-controls"><span>{state.task.length}/500</span><label>{be?"Аб'ём":"Объём"}<select value={state.targetChars} onChange={(e)=>setState({...state,targetChars:Number(e.target.value),reviewText:""})}><option value={3000}>3 000</option><option value={5000}>5 000</option><option value={8000}>8 000</option><option value={12000}>12 000</option></select></label></div></section>
+    <section className="panel w-review-task"><div className="panel-head"><div><h3>{be?"2. Заданне":"2. Задание"}</h3><p>{be?"Да 500 знакаў — тэма і патрэбныя акцэнты.":"До 500 знаков — тема и нужные акценты."}</p></div></div><textarea maxLength={500} value={state.task} onChange={(e)=>setState((current)=>invalidateMap({...current,task:e.target.value}))} placeholder={be?"Што прааналізаваць і на чым зрабіць акцэнт…":"Что проанализировать и на чем сделать акцент…"}/><div className="w-review-controls"><span>{state.task.length}/500</span><label>{be?"Аб'ём":"Объём"}<select value={state.targetChars} onChange={(e)=>setState({...state,targetChars:Number(e.target.value),reviewText:"",sectionTitles:[],boldPhrases:[]})}><option value={1000}>1 000</option><option value={2000}>2 000</option><option value={3000}>3 000</option><option value={6000}>6 000</option><option value={12000}>12 000</option></select></label></div></section>
 
     <section className="w-review-grid">
       <aside className="panel w-review-pool"><div className="panel-head"><div><h3>{be?"Пул матэрыялаў":"Пул материалов"}</h3><p>{state.items.length ? (prepared === state.items.length ? (be?"усе матэрыялы гатовыя да аналізу":"все материалы проанализированы") : (be?`прааналізавана ${prepared} з ${state.items.length}`:`проанализировано ${prepared} из ${state.items.length}`)) : (be?"пакуль пуста":"пока пусто")}</p></div></div>
