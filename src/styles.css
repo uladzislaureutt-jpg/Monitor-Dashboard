@@ -1119,3 +1119,8 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 /* 0.8.6 — W-Review final length control */
 .w-review-length-control{display:flex;align-items:center;gap:7px;font-size:9px;color:#6f6962;font-weight:700}
 .w-review-length-control select{border:1px solid #d7cfc5;border-radius:9px;background:#fff;padding:7px 9px;color:#2f4655}
+
+
+/* 0.8.8 — W-Review style tab close */
+.w-review-style-heading-actions{display:flex;align-items:center;gap:8px}
+.w-review-close-button{width:34px;height:34px;padding:0;border-radius:50%;font-size:18px;line-height:1}
