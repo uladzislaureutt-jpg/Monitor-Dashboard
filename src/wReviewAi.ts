@@ -1,7 +1,7 @@
 import { ensureWorkroomSession, loadWorkroomConfig, loadWorkroomSession } from "./workroom";
 
 export type WUsage = { promptTokens: number; completionTokens: number; totalTokens: number };
-export type WDensity = "minimum" | "moderate" | "many";
+export type WDensity = "minimum" | "moderate" | "many" | "all";
 export type WEditorialTrend = { id: string; title: string; summary: string; sources: string[] };
 export type WEditorialMap = {
   trends: WEditorialTrend[];
