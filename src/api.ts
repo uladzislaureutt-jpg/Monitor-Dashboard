@@ -79,7 +79,7 @@ export const desktopApi = {
   writeClipboardText: (text: string) => invoke<void>("write_clipboard_text", { text }),
   exportReport: (path: string, date: string, items: ReportExportItem[], monitorKey = activeMonitorKey) =>
     invoke<void>("export_report_docx", { path, date, items, monitorKey }),
-  exportWReview: (path: string, text: string) => invoke<void>("export_w_review_docx", { path, text }),
+  exportWReview: (path: string, text: string, sourceNames: string[], sectionTitles: string[], boldPhrases: string[]) => invoke<void>("export_w_review_docx", { path, text, sourceNames, sectionTitles, boldPhrases }),
   extractWReviewSample: (path: string) => invoke<string>("extract_w_review_sample", { path }),
   syncGithub: (repository: string, token: string) =>
     invoke<SyncResult>("sync_github_artifacts", { repository, token, monitorKey: activeMonitorKey }),
