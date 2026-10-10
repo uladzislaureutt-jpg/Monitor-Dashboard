@@ -207,8 +207,14 @@ fn export_report_docx(
 }
 
 #[tauri::command]
-fn export_w_review_docx(path: String, text: String) -> Result<(), String> {
-    report::export_w_review_docx(&PathBuf::from(path), &text)
+fn export_w_review_docx(
+    path: String,
+    text: String,
+    source_names: Vec<String>,
+    section_titles: Vec<String>,
+    bold_phrases: Vec<String>,
+) -> Result<(), String> {
+    report::export_w_review_docx(&PathBuf::from(path), &text, &source_names, &section_titles, &bold_phrases)
 }
 
 #[tauri::command]
