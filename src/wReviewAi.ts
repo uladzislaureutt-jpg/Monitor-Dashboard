@@ -104,8 +104,7 @@ export async function wSynthesize(input: {
   density: { quotes: WDensity; headlines: WDensity; experts: WDensity };
   sourceNames: string[];
 }, onRetry?: RetryNotice) {
-  const payload = await call({
-    action: "synthesize",
+  const baseBody = {
     task: input.task,
     target_chars: input.targetChars,
     evidence_cards: input.evidenceCards,
@@ -113,12 +112,31 @@ export async function wSynthesize(input: {
     trends: input.trends,
     density: input.density,
     source_names: input.sourceNames,
-  }, onRetry);
+  };
+  let payload = await call({ action: "synthesize", ...baseBody }, onRetry);
+  let totalUsage = usage(payload.usage);
+  let reviewText = String(payload.review_text || "");
+  let sectionTitles = Array.isArray(payload.section_titles) ? payload.section_titles.map((value: unknown) => String(value || "").trim()).filter(Boolean) : [];
+  let boldPhrases = Array.isArray(payload.bold_phrases) ? payload.bold_phrases.map((value: unknown) => String(value || "").trim()).filter(Boolean) : [];
+
+  if (reviewText.length < Math.floor(input.targetChars * 0.88)) {
+    payload = await call({ action: "expand_review", ...baseBody, draft: reviewText }, onRetry);
+    const extra = usage(payload.usage);
+    totalUsage = {
+      promptTokens: totalUsage.promptTokens + extra.promptTokens,
+      completionTokens: totalUsage.completionTokens + extra.completionTokens,
+      totalTokens: totalUsage.totalTokens + extra.totalTokens,
+    };
+    reviewText = String(payload.review_text || reviewText);
+    sectionTitles = Array.isArray(payload.section_titles) ? payload.section_titles.map((value: unknown) => String(value || "").trim()).filter(Boolean) : sectionTitles;
+    boldPhrases = Array.isArray(payload.bold_phrases) ? payload.bold_phrases.map((value: unknown) => String(value || "").trim()).filter(Boolean) : boldPhrases;
+  }
+
   return {
-    reviewText: String(payload.review_text || ""),
-    sectionTitles: Array.isArray(payload.section_titles) ? payload.section_titles.map((value: unknown) => String(value || "").trim()).filter(Boolean) : [],
-    boldPhrases: Array.isArray(payload.bold_phrases) ? payload.bold_phrases.map((value: unknown) => String(value || "").trim()).filter(Boolean) : [],
+    reviewText,
+    sectionTitles,
+    boldPhrases,
     model: String(payload.model || "openai/gpt-oss-120b"),
-    usage: usage(payload.usage),
+    usage: totalUsage,
   };
 }
