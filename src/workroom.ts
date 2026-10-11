@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import type {
   WorkroomConfig,
   WorkroomMessage,
@@ -476,14 +477,27 @@ export function clearAccessRequest() {
 async function edgeRequest(config: WorkroomConfig, slug: string, body: unknown, session?: WorkroomSession | null) {
   assertConfigured(config);
   const active = session ? await ensureWorkroomSession(config, session) : null;
+  const appVersion = await getVersion().catch(() => "0.0.0");
+  const versionedBody = body && typeof body === "object" && !Array.isArray(body)
+    ? { ...(body as Record<string, unknown>), app_version: appVersion }
+    : body;
   const payload = await invoke<Record<string, unknown>>("call_supabase_edge", {
     baseUrl: normalizeBaseUrl(config.url),
     anonKey: config.anonKey,
     slug,
     accessToken: active?.accessToken ?? null,
-    body,
+    body: versionedBody,
   });
   return { payload, session: active };
+}
+
+export async function getRuntimeConfig(config: WorkroomConfig, session: WorkroomSession) {
+  const { payload, session: active } = await edgeRequest(config, "monitor-access", { action: "runtime" }, session);
+  return {
+    minimumAllowedVersion: String(payload.minimum_allowed_version || "0.0.0"),
+    updatedAt: payload.updated_at ? String(payload.updated_at) : null,
+    session: active!,
+  };
 }
 
 export async function requestMonitorAccess(config: WorkroomConfig, displayName: string, email: string, locale: "ru" | "be") {
