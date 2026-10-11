@@ -15,7 +15,7 @@ import { ReportView } from "./views/ReportView";
 import { WReviewView } from "./views/WReviewView";
 import { useReportWorkspace } from "./reportWorkspace";
 import { useMonitorAccess } from "./access";
-import { loadWorkroomConfig } from "./workroom";
+import { getRuntimeConfig, loadWorkroomConfig } from "./workroom";
 
 const SYNC_STORAGE_KEY = "monitor-dashboard-github-sync-v2";
 const SYNC_PERSIST_KEY = "github.sync.v2";
@@ -25,6 +25,17 @@ const DEFAULT_L_SYNC: SyncSettings = { repository: "vladreuth-cmd/M-Trouble", to
 type MonitorKey = "social_economic" | "lukashenko";
 type MonitorSyncSettings = Record<MonitorKey, SyncSettings>;
 type SyncUiStatus = { kind: "none" | "notConfigured" | "configured" | "notFound" | "upToDate"; run?: number };
+
+function versionAtLeast(current: string, minimum: string) {
+  const parse = (value: string) => value.split(".").map((part) => Number(part.replace(/\D.*$/, "")) || 0);
+  const a = parse(current), b = parse(minimum);
+  for (let index = 0; index < Math.max(a.length, b.length, 3); index += 1) {
+    const left = a[index] || 0, right = b[index] || 0;
+    if (left > right) return true;
+    if (left < right) return false;
+  }
+  return true;
+}
 
 function normalizeSyncSettings(parsed: unknown): SyncSettings {
   const value = parsed && typeof parsed === "object" ? parsed as Partial<SyncSettings> : {};
@@ -63,6 +74,7 @@ export default function App() {
   const report = useReportWorkspace();
   const access = useMonitorAccess();
   const [appVersion, setAppVersion] = useState("—");
+  const [minimumAllowedVersion, setMinimumAllowedVersion] = useState("0.0.0");
   const [view, setView] = useState<ViewKey>("dashboard");
   const [monitorKey, setMonitorKey] = useState<MonitorKey>("social_economic");
   const [wReviewOpen, setWReviewOpen] = useState(false);
@@ -149,6 +161,14 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
   useEffect(() => { getVersion().then(setAppVersion).catch(() => undefined); }, []);
+  useEffect(() => {
+    if (appVersion === "—" || !access.session?.userId) return;
+    let cancelled = false;
+    getRuntimeConfig(loadWorkroomConfig(), access.session).then((runtime) => {
+      if (!cancelled) setMinimumAllowedVersion(runtime.minimumAllowedVersion);
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [appVersion, access.session?.userId]);
   useEffect(() => {
     if (!syncWarning) return;
     const timer = window.setTimeout(() => setSyncWarning(""), 12_000);
@@ -264,6 +284,10 @@ export default function App() {
       {view === "data" && access.profile.isAdmin && <DataView key={monitorKey} stats={stats} runs={runs.filter((run) => run.monitorKey === monitorKey)} busy={busy} onImport={importBundle} syncSettings={syncSettings} onSaveSyncSettings={saveSyncSettings} onSyncNow={(value) => performSync(value)} syncBusy={syncBusy} syncStatus={syncStatusText} />}
     </>}
   </>;
+
+  if (appVersion !== "—" && !versionAtLeast(appVersion, minimumAllowedVersion)) {
+    return <div className="access-shell"><div className="access-card suspended-card"><div className="brand-mark large">M</div><h1>{locale === "be" ? "Патрабуецца абнаўленне" : "Требуется обновление"}</h1><p>{locale === "be" ? `Версія Monitor ${appVersion} больш не падтрымліваецца. Мінімальная дазволеная версія: ${minimumAllowedVersion}.` : `Версия Monitor ${appVersion} больше не поддерживается. Минимальная разрешённая версия: ${minimumAllowedVersion}.`}</p><button className="primary-button" onClick={access.logout}>{locale === "be" ? "Выйсці" : "Выйти"}</button></div></div>;
+  }
 
   return <div className="app-shell">
     <header className="topbar">
