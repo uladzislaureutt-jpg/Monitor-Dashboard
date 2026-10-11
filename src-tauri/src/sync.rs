@@ -10,6 +10,7 @@ use crate::{db, importer};
 
 const SOCIAL_MONITOR_KEY: &str = "social_economic";
 const L_MONITOR_KEY: &str = "lukashenko";
+const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn artifact_prefix(monitor_key: &str) -> Result<&'static str, String> {
     match monitor_key {
@@ -343,7 +344,7 @@ pub fn sync_server(
         &base_url,
         anon_key,
         access_token,
-        serde_json::json!({ "action": "list", "monitor_key": monitor_key }),
+        serde_json::json!({ "action": "list", "monitor_key": monitor_key, "app_version": APP_VERSION }),
     )?;
 
     let mut artifacts: Vec<(i64, ServerArtifact)> = payload.artifacts.into_iter()
@@ -386,6 +387,7 @@ pub fn sync_server(
                 "action": "download",
                 "monitor_key": monitor_key,
                 "artifact_id": artifact.id,
+                "app_version": APP_VERSION,
             }),
         ) {
             Ok(value) => value,
