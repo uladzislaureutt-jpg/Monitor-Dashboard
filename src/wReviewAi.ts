@@ -1,4 +1,5 @@
 import { ensureWorkroomSession, loadWorkroomConfig, loadWorkroomSession } from "./workroom";
+import { getVersion } from "@tauri-apps/api/app";
 
 export type WUsage = { promptTokens: number; completionTokens: number; totalTokens: number };
 export type WDensity = "minimum" | "moderate" | "many" | "all";
@@ -23,6 +24,7 @@ async function call(body: Record<string, unknown>, onRetry?: RetryNotice) {
   const current = loadWorkroomSession();
   if (!current) throw new Error("W_REVIEW_AUTH_REQUIRED");
   const session = await ensureWorkroomSession(config, current);
+  const appVersion = await getVersion().catch(() => "0.0.0");
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const response = await fetch(`${config.url.replace(/\/+$/, "")}/functions/v1/w-review-ai`, {
       method: "POST",
@@ -31,7 +33,7 @@ async function call(body: Record<string, unknown>, onRetry?: RetryNotice) {
         Authorization: `Bearer ${session.accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, app_version: appVersion }),
     });
     const raw = await response.text();
     let payload: any;
