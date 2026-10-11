@@ -75,8 +75,6 @@ export default function App() {
   const access = useMonitorAccess();
   const [appVersion, setAppVersion] = useState("—");
   const [effectiveMinimumVersion, setEffectiveMinimumVersion] = useState("0.0.0");
-  const [latestServerVersion, setLatestServerVersion] = useState("0.0.0");
-  const [updateMode, setUpdateMode] = useState<"optional" | "required">("optional");
   const [view, setView] = useState<ViewKey>("dashboard");
   const [monitorKey, setMonitorKey] = useState<MonitorKey>("social_economic");
   const [wReviewOpen, setWReviewOpen] = useState(false);
@@ -167,11 +165,7 @@ export default function App() {
     if (appVersion === "—" || !access.session?.userId) return;
     let cancelled = false;
     getRuntimeConfig(loadWorkroomConfig(), access.session).then((runtime) => {
-      if (!cancelled) {
-        setEffectiveMinimumVersion(runtime.effectiveMinimumVersion);
-        setLatestServerVersion(runtime.latestVersion);
-        setUpdateMode(runtime.updateMode);
-      }
+      if (!cancelled) setEffectiveMinimumVersion(runtime.effectiveMinimumVersion);
     }).catch(() => undefined);
     return () => { cancelled = true; };
   }, [appVersion, access.session?.userId]);
