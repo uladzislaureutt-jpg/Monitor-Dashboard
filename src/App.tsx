@@ -74,7 +74,9 @@ export default function App() {
   const report = useReportWorkspace();
   const access = useMonitorAccess();
   const [appVersion, setAppVersion] = useState("—");
-  const [minimumAllowedVersion, setMinimumAllowedVersion] = useState("0.0.0");
+  const [effectiveMinimumVersion, setEffectiveMinimumVersion] = useState("0.0.0");
+  const [latestServerVersion, setLatestServerVersion] = useState("0.0.0");
+  const [updateMode, setUpdateMode] = useState<"optional" | "required">("optional");
   const [view, setView] = useState<ViewKey>("dashboard");
   const [monitorKey, setMonitorKey] = useState<MonitorKey>("social_economic");
   const [wReviewOpen, setWReviewOpen] = useState(false);
@@ -165,7 +167,11 @@ export default function App() {
     if (appVersion === "—" || !access.session?.userId) return;
     let cancelled = false;
     getRuntimeConfig(loadWorkroomConfig(), access.session).then((runtime) => {
-      if (!cancelled) setMinimumAllowedVersion(runtime.minimumAllowedVersion);
+      if (!cancelled) {
+        setEffectiveMinimumVersion(runtime.effectiveMinimumVersion);
+        setLatestServerVersion(runtime.latestVersion);
+        setUpdateMode(runtime.updateMode);
+      }
     }).catch(() => undefined);
     return () => { cancelled = true; };
   }, [appVersion, access.session?.userId]);
@@ -285,8 +291,8 @@ export default function App() {
     </>}
   </>;
 
-  if (appVersion !== "—" && !versionAtLeast(appVersion, minimumAllowedVersion)) {
-    return <div className="access-shell"><div className="access-card suspended-card"><div className="brand-mark large">M</div><h1>{locale === "be" ? "Патрабуецца абнаўленне" : "Требуется обновление"}</h1><p>{locale === "be" ? `Версія Monitor ${appVersion} больш не падтрымліваецца. Мінімальная дазволеная версія: ${minimumAllowedVersion}.` : `Версия Monitor ${appVersion} больше не поддерживается. Минимальная разрешённая версия: ${minimumAllowedVersion}.`}</p><button className="primary-button" onClick={access.logout}>{locale === "be" ? "Выйсці" : "Выйти"}</button></div></div>;
+  if (appVersion !== "—" && !versionAtLeast(appVersion, effectiveMinimumVersion)) {
+    return <div className="access-shell"><div className="access-card suspended-card"><div className="brand-mark large">M</div><h1>{locale === "be" ? "Патрабуецца абнаўленне" : "Требуется обновление"}</h1><p>{locale === "be" ? `Версія Monitor ${appVersion} больш не падтрымліваецца. Мінімальная падтрымліваемая версія: ${effectiveMinimumVersion}.` : `Версия Monitor ${appVersion} больше не поддерживается. Минимальная поддерживаемая версия: ${effectiveMinimumVersion}.`}</p><button className="primary-button" onClick={access.logout}>{locale === "be" ? "Выйсці" : "Выйти"}</button></div></div>;
   }
 
   return <div className="app-shell">
