@@ -1,4 +1,5 @@
 import { ensureWorkroomSession, loadWorkroomConfig, loadWorkroomSession } from "./workroom";
+import { getVersion } from "@tauri-apps/api/app";
 import { compressionRange, compressionReduction, effectiveCompressionMode, type CompressionMode } from "./editorialCompression";
 
 export type EditorialAiResult = {
@@ -22,6 +23,7 @@ export async function aiCompress(input: { text: string; mode: CompressionMode; t
   const current = loadWorkroomSession();
   if (!current) throw new Error("AI_AUTH_REQUIRED");
   const session = await ensureWorkroomSession(config, current);
+  const appVersion = await getVersion().catch(() => "0.0.0");
   const response = await fetch(`${config.url.replace(/\/+$/, "")}/functions/v1/editorial-compress`, {
     method: "POST",
     headers: {
@@ -29,7 +31,7 @@ export async function aiCompress(input: { text: string; mode: CompressionMode; t
       Authorization: `Bearer ${session.accessToken}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ text: input.text, mode: input.mode, title: input.title, source: input.source }),
+    body: JSON.stringify({ text: input.text, mode: input.mode, title: input.title, source: input.source, app_version: appVersion }),
   });
   const raw = await response.text();
   const payload = parsePayload(raw);
