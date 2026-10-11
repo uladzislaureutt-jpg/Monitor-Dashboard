@@ -7,9 +7,10 @@ import { wEditorialMap, wEvidenceBatch, wStyleProfile, wSynthesize, type WDensit
 import { useI18n } from "../i18n";
 
 const W_CONTRACT_VERSION = 4;
-const MAX_ITEMS = 20;
+const MAX_ITEMS = 25;
+const HARD_MAX_ITEMS = 30;
 const MAX_SAMPLES = 5;
-const BATCH_MAX_ITEMS = 20;
+const BATCH_MAX_ITEMS = HARD_MAX_ITEMS;
 const BATCH_MAX_CHARS = 120_000;
 const MAX_ITEM_CHARS = 24_000;
 
