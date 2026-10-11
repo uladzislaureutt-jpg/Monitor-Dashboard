@@ -81,8 +81,6 @@ export const desktopApi = {
     invoke<void>("export_report_docx", { path, date, items, monitorKey }),
   exportWReview: (path: string, text: string, sourceNames: string[], sectionTitles: string[], boldPhrases: string[]) => invoke<void>("export_w_review_docx", { path, text, sourceNames, sectionTitles, boldPhrases }),
   extractWReviewSample: (path: string) => invoke<string>("extract_w_review_sample", { path }),
-  syncGithub: (repository: string, token: string) =>
-    invoke<SyncResult>("sync_github_artifacts", { repository, token, monitorKey: activeMonitorKey }),
   syncServer: (baseUrl: string, anonKey: string, accessToken: string) =>
     invoke<SyncResult>("sync_server_artifacts", { baseUrl, anonKey, accessToken, monitorKey: activeMonitorKey }),
   replaceModerationSnapshot: (snapshot: PublicationModerationSnapshot) =>
