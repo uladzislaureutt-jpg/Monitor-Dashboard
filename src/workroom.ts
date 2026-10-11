@@ -494,7 +494,10 @@ async function edgeRequest(config: WorkroomConfig, slug: string, body: unknown, 
 export async function getRuntimeConfig(config: WorkroomConfig, session: WorkroomSession) {
   const { payload, session: active } = await edgeRequest(config, "monitor-access", { action: "runtime" }, session);
   return {
-    minimumAllowedVersion: String(payload.minimum_allowed_version || "0.0.0"),
+    minimumSupportedVersion: String(payload.minimum_supported_version || "0.0.0"),
+    latestVersion: String(payload.latest_version || payload.minimum_supported_version || "0.0.0"),
+    updateMode: payload.update_mode === "required" ? "required" as const : "optional" as const,
+    effectiveMinimumVersion: String(payload.effective_minimum_version || payload.minimum_supported_version || "0.0.0"),
     updatedAt: payload.updated_at ? String(payload.updated_at) : null,
     session: active!,
   };
