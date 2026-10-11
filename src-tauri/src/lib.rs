@@ -223,16 +223,6 @@ fn extract_w_review_sample(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn sync_github_artifacts(
-    repository: String,
-    token: String,
-    monitor_key: String,
-    state: State<'_, AppState>,
-) -> Result<sync::SyncResult, String> {
-    sync::sync_github(&state.db_path, &repository, &token, &monitor_key)
-}
-
-#[tauri::command]
 fn sync_server_artifacts(
     base_url: String,
     anon_key: String,
@@ -324,7 +314,6 @@ pub fn run() {
             export_report_docx,
             export_w_review_docx,
             extract_w_review_sample,
-            sync_github_artifacts,
             sync_server_artifacts,
             replace_moderation_snapshot,
             get_app_setting,
