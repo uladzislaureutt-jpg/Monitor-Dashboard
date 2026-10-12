@@ -11,14 +11,6 @@ const TOPIC_COLORS = ["#1685D1", "#F06431", "#20AE70", "#B764D9"];
 type Selection = { category: string; bucket: string };
 type Preview = Selection & { x: number; y: number; items: PublicationSummary[] | null };
 
-function interpolate(values: number[], position: number) {
-  const left = Math.max(0, Math.floor(position));
-  const right = Math.min(values.length - 1, Math.ceil(position));
-  if (left === right) return values[left] ?? 0;
-  const progress = position - left;
-  return (values[left] ?? 0) + ((values[right] ?? 0) - (values[left] ?? 0)) * progress;
-}
-
 function compactCategory(value: string) {
   return value.length > 25 ? `${value.slice(0, 23)}…` : value;
 }
