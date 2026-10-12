@@ -346,7 +346,12 @@ export default function App() {
         <div className="module-switch" role="group" aria-label="Выбор мониторинга">
           <button disabled={!access.profile.isAdmin && access.monitors.find((item) => item.monitorKey === "social_economic")?.enabled === false} title={!access.profile.isAdmin && access.monitors.find((item) => item.monitorKey === "social_economic")?.enabled === false ? (locale === "be" ? "Тэхнічныя работы" : "Технические работы") : ""} className={monitorKey === "social_economic" ? "active" : ""} onClick={() => switchMonitor("social_economic")}>SEP-Monitor</button>
           <button disabled={!access.profile.isAdmin && access.monitors.find((item) => item.monitorKey === "lukashenko")?.enabled === false} title={!access.profile.isAdmin && access.monitors.find((item) => item.monitorKey === "lukashenko")?.enabled === false ? (locale === "be" ? "Тэхнічныя работы" : "Технические работы") : ""} className={monitorKey === "lukashenko" ? "active" : ""} onClick={() => switchMonitor("lukashenko")}>L-Monitor</button>
-          {wReviewAllowed && <button className={wReviewOpen ? "active" : ""} onClick={() => { setWReviewOpen(true); setWReviewSection("review"); setWorkroomOpen(false); }}>W-Review</button>}
+          <button
+            disabled={!wReviewAllowed}
+            title={!wReviewAllowed ? (locale === "be" ? "W-Review пакуль недаступны для вашага ўліковага запісу" : "W-Review пока недоступен для вашей учётной записи") : ""}
+            className={wReviewOpen ? "active" : ""}
+            onClick={() => { if (!wReviewAllowed) return; setWReviewOpen(true); setWReviewSection("review"); setWorkroomOpen(false); }}
+          >W-Review</button>
         </div>
         <button className="account-button" onClick={access.logout} title={locale === "be" ? "Выйсці" : "Выйти"}><span>{access.profile.displayName}</span><small>{access.profile.isAdmin ? (locale === "be" ? "адміністратар" : "администратор") : (locale === "be" ? "аператар" : "оператор")}</small></button>
       </div>
