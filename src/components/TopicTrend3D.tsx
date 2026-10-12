@@ -30,7 +30,7 @@ export function TopicTrend3D({ data, onSelect }: { data: TopicTrendPoint[]; onSe
   const previewCache = useRef(new Map<string, PublicationSummary[]>());
   const hoveredKey = useRef<string | null>(null);
   const screenPoints = useRef<ScreenPoint[]>([]);
-  const view = useRef({ yaw: 0.5, pitch: 0.58, zoom: 1 });
+  const view = useRef({ yaw: 0.16, pitch: 0.42, zoom: 1 });
   const drag = useRef<{ active: boolean; x: number; y: number } | null>(null);
   const redrawRef = useRef<() => void>(() => undefined);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -83,16 +83,16 @@ export function TopicTrend3D({ data, onSelect }: { data: TopicTrendPoint[]; onSe
       const { yaw, pitch, zoom } = view.current;
       const cosY = Math.cos(yaw), sinY = Math.sin(yaw);
       const cosP = Math.cos(pitch), sinP = Math.sin(pitch);
-      const base = Math.min(width, height) * 0.31 * zoom;
-      const centerX = width * 0.52;
-      const centerY = height * 0.58;
+      const base = Math.min(width * 0.29, height * 0.54) * zoom;
+      const centerX = width * 0.56;
+      const centerY = height * 0.69;
 
       return (x: number, y: number, z: number) => {
         const rx = x * cosY - y * sinY;
         const ry = x * sinY + y * cosY;
         const py = ry * cosP - z * sinP;
         const depth = ry * sinP + z * cosP;
-        const perspective = 1 / Math.max(0.72, 1 + depth * 0.11);
+        const perspective = 1 / Math.max(0.84, 1 + depth * 0.055);
         return {
           x: centerX + rx * base * perspective,
           y: centerY + py * base * perspective,
@@ -101,9 +101,25 @@ export function TopicTrend3D({ data, onSelect }: { data: TopicTrendPoint[]; onSe
       };
     };
 
-    const normalizedX = (index: number) => model.buckets.length <= 1 ? 0 : -1.25 + (index / (model.buckets.length - 1)) * 2.5;
-    const normalizedY = (index: number) => model.categories.length <= 1 ? 0 : -0.82 + (index / (model.categories.length - 1)) * 1.64;
-    const normalizedZ = (value: number) => (value / model.max) * 1.45;
+    const normalizedX = (index: number) => model.buckets.length <= 1 ? 0 : -1.48 + (index / (model.buckets.length - 1)) * 2.96;
+    const normalizedY = (index: number) => model.categories.length <= 1 ? 0 : -0.78 + (index / (model.categories.length - 1)) * 1.56;
+    const normalizedZ = (value: number) => (value / model.max) * 1.02;
+
+    const smoothPath = (points: Array<{ x: number; y: number }>) => {
+      if (!points.length) return;
+      context.beginPath();
+      context.moveTo(points[0].x, points[0].y);
+      if (points.length === 1) return;
+      for (let index = 0; index < points.length - 1; index += 1) {
+        const current = points[index];
+        const next = points[index + 1];
+        const midX = (current.x + next.x) / 2;
+        const midY = (current.y + next.y) / 2;
+        context.quadraticCurveTo(current.x, current.y, midX, midY);
+      }
+      const last = points[points.length - 1];
+      context.lineTo(last.x, last.y);
+    };
 
     const draw = () => {
       if (disposed) return;
@@ -113,35 +129,16 @@ export function TopicTrend3D({ data, onSelect }: { data: TopicTrendPoint[]; onSe
       screenPoints.current = [];
 
       const floorZ = 0;
+
+      // Calm floor grid: fewer guide lines, low contrast.
       context.save();
       context.lineWidth = 1;
-      context.strokeStyle = "rgba(118, 166, 176, 0.28)";
-      for (let i = 0; i < model.buckets.length; i += 1) {
-        const a = project(normalizedX(i), -0.95, floorZ);
-        const b = project(normalizedX(i), 0.95, floorZ);
+      context.strokeStyle = "rgba(130, 176, 184, 0.17)";
+      const gridEvery = Math.max(1, Math.ceil(model.buckets.length / 10));
+      for (let i = 0; i < model.buckets.length; i += gridEvery) {
+        const a = project(normalizedX(i), -0.92, floorZ);
+        const b = project(normalizedX(i), 0.92, floorZ);
         context.beginPath(); context.moveTo(a.x, a.y); context.lineTo(b.x, b.y); context.stroke();
-      }
-      for (let j = 0; j < model.categories.length; j += 1) {
-        const a = project(-1.35, normalizedY(j), floorZ);
-        const b = project(1.35, normalizedY(j), floorZ);
-        context.beginPath(); context.moveTo(a.x, a.y); context.lineTo(b.x, b.y); context.stroke();
-      }
-      context.restore();
-
-      // Z axis + ticks.
-      const axisBase = project(-1.38, -0.96, 0);
-      const axisTop = project(-1.38, -0.96, 1.5);
-      context.save();
-      context.strokeStyle = "rgba(190, 218, 224, 0.72)";
-      context.fillStyle = "#cfe4e8";
-      context.lineWidth = 1.2;
-      context.font = "9px sans-serif";
-      context.beginPath(); context.moveTo(axisBase.x, axisBase.y); context.lineTo(axisTop.x, axisTop.y); context.stroke();
-      for (let step = 0; step <= 4; step += 1) {
-        const value = model.max * step / 4;
-        const p = project(-1.38, -0.96, normalizedZ(value));
-        context.beginPath(); context.moveTo(p.x - 4, p.y); context.lineTo(p.x + 4, p.y); context.stroke();
-        context.fillText(String(Math.round(value)), p.x - 28, p.y + 3);
       }
       context.restore();
 
@@ -154,49 +151,102 @@ export function TopicTrend3D({ data, onSelect }: { data: TopicTrendPoint[]; onSe
         const color = TOPIC_COLORS[categoryIndex % TOPIC_COLORS.length];
         const rgb = parseHex(color);
         const values = model.buckets.map((bucket) => model.cells.find((point) => point.bucket === bucket && point.category === category)?.count ?? 0);
+        const laneY = normalizedY(categoryIndex);
+        const linePoints = values.map((count, bucketIndex) => project(normalizedX(bucketIndex), laneY, normalizedZ(count)));
+        const floorPoints = values.map((_, bucketIndex) => project(normalizedX(bucketIndex), laneY, 0));
 
-        // Average reference for each topic row.
-        const avgStart = project(normalizedX(0), normalizedY(categoryIndex), normalizedZ(model.average));
-        const avgEnd = project(normalizedX(Math.max(0, model.buckets.length - 1)), normalizedY(categoryIndex), normalizedZ(model.average));
+        // Translucent ribbon ("curtain") gives each topic a distinct 3D plane.
         context.save();
-        context.strokeStyle = "rgba(243, 180, 85, 0.5)";
-        context.lineWidth = 1.3;
-        context.setLineDash([5, 5]);
+        const gradient = context.createLinearGradient(0, Math.min(...linePoints.map((p) => p.y)), 0, Math.max(...floorPoints.map((p) => p.y)));
+        gradient.addColorStop(0, `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.28)`);
+        gradient.addColorStop(1, `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.045)`);
+        context.fillStyle = gradient;
+        context.beginPath();
+        context.moveTo(linePoints[0].x, linePoints[0].y);
+        for (let index = 0; index < linePoints.length - 1; index += 1) {
+          const current = linePoints[index];
+          const next = linePoints[index + 1];
+          const midX = (current.x + next.x) / 2;
+          const midY = (current.y + next.y) / 2;
+          context.quadraticCurveTo(current.x, current.y, midX, midY);
+        }
+        const lastLine = linePoints[linePoints.length - 1];
+        context.lineTo(lastLine.x, lastLine.y);
+        for (let index = floorPoints.length - 1; index >= 0; index -= 1) context.lineTo(floorPoints[index].x, floorPoints[index].y);
+        context.closePath();
+        context.fill();
+        context.restore();
+
+        // Lane baseline.
+        const laneStart = project(normalizedX(0), laneY, 0);
+        const laneEnd = project(normalizedX(Math.max(0, model.buckets.length - 1)), laneY, 0);
+        context.save();
+        context.strokeStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.24)`;
+        context.lineWidth = 1;
+        context.beginPath(); context.moveTo(laneStart.x, laneStart.y); context.lineTo(laneEnd.x, laneEnd.y); context.stroke();
+        context.restore();
+
+        // Average guide only once per lane, subtle and behind the main curve.
+        const avgStart = project(normalizedX(0), laneY, normalizedZ(model.average));
+        const avgEnd = project(normalizedX(Math.max(0, model.buckets.length - 1)), laneY, normalizedZ(model.average));
+        context.save();
+        context.strokeStyle = "rgba(243, 180, 85, 0.38)";
+        context.lineWidth = 1.1;
+        context.setLineDash([6, 7]);
         context.beginPath(); context.moveTo(avgStart.x, avgStart.y); context.lineTo(avgEnd.x, avgEnd.y); context.stroke();
         context.restore();
 
-        // Main trend line.
+        // Smooth main curve.
         context.save();
         context.strokeStyle = color;
-        context.lineWidth = 3.2;
-        context.shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.42)`;
-        context.shadowBlur = 7;
-        context.beginPath();
-        values.forEach((count, bucketIndex) => {
-          const p = project(normalizedX(bucketIndex), normalizedY(categoryIndex), normalizedZ(count));
-          if (bucketIndex === 0) context.moveTo(p.x, p.y); else context.lineTo(p.x, p.y);
-        });
+        context.lineWidth = 3;
+        context.lineJoin = "round";
+        context.lineCap = "round";
+        context.shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.35)`;
+        context.shadowBlur = 8;
+        smoothPath(linePoints);
         context.stroke();
         context.restore();
 
+        // Show only meaningful markers to reduce clutter; all points remain interactive.
         values.forEach((count, bucketIndex) => {
-          const p = project(normalizedX(bucketIndex), normalizedY(categoryIndex), normalizedZ(count));
+          const p = linePoints[bucketIndex];
           const point: ScreenPoint = { x: p.x, y: p.y, category, bucket: model.buckets[bucketIndex], count };
           screenPoints.current.push(point);
+          const prev = bucketIndex > 0 ? values[bucketIndex - 1] : count;
+          const next = bucketIndex < values.length - 1 ? values[bucketIndex + 1] : count;
+          const localPeak = count > 0 && count >= prev && count >= next;
+          const endpoint = bucketIndex === 0 || bucketIndex === values.length - 1;
+          if (!localPeak && !endpoint) return;
           context.save();
-          context.fillStyle = color;
-          context.strokeStyle = "rgba(255,255,255,0.82)";
-          context.lineWidth = 1.3;
-          context.beginPath(); context.arc(p.x, p.y, count > 0 ? 4.4 : 2.4, 0, Math.PI * 2); context.fill(); context.stroke();
+          context.fillStyle = "#f8fbfc";
+          context.strokeStyle = color;
+          context.lineWidth = 2;
+          context.shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.32)`;
+          context.shadowBlur = 6;
+          context.beginPath(); context.arc(p.x, p.y, 4.2, 0, Math.PI * 2); context.fill(); context.stroke();
           context.restore();
         });
 
-        const labelPoint = project(normalizedX(0) - 0.1, normalizedY(categoryIndex), 0);
+        // Topic label as a pill attached to the lane.
+        const labelPoint = project(normalizedX(0) - 0.1, laneY, 0);
+        const label = compactCategory(localizeDataLabel(category, locale, "category"));
         context.save();
         context.font = "600 9px sans-serif";
-        context.fillStyle = "#d6e5e8";
         context.textAlign = "right";
-        context.fillText(compactCategory(localizeDataLabel(category, locale, "category")), labelPoint.x - 8, labelPoint.y + 3);
+        const labelWidth = Math.min(190, context.measureText(label).width + 16);
+        const left = labelPoint.x - labelWidth - 10;
+        const top = labelPoint.y - 10;
+        context.fillStyle = "rgba(10, 42, 50, 0.72)";
+        context.strokeStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.48)`;
+        context.lineWidth = 1;
+        context.beginPath();
+        context.roundRect(left, top, labelWidth, 20, 7);
+        context.fill(); context.stroke();
+        context.fillStyle = "#e6f0f2";
+        context.fillText(label, labelPoint.x - 18, labelPoint.y + 3);
+        context.fillStyle = color;
+        context.beginPath(); context.arc(labelPoint.x - 9, labelPoint.y, 3, 0, Math.PI * 2); context.fill();
         context.restore();
       }
 
@@ -272,8 +322,8 @@ export function TopicTrend3D({ data, onSelect }: { data: TopicTrendPoint[]; onSe
         const dx = event.clientX - drag.current.x;
         const dy = event.clientY - drag.current.y;
         drag.current.x = event.clientX; drag.current.y = event.clientY;
-        view.current.yaw += dx * 0.009;
-        view.current.pitch = Math.max(0.28, Math.min(0.95, view.current.pitch + dy * 0.006));
+        view.current.yaw = Math.max(-0.12, Math.min(0.38, view.current.yaw + dx * 0.0035));
+        view.current.pitch = Math.max(0.30, Math.min(0.58, view.current.pitch + dy * 0.003));
         draw();
         return;
       }
