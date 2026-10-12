@@ -585,10 +585,19 @@ export async function listMonitorAccess(config: WorkroomConfig, session: Workroo
 
   const globals = (Array.isArray(globalResult.payload) ? globalResult.payload : []).map((row) => monitorAccessFromRow(row as Record<string, unknown>));
   return {
-    monitors: globals.map((item) => ({
-      ...item,
-      enabled: isAdmin ? item.enabled : item.enabled && personal.get(item.monitorKey) === true,
-    })),
+    monitors: globals.map((item) => {
+      if (isAdmin) return item;
+      const personallyAllowed = personal.get(item.monitorKey) === true;
+      if (item.enabled && !personallyAllowed) {
+        return {
+          ...item,
+          enabled: false,
+          maintenanceMessageRu: "Нет доступа",
+          maintenanceMessageBe: "Няма доступу",
+        };
+      }
+      return { ...item, enabled: item.enabled && personallyAllowed };
+    }),
     session: active,
   };
 }
