@@ -3,7 +3,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { desktopApi } from "../api";
 import { MONITOR_BOOKMARKLET, parseBrowserCapture } from "../browserImport";
 import { exactCompressForProfile, type CompressionMode } from "../editorialCompression";
-import { wEditorialMap, wEvidenceBatch, wStyleProfile, wSynthesize, type WDensity, type WEditorialMap, type WEditorialTrend, type WUsage } from "../wReviewAi";
+import { wEditorialMap, wEvidenceBatch, wStyleProfile, wSynthesize, type WDensity, type WEditorialMap, type WEditorialTrend, type WFactCheck, type WUsage } from "../wReviewAi";
 import { useI18n } from "../i18n";
 
 const W_CONTRACT_VERSION = 4;
@@ -33,6 +33,8 @@ type WState = {
   reviewText: string;
   sectionTitles: string[];
   boldPhrases: string[];
+  factCheck: WFactCheck | null;
+  factCheckContract?: number;
 };
 
 const STORAGE_KEY = "monitor-w-review-v1";
@@ -40,6 +42,7 @@ const EMPTY: WState = {
   items: [], task: "", targetChars: 3000, samples: [], styleProfile: "", styleContract: 0,
   editorialMap: null, mapContract: 0, selectedTrendIds: [],
   density: { quotes: "moderate", headlines: "moderate", experts: "moderate" }, reviewText: "", sectionTitles: [], boldPhrases: [],
+  factCheck: null, factCheckContract: 0,
 };
 
 function id(prefix = "w") { return `${prefix}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`; }
@@ -74,6 +77,8 @@ function loadState(): WState {
       reviewText: String(raw.reviewText || ""),
       sectionTitles: Array.isArray(raw.sectionTitles) ? raw.sectionTitles.map(String).slice(0, 5) : [],
       boldPhrases: Array.isArray(raw.boldPhrases) ? raw.boldPhrases.map(String).slice(0, 4) : [],
+      factCheck: raw.factCheck && typeof raw.factCheck === "object" ? raw.factCheck as WFactCheck : null,
+      factCheckContract: Number(raw.factCheckContract || 0),
     };
   } catch { return EMPTY; }
 }
@@ -105,7 +110,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   const reviewReady = state.items.length > 0 && prepared === state.items.length && mapReady && selectedTrends.length > 0 && state.task.trim().length > 0;
 
   function invalidateMap(current: WState): WState {
-    return { ...current, editorialMap: null, mapContract: 0, selectedTrendIds: [], reviewText: "", sectionTitles: [], boldPhrases: [] };
+    return { ...current, editorialMap: null, mapContract: 0, selectedTrendIds: [], reviewText: "", sectionTitles: [], boldPhrases: [], factCheck: null, factCheckContract: 0 };
   }
   function addUsage(next: WUsage) {
     setUsage((current) => ({
@@ -259,7 +264,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
       addUsage(result.usage);
       setState((current) => ({
         ...current, editorialMap: result.editorialMap, mapContract: W_CONTRACT_VERSION,
-        selectedTrendIds: result.editorialMap.trends.map((trend: WEditorialTrend) => trend.id), reviewText: "",
+        selectedTrendIds: result.editorialMap.trends.map((trend: WEditorialTrend) => trend.id), reviewText: "", factCheck: null, factCheckContract: 0,
       }));
       setMessage(be ? "Тэндэнцыі пералічаны." : "Тенденции пересчитаны.");
     } catch (reason) { setError(String(reason)); } finally { setAnalysisText(""); setBusy(""); }
@@ -277,6 +282,8 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
       reviewText: "",
       sectionTitles: [],
       boldPhrases: [],
+      factCheck: null,
+      factCheckContract: 0,
     }));
     setActiveId(null);
     setAnalysisText("");
@@ -302,7 +309,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         const name = path.split(/[\\/]/).pop() || `Образец ${state.samples.length + added.length + 1}`;
         added.push({ id: id("sample"), name, text });
       }
-      setState((current) => ({ ...current, samples: [...current.samples, ...added].slice(0, MAX_SAMPLES), styleContract: 0, reviewText: "" }));
+      setState((current) => ({ ...current, samples: [...current.samples, ...added].slice(0, MAX_SAMPLES), styleContract: 0, reviewText: "", factCheck: null, factCheckContract: 0 }));
       setMessage(be ? `Дададзена ўзораў: ${added.length}. Абнавіце профіль стылю.` : `Добавлено образцов: ${added.length}. Обновите профиль стиля.`);
     } catch (reason) { setError(String(reason)); } finally { setBusy(""); }
   }
@@ -316,7 +323,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         samples,
         (seconds) => setMessage(be ? `Ліміт Groq. Профіль працягнецца праз ~${seconds} с…` : `Лимит Groq. Профиль продолжится автоматически через ~${seconds} с…`)
       );
-      setState((current) => ({ ...current, styleProfile: result.styleProfile, styleContract: W_CONTRACT_VERSION, reviewText: "" }));
+      setState((current) => ({ ...current, styleProfile: result.styleProfile, styleContract: W_CONTRACT_VERSION, reviewText: "", factCheck: null, factCheckContract: 0 }));
       addUsage(result.usage);
       setMessage(be ? "Профіль стылю гатовы." : "Профиль стиля готов.");
     } catch (reason) { setError(String(reason)); } finally { setBusy(""); }
@@ -335,14 +342,28 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         density: state.density,
         sourceNames: Array.from(new Set(state.items.map((item) => item.source.trim()).filter(Boolean))),
       }, (seconds) => setMessage(be ? `Ліміт Groq. Генерацыя працягнецца праз ~${seconds} с…` : `Лимит Groq. Генерация продолжится автоматически через ~${seconds} с…`));
-      setState((current) => ({ ...current, reviewText: result.reviewText, sectionTitles: result.sectionTitles, boldPhrases: result.boldPhrases }));
+      setState((current) => ({
+        ...current,
+        reviewText: result.reviewText,
+        sectionTitles: result.sectionTitles,
+        boldPhrases: result.boldPhrases,
+        factCheck: result.factCheck,
+        factCheckContract: W_CONTRACT_VERSION,
+      }));
       addUsage(result.usage);
-      setMessage(be ? "Агляд сфарміраваны." : "Обзор сформирован.");
+      const removed = result.factCheck.unsupportedClaimsRemoved;
+      const partial = result.factCheck.partialClaimsRewritten;
+      setMessage(be
+        ? `Агляд сфарміраваны і правераны па Evidence. Выпраўлена частковых: ${partial}, выдалена непацверджаных: ${removed}.`
+        : `Обзор сформирован и проверен по Evidence. Исправлено частичных: ${partial}, удалено неподтверждённых: ${removed}.`);
     } catch (reason) { setError(String(reason)); } finally { setBusy(""); }
   }
 
   async function exportDocx() {
-    if (!state.reviewText.trim()) return;
+    if (!state.reviewText.trim() || !state.factCheck?.verified || state.factCheckContract !== W_CONTRACT_VERSION) {
+      setError(be ? "Перад экспартам патрэбна актуальная праверка фактаў па Evidence." : "Перед экспортом требуется актуальная проверка фактов по Evidence.");
+      return;
+    }
     const path = await save({ title: "W-Review DOCX", defaultPath: "W-Review.docx", filters: [{ name: "Word", extensions: ["docx"] }] });
     if (!path) return;
     await desktopApi.exportWReview(path, state.reviewText.trim(), Array.from(new Set(state.items.map((item) => item.source.trim()).filter(Boolean))), state.sectionTitles, state.boldPhrases);
@@ -388,19 +409,24 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     </section>
 
     {mapReady&&state.editorialMap&&<section className="panel w-review-map"><div className="panel-head"><div><h3>{be?"3. Тэндэнцыі медыяполя":"3. Тенденции медиаполя"}</h3><p>{be?"Зніміце галачку толькі з тых акцэнтаў, якія не павінны ўваходзіць у агляд." : "Снимите галочку только с тех акцентов, которые не должны входить в обзор."}</p></div><button className="ghost-button small-button" disabled={busy!==""} onClick={recalculateTrends}>{be?"Пералічыць":"Пересчитать"}</button></div>
-      <div className="w-review-trends">{state.editorialMap.trends.map((trend,index)=><label key={trend.id} className={`w-review-trend ${state.selectedTrendIds.includes(trend.id)?"selected":""}`}><input type="checkbox" checked={state.selectedTrendIds.includes(trend.id)} onChange={()=>setState((current)=>({...current,selectedTrendIds:current.selectedTrendIds.includes(trend.id)?current.selectedTrendIds.filter((value)=>value!==trend.id):[...current.selectedTrendIds,trend.id],reviewText:""}))}/><span><b>{index+1}. {trend.title}</b><small>{trend.summary}</small></span></label>)}</div>
+      <div className="w-review-trends">{state.editorialMap.trends.map((trend,index)=><label key={trend.id} className={`w-review-trend ${state.selectedTrendIds.includes(trend.id)?"selected":""}`}><input type="checkbox" checked={state.selectedTrendIds.includes(trend.id)} onChange={()=>setState((current)=>({...current,selectedTrendIds:current.selectedTrendIds.includes(trend.id)?current.selectedTrendIds.filter((value)=>value!==trend.id):[...current.selectedTrendIds,trend.id],reviewText:"",factCheck:null,factCheckContract:0}))}/><span><b>{index+1}. {trend.title}</b><small>{trend.summary}</small></span></label>)}</div>
       <div className="w-review-inventory">{be?"Знойдзена ў пуле":"Найдено в пуле"}: <b>{state.editorialMap.inventory.quotes}</b> {be?"цытат":"цитат"} · <b>{state.editorialMap.inventory.headlines}</b> {be?"загалоўкаў":"заголовков"} · <b>{state.editorialMap.inventory.experts}</b> {be?"экспертных каментарыяў":"экспертных комментариев"}</div>
       <div className="w-review-density">
-        <label><span>{be?"Цытаты":"Цитаты"}</span><select value={state.density.quotes} onChange={(e)=>setState({...state,density:{...state.density,quotes:e.target.value as WDensity},reviewText:""})}>{densityOptions}</select></label>
-        <label><span>{be?"Загалоўкі":"Заголовки"}</span><select value={state.density.headlines} onChange={(e)=>setState({...state,density:{...state.density,headlines:e.target.value as WDensity},reviewText:""})}>{densityOptions}</select></label>
-        <label><span>{be?"Эксперты":"Эксперты"}</span><select value={state.density.experts} onChange={(e)=>setState({...state,density:{...state.density,experts:e.target.value as WDensity},reviewText:""})}>{densityOptions}</select></label>
+        <label><span>{be?"Цытаты":"Цитаты"}</span><select value={state.density.quotes} onChange={(e)=>setState({...state,density:{...state.density,quotes:e.target.value as WDensity},reviewText:"",factCheck:null,factCheckContract:0})}>{densityOptions}</select></label>
+        <label><span>{be?"Загалоўкі":"Заголовки"}</span><select value={state.density.headlines} onChange={(e)=>setState({...state,density:{...state.density,headlines:e.target.value as WDensity},reviewText:"",factCheck:null,factCheckContract:0})}>{densityOptions}</select></label>
+        <label><span>{be?"Эксперты":"Эксперты"}</span><select value={state.density.experts} onChange={(e)=>setState({...state,density:{...state.density,experts:e.target.value as WDensity},reviewText:"",factCheck:null,factCheckContract:0})}>{densityOptions}</select></label>
       </div>
     </section>}
 
     <section className="panel w-review-final"><div className="panel-head"><div><h3>{be?"4. Выніковы агляд":"4. Итоговый обзор"}</h3><p>{be?"AI будуе тэкст па выбраных тэндэнцыях.":"AI строит текст по выбранным тенденциям."}</p></div></div>
       <div className="w-review-readiness"><span className={prepared===state.items.length&&state.items.length?"ready":""}>{prepared===state.items.length&&state.items.length?"✓":"○"} {be?"Матэрыялы прааналізаваны":"Материалы проанализированы"}</span><span className={selectedTrends.length?"ready":""}>{selectedTrends.length?"✓":"○"} {be?"Тэндэнцыі выбраны":"Тенденции выбраны"}</span><span className={state.task.trim()?"ready":""}>{state.task.trim()?"✓":"○"} {be?"Заданне запоўнена":"Задание заполнено"}</span><span className={styleReady?"ready optional": "optional"}>{styleReady?"✓":"○"} {be?"Профіль стылю":"Профиль стиля"} ({be?"неабавязкова":"необязательно"})</span></div>
-      <div className="w-review-final-actions"><label className="w-review-length-control"><span>{be?"Аб\’ём, знакаў":"Объём, знаков"}</span><select value={state.targetChars} onChange={(e)=>setState({...state,targetChars:Number(e.target.value),reviewText:"",sectionTitles:[],boldPhrases:[]})}><option value={1000}>1 000</option><option value={2000}>2 000</option><option value={3000}>3 000</option><option value={6000}>6 000</option><option value={12000}>12 000</option></select></label><button className="primary-button" disabled={busy!==""||!reviewReady} onClick={synthesize}>{busy==="synthesize"?"…":be?"Сфарміраваць агляд":"Сформировать обзор"}</button><button className="secondary-button" disabled={!state.reviewText.trim()} onClick={exportDocx}>DOCX</button></div>
-      <textarea className="report-editor-textarea w-review-final-text" lang={be?"be":"ru"} spellCheck={true} value={state.reviewText} onChange={(e)=>setState({...state,reviewText:e.target.value})} placeholder={be?"Тут з'явіцца выніковы агляд…":"Здесь появится итоговый обзор…"}/>
+      <div className="w-review-final-actions"><label className="w-review-length-control"><span>{be?"Аб\’ём, знакаў":"Объём, знаков"}</span><select value={state.targetChars} onChange={(e)=>setState({...state,targetChars:Number(e.target.value),reviewText:"",sectionTitles:[],boldPhrases:[],factCheck:null,factCheckContract:0})}><option value={1000}>1 000</option><option value={2000}>2 000</option><option value={3000}>3 000</option><option value={6000}>6 000</option><option value={12000}>12 000</option></select></label><button className="primary-button" disabled={busy!==""||!reviewReady} onClick={synthesize}>{busy==="synthesize"?"…":be?"Сфарміраваць агляд":"Сформировать обзор"}</button><button className="secondary-button" disabled={!state.reviewText.trim()||!state.factCheck?.verified||state.factCheckContract!==W_CONTRACT_VERSION} onClick={exportDocx}>DOCX</button></div>
+      <textarea className="report-editor-textarea w-review-final-text" lang={be?"be":"ru"} spellCheck={true} value={state.reviewText} onChange={(e)=>setState({...state,reviewText:e.target.value,factCheck:null,factCheckContract:0})} placeholder={be?"Тут з'явіцца выніковы агляд…":"Здесь появится итоговый обзор…"}/>
+      {state.reviewText.trim()&&<div className={`w-review-fact-check ${state.factCheck?.verified&&state.factCheckContract===W_CONTRACT_VERSION?"verified":"pending"}`}>
+        {state.factCheck?.verified&&state.factCheckContract===W_CONTRACT_VERSION
+          ? <><b>✓ {be?"Факты правераны па Evidence":"Факты проверены по Evidence"}</b><span>{be?"сцвярджэнняў":"утверждений"}: {state.factCheck.claimsTotal} · {be?"падцверджана":"подтверждено"}: {state.factCheck.supportedClaims} · {be?"удакладнена":"уточнено"}: {state.factCheck.partialClaimsRewritten} · {be?"выдалена":"удалено"}: {state.factCheck.unsupportedClaimsRemoved}</span></>
+          : <><b>{be?"○ Патрабуецца праверка фактаў":"○ Требуется проверка фактов"}</b><span>{be?"Пасля ручной праўкі экспарт заблакаваны да новай генерацыі/праверкі.":"После ручной правки экспорт заблокирован до новой генерации/проверки."}</span></>}
+      </div>}
       <div className="w-review-usage">{be?"Сімвалаў":"Символов"}: {state.reviewText.length.toLocaleString()} · {be?"Токенаў у гэтай сесіі":"Токенов в этой сессии"}: {usage.totalTokens.toLocaleString()}</div>
     </section>
   </div>;
