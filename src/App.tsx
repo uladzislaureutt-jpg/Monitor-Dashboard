@@ -19,6 +19,7 @@ import { getRuntimeConfig, loadWorkroomConfig } from "./workroom";
 
 const SYNC_STORAGE_KEY = "monitor-dashboard-github-sync-v2";
 const SYNC_PERSIST_KEY = "github.sync.v2";
+const FIRST_SYNC_PREFIX = "monitor.first-sync.v1";
 const DEFAULT_SYNC: SyncSettings = { repository: "", token: "", autoSync: false, intervalMinutes: 30 };
 const DEFAULT_L_SYNC: SyncSettings = { repository: "vladreuth-cmd/M-Trouble", token: "", autoSync: false, intervalMinutes: 30 };
 
@@ -184,6 +185,49 @@ export default function App() {
     window.addEventListener("monitor:moderation-changed", onModeration);
     return () => window.removeEventListener("monitor:moderation-changed", onModeration);
   }, [period, refreshDashboard]);
+  useEffect(() => {
+    if (access.profile.isAdmin || !access.session?.userId || !access.monitors.length) return;
+    let cancelled = false;
+    const bootstrapKey = `${FIRST_SYNC_PREFIX}:${access.session.userId}`;
+    (async () => {
+      const completed = await desktopApi.getSetting(bootstrapKey).catch(() => null);
+      if (completed === "done" || cancelled) return;
+
+      const allowed: MonitorKey[] = (["social_economic", "lukashenko"] as MonitorKey[])
+        .filter((key) => access.monitors.find((item) => item.monitorKey === key)?.enabled === true);
+      if (!allowed.length) {
+        await desktopApi.setSetting(bootstrapKey, "done").catch(() => undefined);
+        return;
+      }
+
+      const workroomConfig = loadWorkroomConfig();
+      let failed = false;
+      setSyncBusy(true);
+      setMessage(locale === "be" ? "Першасная сінхранізацыя даступных маніторынгаў…" : "Первичная синхронизация доступных мониторингов…");
+      try {
+        for (const key of allowed) {
+          if (cancelled) return;
+          const result = await desktopApi.syncServerFor(key, workroomConfig.url, workroomConfig.anonKey, access.session.accessToken);
+          if (result.errors.length) {
+            failed = true;
+            setSyncWarning(result.errors.join("\n"));
+            break;
+          }
+        }
+        if (!failed && !cancelled) {
+          await desktopApi.setSetting(bootstrapKey, "done");
+          setMessage(locale === "be" ? "Першасная сінхранізацыя завершана." : "Первичная синхронизация завершена.");
+          await Promise.all([refreshCore(), refreshDashboard(period)]);
+        }
+      } catch (reason) {
+        if (!cancelled) setSyncWarning(String(reason));
+      } finally {
+        if (!cancelled) setSyncBusy(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [access.profile.isAdmin, access.session?.userId, access.session.accessToken, access.monitors, locale, period, refreshCore, refreshDashboard]);
+
   useEffect(() => {
     const checkOnOpen = monitorKey === "lukashenko" || syncSettings.autoSync;
     const start = checkOnOpen ? window.setTimeout(() => performSync(syncSettings, true), 900) : undefined;
