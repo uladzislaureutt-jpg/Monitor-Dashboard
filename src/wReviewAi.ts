@@ -182,8 +182,8 @@ export async function wSynthesize(input: {
     totalTokens: totalUsage.totalTokens + verification.usage.totalTokens,
   };
   reviewText = verification.verifiedText || reviewText;
-  sectionTitles = sectionTitles.filter((value) => reviewText.includes(value));
-  boldPhrases = boldPhrases.filter((value) => reviewText.includes(value));
+  sectionTitles = sectionTitles.filter((value: string) => reviewText.includes(value));
+  boldPhrases = boldPhrases.filter((value: string) => reviewText.includes(value));
 
   return {
     reviewText,
