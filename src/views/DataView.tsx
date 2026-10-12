@@ -91,7 +91,7 @@ export function DataView({
         <div className="admin-access-block"><h4>{atx.pending}</h4>{(adminSnapshot?.requests.filter((item) => item.status === "pending").length ?? 0) === 0 ? <p className="muted">{atx.noRequests}</p> : adminSnapshot?.requests.filter((item) => item.status === "pending").map((item) => <div className="admin-request-row" key={item.id}><div><b>{item.displayName}</b><span>{item.email} · {item.locale.toUpperCase()}</span></div><div><button className="primary-button small-button" disabled={adminBusy} onClick={() => adminAction({ action: "review_request", request_id: item.id, decision: "approved" })}>{atx.approve}</button><button className="ghost-button small-button" disabled={adminBusy} onClick={() => adminAction({ action: "review_request", request_id: item.id, decision: "rejected" })}>{atx.reject}</button><button className="text-danger small-button" disabled={adminBusy} onClick={() => { if (window.confirm(atx.deleteRequestConfirm)) void adminAction({ action: "delete_request", request_id: item.id }); }}>{atx.delete}</button></div></div>)}</div>
         <div className="admin-access-block"><h4>{atx.monitors}</h4>{adminSnapshot?.monitors.map((item) => <div className="admin-monitor-row" key={item.monitorKey}><div><b>{item.monitorKey === "social_economic" ? "SEP-Monitor" : item.monitorKey === "lukashenko" ? "L-Monitor" : item.monitorKey === "w_review" ? "W-Review" : item.monitorKey}</b><span>{item.enabled ? atx.works : atx.maintenance}</span></div><label className="toggle-label"><input type="checkbox" checked={item.enabled} disabled={adminBusy} onChange={(e) => adminAction({ action: "set_monitor", monitor_key: item.monitorKey, enabled: e.target.checked, maintenance_message_ru: item.maintenanceMessageRu, maintenance_message_be: item.maintenanceMessageBe })} /><span>{item.enabled ? atx.works : atx.maintenance}</span></label></div>)}</div>
       </div>
-      <div className="admin-user-list"><h4>{atx.users}</h4>{adminSnapshot?.users.map((item) => {
+      <div className="admin-user-list"><h4>{atx.users}</h4><p className="admin-user-access-note">{be ? "Персанальныя правы можна задаваць загадзя. Яны дзейнічаюць толькі калі адпаведны маніторынг глабальна ўключаны вышэй." : "Персональные права можно назначать заранее. Они действуют только когда соответствующий мониторинг глобально включён выше."}</p>{adminSnapshot?.users.map((item) => {
         const monitorItems = adminSnapshot.monitors;
         return <div className="admin-user-row" key={item.id}>
           <div className="admin-user-main"><b>{item.displayName}</b><span>{item.email} · {item.status === "active" ? atx.active : atx.suspended}{item.lastSignInAt ? ` · ${atx.lastLogin}: ${formatDate(item.lastSignInAt)}` : ""}</span></div>
@@ -105,7 +105,7 @@ export function DataView({
                     <input
                       type="checkbox"
                       checked={granted}
-                      disabled={adminBusy || !monitor.enabled}
+                      disabled={adminBusy}
                       onChange={(e) => adminAction({ action: "set_user_monitor", user_id: item.id, monitor_key: monitor.monitorKey, enabled: e.target.checked })}
                     />
                     {label}
