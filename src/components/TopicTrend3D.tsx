@@ -30,6 +30,7 @@ export function TopicTrend3D({ data, onSelect }: { data: TopicTrendPoint[]; onSe
   const previewCache = useRef(new Map<string, PublicationSummary[]>());
   const hoveredKey = useRef<string | null>(null);
   const [webglUnavailable, setWebglUnavailable] = useState(false);
+  const [renderFailed, setRenderFailed] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
   const model = useMemo(() => {
     const buckets = Array.from(new Set(data.map((point) => point.bucket))).sort();
@@ -62,7 +63,6 @@ export function TopicTrend3D({ data, onSelect }: { data: TopicTrendPoint[]; onSe
     }
 
     const zMax = Math.max(1, Math.ceil(model.max * 1.16));
-    const averagePlane = model.buckets.flatMap((_, bucketIndex) => model.categories.map((__, categoryIndex) => [bucketIndex, categoryIndex, model.average]));
     const categoryValues = model.categories.map((category) => model.buckets.map((bucket) => model.cells.find((point) => point.bucket === bucket && point.category === category)?.count ?? 0));
     const option = {
       backgroundColor: "#163842",
@@ -117,34 +117,16 @@ export function TopicTrend3D({ data, onSelect }: { data: TopicTrendPoint[]; onSe
         light: { main: { intensity: 1.22, shadow: true }, ambient: { intensity: 0.64 } },
       },
       series: [
-        {
-          name: t("chart.averagePlane"),
-          type: "surface",
-          silent: true,
-          shading: "color",
-          data: averagePlane,
-          itemStyle: { color: "#F3B455", opacity: 0.12 },
-          wireframe: { show: false },
-        },
         ...model.categories.flatMap((category, categoryIndex) => {
           const values = categoryValues[categoryIndex];
           const color = TOPIC_COLORS[categoryIndex % TOPIC_COLORS.length];
           return [
             {
-              name: category,
-              type: "surface",
-              parametric: true,
+              name: `${t("chart.averagePlane")} · ${category}`,
+              type: "line3D",
               silent: true,
-              shading: "color",
-              parametricEquation: {
-                u: { min: 0, max: Math.max(0, model.buckets.length - 1), step: 0.1 },
-                v: { min: 0, max: 1, step: 1 },
-                x: (u: number) => u,
-                y: () => categoryIndex,
-                z: (u: number, v: number) => interpolate(values, u) * v,
-              },
-              itemStyle: { color, opacity: 0.2 },
-              wireframe: { show: false },
+              lineStyle: { color: "#F3B455", width: 1.5, opacity: 0.5 },
+              data: model.buckets.map((_, bucketIndex) => [bucketIndex, categoryIndex, model.average]),
             },
             {
               name: category,
@@ -169,7 +151,14 @@ export function TopicTrend3D({ data, onSelect }: { data: TopicTrendPoint[]; onSe
         }),
       ],
     };
-    chart.setOption(option as never);
+    try {
+      chart.setOption(option as never, { notMerge: true, lazyUpdate: false });
+      setRenderFailed(false);
+    } catch {
+      setRenderFailed(true);
+      chart.dispose();
+      return;
+    }
     const selectionFrom = (params: { seriesType?: string; data?: unknown }): (Selection & { count: number }) | null => {
       const point = params.data as { bucket?: string; category?: string } | null;
       const count = Number((point as { count?: number } | null)?.count ?? 0);
@@ -235,7 +224,7 @@ export function TopicTrend3D({ data, onSelect }: { data: TopicTrendPoint[]; onSe
   }, [locale, model, onSelect, t]);
 
   if (!data.length) return <div className="chart-empty">{t("common.notEnough")}</div>;
-  if (webglUnavailable) return <div className="chart-empty">{t("chart.webglUnavailable")}</div>;
+  if (webglUnavailable || renderFailed) return <div className="chart-empty">{renderFailed ? (locale === "be" ? "3D-рэжым не ўдалося адлюстраваць на гэтым камп’ютары. Выкарыстоўвайце рэжым «Тэмы»." : "3D-режим не удалось отобразить на этом компьютере. Используйте режим «Темы».") : t("chart.webglUnavailable")}</div>;
   return <div className="topic-3d-wrap">
     <div className="topic-3d-help">{t("chart.topic3dHelp")}</div>
     <div className="topic-3d-legend">{model.categories.map((category, index) => <span key={category}><i style={{ background: TOPIC_COLORS[index % TOPIC_COLORS.length] }} />{localizeDataLabel(category, locale, "category")}</span>)}</div>
