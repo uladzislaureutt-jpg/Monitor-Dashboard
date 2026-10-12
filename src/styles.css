@@ -1147,3 +1147,11 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 /* 0.8.8 — W-Review style tab close */
 .w-review-style-heading-actions{display:flex;align-items:center;gap:8px}
 .w-review-close-button{width:34px;height:34px;padding:0;border-radius:50%;font-size:18px;line-height:1}
+
+
+/* W-Review evidence verification */
+.w-review-fact-check{margin-top:10px;padding:10px 12px;border-radius:10px;display:flex;gap:8px 14px;align-items:center;flex-wrap:wrap;font-size:9px;line-height:1.4}
+.w-review-fact-check b{font-size:10px}
+.w-review-fact-check.verified{background:#edf7f1;border:1px solid #cee4d7;color:#356247}
+.w-review-fact-check.pending{background:#fff7e8;border:1px solid #ead8ae;color:#7a6335}
+.w-review-fact-check span{opacity:.9}
