@@ -564,9 +564,31 @@ export async function listMonitorAccess(config: WorkroomConfig, session: Workroo
     select: "monitor_key,enabled,maintenance_message_ru,maintenance_message_be",
     order: "monitor_key.asc",
   });
-  const { payload, session: active } = await apiRequest(config, session, `/rest/v1/monitor_access?${params.toString()}`);
+  const globalResult = await apiRequest(config, session, `/rest/v1/monitor_access?${params.toString()}`);
+  const profileParams = new URLSearchParams({ select: "is_admin", id: `eq.${session.userId}`, limit: "1" });
+  const profileResult = await apiRequest(config, globalResult.session, `/rest/v1/monitor_profiles?${profileParams.toString()}`);
+  const profileRows = Array.isArray(profileResult.payload) ? profileResult.payload as Array<Record<string, unknown>> : [];
+  const isAdmin = Boolean(profileRows[0]?.is_admin);
+
+  let personal = new Map<string, boolean>();
+  let active = profileResult.session;
+  if (!isAdmin) {
+    const personalParams = new URLSearchParams({
+      select: "monitor_key,enabled",
+      user_id: `eq.${session.userId}`,
+    });
+    const personalResult = await apiRequest(config, active, `/rest/v1/user_monitor_access?${personalParams.toString()}`);
+    active = personalResult.session;
+    const rows = Array.isArray(personalResult.payload) ? personalResult.payload as Array<Record<string, unknown>> : [];
+    personal = new Map(rows.map((row) => [String(row.monitor_key ?? ""), Boolean(row.enabled)]));
+  }
+
+  const globals = (Array.isArray(globalResult.payload) ? globalResult.payload : []).map((row) => monitorAccessFromRow(row as Record<string, unknown>));
   return {
-    monitors: (Array.isArray(payload) ? payload : []).map((row) => monitorAccessFromRow(row as Record<string, unknown>)),
+    monitors: globals.map((item) => ({
+      ...item,
+      enabled: isAdmin ? item.enabled : item.enabled && personal.get(item.monitorKey) === true,
+    })),
     session: active,
   };
 }
@@ -599,6 +621,11 @@ export async function getAdminSnapshot(config: WorkroomConfig, session: Workroom
     lastSignInAt: row.last_sign_in_at ? String(row.last_sign_in_at) : null,
   }));
   const monitors = (Array.isArray(payload.monitors) ? payload.monitors : []).map((row: any) => monitorAccessFromRow(row));
+  const userMonitors = (Array.isArray(payload.user_monitors) ? payload.user_monitors : []).map((row: any) => ({
+    userId: String(row.user_id ?? ""),
+    monitorKey: String(row.monitor_key ?? ""),
+    enabled: Boolean(row.enabled),
+  }));
   const audit = (Array.isArray(payload.audit) ? payload.audit : []).map((row: any) => ({
     id: Number(row.id),
     action: String(row.action ?? ""),
@@ -606,6 +633,6 @@ export async function getAdminSnapshot(config: WorkroomConfig, session: Workroom
     monitorKey: row.monitor_key ? String(row.monitor_key) : null,
     createdAt: String(row.created_at ?? ""),
   }));
-  const snapshot: AdminSnapshot = { requests, users, monitors, audit };
+  const snapshot: AdminSnapshot = { requests, users, monitors, userMonitors, audit };
   return { snapshot, session: active };
 }
