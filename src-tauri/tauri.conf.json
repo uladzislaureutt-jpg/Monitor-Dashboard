@@ -27,7 +27,7 @@
         "connect-src": "ipc: http://ipc.localhost https://kcmmnngcjfmyjzzczvko.supabase.co",
         "img-src": "'self' asset: http://asset.localhost data: blob: https:",
         "style-src": "'self' 'unsafe-inline'",
-        "script-src": "'self'",
+        "script-src": "'self' 'unsafe-eval'",
         "font-src": "'self' data:"
       },
       "capabilities": [
