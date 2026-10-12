@@ -239,10 +239,17 @@ export type AdminAuditItem = {
   createdAt: string;
 };
 
+export type AdminUserMonitorAccess = {
+  userId: string;
+  monitorKey: string;
+  enabled: boolean;
+};
+
 export type AdminSnapshot = {
   requests: AdminAccessRequest[];
   users: AdminUser[];
   monitors: MonitorAccessState[];
+  userMonitors: AdminUserMonitorAccess[];
   audit: AdminAuditItem[];
 };
 
