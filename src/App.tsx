@@ -190,38 +190,42 @@ export default function App() {
     let cancelled = false;
     const bootstrapKey = `${FIRST_SYNC_PREFIX}:${access.session.userId}`;
     (async () => {
-      const completed = await desktopApi.getSetting(bootstrapKey).catch(() => null);
-      if (completed === "done" || cancelled) return;
+      const stored = await desktopApi.getSetting(bootstrapKey).catch(() => null);
+      let completed: MonitorKey[] = [];
+      try {
+        const parsed = stored ? JSON.parse(stored) : [];
+        completed = Array.isArray(parsed) ? parsed.filter((value): value is MonitorKey => value === "social_economic" || value === "lukashenko") : [];
+      } catch { completed = []; }
+      if (cancelled) return;
 
       const allowed: MonitorKey[] = (["social_economic", "lukashenko"] as MonitorKey[])
         .filter((key) => access.monitors.find((item) => item.monitorKey === key)?.enabled === true);
-      if (!allowed.length) {
-        await desktopApi.setSetting(bootstrapKey, "done").catch(() => undefined);
-        return;
-      }
+      const pending = allowed.filter((key) => !completed.includes(key));
+      if (!pending.length) return;
 
       const workroomConfig = loadWorkroomConfig();
-      let failed = false;
+      syncBusyRef.current = true;
       setSyncBusy(true);
       setMessage(locale === "be" ? "Першасная сінхранізацыя даступных маніторынгаў…" : "Первичная синхронизация доступных мониторингов…");
       try {
-        for (const key of allowed) {
+        for (const key of pending) {
           if (cancelled) return;
           const result = await desktopApi.syncServerFor(key, workroomConfig.url, workroomConfig.anonKey, access.session.accessToken);
           if (result.errors.length) {
-            failed = true;
             setSyncWarning(result.errors.join("\n"));
-            break;
+            return;
           }
+          completed = [...new Set([...completed, key])];
+          await desktopApi.setSetting(bootstrapKey, JSON.stringify(completed));
         }
-        if (!failed && !cancelled) {
-          await desktopApi.setSetting(bootstrapKey, "done");
+        if (!cancelled) {
           setMessage(locale === "be" ? "Першасная сінхранізацыя завершана." : "Первичная синхронизация завершена.");
           await Promise.all([refreshCore(), refreshDashboard(period)]);
         }
       } catch (reason) {
         if (!cancelled) setSyncWarning(String(reason));
       } finally {
+        syncBusyRef.current = false;
         if (!cancelled) setSyncBusy(false);
       }
     })();
