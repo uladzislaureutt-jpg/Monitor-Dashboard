@@ -4,6 +4,15 @@ import { getVersion } from "@tauri-apps/api/app";
 export type WUsage = { promptTokens: number; completionTokens: number; totalTokens: number };
 export type WDensity = "minimum" | "moderate" | "many" | "all";
 export type WEditorialTrend = { id: string; title: string; summary: string; sources: string[] };
+export type WFactCheck = {
+  verified: boolean;
+  claimsTotal: number;
+  supportedClaims: number;
+  partialClaimsRewritten: number;
+  unsupportedClaimsRemoved: number;
+  suspiciousAnchors: number;
+  issues: string[];
+};
 export type WEditorialMap = {
   trends: WEditorialTrend[];
   inventory: { quotes: number; headlines: number; experts: number };
@@ -97,6 +106,34 @@ export async function wEditorialMap(input: { task: string; evidenceCards: string
   };
 }
 
+export async function wVerifyReview(input: {
+  task: string;
+  reviewText: string;
+  evidenceCards: string[];
+}, onRetry?: RetryNotice) {
+  const payload = await call({
+    action: "verify_review",
+    task: input.task,
+    review_text: input.reviewText,
+    evidence_cards: input.evidenceCards,
+  }, onRetry);
+  const raw = payload.fact_check || {};
+  return {
+    verifiedText: String(payload.verified_text || "").trim(),
+    factCheck: {
+      verified: raw.verified === true,
+      claimsTotal: Math.max(0, Number(raw.claims_total || 0)),
+      supportedClaims: Math.max(0, Number(raw.supported_claims || 0)),
+      partialClaimsRewritten: Math.max(0, Number(raw.partial_claims_rewritten || 0)),
+      unsupportedClaimsRemoved: Math.max(0, Number(raw.unsupported_claims_removed || 0)),
+      suspiciousAnchors: Math.max(0, Number(raw.suspicious_anchors || 0)),
+      issues: Array.isArray(raw.issues) ? raw.issues.map((value: unknown) => String(value || "").trim()).filter(Boolean) : [],
+    } satisfies WFactCheck,
+    model: String(payload.model || "gemini-3.5-flash-lite"),
+    usage: usage(payload.usage),
+  };
+}
+
 export async function wSynthesize(input: {
   task: string;
   targetChars: number;
@@ -134,11 +171,27 @@ export async function wSynthesize(input: {
     boldPhrases = Array.isArray(payload.bold_phrases) ? payload.bold_phrases.map((value: unknown) => String(value || "").trim()).filter(Boolean) : boldPhrases;
   }
 
+  const verification = await wVerifyReview({
+    task: input.task,
+    reviewText,
+    evidenceCards: input.evidenceCards,
+  }, onRetry);
+  totalUsage = {
+    promptTokens: totalUsage.promptTokens + verification.usage.promptTokens,
+    completionTokens: totalUsage.completionTokens + verification.usage.completionTokens,
+    totalTokens: totalUsage.totalTokens + verification.usage.totalTokens,
+  };
+  reviewText = verification.verifiedText || reviewText;
+  sectionTitles = sectionTitles.filter((value) => reviewText.includes(value));
+  boldPhrases = boldPhrases.filter((value) => reviewText.includes(value));
+
   return {
     reviewText,
     sectionTitles,
     boldPhrases,
+    factCheck: verification.factCheck,
     model: String(payload.model || "openai/gpt-oss-120b"),
+    verifierModel: verification.model,
     usage: totalUsage,
   };
 }
