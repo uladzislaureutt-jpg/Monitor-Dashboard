@@ -966,6 +966,29 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 .admin-user-main {
   flex: 1;
 }
+.admin-user-monitor-access {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid #e7ded3;
+  border-radius: 9px;
+  background: #fffdfa;
+}
+.admin-user-monitor-access label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  font-size: 9px;
+  color: #53656f;
+}
+.admin-user-access-note {
+  margin: -3px 0 8px;
+  color: #817a72;
+  font-size: 9px;
+  line-height: 1.45;
+}
 .admin-user-row > label {
   display: inline-flex;
   align-items: center;
