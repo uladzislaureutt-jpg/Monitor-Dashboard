@@ -39,6 +39,7 @@ export function DataView({
     users: be ? "Карыстальнікі" : "Пользователи",
     access: be ? "Доступ" : "Доступ",
     admin: be ? "Адміністратар" : "Администратор",
+    personalMonitors: be ? "Маніторынгі" : "Мониторинги",
     active: be ? "актыўны" : "активен",
     suspended: be ? "прыпынены" : "приостановлен",
     lastLogin: be ? "Апошні ўваход" : "Последний вход",
@@ -90,7 +91,32 @@ export function DataView({
         <div className="admin-access-block"><h4>{atx.pending}</h4>{(adminSnapshot?.requests.filter((item) => item.status === "pending").length ?? 0) === 0 ? <p className="muted">{atx.noRequests}</p> : adminSnapshot?.requests.filter((item) => item.status === "pending").map((item) => <div className="admin-request-row" key={item.id}><div><b>{item.displayName}</b><span>{item.email} · {item.locale.toUpperCase()}</span></div><div><button className="primary-button small-button" disabled={adminBusy} onClick={() => adminAction({ action: "review_request", request_id: item.id, decision: "approved" })}>{atx.approve}</button><button className="ghost-button small-button" disabled={adminBusy} onClick={() => adminAction({ action: "review_request", request_id: item.id, decision: "rejected" })}>{atx.reject}</button><button className="text-danger small-button" disabled={adminBusy} onClick={() => { if (window.confirm(atx.deleteRequestConfirm)) void adminAction({ action: "delete_request", request_id: item.id }); }}>{atx.delete}</button></div></div>)}</div>
         <div className="admin-access-block"><h4>{atx.monitors}</h4>{adminSnapshot?.monitors.map((item) => <div className="admin-monitor-row" key={item.monitorKey}><div><b>{item.monitorKey === "social_economic" ? "SEP-Monitor" : item.monitorKey === "lukashenko" ? "L-Monitor" : item.monitorKey === "w_review" ? "W-Review" : item.monitorKey}</b><span>{item.enabled ? atx.works : atx.maintenance}</span></div><label className="toggle-label"><input type="checkbox" checked={item.enabled} disabled={adminBusy} onChange={(e) => adminAction({ action: "set_monitor", monitor_key: item.monitorKey, enabled: e.target.checked, maintenance_message_ru: item.maintenanceMessageRu, maintenance_message_be: item.maintenanceMessageBe })} /><span>{item.enabled ? atx.works : atx.maintenance}</span></label></div>)}</div>
       </div>
-      <div className="admin-user-list"><h4>{atx.users}</h4>{adminSnapshot?.users.map((item) => <div className="admin-user-row" key={item.id}><div className="admin-user-main"><b>{item.displayName}</b><span>{item.email} · {item.status === "active" ? atx.active : atx.suspended}{item.lastSignInAt ? ` · ${atx.lastLogin}: ${formatDate(item.lastSignInAt)}` : ""}</span></div><label><input type="checkbox" checked={item.status === "active"} disabled={adminBusy || item.id === access.profile.id} onChange={(e) => adminAction({ action: "set_user_access", user_id: item.id, enabled: e.target.checked })} />{atx.access}</label><label><input type="checkbox" checked={item.isAdmin} disabled={adminBusy || item.id === access.profile.id} onChange={(e) => adminAction({ action: "set_admin", user_id: item.id, is_admin: e.target.checked })} />{atx.admin}</label><button className="text-danger small-button" disabled={adminBusy || item.id === access.profile.id} onClick={() => { if (window.confirm(atx.deleteUserConfirm)) void adminAction({ action: "delete_user", user_id: item.id }); }}>{atx.delete}</button></div>)}</div>
+      <div className="admin-user-list"><h4>{atx.users}</h4>{adminSnapshot?.users.map((item) => {
+        const monitorItems = adminSnapshot.monitors;
+        return <div className="admin-user-row" key={item.id}>
+          <div className="admin-user-main"><b>{item.displayName}</b><span>{item.email} · {item.status === "active" ? atx.active : atx.suspended}{item.lastSignInAt ? ` · ${atx.lastLogin}: ${formatDate(item.lastSignInAt)}` : ""}</span></div>
+          <div className="admin-user-monitor-access" aria-label={atx.personalMonitors}>
+            {item.isAdmin
+              ? <span className="muted">{be ? "Усе маніторынгі" : "Все мониторинги"}</span>
+              : monitorItems.map((monitor) => {
+                  const granted = adminSnapshot.userMonitors.find((entry) => entry.userId === item.id && entry.monitorKey === monitor.monitorKey)?.enabled === true;
+                  const label = monitor.monitorKey === "social_economic" ? "SEP" : monitor.monitorKey === "lukashenko" ? "L" : monitor.monitorKey === "w_review" ? "W-Review" : monitor.monitorKey;
+                  return <label key={monitor.monitorKey} title={!monitor.enabled ? (be ? "Маніторынг глабальна адключаны" : "Мониторинг глобально отключён") : ""}>
+                    <input
+                      type="checkbox"
+                      checked={granted}
+                      disabled={adminBusy || !monitor.enabled}
+                      onChange={(e) => adminAction({ action: "set_user_monitor", user_id: item.id, monitor_key: monitor.monitorKey, enabled: e.target.checked })}
+                    />
+                    {label}
+                  </label>;
+                })}
+          </div>
+          <label><input type="checkbox" checked={item.status === "active"} disabled={adminBusy || item.id === access.profile.id} onChange={(e) => adminAction({ action: "set_user_access", user_id: item.id, enabled: e.target.checked })} />{atx.access}</label>
+          <label><input type="checkbox" checked={item.isAdmin} disabled={adminBusy || item.id === access.profile.id} onChange={(e) => adminAction({ action: "set_admin", user_id: item.id, is_admin: e.target.checked })} />{atx.admin}</label>
+          <button className="text-danger small-button" disabled={adminBusy || item.id === access.profile.id} onClick={() => { if (window.confirm(atx.deleteUserConfirm)) void adminAction({ action: "delete_user", user_id: item.id }); }}>{atx.delete}</button>
+        </div>;
+      })}</div>
     </section>}
     <section className="hero data-hero"><div><div className="eyebrow">{t("data.eyebrow")}</div><h2>{t("data.title")}</h2><p>{t("data.subtitle")}</p></div><button className="import-button" onClick={onImport} disabled={busy}>{busy ? t("data.importing") : t("data.import")}</button></section>
     <section className="panel sync-panel">
