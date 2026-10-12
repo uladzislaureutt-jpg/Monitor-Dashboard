@@ -83,6 +83,8 @@ export const desktopApi = {
   extractWReviewSample: (path: string) => invoke<string>("extract_w_review_sample", { path }),
   syncServer: (baseUrl: string, anonKey: string, accessToken: string) =>
     invoke<SyncResult>("sync_server_artifacts", { baseUrl, anonKey, accessToken, monitorKey: activeMonitorKey }),
+  syncServerFor: (monitorKey: string, baseUrl: string, anonKey: string, accessToken: string) =>
+    invoke<SyncResult>("sync_server_artifacts", { baseUrl, anonKey, accessToken, monitorKey }),
   replaceModerationSnapshot: (snapshot: PublicationModerationSnapshot) =>
     invoke<void>("replace_moderation_snapshot", { monitorKey: activeMonitorKey, flags: snapshot.flags, exclusions: snapshot.exclusions }),
   getSetting: (key: string) => invoke<string | null>("get_app_setting", { key }),
