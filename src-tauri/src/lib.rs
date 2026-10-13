@@ -7,6 +7,7 @@ mod sync;
 
 use std::path::PathBuf;
 use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -20,6 +21,27 @@ use models::{
 struct AppState {
     db_path: PathBuf,
 }
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TikTokTranscriptSegment {
+    start: f64,
+    end: f64,
+    text: String,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TikTokTranscriptResult {
+    title: String,
+    url: String,
+    text: String,
+    language: String,
+    duration: f64,
+    model: String,
+    segments: Vec<TikTokTranscriptSegment>,
+}
+
 
 #[tauri::command]
 fn get_database_stats(state: State<'_, AppState>, monitor_key: String) -> Result<DatabaseStats, String> {
@@ -197,6 +219,143 @@ fn call_supabase_edge(
 }
 
 #[tauri::command]
+fn transcribe_tiktok_url(
+    url: String,
+    base_url: String,
+    anon_key: String,
+    access_token: String,
+    app: AppHandle,
+) -> Result<TikTokTranscriptResult, String> {
+    let parsed = reqwest::Url::parse(url.trim()).map_err(|e| format!("Некорректная TikTok-ссылка: {e}"))?;
+    if parsed.scheme() != "https" && parsed.scheme() != "http" {
+        return Err("Разрешены только http/https ссылки TikTok.".to_string());
+    }
+    let host = parsed.host_str().unwrap_or_default().to_ascii_lowercase();
+    if !(host == "tiktok.com" || host.ends_with(".tiktok.com")) {
+        return Err("Сейчас транскрипция по URL поддерживает только TikTok.".to_string());
+    }
+
+    let edge_base = reqwest::Url::parse(base_url.trim())
+        .map_err(|e| format!("Некорректный Supabase URL: {e}"))?;
+    if edge_base.scheme() != "https" || !edge_base.host_str().unwrap_or_default().to_ascii_lowercase().ends_with(".supabase.co") {
+        return Err("Некорректный адрес сервера транскрипции.".to_string());
+    }
+
+    let yt_dlp = app.path()
+        .resolve("binaries/yt-dlp.exe", tauri::path::BaseDirectory::Resource)
+        .map_err(|e| format!("Не удалось найти yt-dlp: {e}"))?;
+    if !yt_dlp.exists() {
+        return Err("Компонент TikTok-загрузки отсутствует в этой сборке приложения.".to_string());
+    }
+
+    let cache_dir = app.path().app_cache_dir()
+        .map_err(|e| format!("Не удалось открыть кэш приложения: {e}"))?
+        .join("transcription");
+    std::fs::create_dir_all(&cache_dir).map_err(|e| format!("Не удалось создать временную папку: {e}"))?;
+
+    let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
+    let stem = format!("tiktok-{stamp}");
+    let template = cache_dir.join(format!("{stem}.%(ext)s"));
+
+    let output = Command::new(&yt_dlp)
+        .arg("--no-playlist")
+        .arg("--no-warnings")
+        .arg("--quiet")
+        .arg("--max-filesize").arg("22M")
+        .arg("-f").arg("b[filesize<=22M]/b[filesize_approx<=22M]/b")
+        .arg("-o").arg(&template)
+        .arg("--print").arg("%(title)s")
+        .arg(url.trim())
+        .output()
+        .map_err(|e| format!("Не удалось запустить загрузчик TikTok: {e}"))?;
+
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(format!("TikTok не отдал видео для транскрипции. {}", if detail.is_empty() { "Попробуйте другую публичную ссылку.".to_string() } else { detail.chars().take(700).collect() }));
+    }
+
+    let title = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .last()
+        .unwrap_or("TikTok")
+        .trim()
+        .to_string();
+
+    let mut media_path: Option<PathBuf> = None;
+    for entry in std::fs::read_dir(&cache_dir).map_err(|e| format!("Не удалось прочитать временную папку: {e}"))? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        if path.file_stem().and_then(|v| v.to_str()).map(|v| v == stem).unwrap_or(false) {
+            media_path = Some(path);
+            break;
+        }
+    }
+    let media_path = media_path.ok_or_else(|| "TikTok загрузился без медиафайла.".to_string())?;
+    let size = std::fs::metadata(&media_path).map_err(|e| e.to_string())?.len();
+    if size > 22 * 1024 * 1024 {
+        let _ = std::fs::remove_file(&media_path);
+        return Err("Ролик слишком большой для бесплатной транскрипции (лимит 22 MB в приложении).".to_string());
+    }
+
+    let bytes = std::fs::read(&media_path).map_err(|e| format!("Не удалось прочитать видео: {e}"))?;
+    let file_name = media_path.file_name().and_then(|v| v.to_str()).unwrap_or("tiktok.mp4").to_string();
+    let part = reqwest::blocking::multipart::Part::bytes(bytes)
+        .file_name(file_name);
+    let form = reqwest::blocking::multipart::Form::new()
+        .text("app_version", env!("CARGO_PKG_VERSION").to_string())
+        .part("file", part);
+
+    let endpoint = format!("{}/functions/v1/media-transcribe", base_url.trim().trim_end_matches('/'));
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(150))
+        .build()
+        .map_err(|e| format!("Не удалось создать клиент транскрипции: {e}"))?;
+
+    let response = client.post(endpoint)
+        .header("apikey", anon_key.trim())
+        .bearer_auth(access_token.trim())
+        .multipart(form)
+        .send()
+        .map_err(|e| format!("TRANSCRIBE_NETWORK: {e}"));
+
+    let _ = std::fs::remove_file(&media_path);
+    let response = response?;
+    let status = response.status();
+    let raw = response.text().map_err(|e| format!("TRANSCRIBE_RESPONSE: {e}"))?;
+    if !status.is_success() {
+        return Err(format!("TRANSCRIBE_{}: {}", status.as_u16(), raw));
+    }
+
+    let payload: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("TRANSCRIBE_JSON: {e}; body={raw}"))?;
+    let text = payload.get("text").and_then(|v| v.as_str()).unwrap_or_default().trim().to_string();
+    if text.is_empty() {
+        return Err("Whisper вернул пустую транскрипцию.".to_string());
+    }
+    let segments = payload.get("segments").and_then(|v| v.as_array()).map(|items| {
+        items.iter().filter_map(|item| {
+            let text = item.get("text")?.as_str()?.trim().to_string();
+            if text.is_empty() { return None; }
+            Some(TikTokTranscriptSegment {
+                start: item.get("start").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                end: item.get("end").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                text,
+            })
+        }).collect::<Vec<_>>()
+    }).unwrap_or_default();
+
+    Ok(TikTokTranscriptResult {
+        title: if title.is_empty() { "TikTok".to_string() } else { title },
+        url: url.trim().to_string(),
+        text,
+        language: payload.get("language").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+        duration: payload.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0),
+        model: payload.get("model").and_then(|v| v.as_str()).unwrap_or("whisper-large-v3-turbo").to_string(),
+        segments,
+    })
+}
+
+#[tauri::command]
 fn export_report_docx(
     path: String,
     date: String,
@@ -311,6 +470,7 @@ pub fn run() {
             read_clipboard_text,
             write_clipboard_text,
             call_supabase_edge,
+            transcribe_tiktok_url,
             export_report_docx,
             export_w_review_docx,
             extract_w_review_sample,
