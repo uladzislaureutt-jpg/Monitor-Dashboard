@@ -232,9 +232,10 @@ fn sanitize_transcription_text(value: &str) -> String {
     initial_surname.replace_all(&compact_pairs, "$1.$2").to_string()
 }
 
-fn run_transcription(text: &str, bold_italic: bool) -> String {
+fn run_transcription(text: &str, bold: bool, italic: bool) -> String {
     let mut props = String::from("<w:rFonts w:ascii=\"Times New Roman\" w:hAnsi=\"Times New Roman\" w:eastAsia=\"Times New Roman\" w:cs=\"Times New Roman\"/><w:spacing w:val=\"-2\"/><w:sz w:val=\"32\"/><w:szCs w:val=\"32\"/>");
-    if bold_italic { props.push_str("<w:b/><w:bCs/><w:i/><w:iCs/>"); }
+    if bold { props.push_str("<w:b/><w:bCs/>"); }
+    if italic { props.push_str("<w:i/><w:iCs/>"); }
     format!("<w:r><w:rPr>{props}</w:rPr><w:t xml:space=\"preserve\">{}</w:t></w:r>", xml_text(text))
 }
 
@@ -242,14 +243,35 @@ fn paragraph_transcription(runs: &str) -> String {
     format!("<w:p><w:pPr><w:ind w:firstLine=\"720\"/><w:jc w:val=\"both\"/></w:pPr>{runs}</w:p>")
 }
 
+fn paragraph_transcription_blank() -> String {
+    "<w:p><w:pPr><w:jc w:val=\"both\"/></w:pPr></w:p>".to_string()
+}
+
+fn transcription_italic_ranges(text: &str) -> Vec<(usize, usize)> {
+    let mut ranges = Vec::new();
+    for pattern in [
+        r"«TikTok»",
+        r"«[A-Za-z0-9_.-]{3,40}»",
+        r"[А-ЯЁ][а-яё]+(?=\s*\(«[A-Za-z0-9_.-]{3,40}»\))",
+    ] {
+        if let Ok(re) = Regex::new(pattern) {
+            for mat in re.find_iter(text) { ranges.push((mat.start(), mat.end())); }
+        }
+    }
+    ranges.sort_unstable();
+    ranges.dedup();
+    ranges
+}
+
 fn transcription_runs(text: &str, accents: &[String]) -> String {
     let normalized_accents: Vec<String> = accents.iter()
         .map(|value| sanitize_transcription_text(value))
         .filter(|value| !value.trim().is_empty())
         .collect();
-    let ranges = w_review_exact_ranges(text, &normalized_accents);
+    let bold_ranges = w_review_exact_ranges(text, &normalized_accents);
+    let italic_ranges = transcription_italic_ranges(text);
     let mut cuts = vec![0usize, text.len()];
-    for (start, end) in &ranges { cuts.push(*start); cuts.push(*end); }
+    for (start, end) in bold_ranges.iter().chain(italic_ranges.iter()) { cuts.push(*start); cuts.push(*end); }
     cuts.sort_unstable();
     cuts.dedup();
     let mut result = String::new();
@@ -257,9 +279,11 @@ fn transcription_runs(text: &str, accents: &[String]) -> String {
         let start = pair[0];
         let end = pair[1];
         if start >= end { continue; }
-        result.push_str(&run_transcription(&text[start..end], range_contains(&ranges, start, end)));
+        let bold = range_contains(&bold_ranges, start, end);
+        let italic = bold || range_contains(&italic_ranges, start, end);
+        result.push_str(&run_transcription(&text[start..end], bold, italic));
     }
-    if result.is_empty() { result.push_str(&run_transcription(text, false)); }
+    if result.is_empty() { result.push_str(&run_transcription(text, false, false)); }
     result
 }
 
@@ -274,6 +298,7 @@ pub fn export_tiktok_transcript_docx(path: &Path, text: &str, comments: &[String
 
     let cleaned_text = sanitize_transcription_text(text);
     let mut body = String::new();
+    body.push_str(&paragraph_transcription_blank());
     body.push_str(&paragraph_transcription(&transcription_runs(&cleaned_text, accents)));
 
     let cleaned_comments: Vec<String> = comments.iter()
