@@ -256,7 +256,7 @@ fn clean_tiktok_comment(value: &str) -> String {
     let no_before = before_punctuation.replace_all(&normalized, "$1");
     let after_punctuation = Regex::new(r"([,;:!?])([А-Яа-яЁёA-Za-z])").expect("spacing regex");
     let with_after = after_punctuation.replace_all(&no_before, "$1 $2");
-    let bare_dash = Regex::new(r"([А-Яа-яЁёA-Za-z])\s*-\s*([А-Яа-яЁёA-Za-z])").expect("speech dash regex");
+    let bare_dash = Regex::new(r"([А-Яа-яЁёA-Za-z])\s*-\s+([А-Яа-яЁёA-Za-z])").expect("speech dash regex");
     let dashed = bare_dash.replace_all(&with_after, "$1 – $2");
     let whitespace = Regex::new(r"\s+").expect("whitespace regex");
     let clean = whitespace.replace_all(dashed.trim(), " ").trim().to_string();
