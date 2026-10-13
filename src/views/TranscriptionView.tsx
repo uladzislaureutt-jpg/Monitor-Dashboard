@@ -159,7 +159,7 @@ export function TranscriptionView() {
         path,
         state.editorialText.trim(),
         state.comments.map((item) => item.text.trim()).filter(Boolean),
-        [],
+        [new URL(state.url || inputUrl).pathname.match(/^\/@([^/]+)/)?.[1] || ""],
       );
       setMessage(be ? "DOCX захаваны па зададзеным узоры." : "DOCX сохранён по заданному образцу.");
     } catch (reason) { setError(String(reason)); }
