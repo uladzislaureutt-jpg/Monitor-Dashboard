@@ -119,11 +119,8 @@ export function TranscriptionView() {
     setBusy("comments"); setError(""); setMessage("");
     try {
       const capture = parseTikTokCommentsCapture(await desktopApi.readClipboardText());
-      const source = [...capture.comments];
-      const ordered = state.commentMode === "popular" && source.some((item) => item.likes > 0)
-        ? source.sort((a, b) => b.likes - a.likes || a.order - b.order)
-        : source.sort((a, b) => a.order - b.order);
-      const selected = ordered.slice(0, 20).map((item, index) => ({ ...item, id: commentId(index) }));
+      const source = [...capture.comments].sort((a, b) => a.order - b.order);
+      const selected = source.slice(0, 20).map((item, index) => ({ ...item, id: commentId(index) }));
       setState((current) => ({ ...current, comments: selected }));
       setMessage(be
         ? `Дададзена каментарыяў: ${selected.length}.`
