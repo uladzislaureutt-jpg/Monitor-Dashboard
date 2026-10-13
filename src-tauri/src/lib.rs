@@ -261,6 +261,7 @@ fn transcribe_tiktok_url(
         .arg("--no-playlist")
         .arg("--no-warnings")
         .arg("--quiet")
+        .arg("--no-simulate")
         .arg("--max-filesize").arg("22M")
         .arg("-f").arg("b[filesize<=22M]/b[filesize_approx<=22M]/b")
         .arg("-o").arg(&template)
