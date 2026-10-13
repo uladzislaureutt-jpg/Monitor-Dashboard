@@ -232,6 +232,38 @@ fn sanitize_transcription_text(value: &str) -> String {
     initial_surname.replace_all(&compact_pairs, "$1.$2").to_string()
 }
 
+fn strip_tiktok_symbols(value: &str) -> String {
+    let mut cleaned = String::new();
+    for ch in value.chars() {
+        let n = ch as u32;
+        // Emoji pictographs, flags, modifier sequences, keycaps and joiners.
+        if (0x1F000..=0x1FAFF).contains(&n)
+            || (0x2600..=0x27BF).contains(&n)
+            || (0xFE00..=0xFE0F).contains(&n)
+            || (0x1F3FB..=0x1F3FF).contains(&n)
+            || n == 0x200D || n == 0x20E3 || n == 0x00A9 || n == 0x00AE
+            || n == 0x2122 || n == 0x3030 || n == 0x303D
+        { continue; }
+        cleaned.push(ch);
+    }
+    cleaned
+}
+
+fn clean_tiktok_comment(value: &str) -> String {
+    let without_symbols = strip_tiktok_symbols(value);
+    let normalized = sanitize_transcription_text(&without_symbols);
+    let before_punctuation = Regex::new(r"\s+([,.;:!?])").expect("punctuation regex");
+    let no_before = before_punctuation.replace_all(&normalized, "$1");
+    let after_punctuation = Regex::new(r"([,;:!?])([А-Яа-яЁёA-Za-z])").expect("spacing regex");
+    let with_after = after_punctuation.replace_all(&no_before, "$1 $2");
+    let whitespace = Regex::new(r"\s+").expect("whitespace regex");
+    let clean = whitespace.replace_all(with_after.trim(), " ").trim().to_string();
+    if clean.is_empty() { return clean; }
+    let mut chars = clean.chars();
+    let first = chars.next().unwrap();
+    format!("{}{}", first.to_uppercase(), chars.as_str())
+}
+
 fn run_transcription(text: &str, bold: bool, italic: bool) -> String {
     let mut props = String::from("<w:rFonts w:ascii=\"Times New Roman\" w:hAnsi=\"Times New Roman\" w:eastAsia=\"Times New Roman\" w:cs=\"Times New Roman\"/><w:spacing w:val=\"-2\"/><w:sz w:val=\"32\"/><w:szCs w:val=\"32\"/>");
     if bold { props.push_str("<w:b/><w:bCs/>"); }
@@ -295,22 +327,32 @@ pub fn export_tiktok_transcript_docx(path: &Path, text: &str, comments: &[String
         fs::create_dir_all(parent).map_err(|e| format!("Не удалось создать каталог транскрипции: {e}"))?;
     }
 
-    let cleaned_text = sanitize_transcription_text(text);
+    let cleaned_text = sanitize_transcription_text(&strip_tiktok_symbols(text));
+    let spoken = cleaned_text.trim().trim_start_matches('«').trim_end_matches('»').trim();
+    let spoken = if spoken.ends_with(['.', '!', '?', '…']) { spoken.to_string() } else { format!("{spoken}.") };
+    // Frontend passes the account handle in the previously unused accents slot.
+    // Keep parentheses regular, but italicize «handle» using transcription_italic_ranges.
+    let handle = accents.first().map(|value| value.trim().trim_start_matches('@'))
+        .filter(|value| !value.is_empty() && value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-'));
+    let speech_line = match handle {
+        Some(nick) => format!("«{spoken}» («{nick}»)"),
+        None => format!("«{spoken}»"),
+    };
     let mut body = String::new();
     body.push_str(&paragraph_transcription_blank());
-    body.push_str(&paragraph_transcription(&transcription_runs(&cleaned_text, accents)));
+    body.push_str(&paragraph_transcription(&transcription_runs(&speech_line, &[])));
 
     let cleaned_comments: Vec<String> = comments.iter()
-        .map(|value| sanitize_transcription_text(value).trim().trim_end_matches('.').trim().to_string())
+        .map(|value| clean_tiktok_comment(value).trim_end_matches('.').trim().to_string())
         .filter(|value| !value.is_empty())
-        .take(20)
+        .take(30)
         .collect();
     if !cleaned_comments.is_empty() {
         let joined = format!("Комментарии: {}.", cleaned_comments.iter()
             .map(|value| format!("«{}»", value))
             .collect::<Vec<_>>()
             .join("; "));
-        body.push_str(&paragraph_transcription(&transcription_runs(&joined, accents)));
+        body.push_str(&paragraph_transcription(&transcription_runs(&joined, &[])));
     }
 
     body.push_str("<w:sectPr><w:pgSz w:w=\"11906\" w:h=\"16838\"/><w:pgMar w:left=\"1276\" w:right=\"707\" w:gutter=\"0\" w:header=\"720\" w:top=\"1135\" w:footer=\"0\" w:bottom=\"851\"/><w:docGrid w:type=\"default\" w:linePitch=\"272\" w:charSpace=\"0\"/></w:sectPr>");
