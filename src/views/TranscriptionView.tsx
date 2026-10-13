@@ -228,7 +228,7 @@ export function TranscriptionView() {
         <input value={inputUrl} onChange={(e) => setInputUrl(e.target.value)} placeholder={videoSource==="telegram"?"https://t.me/channel/12345":"https://www.tiktok.com/@…/video/…"} />
         <button className="primary-button" disabled={busy!==""||!inputUrl.trim()} onClick={transcribe}>{busy==="transcribe"?"…":be?"Транскрыбаваць":"Транскрибировать"}</button>
       </div>
-      {videoSource==="telegram"&&<div className="transcription-inline-actions"><button className="secondary-button small-button" disabled={busy!==""} onClick={importVideoFile}>{be?"Выбраць відэафайл":"Выбрать видеофайл"}</button><span>{be?"Калі відэа па спасылцы недаступна, захавайце яго з Telegram (да 22 МБ).":"Если видео по ссылке недоступно, сохраните его из Telegram (до 22 МБ)."}</span></div>}
+      {videoSource==="telegram"&&<div className="transcription-inline-actions"><button className="secondary-button small-button" disabled={busy!==""} onClick={importVideoFile}>{be?"Выбраць відэафайл":"Выбрать видеофайл"}</button><span>{be?"Калі відэа па спасылцы недаступна, захавайце яго з Telegram (да 2 ГБ).":"Если видео по ссылке недоступно, сохраните его из Telegram (до 2 ГБ)."}</span></div>}
     </section>
 
     <section className="panel transcription-text">
