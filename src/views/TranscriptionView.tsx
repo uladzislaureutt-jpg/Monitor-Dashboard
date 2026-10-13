@@ -4,7 +4,7 @@ import { desktopApi } from "../api";
 import { compressionReduction, exactCompressForProfile, type CompressionMode } from "../editorialCompression";
 import { useI18n } from "../i18n";
 import { ensureWorkroomSession, loadWorkroomConfig, loadWorkroomSession } from "../workroom";
-import { TIKTOK_COMMENTS_BOOKMARKLET, parseTikTokCommentsCapture, type TikTokCapturedComment } from "../tiktokComments";
+import { parseTikTokCommentsClipboard, type TikTokCapturedComment } from "../tiktokComments";
 
 type TranscriptComment = TikTokCapturedComment & { id: string };
 
@@ -102,20 +102,11 @@ export function TranscriptionView() {
     try { await desktopApi.openUrl(url); } catch (reason) { setError(String(reason)); }
   }
 
-  async function copyCommentsBookmarklet() {
-    try {
-      await desktopApi.writeClipboardText(TIKTOK_COMMENTS_BOOKMARKLET);
-      setMessage(be
-        ? "Код закладкі скапіраваны. Захавайце яго як закладку браўзера «→ Monitor: каментары»."
-        : "Код закладки скопирован. Сохраните его как закладку браузера «→ Monitor: комментарии».");
-    } catch (reason) { setError(String(reason)); }
-  }
-
   async function pasteComments() {
     setBusy("comments"); setError(""); setMessage("");
     try {
-      const capture = parseTikTokCommentsCapture(await desktopApi.readClipboardText());
-      const source = [...capture.comments];
+      const source = parseTikTokCommentsClipboard(await desktopApi.readClipboardText());
+      if (source.length === 0) throw new Error("no_comments");
       const ordered = state.commentMode === "popular" && source.some((item) => item.likes > 0)
         ? source.sort((a, b) => b.likes - a.likes || a.order - b.order)
         : source.sort((a, b) => a.order - b.order);
@@ -124,10 +115,10 @@ export function TranscriptionView() {
       setMessage(be
         ? `Дададзена каментарыяў: ${selected.length}.`
         : `Добавлено комментариев: ${selected.length}.`);
-    } catch (reason) {
+    } catch (_reason) {
       setError(be
-        ? "У буферы няма карэктнага захопу каментарыяў TikTok. Адкрыйце ролік, загрузіце каментарыі і націсніце закладку «→ Monitor: каментары»."
-        : "В буфере нет корректного захвата комментариев TikTok. Откройте ролик, загрузите комментарии и нажмите закладку «→ Monitor: комментарии».");
+        ? "У буферы няма патрэбных каментарыяў. Вылучыце тэкст каментарыяў у TikTok, націсніце Ctrl+C і паўтарыце ўстаўку."
+        : "В буфере нет подходящих комментариев. Выделите текст комментариев на странице TikTok, нажмите Ctrl+C и повторите вставку.");
     } finally { setBusy(""); }
   }
 
@@ -227,13 +218,12 @@ export function TranscriptionView() {
       <div className="panel-head"><div><h3>{be ? "3. Каментарыі" : "3. Комментарии"}</h3><p>{be ? "Да 20 змястоўных каментарыяў, даўжэйшых за 15 знакаў." : "До 20 содержательных комментариев длиннее 15 символов."}</p></div><span className="badge">{state.comments.length}/20</span></div>
       <div className="transcription-comment-tools">
         <button className="secondary-button" disabled={!state.url&&!inputUrl.trim()} onClick={openTikTok}>{be?"Адкрыць TikTok":"Открыть TikTok"}</button>
-        <button className="ghost-button" onClick={copyCommentsBookmarklet}>{be?"Скапіраваць закладку каментарыяў":"Скопировать закладку комментариев"}</button>
         <button className="primary-button" disabled={busy!==""} onClick={pasteComments}>{busy==="comments"?"…":be?"Уставіць каментарыі":"Вставить комментарии"}</button>
         <label><span>{be?"Парадак":"Порядок"}</span><select value={state.commentMode} onChange={(e)=>setState((current)=>({...current,commentMode:e.target.value==="latest"?"latest":"popular"}))}><option value="popular">{be?"Папулярныя":"Популярные"}</option><option value="latest">{be?"Апошнія / як у TikTok":"Последние / как в TikTok"}</option></select></label>
       </div>
       <p className="transcription-comment-hint">{be
-        ? "У браўзеры адкрыйце каментарыі і пракруціце, каб загрузіць патрэбную колькасць. Для апошніх спачатку выберыце адпаведны парадак у TikTok, калі ён даступны; затым націсніце закладку і вярніцеся ў Monitor."
-        : "В браузере откройте комментарии и прокрутите, чтобы загрузить нужное количество. Для последних сначала выберите соответствующий порядок в TikTok, если он доступен; затем нажмите закладку и вернитесь в Monitor."}</p>
+        ? "У браўзеры вылучыце тэкст бачных каментарыяў і націсніце Ctrl+C. Вярніцеся ў Monitor і націсніце «Уставіць каментарыі». Парадак спачатку выберыце ў TikTok; апрацоўваюцца толькі скапіраваныя каментарыі."
+        : "В браузере выделите видимый текст комментариев, нажмите Ctrl+C, вернитесь в Monitor и нажмите «Вставить комментарии». Для популярных или последних сначала выберите порядок в TikTok. Отбор возможен только среди скопированных комментариев."}</p>
       <div className="transcription-comment-list">
         {state.comments.length===0&&<div className="report-empty">{be?"Каментарыі пакуль не дададзены.":"Комментарии пока не добавлены."}</div>}
         {state.comments.map((comment,index)=><div key={comment.id} className="transcription-comment-row">
