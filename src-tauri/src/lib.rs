@@ -226,13 +226,17 @@ fn transcribe_tiktok_url(
     access_token: String,
     app: AppHandle,
 ) -> Result<TikTokTranscriptResult, String> {
-    let parsed = reqwest::Url::parse(url.trim()).map_err(|e| format!("Некорректная TikTok-ссылка: {e}"))?;
+    let parsed = reqwest::Url::parse(url.trim()).map_err(|e| format!("Некорректная ссылка на видео: {e}"))?;
     if parsed.scheme() != "https" && parsed.scheme() != "http" {
-        return Err("Разрешены только http/https ссылки TikTok.".to_string());
+        return Err("Разрешены только http/https ссылки.".to_string());
     }
     let host = parsed.host_str().unwrap_or_default().to_ascii_lowercase();
-    if !(host == "tiktok.com" || host.ends_with(".tiktok.com")) {
-        return Err("Сейчас транскрипция по URL поддерживает только TikTok.".to_string());
+    let telegram = host == "t.me" || host == "telegram.me";
+    if !(telegram || host == "tiktok.com" || host.ends_with(".tiktok.com")) {
+        return Err("Поддерживаются только ссылки TikTok и публичные публикации t.me.".to_string());
+    }
+    if telegram && !parsed.path().starts_with("/s/") && parsed.path().split('/').filter(|part| !part.is_empty()).count() != 2 {
+        return Err("Укажите прямую ссылку на публичный Telegram-пост, например https://t.me/channel/123.".to_string());
     }
 
     let edge_base = reqwest::Url::parse(base_url.trim())
@@ -254,8 +258,12 @@ fn transcribe_tiktok_url(
     std::fs::create_dir_all(&cache_dir).map_err(|e| format!("Не удалось создать временную папку: {e}"))?;
 
     let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
-    let stem = format!("tiktok-{stamp}");
+    let stem = format!("video-{stamp}");
     let template = cache_dir.join(format!("{stem}.%(ext)s"));
+
+    let download_url = if telegram && !parsed.path().starts_with("/s/") {
+        format!("https://t.me/s{}", parsed.path())
+    } else { url.trim().to_string() };
 
     let output = Command::new(&yt_dlp)
         .arg("--no-playlist")
@@ -266,13 +274,13 @@ fn transcribe_tiktok_url(
         .arg("-f").arg("b[filesize<=22M]/b[filesize_approx<=22M]/b")
         .arg("-o").arg(&template)
         .arg("--print").arg("%(title)s")
-        .arg(url.trim())
+        .arg(&download_url)
         .output()
         .map_err(|e| format!("Не удалось запустить загрузчик TikTok: {e}"))?;
 
     if !output.status.success() {
         let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(format!("TikTok не отдал видео для транскрипции. {}", if detail.is_empty() { "Попробуйте другую публичную ссылку.".to_string() } else { detail.chars().take(700).collect() }));
+        return Err(format!("Видео не удалось получить по ссылке. Для Telegram можно сохранить ролик как файл и выбрать его в Monitor. {}", if detail.is_empty() { "Попробуйте другую публичную ссылку.".to_string() } else { detail.chars().take(700).collect() }));
     }
 
     let title = String::from_utf8_lossy(&output.stdout)
@@ -291,7 +299,7 @@ fn transcribe_tiktok_url(
             break;
         }
     }
-    let media_path = media_path.ok_or_else(|| "TikTok загрузился без медиафайла.".to_string())?;
+    let media_path = media_path.ok_or_else(|| "Загрузка не создала медиафайл.".to_string())?;
     let size = std::fs::metadata(&media_path).map_err(|e| e.to_string())?.len();
     if size > 22 * 1024 * 1024 {
         let _ = std::fs::remove_file(&media_path);
