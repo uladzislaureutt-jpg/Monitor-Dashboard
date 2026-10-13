@@ -43,7 +43,7 @@ function loadState(): TranscriptionState {
       language: String(raw.language || ""),
       duration: Math.max(0, Number(raw.duration || 0)),
       comments: Array.isArray(raw.comments)
-        ? raw.comments.slice(0, 20).map((item, index) => ({
+        ? raw.comments.slice(0, 30).map((item, index) => ({
             id: String((item as TranscriptComment).id || `comment-${index}`),
             text: String((item as TranscriptComment).text || ""),
             likes: Math.max(0, Number((item as TranscriptComment).likes || 0)),
@@ -110,7 +110,7 @@ export function TranscriptionView() {
       const ordered = state.commentMode === "popular" && source.some((item) => item.likes > 0)
         ? source.sort((a, b) => b.likes - a.likes || a.order - b.order)
         : source.sort((a, b) => a.order - b.order);
-      const selected = ordered.slice(0, 20).map((item, index) => ({ ...item, id: commentId(index) }));
+      const selected = ordered.slice(0, 30).map((item, index) => ({ ...item, id: commentId(index) }));
       setState((current) => ({ ...current, comments: selected }));
       setMessage(be
         ? `Дададзена каментарыяў: ${selected.length}.`
@@ -215,7 +215,7 @@ export function TranscriptionView() {
     </section>
 
     <section className="panel transcription-comments">
-      <div className="panel-head"><div><h3>{be ? "3. Каментарыі" : "3. Комментарии"}</h3><p>{be ? "Да 20 змястоўных каментарыяў, даўжэйшых за 15 знакаў." : "До 20 содержательных комментариев длиннее 15 символов."}</p></div><span className="badge">{state.comments.length}/20</span></div>
+      <div className="panel-head"><div><h3>{be ? "3. Каментарыі" : "3. Комментарии"}</h3><p>{be ? "Да 30 змястоўных каментарыяў, даўжэйшых за 15 знакаў." : "До 30 содержательных комментариев длиннее 15 символов."}</p></div><span className="badge">{state.comments.length}/30</span></div>
       <div className="transcription-comment-tools">
         <button className="secondary-button" disabled={!state.url&&!inputUrl.trim()} onClick={openTikTok}>{be?"Адкрыць TikTok":"Открыть TikTok"}</button>
         <button className="primary-button" disabled={busy!==""} onClick={pasteComments}>{busy==="comments"?"…":be?"Уставіць каментарыі":"Вставить комментарии"}</button>
