@@ -249,14 +249,13 @@ fn paragraph_transcription_blank() -> String {
 
 fn transcription_italic_ranges(text: &str) -> Vec<(usize, usize)> {
     let mut ranges = Vec::new();
-    for pattern in [
-        r"«TikTok»",
-        r"«[A-Za-z0-9_.-]{3,40}»",
-        r"[А-ЯЁ][а-яё]+(?=\s*\(«[A-Za-z0-9_.-]{3,40}»\))",
-    ] {
-        if let Ok(re) = Regex::new(pattern) {
-            for mat in re.find_iter(text) { ranges.push((mat.start(), mat.end())); }
-        }
+    for pattern in [r"«TikTok»", r"«[A-Za-z0-9_.-]{3,40}»"] {
+        let re = Regex::new(pattern).expect("valid transcription italic regex");
+        for mat in re.find_iter(text) { ranges.push((mat.start(), mat.end())); }
+    }
+    let named_author = Regex::new(r"([А-ЯЁ][а-яё]+)\s*\(«[A-Za-z0-9_.-]{3,40}»\)").expect("valid named author regex");
+    for captures in named_author.captures_iter(text) {
+        if let Some(author) = captures.get(1) { ranges.push((author.start(), author.end())); }
     }
     ranges.sort_unstable();
     ranges.dedup();
