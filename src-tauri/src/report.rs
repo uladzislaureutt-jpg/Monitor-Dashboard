@@ -256,8 +256,10 @@ fn clean_tiktok_comment(value: &str) -> String {
     let no_before = before_punctuation.replace_all(&normalized, "$1");
     let after_punctuation = Regex::new(r"([,;:!?])([А-Яа-яЁёA-Za-z])").expect("spacing regex");
     let with_after = after_punctuation.replace_all(&no_before, "$1 $2");
+    let bare_dash = Regex::new(r"([А-Яа-яЁёA-Za-z])\s*-\s*([А-Яа-яЁёA-Za-z])").expect("speech dash regex");
+    let dashed = bare_dash.replace_all(&with_after, "$1 – $2");
     let whitespace = Regex::new(r"\s+").expect("whitespace regex");
-    let clean = whitespace.replace_all(with_after.trim(), " ").trim().to_string();
+    let clean = whitespace.replace_all(dashed.trim(), " ").trim().to_string();
     if clean.is_empty() { return clean; }
     let mut chars = clean.chars();
     let first = chars.next().unwrap();
@@ -329,7 +331,7 @@ pub fn export_tiktok_transcript_docx(path: &Path, text: &str, comments: &[String
 
     let cleaned_text = sanitize_transcription_text(&strip_tiktok_symbols(text));
     let spoken = cleaned_text.trim().trim_start_matches('«').trim_end_matches('»').trim();
-    let spoken = if spoken.chars().last().map(|c| matches!(c, '.' | '!' | '?' | '…')).unwrap_or(false) { spoken.to_string() } else { format!("{spoken}.") };
+    let spoken = spoken.trim_end_matches('.').trim();
     // Frontend passes the account handle in the previously unused accents slot.
     // Keep parentheses regular, but italicize «handle» using transcription_italic_ranges.
     let handle = accents.first().map(|value| value.trim().trim_start_matches('@'))
