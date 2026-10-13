@@ -218,6 +218,32 @@ fn call_supabase_edge(
     serde_json::from_str(&text).map_err(|e| format!("EDGE_JSON: {e}; body={text}"))
 }
 
+fn prepare_transcription_audio(source: &std::path::Path, app: &AppHandle) -> Result<PathBuf, String> {
+    let ffmpeg = app.path().resolve("binaries/ffmpeg.exe", tauri::path::BaseDirectory::Resource)
+        .map_err(|e| format!("FFmpeg не найден: {e}"))?;
+    if !ffmpeg.is_file() { return Err("Аудиоконвертер отсутствует в сборке.".to_string()); }
+    let cache = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("transcription");
+    std::fs::create_dir_all(&cache).map_err(|e| e.to_string())?;
+    let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+    let output = cache.join(format!("audio-{stamp}.mp3"));
+    let result = Command::new(&ffmpeg)
+        .args(["-hide_banner","-loglevel","error","-nostdin","-y","-i"])
+        .arg(source)
+        .args(["-map","0:a:0","-vn","-ac","1","-ar","16000","-codec:a","libmp3lame","-b:a","32k"])
+        .arg(&output)
+        .output().map_err(|e| format!("Ошибка запуска аудиоконвертера: {e}"))?;
+    if !result.status.success() {
+        let _ = std::fs::remove_file(&output);
+        return Err(format!("Из видео не удалось извлечь звуковую дорожку: {}",String::from_utf8_lossy(&result.stderr).chars().take(300).collect::<String>()));
+    }
+    let size = std::fs::metadata(&output).map_err(|e| e.to_string())?.len();
+    if size == 0 || size > 22 * 1024 * 1024 {
+        let _ = std::fs::remove_file(&output);
+        return Err("Даже сжатая аудиодорожка превышает 22 МБ. Разделите запись на части.".to_string());
+    }
+    Ok(output)
+}
+
 #[tauri::command]
 fn transcribe_tiktok_url(
     url: String,
@@ -270,8 +296,8 @@ fn transcribe_tiktok_url(
         .arg("--no-warnings")
         .arg("--quiet")
         .arg("--no-simulate")
-        .arg("--max-filesize").arg("22M")
-        .arg("-f").arg("b[filesize<=22M]/b[filesize_approx<=22M]/b")
+        .arg("--max-filesize").arg("2048M")
+        .arg("-f").arg("b")
         .arg("-o").arg(&template)
         .arg("--print").arg("%(title)s")
         .arg(&download_url)
@@ -300,14 +326,12 @@ fn transcribe_tiktok_url(
         }
     }
     let media_path = media_path.ok_or_else(|| "Загрузка не создала медиафайл.".to_string())?;
-    let size = std::fs::metadata(&media_path).map_err(|e| e.to_string())?.len();
-    if size > 22 * 1024 * 1024 {
-        let _ = std::fs::remove_file(&media_path);
-        return Err("Ролик слишком большой для бесплатной транскрипции (лимит 22 MB в приложении).".to_string());
-    }
-
-    let bytes = std::fs::read(&media_path).map_err(|e| format!("Не удалось прочитать видео: {e}"))?;
-    let file_name = media_path.file_name().and_then(|v| v.to_str()).unwrap_or("tiktok.mp4").to_string();
+    let converted = prepare_transcription_audio(&media_path, &app);
+    let _ = std::fs::remove_file(&media_path);
+    let audio_path = converted?;
+    let bytes = std::fs::read(&audio_path).map_err(|e| format!("Не удалось прочитать аудио: {e}"))?;
+    let _ = std::fs::remove_file(&audio_path);
+    let file_name = "audio.mp3".to_string();
     let part = reqwest::blocking::multipart::Part::bytes(bytes)
         .file_name(file_name);
     let form = reqwest::blocking::multipart::Form::new()
@@ -327,7 +351,6 @@ fn transcribe_tiktok_url(
         .send()
         .map_err(|e| format!("TRANSCRIBE_NETWORK: {e}"));
 
-    let _ = std::fs::remove_file(&media_path);
     let response = response?;
     let status = response.status();
     let raw = response.text().map_err(|e| format!("TRANSCRIBE_RESPONSE: {e}"))?;
@@ -364,20 +387,22 @@ fn transcribe_tiktok_url(
     })
 }
 #[tauri::command]
-fn transcribe_local_video(path: String, base_url: String, anon_key: String, access_token: String) -> Result<TikTokTranscriptResult, String> {
+fn transcribe_local_video(path: String, base_url: String, anon_key: String, access_token: String, app: AppHandle) -> Result<TikTokTranscriptResult, String> {
     let media_path = PathBuf::from(&path);
     let ext = media_path.extension().and_then(|v| v.to_str()).unwrap_or_default().to_ascii_lowercase();
     if !["mp4","mov","m4a","mp3","wav","webm","ogg","opus","mpeg","mpga"].contains(&ext.as_str()) {
         return Err("Поддерживаются видео и аудиофайлы MP4, MOV, M4A, MP3, WAV, WEBM, OGG.".to_string());
     }
     let size = std::fs::metadata(&media_path).map_err(|e| format!("Файл недоступен: {e}"))?.len();
-    if size == 0 || size > 22 * 1024 * 1024 { return Err("Для этого способа файл должен быть не больше 22 МБ.".to_string()); }
+    if size == 0 || size > 2 * 1024 * 1024 * 1024 { return Err("Поддерживаются файлы до 2 ГБ.".to_string()); }
     let title = media_path.file_name().and_then(|v| v.to_str()).unwrap_or("Видео Telegram").to_string();
     let url = String::new();
     let edge_base = reqwest::Url::parse(base_url.trim()).map_err(|e| e.to_string())?;
     if edge_base.scheme() != "https" || !edge_base.host_str().unwrap_or_default().to_ascii_lowercase().ends_with(".supabase.co") { return Err("Некорректный адрес сервера.".to_string()); }
-    let bytes = std::fs::read(&media_path).map_err(|e| format!("Не удалось прочитать видео: {e}"))?;
-    let file_name = media_path.file_name().and_then(|v| v.to_str()).unwrap_or("tiktok.mp4").to_string();
+    let audio_path = prepare_transcription_audio(&media_path, &app)?;
+    let bytes = std::fs::read(&audio_path).map_err(|e| format!("Не удалось прочитать аудио: {e}"))?;
+    let _ = std::fs::remove_file(&audio_path);
+    let file_name = "audio.mp3".to_string();
     let part = reqwest::blocking::multipart::Part::bytes(bytes)
         .file_name(file_name);
     let form = reqwest::blocking::multipart::Form::new()
