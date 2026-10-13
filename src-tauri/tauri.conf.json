@@ -45,7 +45,8 @@
       "icons/icon.png"
     ],
     "resources": [
-      "binaries/yt-dlp.exe"
+      "binaries/yt-dlp.exe",
+      "binaries/ffmpeg.exe"
     ]
   }
 }
