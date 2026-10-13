@@ -31,6 +31,18 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      - name: Prepare pinned yt-dlp
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "src-tauri/binaries" | Out-Null
+          $url = "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp.exe"
+          $out = "src-tauri/binaries/yt-dlp.exe"
+          Invoke-WebRequest -Uri $url -OutFile $out
+          $hash = (Get-FileHash -Path $out -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne "66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a") {
+            throw "yt-dlp SHA256 mismatch: $hash"
+          }
+
       - name: Build Tauri Windows installer
         run: npm run tauri build -- --bundles nsis
 
