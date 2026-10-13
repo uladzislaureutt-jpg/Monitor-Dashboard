@@ -5,7 +5,6 @@ import { MONITOR_BOOKMARKLET, parseBrowserCapture } from "../browserImport";
 import { exactCompressForProfile, type CompressionMode } from "../editorialCompression";
 import { wEditorialMap, wEvidenceBatch, wStyleProfile, wSynthesize, wVerifyReview, type WDensity, type WEditorialMap, type WEditorialTrend, type WFactCheck, type WUsage } from "../wReviewAi";
 import { useI18n } from "../i18n";
-import { ensureWorkroomSession, loadWorkroomConfig, loadWorkroomSession } from "../workroom";
 
 const W_CONTRACT_VERSION = 4;
 const MAX_ITEMS = 25;
@@ -147,33 +146,6 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     } catch {
       try { await desktopApi.openUrl(url.trim()); } catch { /* best effort */ }
       setError(be ? "Прамая загрузка не ўдалася. Адкрыйце матэрыял у браўзеры, націсніце «→ Monitor», затым «Уставіць з браўзера»." : "Прямая загрузка не удалась. Откройте материал в браузере, нажмите «→ Monitor», затем «Вставить из браузера».");
-    } finally { setBusy(""); }
-  }
-
-  async function transcribeTikTok() {
-    if (!url.trim() || state.items.length >= MAX_ITEMS) return;
-    setBusy("tiktok"); setError(""); setMessage("");
-    try {
-      const config = loadWorkroomConfig();
-      const session = await ensureWorkroomSession(config, loadWorkroomSession());
-      const result = await desktopApi.transcribeTikTok(url.trim(), config.url, config.anonKey, session.accessToken);
-      addItem({
-        title: result.title || "TikTok",
-        source: "TikTok",
-        region: "",
-        url: result.url || url.trim(),
-        text: result.text,
-      });
-      const duration = result.duration > 0 ? ` · ${Math.round(result.duration)} с` : "";
-      setUrl("");
-      setMessage(be
-        ? `TikTok транскрыбаваны${duration}. Тэкст дададзены ў пул.`
-        : `TikTok транскрибирован${duration}. Текст добавлен в пул.`);
-    } catch (reason) {
-      const detail = String(reason);
-      setError(detail.includes("media_too_large") || detail.includes("слишком большой")
-        ? (be ? "Ролік занадта вялікі для бясплатнага маршруту. Пакуль падтрымліваюцца TikTok-файлы да 22 MB." : "Ролик слишком большой для бесплатного маршрута. Пока поддерживаются TikTok-файлы до 22 MB.")
-        : detail);
     } finally { setBusy(""); }
   }
 
@@ -446,7 +418,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     {message && <div className="notice success">{message}</div>}{error && <div className="notice error">{error}</div>}
 
     <section className="panel w-review-import"><div className="panel-head"><div><h3>{be ? "1. Матэрыялы" : "1. Материалы"}</h3><p>{be ? "Прамая загрузка, закладка → Monitor або ручны ўвод." : "Прямая загрузка, закладка → Monitor или ручной ввод."}</p></div></div>
-      <div className="w-review-import-row"><input value={url} onChange={(e)=>setUrl(e.target.value)} placeholder="https://…" /><button className="secondary-button" onClick={importUrl} disabled={busy!==""||!url.trim()||state.items.length>=MAX_ITEMS}>{busy==="url"?"…":be?"Спампаваць":"Скачать"}</button><button className="secondary-button" onClick={transcribeTikTok} disabled={busy!==""||!url.trim()||state.items.length>=MAX_ITEMS}>{busy==="tiktok"?"…":be?"TikTok → тэкст":"TikTok → текст"}</button><button className="primary-button" onClick={pasteBrowser} disabled={busy!==""||state.items.length>=MAX_ITEMS}>{busy==="clipboard"?"…":be?"Уставіць з браўзера":"Вставить из браузера"}</button><button className="ghost-button" onClick={()=>setManualOpen((v)=>!v)}>{be?"Дадаць уручную":"Добавить вручную"}</button><button className="ghost-button" onClick={copyBookmarklet}>→ Monitor</button></div>
+      <div className="w-review-import-row"><input value={url} onChange={(e)=>setUrl(e.target.value)} placeholder="https://…" /><button className="secondary-button" onClick={importUrl} disabled={busy!==""||!url.trim()||state.items.length>=MAX_ITEMS}>{busy==="url"?"…":be?"Спампаваць":"Скачать"}</button><button className="primary-button" onClick={pasteBrowser} disabled={busy!==""||state.items.length>=MAX_ITEMS}>{busy==="clipboard"?"…":be?"Уставіць з браўзера":"Вставить из браузера"}</button><button className="ghost-button" onClick={()=>setManualOpen((v)=>!v)}>{be?"Дадаць уручную":"Добавить вручную"}</button><button className="ghost-button" onClick={copyBookmarklet}>→ Monitor</button></div>
       {manualOpen&&<div className="w-review-manual"><input placeholder={be?"Загаловак":"Заголовок"} value={manual.title} onChange={(e)=>setManual({...manual,title:e.target.value})}/><input placeholder={be?"Крыніца":"Источник"} value={manual.source} onChange={(e)=>setManual({...manual,source:e.target.value})}/><input placeholder={be?"Краіна / рэгіён":"Страна / регион"} value={manual.region} onChange={(e)=>setManual({...manual,region:e.target.value})}/><input placeholder="URL" value={manual.url} onChange={(e)=>setManual({...manual,url:e.target.value})}/><textarea placeholder={be?"Тэкст публікацыі":"Текст публикации"} value={manual.text} onChange={(e)=>setManual({...manual,text:e.target.value})}/><button className="primary-button" onClick={()=>{try{addItem(manual);setManual({title:"",source:"",region:"",url:"",text:""});setManualOpen(false)}catch(reason){setError(String(reason))}}}>{be?"Дадаць":"Добавить"}</button></div>}
     </section>
 
