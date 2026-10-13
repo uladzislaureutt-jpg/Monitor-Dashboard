@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { desktopApi } from "../api";
 import { compressionReduction, exactCompressForProfile, type CompressionMode } from "../editorialCompression";
@@ -16,7 +16,6 @@ type TranscriptionState = {
   language: string;
   duration: number;
   comments: TranscriptComment[];
-  accents: string[];
   commentMode: "popular" | "latest";
 };
 
@@ -29,7 +28,6 @@ const EMPTY: TranscriptionState = {
   language: "",
   duration: 0,
   comments: [],
-  accents: [],
   commentMode: "popular",
 };
 
@@ -52,7 +50,6 @@ function loadState(): TranscriptionState {
             order: Number((item as TranscriptComment).order || index),
           })).filter((item) => item.text.trim())
         : [],
-      accents: Array.isArray(raw.accents) ? raw.accents.map(String).filter(Boolean).slice(0, 40) : [],
       commentMode: raw.commentMode === "latest" ? "latest" : "popular",
     };
   } catch { return EMPTY; }
@@ -71,8 +68,6 @@ export function TranscriptionView() {
   const [exactMode, setExactMode] = useState<CompressionMode>("light");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const transcriptRef = useRef<HTMLTextAreaElement | null>(null);
-  const commentRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
 
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }, [state]);
 
@@ -93,7 +88,6 @@ export function TranscriptionView() {
         language: result.language,
         duration: result.duration,
         comments: [],
-        accents: [],
       }));
       setInputUrl(result.url || url);
       setMessage(be ? "Транскрыпцыя гатовая. Тэкст можна рэдагаваць і скарачаць." : "Транскрипция готова. Текст можно редактировать и сокращать.");
@@ -137,19 +131,6 @@ export function TranscriptionView() {
     } finally { setBusy(""); }
   }
 
-  function addAccent(textarea: HTMLTextAreaElement | null) {
-    if (!textarea) return;
-    const selected = textarea.value.slice(textarea.selectionStart, textarea.selectionEnd).trim();
-    if (selected.length < 3) {
-      setError(be ? "Спачатку вылучыце патрэбны фрагмент тэксту." : "Сначала выделите нужный фрагмент текста.");
-      return;
-    }
-    setError("");
-    setState((current) => current.accents.includes(selected)
-      ? current
-      : { ...current, accents: [...current.accents, selected].slice(0, 40) });
-  }
-
   function applyExactCompression() {
     const source = state.editorialText.trim();
     if (!source) return;
@@ -187,7 +168,7 @@ export function TranscriptionView() {
         path,
         state.editorialText.trim(),
         state.comments.map((item) => item.text.trim()).filter(Boolean),
-        state.accents,
+        [],
       );
       setMessage(be ? "DOCX захаваны па зададзеным узоры." : "DOCX сохранён по заданному образцу.");
     } catch (reason) { setError(String(reason)); }
@@ -214,7 +195,14 @@ export function TranscriptionView() {
     </section>
 
     <section className="panel transcription-text">
-      <div className="panel-head"><div><h3>{be ? "2. Тэкст" : "2. Текст"}</h3><p>{be ? "Рэдагуйце і скарачайце расшыфроўку перад экспартам." : "Редактируйте и сокращайте расшифровку перед экспортом."}</p></div><div className="transcription-inline-actions"><button className="secondary-button small-button" disabled={!state.editorialText} onClick={() => addAccent(transcriptRef.current)}>{be ? "Акцэнт" : "Акцент"}</button><button className="ghost-button small-button" disabled={!state.rawText} onClick={() => setState((current) => ({ ...current, editorialText: current.rawText, accents: [] }))}>{be ? "Вярнуць зыходны" : "Вернуть исходный"}</button></div></div>
+      <div className="panel-head"><div><h3>{be ? "2. Тэкст" : "2. Текст"}</h3><p>{be ? "Арыгінал застаецца без змен, рэдагуецца толькі тэкст для экспарту." : "Исходный текст сохраняется, редактируется только версия для экспорта."}</p></div></div>
+      <div className="transcription-text-columns">
+        <div className="transcription-text-pane">
+          <div className="panel-head"><b>{be ? "Зыходная транскрыпцыя" : "Исходная транскрипция"}</b></div>
+          <textarea className="report-editor-textarea transcription-main-editor" readOnly value={state.rawText} placeholder={be ? "Тут з'явіцца арыгінальная транскрыпцыя…" : "Здесь появится исходная транскрипция…"} />
+        </div>
+        <div className="transcription-text-pane">
+          <div className="panel-head"><b>{be ? "Тэкст для экспарту" : "Текст для экспорта"}</b><button className="ghost-button small-button" disabled={!state.rawText || busy!==""} onClick={() => setState((current) => ({ ...current, editorialText: current.rawText }))}>{be ? "Вярнуць зыходны" : "Вернуть исходный"}</button></div>
       <div className="report-compression-panel">
         <div className="report-compression-head">
           <div><b>Exact</b><span>{be ? "Скарачэнне без дадання новых фактаў" : "Сокращение без добавления новых фактов"}</span></div>
@@ -230,8 +218,9 @@ export function TranscriptionView() {
           <span>{be ? "Скарочана ад арыгінала" : "Сокращено от исходного"}: {compressionReduction(state.rawText, state.editorialText)}%</span>
         </div>
       </div>
-      <textarea ref={transcriptRef} className="report-editor-textarea transcription-main-editor" spellCheck={true} value={state.editorialText} onChange={(e) => setState((current) => ({ ...current, editorialText: e.target.value }))} placeholder={be ? "Тут з'явіцца транскрыпцыя…" : "Здесь появится транскрипция…"} />
-      {state.accents.length>0&&<div className="transcription-accents"><span>{be?"Акцэнты для DOCX:":"Акценты для DOCX:"}</span>{state.accents.map((accent)=><button key={accent} className="accent-chip" title={be?"Прыбраць акцэнт":"Убрать акцент"} onClick={()=>setState((current)=>({...current,accents:current.accents.filter((item)=>item!==accent)}))}>{accent.length>70?`${accent.slice(0,68)}…`:accent}<b>×</b></button>)}</div>}
+      <textarea className="report-editor-textarea transcription-main-editor" spellCheck={true} value={state.editorialText} onChange={(e) => setState((current) => ({ ...current, editorialText: e.target.value }))} placeholder={be ? "Тут з'явіцца транскрыпцыя…" : "Здесь появится транскрипция…"} />
+        </div>
+      </div>
     </section>
 
     <section className="panel transcription-comments">
@@ -249,14 +238,14 @@ export function TranscriptionView() {
         {state.comments.length===0&&<div className="report-empty">{be?"Каментарыі пакуль не дададзены.":"Комментарии пока не добавлены."}</div>}
         {state.comments.map((comment,index)=><div key={comment.id} className="transcription-comment-row">
           <div className="transcription-comment-number">{index+1}</div>
-          <textarea ref={(node)=>{commentRefs.current[comment.id]=node;}} spellCheck={true} value={comment.text} onChange={(e)=>setState((current)=>({...current,comments:current.comments.map((item)=>item.id===comment.id?{...item,text:e.target.value}:item)}))}/>
-          <div className="transcription-comment-actions">{comment.likes>0&&<small>♥ {comment.likes.toLocaleString()}</small>}<button className="ghost-button small-button" onClick={()=>addAccent(commentRefs.current[comment.id])}>{be?"Акцэнт":"Акцент"}</button><button className="ghost-button small-button" onClick={()=>setState((current)=>({...current,comments:current.comments.filter((item)=>item.id!==comment.id)}))}>×</button></div>
+          <textarea spellCheck={true} value={comment.text} onChange={(e)=>setState((current)=>({...current,comments:current.comments.map((item)=>item.id===comment.id?{...item,text:e.target.value}:item)}))}/>
+          <div className="transcription-comment-actions">{comment.likes>0&&<small>♥ {comment.likes.toLocaleString()}</small>}<button className="ghost-button small-button" onClick={()=>setState((current)=>({...current,comments:current.comments.filter((item)=>item.id!==comment.id)}))}>×</button></div>
         </div>)}
       </div>
     </section>
 
     <section className="panel transcription-export">
-      <div className="panel-head"><div><h3>{be ? "4. Экспарт" : "4. Экспорт"}</h3><p>{be ? "Times New Roman 16 pt, чырвоны радок 1,27 см, выраўноўванне па шырыні; акцэнты — паўтлусты курсіў." : "Times New Roman 16 pt, красная строка 1,27 см, выравнивание по ширине; акценты — полужирный курсив."}</p></div><button className="primary-button" disabled={busy!==""||!state.editorialText.trim()} onClick={exportDocx}>{busy==="export"?"…":"DOCX"}</button></div>
+      <div className="panel-head"><div><h3>{be ? "4. Экспарт" : "4. Экспорт"}</h3><p>{be ? "Экспарт адрэдагаванага тэксту і каментарыяў у Word." : "Экспорт отредактированного текста и комментариев в Word."}</p></div><button className="primary-button" disabled={busy!==""||!state.editorialText.trim()} onClick={exportDocx}>{busy==="export"?"…":"DOCX"}</button></div>
     </section>
   </div>;
 }
