@@ -363,6 +363,76 @@ fn transcribe_tiktok_url(
         segments,
     })
 }
+#[tauri::command]
+fn transcribe_local_video(path: String, base_url: String, anon_key: String, access_token: String) -> Result<TikTokTranscriptResult, String> {
+    let media_path = PathBuf::from(&path);
+    let ext = media_path.extension().and_then(|v| v.to_str()).unwrap_or_default().to_ascii_lowercase();
+    if !["mp4","mov","m4a","mp3","wav","webm","ogg","opus","mpeg","mpga"].contains(&ext.as_str()) {
+        return Err("Поддерживаются видео и аудиофайлы MP4, MOV, M4A, MP3, WAV, WEBM, OGG.".to_string());
+    }
+    let size = std::fs::metadata(&media_path).map_err(|e| format!("Файл недоступен: {e}"))?.len();
+    if size == 0 || size > 22 * 1024 * 1024 { return Err("Для этого способа файл должен быть не больше 22 МБ.".to_string()); }
+    let title = media_path.file_name().and_then(|v| v.to_str()).unwrap_or("Видео Telegram").to_string();
+    let url = String::new();
+    let edge_base = reqwest::Url::parse(base_url.trim()).map_err(|e| e.to_string())?;
+    if edge_base.scheme() != "https" || !edge_base.host_str().unwrap_or_default().to_ascii_lowercase().ends_with(".supabase.co") { return Err("Некорректный адрес сервера.".to_string()); }
+    let bytes = std::fs::read(&media_path).map_err(|e| format!("Не удалось прочитать видео: {e}"))?;
+    let file_name = media_path.file_name().and_then(|v| v.to_str()).unwrap_or("tiktok.mp4").to_string();
+    let part = reqwest::blocking::multipart::Part::bytes(bytes)
+        .file_name(file_name);
+    let form = reqwest::blocking::multipart::Form::new()
+        .text("app_version", env!("CARGO_PKG_VERSION").to_string())
+        .part("file", part);
+
+    let endpoint = format!("{}/functions/v1/media-transcribe", base_url.trim().trim_end_matches('/'));
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(150))
+        .build()
+        .map_err(|e| format!("Не удалось создать клиент транскрипции: {e}"))?;
+
+    let response = client.post(endpoint)
+        .header("apikey", anon_key.trim())
+        .bearer_auth(access_token.trim())
+        .multipart(form)
+        .send()
+        .map_err(|e| format!("TRANSCRIBE_NETWORK: {e}"));
+
+    let response = response?;
+    let status = response.status();
+    let raw = response.text().map_err(|e| format!("TRANSCRIBE_RESPONSE: {e}"))?;
+    if !status.is_success() {
+        return Err(format!("TRANSCRIBE_{}: {}", status.as_u16(), raw));
+    }
+
+    let payload: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("TRANSCRIBE_JSON: {e}; body={raw}"))?;
+    let text = payload.get("text").and_then(|v| v.as_str()).unwrap_or_default().trim().to_string();
+    if text.is_empty() {
+        return Err("Whisper вернул пустую транскрипцию.".to_string());
+    }
+    let segments = payload.get("segments").and_then(|v| v.as_array()).map(|items| {
+        items.iter().filter_map(|item| {
+            let text = item.get("text")?.as_str()?.trim().to_string();
+            if text.is_empty() { return None; }
+            Some(TikTokTranscriptSegment {
+                start: item.get("start").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                end: item.get("end").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                text,
+            })
+        }).collect::<Vec<_>>()
+    }).unwrap_or_default();
+
+    Ok(TikTokTranscriptResult {
+        title: if title.is_empty() { "TikTok".to_string() } else { title },
+        url: url.trim().to_string(),
+        text,
+        language: payload.get("language").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+        duration: payload.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0),
+        model: payload.get("model").and_then(|v| v.as_str()).unwrap_or("whisper-large-v3-turbo").to_string(),
+        segments,
+    })
+}
+
 
 #[tauri::command]
 fn export_report_docx(
@@ -490,6 +560,7 @@ pub fn run() {
             write_clipboard_text,
             call_supabase_edge,
             transcribe_tiktok_url,
+            transcribe_local_video,
             export_report_docx,
             export_w_review_docx,
             extract_w_review_sample,
