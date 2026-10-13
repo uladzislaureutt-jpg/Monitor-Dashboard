@@ -149,7 +149,7 @@ export function TranscriptionView() {
       const config = loadWorkroomConfig();
       const session = await ensureWorkroomSession(config, loadWorkroomSession());
       const version = await getVersion();
-      const response = await fetch(`${config.url.replace(/\\/+$/, "")}/functions/v1/transcription-edit`, {
+      const response = await fetch(`${config.url.replace(/\/+$/, "")}/functions/v1/transcription-edit`, {
         method: "POST",
         headers: { apikey: config.anonKey, Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" },
         body: JSON.stringify({ text, app_version: version }),
