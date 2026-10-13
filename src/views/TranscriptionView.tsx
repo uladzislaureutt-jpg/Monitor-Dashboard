@@ -222,7 +222,7 @@ export function TranscriptionView() {
     {error && <div className="notice error">{error}</div>}
 
     <section className="panel transcription-source">
-      <div className="panel-head"><div><h3>{be ? "1. Відэа" : "1. Видео"}</h3><p>{be ? "Устаўце публічную спасылку TikTok." : "Вставьте публичную ссылку TikTok."}</p></div><button className="ghost-button small-button" disabled={busy!==""} onClick={clearAll}>{be ? "Ачысціць" : "Очистить"}</button></div>
+      <div className="panel-head"><div><h3>{be ? "1. Відэа" : "1. Видео"}</h3><p>{videoSource === "telegram" ? (be ? "Устаўце спасылку на публічную публікацыю Telegram." : "Вставьте ссылку на публичную публикацию Telegram.") : (be ? "Устаўце публічную спасылку TikTok." : "Вставьте публичную ссылку TikTok.")}</p></div><button className="ghost-button small-button" disabled={busy!==""} onClick={clearAll}>{be ? "Ачысціць" : "Очистить"}</button></div>
       <div className="transcription-inline-actions"><button className={videoSource==="tiktok"?"primary-button small-button":"ghost-button small-button"} onClick={()=>setVideoSource("tiktok")}>TikTok</button><button className={videoSource==="telegram"?"primary-button small-button":"ghost-button small-button"} onClick={()=>setVideoSource("telegram")}>Telegram</button></div>
       <div className="transcription-url-row">
         <input value={inputUrl} onChange={(e) => setInputUrl(e.target.value)} placeholder={videoSource==="telegram"?"https://t.me/channel/12345":"https://www.tiktok.com/@…/video/…"} />
