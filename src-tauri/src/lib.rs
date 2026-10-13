@@ -382,6 +382,16 @@ fn extract_w_review_sample(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn export_tiktok_transcript_docx(
+    path: String,
+    text: String,
+    comments: Vec<String>,
+    accents: Vec<String>,
+) -> Result<(), String> {
+    report::export_tiktok_transcript_docx(&PathBuf::from(path), &text, &comments, &accents)
+}
+
+#[tauri::command]
 fn sync_server_artifacts(
     base_url: String,
     anon_key: String,
@@ -474,6 +484,7 @@ pub fn run() {
             export_report_docx,
             export_w_review_docx,
             extract_w_review_sample,
+            export_tiktok_transcript_docx,
             sync_server_artifacts,
             replace_moderation_snapshot,
             get_app_setting,
