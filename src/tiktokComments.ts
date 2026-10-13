@@ -17,9 +17,17 @@ function compact(value: string) {
   return value.replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
 }
 
+/** Remove UI labels that can look like valid comments after Ctrl+C. */
+function isTikTokUiLine(value: string) {
+  const text = compact(value).replace(/[.:…]+$/g, "").trim();
+  return /^(?:просмотреть|посмотреть|показать|скрыть|открыть|свернуть|загрузить|читать|смотреть|развернуть|view|show|hide|load|see|read)\s+(?:(?:ещё|еще|more|all)\s+)?(?:\d+[\s.,]*)?(?:ответ(?:ов|а|ы)?|комментари(?:ев|я|и)?|repl(?:y|ies)|comments?)(?:\s*\(\d+\))?$/iu.test(text)
+    || /^(?:показать|просмотреть|посмотреть|view|show|see)\s+\d+\s+(?:ответ(?:ов|а|ы)?|repl(?:y|ies)|комментари(?:ев|я|и)?)$/iu.test(text)
+    || /^(?:ответить|reply|лайк|нравится|like|поделиться|share|перевести|translate|подписаться|follow|подписки|following|more|еще|ещё)$/iu.test(text);
+}
+
 export function isUsefulTikTokComment(value: string) {
   const text = compact(value);
-  if (text.length <= 15) return false;
+  if (text.length <= 15 || isTikTokUiLine(text)) return false;
   const letters = (text.match(/[\p{L}\p{N}]/gu) || []).length;
   return letters >= 5;
 }
@@ -86,7 +94,7 @@ export function parseTikTokCommentsClipboard(raw: string): TikTokCapturedComment
   const results: TikTokCapturedComment[] = [];
   const seen = new Set<string>();
   for (const line of lines) {
-    if (ignore.test(line) || meta.test(line) || /^@?[\p{L}\p{N}_.-]{2,32}$/u.test(line)) continue;
+    if (ignore.test(line) || isTikTokUiLine(line) || meta.test(line) || /^@?[\p{L}\p{N}_.-]{2,32}$/u.test(line)) continue;
     if (!isUsefulTikTokComment(line)) continue;
     const normalized = line.toLocaleLowerCase("ru-RU");
     if (seen.has(normalized)) continue;
