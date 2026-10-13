@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { save } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { getVersion } from "@tauri-apps/api/app";
 import { desktopApi } from "../api";
 import { compressionReduction, exactCompressForProfile, type CompressionMode } from "../editorialCompression";
@@ -65,6 +65,7 @@ export function TranscriptionView() {
   const be = locale === "be";
   const [state, setState] = useState<TranscriptionState>(loadState);
   const [inputUrl, setInputUrl] = useState(state.url);
+  const [videoSource, setVideoSource] = useState<"tiktok"|"telegram">(state.url.includes("t.me/") ? "telegram" : "tiktok");
   const [busy, setBusy] = useState("");
   const [exactMode, setExactMode] = useState<CompressionMode>("light");
   const [aiRuns, setAiRuns] = useState(() => Math.min(2, Number(localStorage.getItem(`transcription-ai-runs:${state.url}`) || 0) || 0));
@@ -97,6 +98,20 @@ export function TranscriptionView() {
     } catch (reason) {
       setError(String(reason));
     } finally { setBusy(""); }
+  }
+
+  async function importVideoFile() {
+    setBusy("transcribe"); setError(""); setMessage("");
+    try {
+      const path = await open({ multiple: false, filters: [{ name: "Видео или аудио", extensions: ["mp4","mov","m4a","mp3","wav","webm","ogg","opus","mpeg","mpga"] }] });
+      if (!path || Array.isArray(path)) return;
+      const config = loadWorkroomConfig();
+      const session = await ensureWorkroomSession(config, loadWorkroomSession());
+      const result = await desktopApi.transcribeLocalVideo(path, config.url, config.anonKey, session.accessToken);
+      setState((current) => ({ ...current, title: result.title || "Telegram", url: inputUrl.trim(), rawText: result.text, editorialText: result.text, language: result.language, duration: result.duration, comments: [] }));
+      setMessage(be ? "Транскрыпцыя файла гатовая." : "Транскрипция файла готова.");
+    } catch (reason) { setError(String(reason)); }
+    finally { setBusy(""); }
   }
 
   async function openTikTok() {
@@ -199,7 +214,7 @@ export function TranscriptionView() {
 
   return <div className="view-stack transcription-view">
     <section className="view-heading">
-      <div><div className="eyebrow dark">TRANSCRIPTION</div><h2>{be ? "Транскрыпцыя TikTok" : "Транскрипция TikTok"}</h2><p>{be ? "Відэа → тэкст → каментарыі → рэдагаванне → DOCX." : "Видео → текст → комментарии → редактирование → DOCX."}</p></div>
+      <div><div className="eyebrow dark">TRANSCRIPTION</div><h2>{be ? "Транскрыпцыя відэа" : "Транскрипция видео"}</h2><p>{be ? "Відэа → тэкст → каментарыі → рэдагаванне → DOCX." : "Видео → текст → комментарии → редактирование → DOCX."}</p></div>
       <div className="transcription-meta"><b>{state.title || "TikTok"}</b><span>{state.language || "—"} · {duration}</span></div>
     </section>
 
@@ -208,10 +223,12 @@ export function TranscriptionView() {
 
     <section className="panel transcription-source">
       <div className="panel-head"><div><h3>{be ? "1. Відэа" : "1. Видео"}</h3><p>{be ? "Устаўце публічную спасылку TikTok." : "Вставьте публичную ссылку TikTok."}</p></div><button className="ghost-button small-button" disabled={busy!==""} onClick={clearAll}>{be ? "Ачысціць" : "Очистить"}</button></div>
+      <div className="transcription-inline-actions"><button className={videoSource==="tiktok"?"primary-button small-button":"ghost-button small-button"} onClick={()=>setVideoSource("tiktok")}>TikTok</button><button className={videoSource==="telegram"?"primary-button small-button":"ghost-button small-button"} onClick={()=>setVideoSource("telegram")}>Telegram</button></div>
       <div className="transcription-url-row">
-        <input value={inputUrl} onChange={(e) => setInputUrl(e.target.value)} placeholder="https://www.tiktok.com/@…/video/…" />
+        <input value={inputUrl} onChange={(e) => setInputUrl(e.target.value)} placeholder={videoSource==="telegram"?"https://t.me/channel/12345":"https://www.tiktok.com/@…/video/…"} />
         <button className="primary-button" disabled={busy!==""||!inputUrl.trim()} onClick={transcribe}>{busy==="transcribe"?"…":be?"Транскрыбаваць":"Транскрибировать"}</button>
       </div>
+      {videoSource==="telegram"&&<div className="transcription-inline-actions"><button className="secondary-button small-button" disabled={busy!==""} onClick={importVideoFile}>{be?"Выбраць відэафайл":"Выбрать видеофайл"}</button><span>{be?"Калі відэа па спасылцы недаступна, захавайце яго з Telegram (да 22 МБ).":"Если видео по ссылке недоступно, сохраните его из Telegram (до 22 МБ)."}</span></div>}
     </section>
 
     <section className="panel transcription-text">
