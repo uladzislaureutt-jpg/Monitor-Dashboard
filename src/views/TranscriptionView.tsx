@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { desktopApi } from "../api";
+import { compressionReduction, exactCompressForProfile, type CompressionMode } from "../editorialCompression";
 import { useI18n } from "../i18n";
 import { ensureWorkroomSession, loadWorkroomConfig, loadWorkroomSession } from "../workroom";
 import { TIKTOK_COMMENTS_BOOKMARKLET, parseTikTokCommentsCapture, type TikTokCapturedComment } from "../tiktokComments";
@@ -67,6 +68,7 @@ export function TranscriptionView() {
   const [state, setState] = useState<TranscriptionState>(loadState);
   const [inputUrl, setInputUrl] = useState(state.url);
   const [busy, setBusy] = useState("");
+  const [exactMode, setExactMode] = useState<CompressionMode>("light");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const transcriptRef = useRef<HTMLTextAreaElement | null>(null);
@@ -148,6 +150,22 @@ export function TranscriptionView() {
       : { ...current, accents: [...current.accents, selected].slice(0, 40) });
   }
 
+  function applyExactCompression() {
+    const source = state.editorialText.trim();
+    if (!source) return;
+    const result = exactCompressForProfile(source, exactMode, "l");
+    if (result.reductionPct <= 0 || result.text === source) {
+      setError(be ? "Для гэтага тэксту Exact не знайшоў бяспечнага скарачэння. Можна абраць іншы ўзровень." : "Для этого текста Exact не нашёл подходящего сокращения. Можно выбрать другой уровень.");
+      setMessage("");
+      return;
+    }
+    setError("");
+    setState((current) => ({ ...current, editorialText: result.text }));
+    setMessage(be
+      ? `Exact: скарочана на ${result.reductionPct}% ад папярэдняй версіі; сумарна ${compressionReduction(state.rawText || source, result.text)}% ад арыгінала.`
+      : `Exact: сокращено на ${result.reductionPct}% от предыдущей версии; суммарно ${compressionReduction(state.rawText || source, result.text)}% от оригинала.`);
+  }
+
   function clearAll() {
     setState(EMPTY);
     setInputUrl("");
@@ -197,6 +215,21 @@ export function TranscriptionView() {
 
     <section className="panel transcription-text">
       <div className="panel-head"><div><h3>{be ? "2. Тэкст" : "2. Текст"}</h3><p>{be ? "Рэдагуйце і скарачайце расшыфроўку перад экспартам." : "Редактируйте и сокращайте расшифровку перед экспортом."}</p></div><div className="transcription-inline-actions"><button className="secondary-button small-button" disabled={!state.editorialText} onClick={() => addAccent(transcriptRef.current)}>{be ? "Акцэнт" : "Акцент"}</button><button className="ghost-button small-button" disabled={!state.rawText} onClick={() => setState((current) => ({ ...current, editorialText: current.rawText, accents: [] }))}>{be ? "Вярнуць зыходны" : "Вернуть исходный"}</button></div></div>
+      <div className="report-compression-panel">
+        <div className="report-compression-head">
+          <div><b>Exact</b><span>{be ? "Скарачэнне без дадання новых фактаў" : "Сокращение без добавления новых фактов"}</span></div>
+          <label><select value={exactMode} disabled={busy!=="" || !state.editorialText.trim()} onChange={(e) => setExactMode(e.target.value as CompressionMode)}>
+            <option value="light">{be ? "Мінімальнае 20–30%" : "Минимальное 20–30%"}</option>
+            <option value="standard">{be ? "Стандарт 30–50%" : "Стандарт 30–50%"}</option>
+            <option value="maximum">{be ? "Максімальнае 50–70%" : "Максимальное 50–70%"}</option>
+            <option value="extract">{be ? "Экстракт 70–90%" : "Экстракт 70–90%"}</option>
+          </select></label>
+        </div>
+        <div className="report-compression-actions">
+          <button className="secondary-button small-button" disabled={busy!=="" || !state.editorialText.trim()} onClick={applyExactCompression}>{be ? "Скараціць Exact" : "Сократить Exact"}</button>
+          <span>{be ? "Скарочана ад арыгінала" : "Сокращено от исходного"}: {compressionReduction(state.rawText, state.editorialText)}%</span>
+        </div>
+      </div>
       <textarea ref={transcriptRef} className="report-editor-textarea transcription-main-editor" spellCheck={true} value={state.editorialText} onChange={(e) => setState((current) => ({ ...current, editorialText: e.target.value }))} placeholder={be ? "Тут з'явіцца транскрыпцыя…" : "Здесь появится транскрипция…"} />
       {state.accents.length>0&&<div className="transcription-accents"><span>{be?"Акцэнты для DOCX:":"Акценты для DOCX:"}</span>{state.accents.map((accent)=><button key={accent} className="accent-chip" title={be?"Прыбраць акцэнт":"Убрать акцент"} onClick={()=>setState((current)=>({...current,accents:current.accents.filter((item)=>item!==accent)}))}>{accent.length>70?`${accent.slice(0,68)}…`:accent}<b>×</b></button>)}</div>}
     </section>
