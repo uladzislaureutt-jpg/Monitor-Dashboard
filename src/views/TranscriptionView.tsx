@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
+import { getVersion } from "@tauri-apps/api/app";
 import { desktopApi } from "../api";
 import { compressionReduction, exactCompressForProfile, type CompressionMode } from "../editorialCompression";
 import { useI18n } from "../i18n";
@@ -66,6 +67,7 @@ export function TranscriptionView() {
   const [inputUrl, setInputUrl] = useState(state.url);
   const [busy, setBusy] = useState("");
   const [exactMode, setExactMode] = useState<CompressionMode>("light");
+  const [aiRuns, setAiRuns] = useState(() => Math.min(2, Number(localStorage.getItem(`transcription-ai-runs:${state.url}`) || 0) || 0));
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -90,6 +92,7 @@ export function TranscriptionView() {
         comments: [],
       }));
       setInputUrl(result.url || url);
+      setAiRuns(Math.min(2, Number(localStorage.getItem(`transcription-ai-runs:${result.url || url}`) || 0) || 0));
       setMessage(be ? "Транскрыпцыя гатовая. Тэкст можна рэдагаваць і скарачаць." : "Транскрипция готова. Текст можно редактировать и сокращать.");
     } catch (reason) {
       setError(String(reason));
@@ -138,9 +141,35 @@ export function TranscriptionView() {
       : `Exact: сокращено на ${result.reductionPct}% от предыдущей версии; суммарно ${compressionReduction(state.rawText || source, result.text)}% от оригинала.`);
   }
 
+  async function applyGeminiEdit() {
+    const text = state.editorialText.trim();
+    if (!text || aiRuns >= 2 || busy) return;
+    setBusy("gemini"); setError(""); setMessage("");
+    try {
+      const config = loadWorkroomConfig();
+      const session = await ensureWorkroomSession(config, loadWorkroomSession());
+      const version = await getVersion();
+      const response = await fetch(`${config.url.replace(/\\/+$/, "")}/functions/v1/transcription-edit`, {
+        method: "POST",
+        headers: { apikey: config.anonKey, Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ text, app_version: version }),
+      });
+      const data = await response.json() as { edited_text?: string; error?: string; model?: string; status?: number };
+      if (!response.ok || !data.edited_text) throw new Error(`${data.error || "gemini_failed"}${data.status ? ` (${data.status})` : ""}`);
+      const key = `transcription-ai-runs:${state.url || inputUrl}`;
+      const used = Math.min(2, aiRuns + 1);
+      localStorage.setItem(key, String(used));
+      setAiRuns(used);
+      setState((current) => ({ ...current, editorialText: data.edited_text || current.editorialText }));
+      setMessage(be ? `Gemini: тэкст адрэдагаваны. Выкарыстана ${used}/2.` : `Gemini: текст отредактирован. Использовано ${used}/2.`);
+    } catch (reason) { setError(String(reason)); }
+    finally { setBusy(""); }
+  }
+
   function clearAll() {
     setState(EMPTY);
     setInputUrl("");
+    setAiRuns(0);
     setMessage("");
     setError("");
   }
@@ -206,6 +235,8 @@ export function TranscriptionView() {
         </div>
         <div className="report-compression-actions">
           <button className="secondary-button small-button" disabled={busy!=="" || !state.editorialText.trim()} onClick={applyExactCompression}>{be ? "Скараціць Exact" : "Сократить Exact"}</button>
+          <button className="secondary-button small-button" disabled={busy!=="" || !state.editorialText.trim() || aiRuns>=2} onClick={applyGeminiEdit}>{busy==="gemini" ? "Gemini…" : (be ? "Рэдагаваць Gemini" : "Редактировать Gemini")}</button>
+          <span>Gemini: {aiRuns}/2</span>
           <span>{be ? "Скарочана ад арыгінала" : "Сокращено от исходного"}: {compressionReduction(state.rawText, state.editorialText)}%</span>
         </div>
       </div>
