@@ -70,3 +70,29 @@ export function parseTikTokCommentsCapture(raw: string): TikTokCommentsEnvelope 
     comments,
   };
 }
+
+/** Fallback for plain text copied from TikTok's visible comments list.
+ * TikTok does not guarantee that text selections contain likes or all loaded comments.
+ */
+export function parseTikTokCommentsClipboard(raw: string): TikTokCapturedComment[] {
+  const text = raw.trim();
+  if (!text) return [];
+  if (text.startsWith("{")) {
+    try { return parseTikTokCommentsCapture(text).comments; } catch { /* plain text follows */ }
+  }
+  const lines = text.replace(/\r/g, "").split("\n").map(compact).filter(Boolean);
+  const ignore = /^(?:Reply|Replies|View replies|View more replies|See more|Like|Liked|Share|Report|Translate|Follow|Following|Ответить|Ответы|Показать ответы|Посмотреть ответы|Нравится|Поделиться|Перевести|Подписаться|Еще|Ещё|Смотреть ещё|Показать больше|Показать перевод|Скрыть|Свернуть|автор|author|creator|·|•|❤|♥)$/i;
+  const meta = /^(?:@?[\p{L}\p{N}_.-]{2,32}\s*[·•]\s*)?(?:(?:\d+\s*(?:[hdwmy]|[чднмг]|час(?:ов|а)?|дн(?:ей|я)?|недел[ьи]|минут(?:ы)?))|(?:\d{1,2}[-/.]\d{1,2}(?:[-/.]\d{2,4})?)|(?:\d+(?:[.,]\d+)?[KkMmКкМм]?)|(?:\d+\s*(?:likes?|лайк(?:ов|а)?)))$/iu;
+  const results: TikTokCapturedComment[] = [];
+  const seen = new Set<string>();
+  for (const line of lines) {
+    if (ignore.test(line) || meta.test(line) || /^@?[\p{L}\p{N}_.-]{2,32}$/u.test(line)) continue;
+    if (!isUsefulTikTokComment(line)) continue;
+    const normalized = line.toLocaleLowerCase("ru-RU");
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    results.push({ text: line, likes: 0, order: results.length });
+    if (results.length >= 60) break;
+  }
+  return results;
+}
