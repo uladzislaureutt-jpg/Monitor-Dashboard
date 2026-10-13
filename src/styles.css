@@ -1181,3 +1181,12 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 .transcription-comment-actions small{font-size:8px;color:var(--muted)}
 .transcription-export .panel-head{margin-bottom:0}
 @media(max-width:900px){.transcription-url-row{grid-template-columns:1fr}.transcription-comment-row{grid-template-columns:26px minmax(0,1fr)}.transcription-comment-actions{grid-column:2;flex-direction:row;align-items:center;justify-content:flex-end}}
+
+/* Transcription source and editable copy */
+.transcription-text-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
+.transcription-text-pane{min-width:0;display:flex;flex-direction:column;gap:10px}
+.transcription-text-pane .panel-head{margin:0;min-height:34px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.transcription-text-pane .report-compression-panel{margin:0}
+.transcription-text-pane .transcription-main-editor{min-height:320px;resize:vertical}
+.transcription-text-pane textarea[readonly]{background:#f7f5f1;color:#4b5660}
+@media(max-width:1050px){.transcription-text-columns{grid-template-columns:minmax(0,1fr)}}
