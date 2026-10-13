@@ -380,3 +380,20 @@ export type SyncResult = {
   alreadyPresent: number;
   errors: string[];
 };
+
+
+export type TikTokTranscriptSegment = {
+  start: number;
+  end: number;
+  text: string;
+};
+
+export type TikTokTranscriptResult = {
+  title: string;
+  url: string;
+  text: string;
+  language: string;
+  duration: number;
+  model: string;
+  segments: TikTokTranscriptSegment[];
+};
