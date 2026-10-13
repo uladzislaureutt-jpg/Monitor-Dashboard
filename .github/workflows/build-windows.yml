@@ -43,6 +43,18 @@ jobs:
             throw "yt-dlp SHA256 mismatch: $hash"
           }
 
+      - name: Bundle FFmpeg audio converter
+        shell: pwsh
+        run: |
+          npm pack @ffmpeg-installer/win32-x64@4.1.0 --pack-destination .
+          $archive = Get-ChildItem -Filter "ffmpeg-installer-win32-x64-4.1.0.tgz" | Select-Object -First 1
+          if (-not $archive) { throw "Pinned FFmpeg archive missing" }
+          tar -xzf $archive.FullName package/ffmpeg.exe
+          Move-Item -Force package/ffmpeg.exe src-tauri/binaries/ffmpeg.exe
+          & src-tauri/binaries/ffmpeg.exe -version | Select-Object -First 1
+          Remove-Item -Recurse -Force package
+          Remove-Item -Force $archive.FullName
+
       - name: Build Tauri Windows installer
         run: npm run tauri build -- --bundles nsis
 
