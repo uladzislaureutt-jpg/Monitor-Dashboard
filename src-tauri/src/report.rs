@@ -201,6 +201,119 @@ fn title_separator(title: &str) -> &'static str {
 
 
 
+fn sanitize_transcription_text(value: &str) -> String {
+    let omission = Regex::new(r"\[\s*(?:…|\.{3})\s*\]").expect("valid omission regex");
+    let spaces = Regex::new(r"[ \t]{2,}").expect("valid spaces regex");
+    let cleaned = omission.replace_all(value, " ");
+    let compact = spaces.replace_all(cleaned.trim(), " ");
+    let mut quoted = String::with_capacity(compact.len());
+    let mut opening_straight_quote = true;
+    for ch in compact.chars() {
+        match ch {
+            '«' => quoted.push('«'),
+            '»' => quoted.push('»'),
+            '“' | '„' | '‟' => quoted.push('«'),
+            '”' => quoted.push('»'),
+            '"' => {
+                quoted.push(if opening_straight_quote { '«' } else { '»' });
+                opening_straight_quote = !opening_straight_quote;
+            }
+            '—' => quoted.push('–'),
+            _ => quoted.push(ch),
+        }
+    }
+    let spaced_dash = Regex::new(r"\s-\s").expect("valid spaced dash regex");
+    let normalized = spaced_dash.replace_all(&quoted, " – ");
+    let abbreviations = Regex::new(r"(?i)\b(тыс|млн|млрд|трлн)\.?(\s|$)").expect("valid abbreviation regex");
+    let with_abbreviations = abbreviations.replace_all(normalized.trim(), "$1.$2");
+    let initials_pair = Regex::new(r"\b([А-ЯЁA-Z])\.\s+([А-ЯЁA-Z])\.").expect("valid initials pair");
+    let compact_pairs = initials_pair.replace_all(&with_abbreviations, "$1.$2.");
+    let initial_surname = Regex::new(r"\b([А-ЯЁA-Z])\.\s+([А-ЯЁA-Z][А-ЯЁа-яёA-Za-z-]+)").expect("valid initial surname");
+    initial_surname.replace_all(&compact_pairs, "$1.$2").to_string()
+}
+
+fn run_transcription(text: &str, bold_italic: bool) -> String {
+    let mut props = String::from("<w:rFonts w:ascii=\"Times New Roman\" w:hAnsi=\"Times New Roman\" w:eastAsia=\"Times New Roman\" w:cs=\"Times New Roman\"/><w:spacing w:val=\"-2\"/><w:sz w:val=\"32\"/><w:szCs w:val=\"32\"/>");
+    if bold_italic { props.push_str("<w:b/><w:bCs/><w:i/><w:iCs/>"); }
+    format!("<w:r><w:rPr>{props}</w:rPr><w:t xml:space=\"preserve\">{}</w:t></w:r>", xml_text(text))
+}
+
+fn paragraph_transcription(runs: &str) -> String {
+    format!("<w:p><w:pPr><w:ind w:firstLine=\"720\"/><w:jc w:val=\"both\"/></w:pPr>{runs}</w:p>")
+}
+
+fn transcription_runs(text: &str, accents: &[String]) -> String {
+    let normalized_accents: Vec<String> = accents.iter()
+        .map(|value| sanitize_transcription_text(value))
+        .filter(|value| !value.trim().is_empty())
+        .collect();
+    let ranges = w_review_exact_ranges(text, &normalized_accents);
+    let mut cuts = vec![0usize, text.len()];
+    for (start, end) in &ranges { cuts.push(*start); cuts.push(*end); }
+    cuts.sort_unstable();
+    cuts.dedup();
+    let mut result = String::new();
+    for pair in cuts.windows(2) {
+        let start = pair[0];
+        let end = pair[1];
+        if start >= end { continue; }
+        result.push_str(&run_transcription(&text[start..end], range_contains(&ranges, start, end)));
+    }
+    if result.is_empty() { result.push_str(&run_transcription(text, false)); }
+    result
+}
+
+pub fn export_tiktok_transcript_docx(path: &Path, text: &str, comments: &[String], accents: &[String]) -> Result<(), String> {
+    if text.trim().is_empty() { return Err("Текст транскрипции пуст.".to_string()); }
+    if path.extension().and_then(|value| value.to_str()).map(|value| value.eq_ignore_ascii_case("docx")) != Some(true) {
+        return Err("Файл транскрипции должен иметь расширение .docx".to_string());
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("Не удалось создать каталог транскрипции: {e}"))?;
+    }
+
+    let cleaned_text = sanitize_transcription_text(text);
+    let mut body = String::new();
+    body.push_str(&paragraph_transcription(&transcription_runs(&cleaned_text, accents)));
+
+    let cleaned_comments: Vec<String> = comments.iter()
+        .map(|value| sanitize_transcription_text(value).trim().trim_end_matches('.').trim().to_string())
+        .filter(|value| !value.is_empty())
+        .take(20)
+        .collect();
+    if !cleaned_comments.is_empty() {
+        let joined = format!("Комментарии: {}.", cleaned_comments.iter()
+            .map(|value| format!("«{}»", value))
+            .collect::<Vec<_>>()
+            .join("; "));
+        body.push_str(&paragraph_transcription(&transcription_runs(&joined, accents)));
+    }
+
+    body.push_str("<w:sectPr><w:pgSz w:w=\"11906\" w:h=\"16838\"/><w:pgMar w:left=\"1276\" w:right=\"707\" w:gutter=\"0\" w:header=\"720\" w:top=\"1135\" w:footer=\"0\" w:bottom=\"851\"/><w:docGrid w:type=\"default\" w:linePitch=\"272\" w:charSpace=\"0\"/></w:sectPr>");
+
+    let document = format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><w:body>{body}</w:body></w:document>");
+    let styles = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:styles xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii=\"Times New Roman\" w:hAnsi=\"Times New Roman\" w:eastAsia=\"Times New Roman\" w:cs=\"Times New Roman\"/><w:spacing w:val=\"-2\"/><w:sz w:val=\"32\"/><w:szCs w:val=\"32\"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr/></w:pPrDefault></w:docDefaults><w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"Normal\"><w:name w:val=\"Normal\"/><w:qFormat/><w:rPr><w:rFonts w:ascii=\"Times New Roman\" w:hAnsi=\"Times New Roman\" w:eastAsia=\"Times New Roman\" w:cs=\"Times New Roman\"/><w:spacing w:val=\"-2\"/><w:sz w:val=\"32\"/><w:szCs w:val=\"32\"/></w:rPr></w:style></w:styles>";
+    let root_rels = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/></Relationships>";
+    let doc_rels = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/></Relationships>";
+    let content_types = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/><Override PartName=\"/word/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml\"/></Types>";
+
+    let file = File::create(path).map_err(|e| format!("Не удалось создать DOCX транскрипции: {e}"))?;
+    let mut zip = ZipWriter::new(file);
+    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    for (name, content) in [
+        ("[Content_Types].xml", content_types.to_string()),
+        ("_rels/.rels", root_rels.to_string()),
+        ("word/document.xml", document),
+        ("word/styles.xml", styles.to_string()),
+        ("word/_rels/document.xml.rels", doc_rels.to_string()),
+    ] {
+        zip.start_file(name, options).map_err(|e| format!("Не удалось создать часть DOCX {name}: {e}"))?;
+        zip.write_all(content.as_bytes()).map_err(|e| format!("Не удалось записать часть DOCX {name}: {e}"))?;
+    }
+    zip.finish().map_err(|e| format!("Не удалось завершить DOCX транскрипции: {e}"))?;
+    Ok(())
+}
+
 fn decode_word_xml(value: &str) -> String {
     value
         .replace("&lt;", "<")
