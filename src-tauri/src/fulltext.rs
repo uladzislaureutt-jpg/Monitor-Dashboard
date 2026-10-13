@@ -375,9 +375,75 @@ pub fn resolve_known_source(db_path: &Path, url: &str) -> Result<KnownSourceMeta
     })
 }
 
+
+fn fetch_telegram_public_post(parsed: &reqwest::Url) -> Result<KnownSourceArticleResult, String> {
+    let host = parsed.host_str().unwrap_or_default().to_ascii_lowercase();
+    if !matches!(host.as_str(), "t.me" | "telegram.me" | "www.t.me") {
+        return Err("Не Telegram URL".to_string());
+    }
+    let parts: Vec<&str> = parsed.path_segments()
+        .map(|it| it.filter(|v| !v.is_empty()).collect())
+        .unwrap_or_default();
+    let (channel, post_id) = match parts.as_slice() {
+        [channel, post_id] | ["s", channel, post_id]
+            if !channel.starts_with('+') && post_id.chars().all(|ch| ch.is_ascii_digit())
+                && !post_id.is_empty() => (*channel, *post_id),
+        _ => return Err("Нужна публичная ссылка на отдельное сообщение Telegram: t.me/channel/12345.".to_string()),
+    };
+    if !channel.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_') {
+        return Err("Некорректное имя публичного Telegram-канала.".to_string());
+    }
+    let canonical = format!("https://t.me/{channel}/{post_id}");
+    let page_url = format!("https://t.me/s/{channel}/{post_id}");
+    let client = Client::builder()
+        .timeout(Duration::from_secs(15))
+        .user_agent(DESKTOP_UA)
+        .build()
+        .map_err(|e| format!("Telegram HTTP client: {e}"))?;
+    let mut response = client.get(&page_url).send()
+        .map_err(|e| format!("Не удалось получить публичную страницу Telegram: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!("Telegram вернул HTTP {}. Используйте ручную вставку текста.", response.status()));
+    }
+    let mut bytes = Vec::new();
+    response.take(MAX_HTML_BYTES as u64 + 1).read_to_end(&mut bytes)
+        .map_err(|e| format!("Ошибка чтения Telegram: {e}"))?;
+    let html = String::from_utf8_lossy(&bytes);
+    // Identify an exact public post, never concatenate neighbouring messages.
+    let data_post = format!(r#"data-post="{channel}/{post_id}""#);
+    let offset = html.find(&data_post)
+        .ok_or_else(|| "Telegram не показал указанное сообщение в публичной ленте. Вставьте текст вручную.".to_string())?;
+    let tail = &html[offset..];
+    let end = tail.find("tgme_widget_message_wrap").unwrap_or(tail.len()).min(100_000);
+    let block = &tail[..end];
+    let text_re = Regex::new(r#"(?is)<div\b[^>]*class="[^"]*\btgme_widget_message_text\b[^"]*"[^>]*>(.*?)</div>"#)
+        .expect("telegram message regex");
+    let inner = text_re.captures(block).and_then(|m| m.get(1))
+        .ok_or_else(|| "У сообщения нет доступного публичного текста. Используйте ручную вставку.".to_string())?;
+    let br = Regex::new(r"(?i)<br\s*/?>").expect("br regex");
+    let tags = Regex::new(r"(?s)<[^>]+>").expect("tag regex");
+    let raw = br.replace_all(inner.as_str(), "\n");
+    let raw = tags.replace_all(&raw, "");
+    let decoded = decode_entities(&raw);
+    let text = decoded.lines().map(str::trim).filter(|s| !s.is_empty())
+        .collect::<Vec<_>>().join("\n");
+    if text.chars().count() < 12 {
+        return Err("Telegram сообщил слишком короткий или пустой текст. Используйте ручную вставку.".to_string());
+    }
+    let title: String = text.lines().next().unwrap_or("Telegram").chars().take(180).collect();
+    Ok(KnownSourceArticleResult {
+        title, source: format!("Telegram @{channel}"), region: None,
+        url: canonical, text, quality: "full".to_string(),
+        strategy: "telegram_public_post".to_string(),
+    })
+}
+
 pub fn fetch_known_source_article(db_path: &Path, url: &str) -> Result<KnownSourceArticleResult, String> {
     let parsed = safe_public_url(url)?;
     let host = parsed.host_str().unwrap_or_default();
+    if matches!(host, "t.me" | "telegram.me" | "www.t.me") {
+        return fetch_telegram_public_post(&parsed);
+    }
     let Some((source, region, _domain)) = known_source_for_host(db_path, host)? else {
         return Err("Источник с таким доменом отсутствует в локальной базе Monitor. Используйте вставку из буфера.".to_string());
     };
