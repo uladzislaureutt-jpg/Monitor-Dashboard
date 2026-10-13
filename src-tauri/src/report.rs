@@ -329,7 +329,7 @@ pub fn export_tiktok_transcript_docx(path: &Path, text: &str, comments: &[String
 
     let cleaned_text = sanitize_transcription_text(&strip_tiktok_symbols(text));
     let spoken = cleaned_text.trim().trim_start_matches('«').trim_end_matches('»').trim();
-    let spoken = if spoken.ends_with(['.', '!', '?', '…']) { spoken.to_string() } else { format!("{spoken}.") };
+    let spoken = if spoken.chars().last().map(|c| matches!(c, '.' | '!' | '?' | '…')).unwrap_or(false) { spoken.to_string() } else { format!("{spoken}.") };
     // Frontend passes the account handle in the previously unused accents slot.
     // Keep parentheses regular, but italicize «handle» using transcription_italic_ranges.
     let handle = accents.first().map(|value| value.trim().trim_start_matches('@'))
