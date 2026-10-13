@@ -1,1 +1,0 @@
-Build Windows installer for Telegram public post import, 2026-10-13.
