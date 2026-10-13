@@ -203,7 +203,7 @@ export function TranscriptionView() {
         path,
         state.editorialText.trim(),
         state.comments.map((item) => item.text.trim()).filter(Boolean),
-        [new URL(state.url || inputUrl).pathname.match(/^\/@([^/]+)/)?.[1] || ""],
+        [(() => { try { const parsed = new URL(state.url || inputUrl); return parsed.hostname.endsWith("t.me") ? (parsed.pathname.match(/^\/(?:s\/)?([^/]+)/)?.[1] || "") : (parsed.pathname.match(/^\/@([^/]+)/)?.[1] || ""); } catch { return ""; } })()],
       );
       setMessage(be ? "DOCX захаваны па зададзеным узоры." : "DOCX сохранён по заданному образцу.");
     } catch (reason) { setError(String(reason)); }
