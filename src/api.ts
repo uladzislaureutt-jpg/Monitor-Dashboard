@@ -93,6 +93,8 @@ export const desktopApi = {
   getSetting: (key: string) => invoke<string | null>("get_app_setting", { key }),
   setSetting: (key: string, value: string) => invoke<void>("set_app_setting", { key, value }),
   deleteSetting: (key: string) => invoke<void>("delete_app_setting", { key }),
+  recognizeVideoScreenshot: (path: string, baseUrl: string, anonKey: string, accessToken: string) =>
+    invoke<string>("recognize_video_screenshot", { path, baseUrl, anonKey, accessToken }),
   transcribeLocalVideo: (path: string, baseUrl: string, anonKey: string, accessToken: string) =>
     invoke<TikTokTranscriptResult>("transcribe_local_video", { path, baseUrl, anonKey, accessToken }),
   transcribeTikTok: (url: string, baseUrl: string, anonKey: string, accessToken: string) =>
