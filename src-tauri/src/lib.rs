@@ -396,6 +396,31 @@ fn transcribe_tiktok_url(
     Ok(TikTokTranscriptResult { title, url: url.trim().to_string(), text, language, duration, model, segments })
 }
 #[tauri::command]
+fn recognize_video_screenshot(path: String, base_url: String, anon_key: String, access_token: String) -> Result<String, String> {
+    let image = PathBuf::from(path);
+    let extension = image.extension().and_then(|e|e.to_str()).unwrap_or("").to_ascii_lowercase();
+    let mime = match extension.as_str() { "png"=>"image/png", "jpg"|"jpeg"=>"image/jpeg", "webp"=>"image/webp", _=>return Err("Выберите PNG, JPEG или WebP.".to_string()) };
+    let size = std::fs::metadata(&image).map_err(|e| format!("Скриншот недоступен: {e}"))?.len();
+    if size == 0 || size > 8*1024*1024 {return Err("Размер скриншота должен быть до 8 МБ.".to_string());}
+    let url = reqwest::Url::parse(base_url.trim()).map_err(|e|e.to_string())?;
+    if url.scheme() != "https" || !url.host_str().unwrap_or("").ends_with(".supabase.co") {return Err("Некорректный адрес сервера.".to_string());}
+    let bytes=std::fs::read(&image).map_err(|e|e.to_string())?;
+    let form=reqwest::blocking::multipart::Form::new().part("image",
+        reqwest::blocking::multipart::Part::bytes(bytes).file_name(format!("frame.{extension}")).mime_str(mime).map_err(|e|e.to_string())?);
+    let client=reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(100)).build().map_err(|e|e.to_string())?;
+    let endpoint=format!("{}/functions/v1/transcription-image-ocr",base_url.trim().trim_end_matches('/'));
+    let response=client.post(endpoint).header("apikey",anon_key.trim()).bearer_auth(access_token.trim())
+        .multipart(form).send().map_err(|e|format!("OCR_NETWORK: {e}"))?;
+    let status=response.status();
+    let raw=response.text().map_err(|e|e.to_string())?;
+    if !status.is_success(){return Err(format!("OCR_{}: {}",status.as_u16(),raw.chars().take(400).collect::<String>()));}
+    let parsed:serde_json::Value=serde_json::from_str(&raw).map_err(|e|e.to_string())?;
+    let result=parsed.get("text").and_then(|x|x.as_str()).unwrap_or("").trim();
+    if result.is_empty(){return Err("На скриншоте текст не обнаружен.".to_string());}
+    Ok(result.to_string())
+}
+
+#[tauri::command]
 fn transcribe_local_video(path: String, base_url: String, anon_key: String, access_token: String, app: AppHandle) -> Result<TikTokTranscriptResult, String> {
     let media_path = PathBuf::from(&path);
     let ext = media_path.extension().and_then(|v| v.to_str()).unwrap_or_default().to_ascii_lowercase();
@@ -543,6 +568,7 @@ pub fn run() {
             call_supabase_edge,
             transcribe_tiktok_url,
             transcribe_local_video,
+            recognize_video_screenshot,
             export_report_docx,
             export_w_review_docx,
             extract_w_review_sample,
