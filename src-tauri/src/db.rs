@@ -196,7 +196,7 @@ pub fn existing_run(
 
 fn period_clause(alias: &str, parameter: &str) -> String {
     format!(
-        "({parameter} IS NULL OR ({alias}.published_at IS NOT NULL AND datetime({alias}.published_at) >= datetime('now', '-' || {parameter} || ' days')))"
+        "({alias}.published_at IS NOT NULL AND datetime({alias}.published_at) <= datetime('now', '+1 day') AND ({parameter} IS NULL OR datetime({alias}.published_at) >= datetime('now', '-' || {parameter} || ' days')))"
     )
 }
 
