@@ -40,6 +40,7 @@ struct TikTokTranscriptResult {
     duration: f64,
     model: String,
     segments: Vec<TikTokTranscriptSegment>,
+    warnings: Vec<String>,
 }
 
 
@@ -218,65 +219,93 @@ fn call_supabase_edge(
     serde_json::from_str(&text).map_err(|e| format!("EDGE_JSON: {e}; body={text}"))
 }
 
-fn transcribe_audio_chunks(audio: &std::path::Path, app: &AppHandle, base_url: &str, anon_key: &str, access_token: &str) -> Result<(String, String, f64, String, Vec<TikTokTranscriptSegment>), String> {
-    let ffmpeg = app.path().resolve("binaries/ffmpeg.exe", tauri::path::BaseDirectory::Resource).map_err(|e| e.to_string())?;
-    let output = Command::new(&ffmpeg).args(["-hide_banner","-loglevel","error","-nostdin","-i"]).arg(audio)
-        .args(["-f","null","-"]).output().map_err(|e| e.to_string())?;
-    if !output.status.success() { return Err("Ошибка чтения аудиофайла.".to_string()); }
-    let audio_size = std::fs::metadata(audio).map_err(|e|e.to_string())?.len();
-    // MP3 at 32 kbps; duration is only an estimate for a CBR audio track.
-    let estimated_duration = (audio_size as f64 * 8.0 / 32000.0).max(1.0);
-    let chunk_seconds = 45.0_f64;
-    let count = (estimated_duration / chunk_seconds).ceil().max(1.0) as usize;
-    if count > 240 { return Err("Слишком длинная запись для одной транскрипции.".to_string()); }
-    let client = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(150)).build().map_err(|e|e.to_string())?;
-    let endpoint = format!("{}/functions/v1/media-transcribe",base_url.trim().trim_end_matches('/'));
-    let mut parts = Vec::new();
-    let mut all_segments = Vec::new();
-    let mut language = String::new();
-    let mut model = String::new();
-    let mut actual_duration = 0.0_f64;
+fn transcribe_audio_chunks(audio: &std::path::Path, app: &AppHandle, base_url: &str, anon_key: &str, access_token: &str) -> Result<(String, String, f64, String, Vec<TikTokTranscriptSegment>, Vec<String>), String> {
+    let ffmpeg = app.path().resolve("binaries/ffmpeg.exe", tauri::path::BaseDirectory::Resource).map_err(|e|e.to_string())?;
+    let size = std::fs::metadata(audio).map_err(|e|e.to_string())?.len();
+    let duration_estimate = (size as f64 * 8.0 / 32000.0).max(1.0);
+    let count = (duration_estimate / 45.0).ceil().max(1.0) as usize;
+    if count > 240 { return Err("Запись слишком длинная для одного запуска.".to_string()); }
+    let client=reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(150)).build().map_err(|e|e.to_string())?;
+    let endpoint=format!("{}/functions/v1/media-transcribe",base_url.trim().trim_end_matches('/'));
+    let mut parts=Vec::new();
+    let mut segments=Vec::new();
+    let mut warnings=Vec::new();
+    let mut language=String::new();
+    let mut model=String::new();
+    let mut duration=0.0_f64;
     for index in 0..count {
-        let start = index as f64 * chunk_seconds;
-        let end = start + chunk_seconds;
-        let chunk = audio.with_file_name(format!("chunk-{}-{}.mp3",std::process::id(), index));
-        let extracted = Command::new(&ffmpeg).args(["-hide_banner","-loglevel","error","-nostdin","-y","-ss"])
-            .arg(format!("{start:.2}")).args(["-i"]).arg(audio)
-            .args(["-t"]).arg(format!("{chunk_seconds:.2}"))
+        // Three seconds of context on BOTH sides of each 45-second segment.
+        // Select the transcript only from the segment's OWN 45-second interval.
+        let boundary=index as f64*45.0;
+        let offset=(boundary-3.0).max(0.0);
+        let length=45.0 + (boundary-offset) + 3.0;
+        let chunk=audio.with_file_name(format!("chunk-{}-{}.mp3",std::process::id(),index));
+        let converted=Command::new(&ffmpeg).args(["-hide_banner","-loglevel","error","-nostdin","-y","-ss"])
+            .arg(format!("{offset:.3}")).arg("-i").arg(audio).arg("-t").arg(format!("{length:.3}"))
             .args(["-ac","1","-ar","16000","-codec:a","libmp3lame","-b:a","48k"])
             .arg(&chunk).output().map_err(|e|e.to_string())?;
-        if !extracted.status.success() {let _=std::fs::remove_file(&chunk);return Err(format!("Не удалось выделить аудиофрагмент {}",index+1));}
+        if !converted.status.success() {
+            let _=std::fs::remove_file(&chunk);
+            return Err(format!("Не удалось выделить аудио: участок {}",index+1));
+        }
         let bytes=std::fs::read(&chunk).map_err(|e|e.to_string())?;
         let _=std::fs::remove_file(&chunk);
-        if bytes.len() < 12000 {break;}
+        if bytes.len()<12000 {
+            // A small final empty fragment is possible due to MP3 header/duration estimation.
+            if index+1==count {break;}
+            return Err(format!("Аудиофрагмент {} неожиданно пустой.",index+1));
+        }
         let form=reqwest::blocking::multipart::Form::new()
             .text("app_version",env!("CARGO_PKG_VERSION").to_string())
             .part("file",reqwest::blocking::multipart::Part::bytes(bytes).file_name("audio.mp3"));
         let response=client.post(&endpoint).header("apikey",anon_key.trim()).bearer_auth(access_token.trim())
             .multipart(form).send().map_err(|e|format!("TRANSCRIBE_NETWORK (часть {}): {e}",index+1))?;
-        let status=response.status();let raw=response.text().map_err(|e|e.to_string())?;
+        let status=response.status();
+        let raw=response.text().map_err(|e|e.to_string())?;
         if !status.is_success(){return Err(format!("TRANSCRIBE_{} (часть {}): {}",status.as_u16(),index+1,raw.chars().take(300).collect::<String>()));}
         let payload:serde_json::Value=serde_json::from_str(&raw).map_err(|e|e.to_string())?;
-        let text=payload.get("text").and_then(|v|v.as_str()).unwrap_or("").trim();
-        if text.is_empty(){return Err(format!("Whisper не распознал часть {} ({}–{} сек). Проверьте запись.",index+1,start,end));}
-        parts.push(text.to_string());
-        let duration=payload.get("duration").and_then(|v|v.as_f64()).unwrap_or(chunk_seconds);
-        actual_duration=start+duration.min(chunk_seconds);
+        let chunk_duration=payload.get("duration").and_then(|v|v.as_f64()).unwrap_or(length).min(length);
+        let chunk_end=offset+chunk_duration;
+        duration=duration.max(chunk_end);
         if language.is_empty(){language=payload.get("language").and_then(|v|v.as_str()).unwrap_or("").to_string();}
         if model.is_empty(){model=payload.get("model").and_then(|v|v.as_str()).unwrap_or("").to_string();}
+        let mut own_segments=Vec::new();
         if let Some(items)=payload.get("segments").and_then(|v|v.as_array()){
-            for segment in items {
-                let t=segment.get("text").and_then(|v|v.as_str()).unwrap_or("").trim();
-                if !t.is_empty(){all_segments.push(TikTokTranscriptSegment{
-                    start:start+segment.get("start").and_then(|v|v.as_f64()).unwrap_or(0.0),
-                    end:start+segment.get("end").and_then(|v|v.as_f64()).unwrap_or(0.0),
-                    text:t.to_string(),
-                });}
+            for item in items {
+                let text=item.get("text").and_then(|v|v.as_str()).unwrap_or("").trim();
+                if text.is_empty(){continue;}
+                let local_start=item.get("start").and_then(|v|v.as_f64()).unwrap_or(0.0);
+                let local_end=item.get("end").and_then(|v|v.as_f64()).unwrap_or(local_start);
+                let absolute_start=offset+local_start;
+                let absolute_end=offset+local_end;
+                // Midpoint ownership prevents duplicate phrases in overlap.
+                let midpoint=(absolute_start+absolute_end)/2.0;
+                if midpoint<boundary || midpoint>=boundary+45.0 {continue;}
+                own_segments.push(TikTokTranscriptSegment{start:absolute_start,end:absolute_end,text:text.to_string()});
             }
         }
+        own_segments.sort_by(|a,b|a.start.total_cmp(&b.start));
+        let mut previous_end=boundary;
+        for segment in &own_segments {
+            if segment.start-previous_end>4.0 && segment.start<boundary+43.0 {
+                warnings.push(format!("Возможный пропуск речи: {:.0}–{:.0} с. Проверьте по видео.",previous_end,segment.start));
+            }
+            previous_end=previous_end.max(segment.end);
+        }
+        if own_segments.is_empty(){
+            // Do not silently use a complete chunk transcript when segment timings
+            // cannot establish its ownership or coverage.
+            warnings.push(format!("Участок {:.0}–{:.0} с: нет проверяемых временных сегментов.",boundary,boundary+45.0));
+            let fallback=payload.get("text").and_then(|v|v.as_str()).unwrap_or("").trim();
+            if fallback.is_empty(){return Err(format!("Whisper не распознал участок {:.0}–{:.0} с.",boundary,boundary+45.0));}
+            parts.push(fallback.to_string());
+        } else {
+            parts.push(own_segments.iter().map(|v|v.text.as_str()).collect::<Vec<_>>().join(" "));
+            segments.extend(own_segments);
+        }
     }
-    if parts.is_empty(){return Err("Не удалось распознать ни одного фрагмента.".to_string());}
-    Ok((parts.join(" "),language,actual_duration,model,all_segments))
+    if parts.is_empty(){return Err("Whisper не распознал аудио.".to_string());}
+    Ok((parts.join(" "),language,duration,model,segments,warnings))
 }
 
 fn prepare_transcription_audio(source: &std::path::Path, app: &AppHandle) -> Result<PathBuf, String> {
@@ -392,8 +421,8 @@ fn transcribe_tiktok_url(
     let audio_path = converted?;
     let result = transcribe_audio_chunks(&audio_path, &app, &base_url, &anon_key, &access_token);
     let _ = std::fs::remove_file(&audio_path);
-    let (text,language,duration,model,segments) = result?;
-    Ok(TikTokTranscriptResult { title, url: url.trim().to_string(), text, language, duration, model, segments })
+    let (text,language,duration,model,segments,warnings) = result?;
+    Ok(TikTokTranscriptResult { title, url: url.trim().to_string(), text, language, duration, model, segments, warnings })
 }
 #[tauri::command]
 fn recognize_video_screenshot(path: String, base_url: String, anon_key: String, access_token: String) -> Result<String, String> {
@@ -436,8 +465,8 @@ fn transcribe_local_video(path: String, base_url: String, anon_key: String, acce
     let audio_path = prepare_transcription_audio(&media_path, &app)?;
     let result = transcribe_audio_chunks(&audio_path, &app, &base_url, &anon_key, &access_token);
     let _ = std::fs::remove_file(&audio_path);
-    let (text,language,duration,model,segments) = result?;
-    Ok(TikTokTranscriptResult { title, url: url.trim().to_string(), text, language, duration, model, segments })
+    let (text,language,duration,model,segments,warnings) = result?;
+    Ok(TikTokTranscriptResult { title, url: url.trim().to_string(), text, language, duration, model, segments, warnings })
 }
 
 
