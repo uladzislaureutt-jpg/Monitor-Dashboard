@@ -48,7 +48,7 @@ function loadState(): TranscriptionState {
       language: String(raw.language || ""),
       duration: Math.max(0, Number(raw.duration || 0)),
       comments: Array.isArray(raw.comments)
-        ? raw.comments.slice(0, 30).map((item, index) => ({
+        ? raw.comments.slice(0, 25).map((item, index) => ({
             id: String((item as TranscriptComment).id || `comment-${index}`),
             text: String((item as TranscriptComment).text || ""),
             likes: Math.max(0, Number((item as TranscriptComment).likes || 0)),
