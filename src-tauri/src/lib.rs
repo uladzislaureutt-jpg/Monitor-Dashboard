@@ -390,9 +390,9 @@ fn transcribe_tiktok_url(
     let converted = prepare_transcription_audio(&media_path, &app);
     let _ = std::fs::remove_file(&media_path);
     let audio_path = converted?;
-    let (text,language,duration,model,segments) = transcribe_audio_chunks(&audio_path, &app, &base_url, &anon_key, &access_token);
+    let result = transcribe_audio_chunks(&audio_path, &app, &base_url, &anon_key, &access_token);
     let _ = std::fs::remove_file(&audio_path);
-    let (text,language,duration,model,segments)= (text?,language,duration,model,segments);
+    let (text,language,duration,model,segments) = result?;
     Ok(TikTokTranscriptResult { title, url: url.trim().to_string(), text, language, duration, model, segments })
 }
 #[tauri::command]
@@ -409,9 +409,9 @@ fn transcribe_local_video(path: String, base_url: String, anon_key: String, acce
     let edge_base = reqwest::Url::parse(base_url.trim()).map_err(|e| e.to_string())?;
     if edge_base.scheme() != "https" || !edge_base.host_str().unwrap_or_default().to_ascii_lowercase().ends_with(".supabase.co") { return Err("Некорректный адрес сервера.".to_string()); }
     let audio_path = prepare_transcription_audio(&media_path, &app)?;
-    let (text,language,duration,model,segments) = transcribe_audio_chunks(&audio_path, &app, &base_url, &anon_key, &access_token);
+    let result = transcribe_audio_chunks(&audio_path, &app, &base_url, &anon_key, &access_token);
     let _ = std::fs::remove_file(&audio_path);
-    let (text,language,duration,model,segments)= (text?,language,duration,model,segments);
+    let (text,language,duration,model,segments) = result?;
     Ok(TikTokTranscriptResult { title, url: url.trim().to_string(), text, language, duration, model, segments })
 }
 
