@@ -321,7 +321,7 @@ fn transcription_runs(text: &str, accents: &[String]) -> String {
 }
 
 pub fn export_tiktok_transcript_docx(path: &Path, text: &str, comments: &[String], accents: &[String]) -> Result<(), String> {
-    if text.trim().is_empty() { return Err("Текст транскрипции пуст.".to_string()); }
+    if text.trim().is_empty() && comments.iter().all(|comment| comment.trim().is_empty()) { return Err("Нет текста или комментариев для экспорта.".to_string()); }
     if path.extension().and_then(|value| value.to_str()).map(|value| value.eq_ignore_ascii_case("docx")) != Some(true) {
         return Err("Файл транскрипции должен иметь расширение .docx".to_string());
     }
@@ -342,7 +342,9 @@ pub fn export_tiktok_transcript_docx(path: &Path, text: &str, comments: &[String
     };
     let mut body = String::new();
     body.push_str(&paragraph_transcription_blank());
-    body.push_str(&paragraph_transcription(&transcription_runs(&speech_line, &[])));
+    if !spoken.is_empty() {
+        body.push_str(&paragraph_transcription(&transcription_runs(&speech_line, &[])));
+    }
 
     let cleaned_comments: Vec<String> = comments.iter()
         .map(|value| clean_tiktok_comment(value).trim_end_matches('.').trim().to_string())
