@@ -730,7 +730,7 @@ pub fn list_sources(path: &Path, monitor_key: &str, period_days: Option<i64>) ->
                JOIN monitor_items mi ON mi.document_id=d.id
                JOIN monitors m ON m.id=mi.monitor_id
               WHERE d.source_id=s.id AND m.monitor_key=?1
-                AND (?2 IS NULL OR (d.published_at IS NOT NULL AND datetime(d.published_at) >= datetime('now', '-' || ?2 || ' days')))
+                AND (d.published_at IS NOT NULL AND datetime(d.published_at) <= datetime('now', '+1 day') AND (?2 IS NULL OR datetime(d.published_at) >= datetime('now', '-' || ?2 || ' days')))
                 AND NOT EXISTS (SELECT 1 FROM moderation_flags mf WHERE mf.monitor_key=m.monitor_key AND mf.document_uid=d.document_uid)
                 AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid)) AS publications,
             COALESCE((SELECT SUM(COALESCE(srm.results,0))
@@ -741,7 +741,7 @@ pub fn list_sources(path: &Path, monitor_key: &str, period_days: Option<i64>) ->
                 AND (?2 IS NULL OR datetime(COALESCE(r.started_at,r.imported_at)) >= datetime('now', '-' || ?2 || ' days'))),0) AS total_results,
             (SELECT MAX(d.published_at) FROM documents d
               WHERE d.source_id=s.id
-                AND (?2 IS NULL OR (d.published_at IS NOT NULL AND datetime(d.published_at) >= datetime('now', '-' || ?2 || ' days')))) AS last_seen_at,
+                AND (d.published_at IS NOT NULL AND datetime(d.published_at) <= datetime('now', '+1 day') AND (?2 IS NULL OR datetime(d.published_at) >= datetime('now', '-' || ?2 || ' days')))) AS last_seen_at,
             (SELECT srm.access_status
                FROM source_run_metrics srm
                JOIN runs r ON r.id=srm.run_id
