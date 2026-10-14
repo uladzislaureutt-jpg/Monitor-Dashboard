@@ -77,6 +77,7 @@ export function TranscriptionView() {
   const [aiRuns, setAiRuns] = useState(() => Math.min(2, Number(localStorage.getItem(`transcription-ai-runs:${state.url}`) || 0) || 0));
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [coverageWarnings, setCoverageWarnings] = useState<string[]>([]);
 
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }, [state]);
 
@@ -100,6 +101,7 @@ export function TranscriptionView() {
       }));
       setInputUrl(result.url || url);
       setAiRuns(Math.min(2, Number(localStorage.getItem(`transcription-ai-runs:${result.url || url}`) || 0) || 0));
+      setCoverageWarnings(result.warnings || []);
       setMessage(be ? "Транскрыпцыя гатовая. Тэкст можна рэдагаваць і скарачаць." : "Транскрипция готова. Текст можно редактировать и сокращать.");
     } catch (reason) {
       setError(String(reason));
@@ -115,6 +117,7 @@ export function TranscriptionView() {
       const session = await ensureWorkroomSession(config, loadWorkroomSession());
       const result = await desktopApi.transcribeLocalVideo(path, config.url, config.anonKey, session.accessToken);
       setState((current) => ({ ...current, title: result.title || "Telegram", url: inputUrl.trim(), rawText: result.text, editorialText: result.text, language: result.language, duration: result.duration, comments: [] }));
+      setCoverageWarnings(result.warnings || []);
       setMessage(be ? "Транскрыпцыя файла гатовая." : "Транскрипция файла готова.");
     } catch (reason) { setError(String(reason)); }
     finally { setBusy(""); }
@@ -213,6 +216,7 @@ export function TranscriptionView() {
     setState(EMPTY);
     setInputUrl("");
     setAiRuns(0);
+    setCoverageWarnings([]);
     setMessage("");
     setError("");
   }
@@ -248,6 +252,7 @@ export function TranscriptionView() {
 
     {message && <div className="notice success">{message}</div>}
     {error && <div className="notice error">{error}</div>}
+    {coverageWarnings.length>0 && <div className="notice error"><b>{be?"Увага: магчымыя пропускі пры распазнаванні":"Внимание: возможные пропуски распознавания"}</b><ul>{coverageWarnings.slice(0,12).map((item,i)=><li key={i}>{item}</li>)}</ul></div>}
 
     <section className="panel transcription-source">
       <div className="panel-head"><div><h3>{be ? "1. Відэа" : "1. Видео"}</h3><p>{videoSource === "telegram" ? (be ? "Устаўце спасылку на публічную публікацыю Telegram." : "Вставьте ссылку на публичную публикацию Telegram.") : (be ? "Устаўце публічную спасылку TikTok." : "Вставьте публичную ссылку TikTok.")}</p></div><button className="ghost-button small-button" disabled={busy!==""} onClick={clearAll}>{be ? "Ачысціць" : "Очистить"}</button></div>
