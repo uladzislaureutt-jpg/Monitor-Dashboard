@@ -17,6 +17,8 @@ type TranscriptionState = {
   language: string;
   duration: number;
   comments: TranscriptComment[];
+  manualComments: string[];
+  imageText: string;
   commentMode: "popular" | "latest";
 };
 
@@ -29,6 +31,8 @@ const EMPTY: TranscriptionState = {
   language: "",
   duration: 0,
   comments: [],
+  manualComments: ["","","","",""],
+  imageText: "",
   commentMode: "popular",
 };
 
@@ -51,6 +55,8 @@ function loadState(): TranscriptionState {
             order: Number((item as TranscriptComment).order || index),
           })).filter((item) => item.text.trim())
         : [],
+      manualComments: Array.from({length:5},(_,i)=>String(raw.manualComments?.[i] || "")),
+      imageText: String(raw.imageText || ""),
       commentMode: raw.commentMode === "latest" ? "latest" : "popular",
     };
   } catch { return EMPTY; }
@@ -114,6 +120,20 @@ export function TranscriptionView() {
     finally { setBusy(""); }
   }
 
+  async function recognizeScreenshot() {
+    setBusy("ocr"); setError(""); setMessage("");
+    try {
+      const path = await open({multiple:false,filters:[{name:"Скриншот",extensions:["png","jpg","jpeg","webp"]}]});
+      if (!path || Array.isArray(path)) return;
+      const config = loadWorkroomConfig();
+      const session = await ensureWorkroomSession(config,loadWorkroomSession());
+      const recognized = await desktopApi.recognizeVideoScreenshot(path,config.url,config.anonKey,session.accessToken);
+      setState((current)=>({...current,imageText:recognized}));
+      setMessage(be?"Тэкст са скрыншота распазнаны. Праверце яго перад даданнем.":"Текст со скриншота распознан. Проверьте его перед добавлением.");
+    } catch(reason) {setError(String(reason));}
+    finally {setBusy("");}
+  }
+
   async function openTikTok() {
     const url = (state.url || inputUrl).trim();
     if (!url) return;
@@ -128,11 +148,19 @@ export function TranscriptionView() {
       const ordered = state.commentMode === "popular" && source.some((item) => item.likes > 0)
         ? source.sort((a, b) => b.likes - a.likes || a.order - b.order)
         : source.sort((a, b) => a.order - b.order);
-      const selected = ordered.slice(0, 30).map((item, index) => ({ ...item, id: commentId(index) }));
-      setState((current) => ({ ...current, comments: selected }));
-      setMessage(be
-        ? `Дададзена каментарыяў: ${selected.length}.`
-        : `Добавлено комментариев: ${selected.length}.`);
+      let added = 0;
+      setState((current) => {
+        const kept = [...current.comments];
+        const seen = new Set(kept.map((item)=>item.text.trim().toLocaleLowerCase("ru-RU")));
+        for (const item of ordered) {
+          const key = item.text.trim().toLocaleLowerCase("ru-RU");
+          if (kept.length>=25) break;
+          if (!key || seen.has(key)) continue;
+          seen.add(key); kept.push({...item,id:commentId(kept.length)}); added++;
+        }
+        return {...current,comments:kept};
+      });
+      setMessage(be ? `Дададзена новых каментарыяў: ${added}. Ранейшыя захаваны.` : `Добавлено новых комментариев: ${added}. Ранее добавленные сохранены.`);
     } catch (_reason) {
       setError(be
         ? "У буферы няма патрэбных каментарыяў. Вылучыце тэкст каментарыяў у TikTok, націсніце Ctrl+C і паўтарыце ўстаўку."
@@ -202,7 +230,7 @@ export function TranscriptionView() {
       await desktopApi.exportTikTokTranscript(
         path,
         state.editorialText.trim(),
-        state.comments.map((item) => item.text.trim()).filter(Boolean),
+        [...state.comments.map((item) => item.text.trim()), ...state.manualComments.map((text)=>text.trim())].filter(Boolean),
         [(() => { try { const parsed = new URL(state.url || inputUrl); return parsed.hostname.endsWith("t.me") ? (parsed.pathname.match(/^\/(?:s\/)?([^/]+)/)?.[1] || "") : (parsed.pathname.match(/^\/@([^/]+)/)?.[1] || ""); } catch { return ""; } })()],
       );
       setMessage(be ? "DOCX захаваны па зададзеным узоры." : "DOCX сохранён по заданному образцу.");
@@ -262,8 +290,17 @@ export function TranscriptionView() {
       </div>
     </section>
 
+    <section className="panel transcription-image-text">
+      <div className="panel-head"><div><h3>{be?"Тэкст на відэа (скрыншот)":"Текст на видео (скриншот)"}</h3><p>{be?"Gemini распазнае надпісы на кадры. Праверце тэкст перад даданнем у экспарт.":"Gemini распознаёт надписи на кадре. Проверьте результат перед добавлением в текст для экспорта."}</p></div></div>
+      <div className="transcription-inline-actions">
+        <button className="secondary-button small-button" disabled={busy!==""} onClick={recognizeScreenshot}>{busy==="ocr"?"Gemini…":be?"Выбраць скрыншот":"Выбрать скриншот"}</button>
+        <button className="secondary-button small-button" disabled={busy!=="" || !state.imageText.trim()} onClick={()=>setState((current)=>({...current,editorialText:[current.editorialText.trim(),current.imageText.trim()].filter(Boolean).join("\n\n")}))}>{be?"Дадаць да тэксту для экспарту":"Добавить к тексту для экспорта"}</button>
+      </div>
+      <textarea className="report-editor-textarea" style={{minHeight:110}} spellCheck value={state.imageText} onChange={(e)=>setState((current)=>({...current,imageText:e.target.value}))} placeholder={be?"Распазнаны тэкст з кадра…":"Распознанный текст с кадра…"} />
+    </section>
+
     <section className="panel transcription-comments">
-      <div className="panel-head"><div><h3>{be ? "3. Каментарыі" : "3. Комментарии"}</h3><p>{be ? "Да 30 змястоўных каментарыяў, даўжэйшых за 15 знакаў." : "До 30 содержательных комментариев длиннее 15 символов."}</p></div><span className="badge">{state.comments.length}/30</span></div>
+      <div className="panel-head"><div><h3>{be ? "3. Каментарыі" : "3. Комментарии"}</h3><p>{be ? "Да 25 агульных і 5 асобных каментарыяў — разам да 30." : "До 25 комментариев из общего списка и 5 отдельных — всего до 30."}</p></div><span className="badge">{state.comments.length+state.manualComments.filter((text)=>text.trim()).length}/30</span></div>
       <div className="transcription-comment-tools">
         <button className="secondary-button" disabled={!state.url&&!inputUrl.trim()} onClick={openTikTok}>{be?"Адкрыць TikTok":"Открыть TikTok"}</button>
         <button className="primary-button" disabled={busy!==""} onClick={pasteComments}>{busy==="comments"?"…":be?"Уставіць каментарыі":"Вставить комментарии"}</button>
@@ -278,6 +315,14 @@ export function TranscriptionView() {
           <div className="transcription-comment-number">{index+1}</div>
           <textarea spellCheck={true} value={comment.text} onChange={(e)=>setState((current)=>({...current,comments:current.comments.map((item)=>item.id===comment.id?{...item,text:e.target.value}:item)}))}/>
           <div className="transcription-comment-actions">{comment.likes>0&&<small>♥ {comment.likes.toLocaleString()}</small>}<button className="ghost-button small-button" onClick={()=>setState((current)=>({...current,comments:current.comments.filter((item)=>item.id!==comment.id)}))}>×</button></div>
+        </div>)}
+      </div>
+      <div className="transcription-extra-comments">
+        <p><b>{be?"Дадатковыя каментарыі (5 месцаў)":"Дополнительные комментарии (5 полей)"}</b> — {be?"устаўляйце па адным, сабраны спіс не змяняецца.":"вставляйте по одному, основной список сохраняется."}</p>
+        {state.manualComments.map((value,index)=><div key={index} className="transcription-comment-row">
+          <div className="transcription-comment-number">{state.comments.length+index+1}</div>
+          <textarea spellCheck value={value} placeholder={be?`Асобны каментарый ${index+1}`:`Отдельный комментарий ${index+1}`} onChange={(e)=>setState((current)=>({...current,manualComments:current.manualComments.map((old,i)=>i===index?e.target.value:old)}))} />
+          <button className="ghost-button small-button" disabled={!value} onClick={()=>setState((current)=>({...current,manualComments:current.manualComments.map((old,i)=>i===index?"":old)}))}>×</button>
         </div>)}
       </div>
     </section>
