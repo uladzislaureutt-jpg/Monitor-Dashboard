@@ -248,7 +248,7 @@ fn transcribe_audio_chunks(audio: &std::path::Path, app: &AppHandle, base_url: &
         if !extracted.status.success() {let _=std::fs::remove_file(&chunk);return Err(format!("Не удалось выделить аудиофрагмент {}",index+1));}
         let bytes=std::fs::read(&chunk).map_err(|e|e.to_string())?;
         let _=std::fs::remove_file(&chunk);
-        if bytes.is_empty() {break;}
+        if bytes.len() < 12000 {break;}
         let form=reqwest::blocking::multipart::Form::new()
             .text("app_version",env!("CARGO_PKG_VERSION").to_string())
             .part("file",reqwest::blocking::multipart::Part::bytes(bytes).file_name("audio.mp3"));
