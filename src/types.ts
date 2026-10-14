@@ -396,4 +396,5 @@ export type TikTokTranscriptResult = {
   duration: number;
   model: string;
   segments: TikTokTranscriptSegment[];
+  warnings: string[];
 };
