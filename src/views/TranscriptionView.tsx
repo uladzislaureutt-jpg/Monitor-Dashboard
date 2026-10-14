@@ -222,12 +222,12 @@ export function TranscriptionView() {
   }
 
   async function exportDocx() {
-    if (!state.editorialText.trim()) return;
+    if (!state.editorialText.trim() && !state.comments.some((item)=>item.text.trim()) && !state.manualComments.some((item)=>item.trim())) return;
     setBusy("export"); setError(""); setMessage("");
     try {
       const path = await save({
         title: be ? "Экспарт транскрыпцыі" : "Экспорт транскрипции",
-        defaultPath: "Транскрипция TikTok.docx",
+        defaultPath: state.editorialText.trim() ? "Транскрипция видео.docx" : "Комментарии к видео.docx",
         filters: [{ name: "Word", extensions: ["docx"] }],
       });
       if (!path) return;
@@ -333,7 +333,7 @@ export function TranscriptionView() {
     </section>
 
     <section className="panel transcription-export">
-      <div className="panel-head"><div><h3>{be ? "4. Экспарт" : "4. Экспорт"}</h3><p>{be ? "Экспарт адрэдагаванага тэксту і каментарыяў у Word." : "Экспорт отредактированного текста и комментариев в Word."}</p></div><button className="primary-button" disabled={busy!==""||!state.editorialText.trim()} onClick={exportDocx}>{busy==="export"?"…":"DOCX"}</button></div>
+      <div className="panel-head"><div><h3>{be ? "4. Экспарт" : "4. Экспорт"}</h3><p>{be ? "Экспарт адрэдагаванага тэксту і каментарыяў у Word." : "Экспорт отредактированного текста и комментариев в Word."}</p></div><button className="primary-button" disabled={busy!==""||(!state.editorialText.trim()&&!state.comments.some((item)=>item.text.trim())&&!state.manualComments.some((item)=>item.trim()))} onClick={exportDocx}>{busy==="export"?"…":"DOCX"}</button></div>
     </section>
   </div>;
 }
