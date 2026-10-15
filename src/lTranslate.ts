@@ -2,10 +2,11 @@ import {ensureWorkroomSession,loadWorkroomConfig,loadWorkroomSession} from "./wo
 export type LTranslationResult={
   translatedText:string;
   model:string;
+  provider:"qwen"|"gemini";
   usage:{prompt_tokens:number;completion_tokens:number;total_tokens:number};
   limits:{remaining_requests:string|null;remaining_tokens:string|null;limit_requests:string|null;limit_tokens:string|null;reset_requests:string|null;reset_tokens:string|null};
 };
-export async function translateLArticle(input:{text:string;title:string}):Promise<LTranslationResult>{
+export async function translateLArticle(input:{text:string;title:string;provider:"qwen"|"gemini"}):Promise<LTranslationResult>{
   const config=loadWorkroomConfig();
   const current=loadWorkroomSession();
   if(!current)throw new Error("TRANSLATE_AUTH_REQUIRED");
@@ -21,5 +22,5 @@ export async function translateLArticle(input:{text:string;title:string}):Promis
   if(!response.ok)throw new Error(`${data.error||"TRANSLATE_FAILED"}: ${data.detail||""}`);
   const translatedText=String(data.translated_text||"").trim();
   if(!translatedText)throw new Error("TRANSLATE_EMPTY");
-  return {translatedText,model:String(data.model||""),usage:data.usage||{},limits:data.limits||{}};
+  return {translatedText,provider:input.provider,model:String(data.model||""),usage:data.usage||{},limits:data.limits||{remaining_requests:null,remaining_tokens:null,limit_requests:null,limit_tokens:null,reset_requests:null,reset_tokens:null}};
 }
