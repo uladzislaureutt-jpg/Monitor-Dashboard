@@ -110,6 +110,7 @@ export function ReportView() {
   const [aiBusy, setAiBusy] = useState(false);
   const [translationBusy, setTranslationBusy] = useState(false);
   const [translationStats,setTranslationStats] = useState<Record<string,Array<{at:string;prompt:number;completion:number;total:number;remaining:string|null}>>>(()=>{try{return JSON.parse(localStorage.getItem("l-translation-stats-v1")||"{\"qwen\":[],\"gemini\":[]}")}catch{return {qwen:[],gemini:[]}}});
+  const todayTranslations = (provider:"qwen"|"gemini") => (translationStats[provider]||[]).filter(entry=>entry.at.slice(0,10)===new Date().toISOString().slice(0,10));
   const [aiRuns, setAiRuns] = useState<number | null>(null);
   const [lintIssues, setLintIssues] = useState<EditorialLintIssue[]>([]);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
