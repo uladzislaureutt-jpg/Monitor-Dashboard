@@ -109,6 +109,7 @@ export function ReportView() {
   const [compressionMode, setCompressionMode] = useState<CompressionMode>("auto");
   const [aiBusy, setAiBusy] = useState(false);
   const [translationBusy, setTranslationBusy] = useState(false);
+  const [translationStats,setTranslationStats] = useState<Record<string,Array<{at:string;prompt:number;completion:number;total:number;remaining:string|null}>>>(()=>{try{return JSON.parse(localStorage.getItem("l-translation-stats-v1")||"{\"qwen\":[],\"gemini\":[]}")}catch{return {qwen:[],gemini:[]}}});
   const [aiRuns, setAiRuns] = useState<number | null>(null);
   const [lintIssues, setLintIssues] = useState<EditorialLintIssue[]>([]);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
@@ -262,14 +263,16 @@ export function ReportView() {
     setStatus(tx.manualSaved);
   }
 
-  async function translateSelectedArticle() {
+  async function translateSelectedArticle(provider:"qwen"|"gemini") {
     if (!isLMonitor || !active || translationBusy) return;
     setTranslationBusy(true); setError(""); setStatus("");
     try {
-      const result = await translateLArticle({text:active.sourceText,title:active.title});
+      const result = await translateLArticle({text:active.sourceText,title:active.title,provider});
       // Keep original sourceText immutable; only the editor receives Russian text.
       report.updateText(active.documentUid,result.translatedText);
       const usage=result.usage;
+      const entry={at:new Date().toISOString(),prompt:Number(usage.prompt_tokens||0),completion:Number(usage.completion_tokens||0),total:Number(usage.total_tokens||0),remaining:result.limits.remaining_requests??null};
+      setTranslationStats(previous=>{const next={...previous,[provider]:[...(previous[provider]||[]),entry].slice(-100)};localStorage.setItem("l-translation-stats-v1",JSON.stringify(next));return next;});
       const remaining=result.limits.remaining_requests ?? "—";
       setStatus(`Qwen: ${usage.total_tokens ?? 0} токенов (вход ${usage.prompt_tokens ?? 0}, выход ${usage.completion_tokens ?? 0}). Остаток запросов: ${remaining}. Перевод сохранён в рабочем тексте.`);
     } catch(reason) {setError(String(reason));}
@@ -461,7 +464,7 @@ export function ReportView() {
         {manualOpen && active.sourceQuality !== "full" && <div className="report-manual-source"><p>{tx.pasteHelp}</p><textarea value={manualText} onChange={(e) => setManualText(e.target.value)} placeholder={tx.pastePlaceholder} /><div><button className="primary-button small-button" disabled={!manualText.trim()} onClick={saveManualFullText}>{tx.saveManual}</button><button className="ghost-button small-button" onClick={() => { setManualOpen(false); setManualText(""); }}>{tx.cancel}</button></div></div>}
         <div className={`report-compression-panel ${active.sourceQuality !== "full" ? "disabled" : ""}`}>
           <div className="report-compression-head"><div><b>{isLMonitor ? tx.exact : tx.compression}</b><span>{isLMonitor ? tx.exactHelp : tx.aiHelp}</span></div><label><select value={compressionMode} onChange={(e) => setCompressionMode(e.target.value as CompressionMode)} disabled={active.sourceQuality !== "full" || aiBusy}><option value="auto">{tx.compressionAuto}</option>{isLMonitor && <option value="light">{tx.compressionMinimum}</option>}<option value="standard">{tx.compressionStandard}</option><option value="maximum">{tx.compressionMaximum}</option><option value="extract">{tx.compressionExtract}</option></select></label></div>
-          <div className="report-compression-actions">{isLMonitor && <button className="secondary-button small-button" disabled={translationBusy || aiBusy || !active.sourceText.trim()} onClick={translateSelectedArticle}>{translationBusy ? "Qwen…" : (be ? "Перакласці на рускую" : "Перевести на русский (Qwen)")}</button>}<button className="secondary-button small-button" disabled={active.sourceQuality !== "full" || aiBusy} onClick={applyExactCompression}>{tx.exact}</button>{!isLMonitor && <button className="primary-button small-button" disabled={active.sourceQuality !== "full" || aiBusy || aiLimitReached || aiRuns === null} onClick={applyAiCompression}>{aiBusy ? tx.aiRunning : tx.ai}</button>}<span>{be ? "Бягучае скарачэнне" : "Текущее сокращение"}: {compressionReduction(active.sourceText, active.editorialText)}%</span>{!isLMonitor && <span>{tx.aiLimit}: {aiRuns ?? "…"}/{MAX_AI_COMPRESSION_RUNS}</span>}</div>
+          <div className="report-compression-actions">{isLMonitor && <button className="secondary-button small-button" disabled={translationBusy || aiBusy || !active.sourceText.trim()} onClick={()=>translateSelectedArticle("qwen")}>{translationBusy ? "Qwen…" : (be ? "Перакласці на рускую" : "Перевести на русский (Qwen)")}</button>}<button className="secondary-button small-button" disabled={active.sourceQuality !== "full" || aiBusy} onClick={applyExactCompression}>{tx.exact}</button>{!isLMonitor && <button className="primary-button small-button" disabled={active.sourceQuality !== "full" || aiBusy || aiLimitReached || aiRuns === null} onClick={applyAiCompression}>{aiBusy ? tx.aiRunning : tx.ai}</button>}<span>{be ? "Бягучае скарачэнне" : "Текущее сокращение"}: {compressionReduction(active.sourceText, active.editorialText)}%</span>{!isLMonitor && <span>{tx.aiLimit}: {aiRuns ?? "…"}/{MAX_AI_COMPRESSION_RUNS}</span>}</div>
           {active.sourceQuality !== "full" && <p>{tx.compressionNeedsFull}</p>}
           {!isLMonitor && maximumMode && <p>{tx.aiMaximumHelp}</p>}
           {!isLMonitor && extractMode && <p>{tx.aiExtractHelp}</p>}
