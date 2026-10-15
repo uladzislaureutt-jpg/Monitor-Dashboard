@@ -275,7 +275,7 @@ export function ReportView() {
       const entry={at:new Date().toISOString(),prompt:Number(usage.prompt_tokens||0),completion:Number(usage.completion_tokens||0),total:Number(usage.total_tokens||0),remaining:result.limits.remaining_requests??null};
       setTranslationStats(previous=>{const next={...previous,[provider]:[...(previous[provider]||[]),entry].slice(-100)};localStorage.setItem("l-translation-stats-v1",JSON.stringify(next));return next;});
       const remaining=result.limits.remaining_requests ?? "—";
-      setStatus(`Qwen: ${usage.total_tokens ?? 0} токенов (вход ${usage.prompt_tokens ?? 0}, выход ${usage.completion_tokens ?? 0}). Остаток запросов: ${remaining}. Перевод сохранён в рабочем тексте.`);
+      setStatus(`${provider==="qwen"?"Qwen":"Gemini"}: ${usage.total_tokens ?? 0} токенов (вход ${usage.prompt_tokens ?? 0}, выход ${usage.completion_tokens ?? 0}). Остаток запросов: ${remaining}. Перевод сохранён в рабочем тексте.`);
     } catch(reason) {setError(String(reason));}
     finally {setTranslationBusy(false);}
   }
