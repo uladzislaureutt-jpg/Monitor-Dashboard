@@ -139,8 +139,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
       const slots=store.slots.map((slot,i)=>{
         if(i===store.activeSlot)return updated;
         if(!sharedChanged)return slot;
-        return {...slot,samples:updated.samples,styleProfile:updated.styleProfile,styleContract:updated.styleContract,
-          reviewText:"",sectionTitles:[],boldPhrases:[],factCheck:null,factCheckContract:0};
+        return {...slot,samples:updated.samples,styleProfile:updated.styleProfile,styleContract:updated.styleContract};
       });
       return {...store,slots};
     });
@@ -386,7 +385,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         const name = path.split(/[\\/]/).pop() || `Образец ${state.samples.length + added.length + 1}`;
         added.push({ id: id("sample"), name, text });
       }
-      setState((current) => ({ ...current, samples: [...current.samples, ...added].slice(0, MAX_SAMPLES), styleContract: 0, reviewText: "", factCheck: null, factCheckContract: 0 }));
+      setState((current) => ({ ...current, samples: [...current.samples, ...added].slice(0, MAX_SAMPLES), styleContract: 0 }));
       setMessage(be ? `Дададзена ўзораў: ${added.length}. Абнавіце профіль стылю.` : `Добавлено образцов: ${added.length}. Обновите профиль стиля.`);
     } catch (reason) { setError(String(reason)); } finally { setBusy(""); }
   }
@@ -400,7 +399,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         samples,
         (seconds) => setMessage(be ? `Ліміт Groq. Профіль працягнецца праз ~${seconds} с…` : `Лимит Groq. Профиль продолжится автоматически через ~${seconds} с…`)
       );
-      setState((current) => ({ ...current, styleProfile: result.styleProfile, styleContract: W_CONTRACT_VERSION, reviewText: "", factCheck: null, factCheckContract: 0 }));
+      setState((current) => ({ ...current, styleProfile: result.styleProfile, styleContract: W_CONTRACT_VERSION }));
       addUsage(result.usage);
       setMessage(be ? "Профіль стылю гатовы." : "Профиль стиля готов.");
     } catch (reason) { setError(String(reason)); } finally { setBusy(""); }
@@ -452,7 +451,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
       {message && <div className="notice success">{message}</div>}{error && <div className="notice error">{error}</div>}
       <section className="panel w-review-style"><div className="panel-head"><div><h3>{be?"Узоры і профіль":"Образцы и профиль"}</h3><p>{be?"Профіль можна выкарыстоўваць для многіх аглядаў без пераліку." : "Профиль можно использовать для многих обзоров без пересчёта."}</p></div></div>
         <div className="w-review-controls"><button className="secondary-button" disabled={busy!==""||state.samples.length>=MAX_SAMPLES} onClick={importSamples}>{busy==="sample"?"…":be?"Дадаць DOCX/TXT":"Добавить DOCX/TXT"}</button><button className="primary-button" disabled={busy!==""||!state.samples.length} onClick={buildStyleProfile}>{busy==="style"?"…":styleReady?(be?"Абнавіць профіль":"Обновить профиль"):(be?"Стварыць профіль стылю":"Создать профиль стиля")}</button></div>
-        {state.samples.length>0&&<div className="w-review-samples">{state.samples.map((sample)=><div key={sample.id}><span>{sample.name}</span><button className="ghost-button small-button" onClick={()=>setState((current)=>({...current,samples:current.samples.filter((item)=>item.id!==sample.id),styleContract:0,reviewText:""}))}>×</button></div>)}</div>}
+        {state.samples.length>0&&<div className="w-review-samples">{state.samples.map((sample)=><div key={sample.id}><span>{sample.name}</span><button className="ghost-button small-button" onClick={()=>setState((current)=>({...current,samples:current.samples.filter((item)=>item.id!==sample.id),styleContract:0}))}>×</button></div>)}</div>}
         {styleReady&&<p className="w-review-style-ready">{be?"✓ Профіль стылю гатовы":"✓ Профиль стиля готов"}</p>}
       </section>
     </div>;
@@ -530,6 +529,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
 
     <section className="panel w-review-final"><div className="panel-head"><div><h3>{be?"4. Выніковы агляд":"4. Итоговый обзор"}</h3><p>{be?"AI будуе тэкст па выбраных тэндэнцыях.":"AI строит текст по выбранным тенденциям."}</p></div></div>
       <div className="w-review-readiness"><span className={prepared===state.items.length&&state.items.length?"ready":""}>{prepared===state.items.length&&state.items.length?"✓":"○"} {be?"Матэрыялы прааналізаваны":"Материалы проанализированы"}</span><span className={selectedTrends.length?"ready":""}>{selectedTrends.length?"✓":"○"} {be?"Тэндэнцыі выбраны":"Тенденции выбраны"}</span><span className={topicReady?"ready":""}>{topicReady?"✓":"○"} {be?"Тэма ўказана":"Тема указана"}</span><span className={styleReady?"ready":""}>{styleReady?"✓":"○"} {be?"Аўтарскі стыль (абавязкова)":"Авторский стиль (обязательно)"}</span></div>
+      {!styleReady&&<p style={{fontSize:11,color:"#9a443b",margin:"0 0 10px"}}>{be?"Перад фарміраваннем агляду стварыце профіль на ўкладцы «Аўтарскі стыль».":"Перед формированием обзора создайте профиль на вкладке «Авторский стиль»."}</p>}
       <div className="w-review-final-actions"><label className="w-review-length-control"><span>{be?"Аб\’ём, знакаў":"Объём, знаков"}</span><select value={state.targetChars} onChange={(e)=>setState({...state,targetChars:Number(e.target.value),reviewText:"",sectionTitles:[],boldPhrases:[],factCheck:null,factCheckContract:0})}><option value={1000}>1 000</option><option value={2000}>2 000</option><option value={3000}>3 000</option><option value={6000}>6 000</option><option value={8000}>8 000</option></select></label><button className="primary-button" disabled={busy!==""||!reviewReady} onClick={synthesize}>{busy==="synthesize"?"…":be?"Сфарміраваць агляд":"Сформировать обзор"}</button><button className="secondary-button" disabled={!state.reviewText.trim()||busy!==""} onClick={exportDocx}>DOCX</button></div>
       <textarea className="report-editor-textarea w-review-final-text" lang={be?"be":"ru"} spellCheck={true} value={state.reviewText} onChange={(e)=>setState({...state,reviewText:e.target.value})} placeholder={be?"Тут з'явіцца выніковы агляд…":"Здесь появится итоговый обзор…"}/>
       <div className="w-review-usage">{be?"Сімвалаў":"Символов"}: {state.reviewText.length.toLocaleString()} · {be?"Токенаў у гэтай сесіі":"Токенов в этой сессии"}: {usage.totalTokens.toLocaleString()}</div>
