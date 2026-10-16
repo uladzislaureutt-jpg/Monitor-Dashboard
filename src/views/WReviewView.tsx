@@ -425,7 +425,14 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
       setMessage(be
         ? `Агляд сфарміраваны і правераны па Evidence. Выпраўлена частковых: ${partial}, выдалена непацверджаных: ${removed}.`
         : `Обзор сформирован и проверен по Evidence. Исправлено частичных: ${partial}, удалено неподтверждённых: ${removed}.`);
-    } catch (reason) { setError(String(reason)); } finally { setBusy(""); }
+    } catch (reason) {
+      const text = String(reason);
+      setError(text.includes("w_review_daily_generation_limit")
+        ? (be
+          ? "Для гэтай тэмы сёння ўжо сфарміраваны 2 агляды. Ліміт абновіцца ў 00:00 па Мінску."
+          : "Для этой темы сегодня уже сформированы 2 обзора. Лимит обновится в 00:00 по Минску.")
+        : text);
+    } finally { setBusy(""); }
   }
 
   async function verifyCurrentReview() {
