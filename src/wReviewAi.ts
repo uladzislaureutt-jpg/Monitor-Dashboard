@@ -106,34 +106,6 @@ export async function wEditorialMap(input: { task: string; evidenceCards: string
   };
 }
 
-export async function wVerifyReview(input: {
-  task: string;
-  reviewText: string;
-  evidenceCards: string[];
-}, onRetry?: RetryNotice) {
-  const payload = await call({
-    action: "verify_review",
-    task: input.task,
-    review_text: input.reviewText,
-    evidence_cards: input.evidenceCards,
-  }, onRetry);
-  const raw = payload.fact_check || {};
-  return {
-    verifiedText: String(payload.verified_text || "").trim(),
-    factCheck: {
-      verified: raw.verified === true,
-      claimsTotal: Math.max(0, Number(raw.claims_total || 0)),
-      supportedClaims: Math.max(0, Number(raw.supported_claims || 0)),
-      partialClaimsRewritten: Math.max(0, Number(raw.partial_claims_rewritten || 0)),
-      unsupportedClaimsRemoved: Math.max(0, Number(raw.unsupported_claims_removed || 0)),
-      suspiciousAnchors: Math.max(0, Number(raw.suspicious_anchors || 0)),
-      issues: Array.isArray(raw.issues) ? raw.issues.map((value: unknown) => String(value || "").trim()).filter(Boolean) : [],
-    } satisfies WFactCheck,
-    model: String(payload.model || "gemini-3.5-flash-lite"),
-    usage: usage(payload.usage),
-  };
-}
-
 export async function wSynthesize(input: {
   task: string;
   topicKey: string;
@@ -156,42 +128,18 @@ export async function wSynthesize(input: {
   };
   // Cloudflare receives the complete evidence pool in a single synthesis request.
   const payload = await call({action:"synthesize",...baseBody,target_chars:Math.min(8000,input.targetChars)},onRetry);
-  let reviewText = String(payload.review_text || "").trim();
+  const reviewText = String(payload.review_text || "").trim();
   if (!reviewText) throw new Error("W_REVIEW_EMPTY_SYNTHESIS");
-  let sectionTitles: string[] = Array.isArray(payload.section_titles) ? payload.section_titles.map((v:unknown)=>String(v||"").trim()).filter(Boolean) : [];
-  let boldPhrases: string[] = Array.isArray(payload.bold_phrases) ? payload.bold_phrases.map((v:unknown)=>String(v||"").trim()).filter(Boolean) : [];
-  let totalUsage: WUsage = usage(payload.usage);
-  const model = String(payload.model || "@cf/openai/gpt-oss-120b");
-  let verification: Awaited<ReturnType<typeof wVerifyReview>> | null = null;
-  let verificationError = "";
-  try {
-    verification = await wVerifyReview({task: input.task, reviewText, evidenceCards: input.evidenceCards}, onRetry);
-  } catch (reason) {
-    verificationError = String(reason);
-  }
-  if (verification) {
-    totalUsage = {
-      promptTokens: totalUsage.promptTokens + verification.usage.promptTokens,
-      completionTokens: totalUsage.completionTokens + verification.usage.completionTokens,
-      totalTokens: totalUsage.totalTokens + verification.usage.totalTokens,
-    };
-    reviewText = verification.verifiedText || reviewText;
-  }
-  sectionTitles = sectionTitles.filter((value: string) => reviewText.includes(value));
-  boldPhrases = boldPhrases.filter((value: string) => reviewText.includes(value));
-
+  const sectionTitles: string[] = Array.isArray(payload.section_titles)
+    ? payload.section_titles.map((v:unknown)=>String(v||"").trim()).filter((v:string)=>Boolean(v)&&reviewText.includes(v)) : [];
+  const boldPhrases: string[] = Array.isArray(payload.bold_phrases)
+    ? payload.bold_phrases.map((v:unknown)=>String(v||"").trim()).filter((v:string)=>Boolean(v)&&reviewText.includes(v)) : [];
   return {
     reviewText,
     sectionTitles,
     boldPhrases,
-    factCheck: verification?.factCheck ?? {
-      verified: false, claimsTotal: 0, supportedClaims: 0,
-      partialClaimsRewritten: 0, unsupportedClaimsRemoved: 0,
-      suspiciousAnchors: 0, issues: ["Проверка фактов не завершена. Не экспортируйте обзор без повторной проверки."],
-    },
-    verificationError,
-    model,
-    verifierModel: verification?.model || "",
-    usage: totalUsage,
+    model: String(payload.model || "@cf/openai/gpt-oss-120b"),
+    usage: usage(payload.usage),
+    preflightWarnings: Array.isArray(payload.preflight_warnings) ? payload.preflight_warnings.map(String).slice(0, 6) : [] as string[],
   };
 }
