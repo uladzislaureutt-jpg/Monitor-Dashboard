@@ -21,10 +21,12 @@ export type WEditorialMap = {
 type RetryNotice = (seconds: number) => void;
 type EvidenceInput = { title: string; source: string; text: string };
 
-function retrySeconds(value: unknown) {
-  const text = String(value || "");
-  const numeric = Number(text.match(/[0-9]+(?:\.[0-9]+)?/)?.[0] || 0);
-  return Math.max(2, Math.min(75, Math.ceil(numeric || 12)));
+function retrySeconds(value: unknown): number | null {
+  // Never guess a wait time for quota exhaustion; only honor short provider hints.
+  const raw = String(value || "").trim();
+  if (!/^\d+(?:\.\d+)?s?$/.test(raw)) return null;
+  const seconds = Math.max(2, Math.ceil(Number(raw.replace(/s$/, ""))));
+  return seconds <= 12 ? seconds : null;
 }
 function wait(ms: number) { return new Promise((resolve) => window.setTimeout(resolve, ms)); }
 
@@ -34,7 +36,7 @@ async function call(body: Record<string, unknown>, onRetry?: RetryNotice) {
   if (!current) throw new Error("W_REVIEW_AUTH_REQUIRED");
   const session = await ensureWorkroomSession(config, current);
   const appVersion = await getVersion().catch(() => "0.0.0");
-  for (let attempt = 0; attempt < 8; attempt += 1) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
     const response = await fetch(`${config.url.replace(/\/+$/, "")}/functions/v1/w-review-ai`, {
       method: "POST",
       headers: {
@@ -48,16 +50,20 @@ async function call(body: Record<string, unknown>, onRetry?: RetryNotice) {
     let payload: any;
     try { payload = JSON.parse(raw); } catch { payload = { error: "invalid_response", detail: raw }; }
     if (response.ok) return payload;
-    if (response.status === 429 && attempt < 7) {
-      const seconds = retrySeconds(payload.retry_after);
+    const seconds = retrySeconds(payload.retry_after);
+    // A daily Gemini quota, an unclassified 429, or a failed fallback must not be retried.
+    if (response.status === 429 && payload.retryable === true && seconds !== null && attempt === 0) {
       onRetry?.(seconds);
       await wait(seconds * 1000);
       continue;
     }
-    const retry = payload.retry_after ? `: retry_after=${payload.retry_after}` : "";
-    throw new Error(`${String(payload.error || `HTTP_${response.status}`)}${retry}${payload.detail ? `: ${String(payload.detail).slice(0, 350)}` : ""}`);
+    const issue = payload?.issue && typeof payload.issue === "object" ? payload.issue : null;
+    const kind = typeof issue?.kind === "string" ? ` [${issue.kind}]` : "";
+    const metric = typeof issue?.quota_metric === "string" && issue.quota_metric ? ` [${issue.quota_metric}]` : "";
+    const detail = payload.detail ? `: ${String(payload.detail).slice(0, 220)}` : "";
+    throw new Error(`${String(payload.error || `HTTP_${response.status}`)}${kind}${metric}${detail}`);
   }
-  throw new Error("groq_rate_limit");
+  throw new Error("W_REVIEW_RETRIES_EXHAUSTED");
 }
 
 function usage(value: any): WUsage {
