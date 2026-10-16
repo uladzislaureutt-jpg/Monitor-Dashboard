@@ -3,12 +3,12 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { desktopApi } from "../api";
 import { MONITOR_BOOKMARKLET, parseBrowserCapture } from "../browserImport";
 import { exactCompressForProfile, type CompressionMode } from "../editorialCompression";
-import { wEditorialMap, wEvidenceBatch, wStyleProfile, wSynthesize, wVerifyReview, type WDensity, type WEditorialMap, type WEditorialTrend, type WFactCheck, type WUsage } from "../wReviewAi";
+import { wEditorialMap, wEvidenceBatch, wStyleProfile, wSynthesize, type WDensity, type WEditorialMap, type WEditorialTrend, type WFactCheck, type WUsage } from "../wReviewAi";
 import { useI18n } from "../i18n";
 
 const W_CONTRACT_VERSION = 4;
-const MAX_ITEMS = 25;
-const HARD_MAX_ITEMS = 30;
+const MAX_ITEMS = 18;
+const HARD_MAX_ITEMS = 30; // Legacy pools remain intact; the operator can trim them manually.
 const MAX_SAMPLES = 5;
 const BATCH_MAX_ITEMS = 2; // Keep evidence calls small so completed cards survive an upstream model failure.
 const BATCH_MAX_CHARS = 120_000;
@@ -21,7 +21,9 @@ type WItem = {
 type WSample = { id: string; name: string; text: string };
 type WState = {
   items: WItem[];
-  task: string;
+  topic: string;
+  tasks: string[];
+  exclusions: string;
   targetChars: number;
   samples: WSample[];
   styleProfile: string;
@@ -40,7 +42,7 @@ type WState = {
 
 const STORAGE_KEY = "monitor-w-review-v1";
 const EMPTY: WState = {
-  items: [], task: "", targetChars: 3000, samples: [], styleProfile: "", styleContract: 0,
+  items: [], topic: "", tasks: [""], exclusions: "", targetChars: 3000, samples: [], styleProfile: "", styleContract: 0,
   editorialMap: null, mapContract: 0, selectedTrendIds: [],
   density: { quotes: "moderate", headlines: "moderate", experts: "moderate" }, reviewText: "", sectionTitles: [], boldPhrases: [],
   factCheck: null, factCheckContract: 0, auditDecisions: {},
@@ -61,8 +63,12 @@ function loadState(): WState {
         : { id: String(sample?.id || id("sample")), name: String(sample?.name || `Образец ${index + 1}`), text: String(sample?.text || "") }
     ).filter((sample: WSample) => sample.text.trim());
     return {
-      items: Array.isArray(raw.items) ? raw.items.slice(0, MAX_ITEMS) : [],
-      task: String(raw.task || "").slice(0, 500),
+      items: Array.isArray(raw.items) ? raw.items.slice(0, HARD_MAX_ITEMS) : [],
+      topic: String(raw.topic || "").slice(0, 140),
+      tasks: Array.isArray(raw.tasks) && raw.tasks.length
+        ? raw.tasks.slice(0,5).map((v:unknown)=>String(v||"").slice(0,160))
+        : [String(raw.task||"").slice(0,160)],
+      exclusions: String(raw.exclusions || "").slice(0, 300),
       targetChars: [1000, 2000, 3000, 6000, 8000].includes(Number(raw.targetChars)) ? Number(raw.targetChars) : 3000,
       samples,
       styleProfile: String(raw.styleProfile || "").slice(0, 10000),
@@ -102,7 +108,10 @@ function loadWorkspaceStore(): WWorkspaceStore {
     if (!saved || !Array.isArray(saved.slots) || saved.slots.length!==3) return initial;
     const slots = saved.slots.map((slot:any)=>({
       ...emptyWorkspace(), ...slot,
-      items:Array.isArray(slot?.items)?slot.items.slice(0,MAX_ITEMS):[],
+      items:Array.isArray(slot?.items)?slot.items.slice(0,HARD_MAX_ITEMS):[],
+      topic:String(slot?.topic||"").slice(0,140),
+      tasks:Array.isArray(slot?.tasks)&&slot.tasks.length ? slot.tasks.slice(0,5).map((v:unknown)=>String(v||"").slice(0,160)) : [String(slot?.task||"").slice(0,160)],
+      exclusions:String(slot?.exclusions||"").slice(0,300),
       targetChars:[1000,2000,3000,6000,8000].includes(Number(slot?.targetChars))?Number(slot.targetChars):3000,
       density:{quotes:densityValue(slot?.density?.quotes),headlines:densityValue(slot?.density?.headlines),experts:densityValue(slot?.density?.experts)},
       selectedTrendIds:Array.isArray(slot?.selectedTrendIds)?slot.selectedTrendIds:[],
@@ -145,9 +154,6 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   const [error, setError] = useState("");
   const [compressionMode, setCompressionMode] = useState<CompressionMode>("standard");
   const [analysisText, setAnalysisText] = useState("");
-  const [auditOpen,setAuditOpen] = useState(false);
-  const [editFragment,setEditFragment] = useState("");
-  const [replacement,setReplacement] = useState("");
   const [usage, setUsage] = useState<WUsage>({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
 
   useEffect(() => { localStorage.setItem(WORKSPACES_KEY, JSON.stringify(workspaces)); }, [workspaces]);
@@ -157,7 +163,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     if(busy || index===activeSlot) return;
     setWorkspaces(current=>({...current,activeSlot:index}));
     setActiveId(workspaces.slots[index].items[0]?.id??null);
-    setUrl("");setManualOpen(false);setAnalysisText("");setMessage("");setError("");setAuditOpen(false);
+    setUrl("");setManualOpen(false);setAnalysisText("");setMessage("");setError("");
   }
   function renameWorkspace(index:number,value:string) {
     setWorkspaces(current=>({...current,names:current.names.map((name,i)=>i===index?value.slice(0,60):name)}));
@@ -169,7 +175,17 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   const mapReady = Boolean(state.editorialMap?.trends?.length && state.mapContract === W_CONTRACT_VERSION);
   const selectedTrends = mapReady ? state.editorialMap!.trends.filter((trend) => state.selectedTrendIds.includes(trend.id)) : [];
   const styleReady = Boolean(state.styleProfile.trim() && state.styleContract === W_CONTRACT_VERSION);
-  const reviewReady = state.items.length > 0 && prepared === state.items.length && mapReady && selectedTrends.length > 0 && state.task.trim().length > 0;
+  const topicReady = state.topic.trim().length > 0;
+  const operatorTask = useMemo(() => {
+    const tasks=state.tasks.map(v=>v.trim()).filter(Boolean);
+    return [
+      `ТЕМА: ${state.topic.trim()}`,
+      `ЗАДАЧИ: ${tasks.length?tasks.map((v,i)=>`${i+1}. ${v}`).join(" | "):"Выявить главные тенденции освещения темы, аргументы и наиболее важные факты."}`,
+      `ИСКЛЮЧЕНИЯ — НЕ УПОМИНАТЬ: ${state.exclusions.trim()||"Дополнительных исключений нет."}`
+    ].join("\n");
+  },[state.topic,state.tasks,state.exclusions]);
+  const reviewReady = state.items.length > 0 && state.items.length <= MAX_ITEMS &&
+    prepared === state.items.length && mapReady && selectedTrends.length > 0 && topicReady && styleReady;
 
   function invalidateMap(current: WState): WState {
     return { ...current, editorialMap: null, mapContract: 0, selectedTrendIds: [], reviewText: "", sectionTitles: [], boldPhrases: [], factCheck: null, factCheckContract: 0 };
@@ -270,7 +286,8 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
 
   async function analyzePool() {
     if (!state.items.length) { setError(be ? "Спачатку дадайце матэрыялы." : "Сначала добавьте материалы."); return; }
-    if (!state.task.trim()) { setError(be ? "Запоўніце заданне для агляду." : "Заполните задание для обзора."); return; }
+    if (!topicReady) { setError(be?"Укажыце тэму агляду.":"Укажите тему обзора."); return; }
+    if (state.items.length>MAX_ITEMS) { setError(`Сократите пул до ${MAX_ITEMS} публикаций.`); return; }
     setBusy("analyze"); setError(""); setMessage("");
     const next = [...state.items];
     try {
@@ -295,7 +312,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
       if (done !== next.length) { const missing = next.filter((item) => !(item.evidence.trim() && item.evidenceContract === W_CONTRACT_VERSION)).map((item) => item.title).slice(0, 4); throw new Error(`Проанализировано ${done} из ${next.length}. Не обработаны: ${missing.join("; ")}${next.length - done > missing.length ? "…" : ""}. Нажмите «Проанализировать пул» ещё раз — готовые материалы повторно не обрабатываются.`); }
       setAnalysisText(be ? "Вызначаю тэндэнцыі медыяполя…" : "Выявляю тенденции медиаполя…");
       const mapResult = await wEditorialMap(
-        { task: state.task, evidenceCards: evidenceCards(next) },
+        { task: operatorTask, evidenceCards: evidenceCards(next) },
         (seconds) => setAnalysisText(be ? `Ліміт AI. Карта працягнецца праз ~${seconds} с…` : `Лимит AI. Карта продолжится автоматически через ~${seconds} с…`)
       );
       addUsage(mapResult.usage);
@@ -316,11 +333,11 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   }
 
   async function recalculateTrends() {
-    if (prepared !== state.items.length || !state.task.trim()) return;
+    if (!topicReady || state.items.length>MAX_ITEMS || prepared !== state.items.length) return;
     setBusy("map"); setError(""); setMessage("");
     try {
       const result = await wEditorialMap(
-        { task: state.task, evidenceCards: evidenceCards(state.items) },
+        { task: operatorTask, evidenceCards: evidenceCards(state.items) },
         (seconds) => setAnalysisText(be ? `Ліміт AI. Працяг праз ~${seconds} с…` : `Лимит AI. Продолжение через ~${seconds} с…`)
       );
       addUsage(result.usage);
@@ -337,7 +354,9 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     setState((current) => ({
       ...current,
       items: [],
-      task: "",
+      topic: "",
+      tasks: [""],
+      exclusions: "",
       editorialMap: null,
       mapContract: 0,
       selectedTrendIds: [],
@@ -397,10 +416,10 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     try {
       const result = await wSynthesize({
         topicKey: `workspace-${activeSlot + 1}`,
-        task: state.task,
+        task: operatorTask,
         targetChars: state.targetChars,
         evidenceCards: evidenceCards(state.items),
-        styleProfile: styleReady ? state.styleProfile : "",
+        styleProfile: state.styleProfile,
         trends: selectedTrends,
         density: state.density,
         sourceNames: Array.from(new Set(state.items.map((item) => item.source.trim()).filter(Boolean))),
