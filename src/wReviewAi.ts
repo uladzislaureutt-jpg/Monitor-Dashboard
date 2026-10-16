@@ -136,6 +136,7 @@ export async function wVerifyReview(input: {
 
 export async function wSynthesize(input: {
   task: string;
+  topicKey: string;
   targetChars: number;
   evidenceCards: string[];
   styleProfile: string;
@@ -145,6 +146,7 @@ export async function wSynthesize(input: {
 }, onRetry?: RetryNotice) {
   const baseBody = {
     task: input.task,
+    topic_key: input.topicKey,
     target_chars: input.targetChars,
     evidence_cards: input.evidenceCards,
     style_profile: input.styleProfile,
