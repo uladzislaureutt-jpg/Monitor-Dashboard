@@ -80,6 +80,7 @@ export default function App() {
   const [view, setView] = useState<ViewKey>("dashboard");
   const [monitorKey, setMonitorKey] = useState<MonitorKey>("social_economic");
   const [wReviewOpen, setWReviewOpen] = useState(false);
+  const [wReviewDenied, setWReviewDenied] = useState(false);
   const [wReviewSection, setWReviewSection] = useState<"review" | "style">("review");
   const [transcriptionOpen, setTranscriptionOpen] = useState(false);
   const [stats, setStats] = useState<DatabaseStats | null>(null);
@@ -279,6 +280,7 @@ export default function App() {
   }
   function showArchiveForSearch(query: string) { setArchiveSeed(query); setGlobalQuery(query); setSearchOpen(false); setView("archive"); }
   function navigate(next: ViewKey) {
+    setWReviewDenied(false);
     if ((next === "data" || next === "sources") && !access.profile.isAdmin) return;
     setWReviewOpen(false);
     setTranscriptionOpen(false);
@@ -286,6 +288,7 @@ export default function App() {
     if (next !== "archive") setArchiveSeed("");
   }
   function switchMonitor(next: MonitorKey) {
+    setWReviewDenied(false);
     const state = access.monitors.find((item) => item.monitorKey === next);
     if (!access.profile.isAdmin && state && !state.enabled) return;
     if (next === monitorKey && !wReviewOpen && !transcriptionOpen) return;
@@ -309,6 +312,7 @@ export default function App() {
   const wReviewAccess = access.monitors.find((item) => item.monitorKey === "w_review");
   const wReviewAllowed = access.profile.isAdmin || wReviewAccess?.enabled === true;
   const monitorBlocked = !access.profile.isAdmin && activeMonitorAccess?.enabled === false;
+  if (wReviewDenied && wReviewAllowed) { queueMicrotask(() => { setWReviewOpen(true); setWReviewDenied(false); }); }
   const maintenanceMessage = locale === "be"
     ? activeMonitorAccess?.maintenanceMessageBe || "Тэхнічныя работы"
     : activeMonitorAccess?.maintenanceMessageRu || "Технические работы";
@@ -321,7 +325,9 @@ export default function App() {
     {message && <div className="notice success global-notice"><span>{message}</span><button onClick={() => setMessage("")}>×</button></div>}
     {error && <div className="notice error global-notice"><span>{error}</span><button onClick={() => setError("")}>×</button></div>}
     {syncWarning && <div className="notice error global-notice"><span>{syncWarning}</span><button onClick={() => setSyncWarning("")}>×</button></div>}
-    {monitorBlocked ? (
+    {wReviewDenied && !wReviewAllowed ? (
+      <section className="maintenance-screen panel"><h2>{locale === "be" ? "W-Review: няма доступу" : "W-Review: нет доступа"}</h2><p>{locale === "be" ? "Для гэтага ўліковага запісу пакуль няма дазволу на W-Review. Калі дазвол ужо выдадзены, абнавіце доступ." : "Для этой учётной записи пока нет разрешения на W-Review. Если разрешение уже выдано, обновите доступ."}</p><button className="primary-button" onClick={() => void access.refreshAccess()}>{locale === "be" ? "Абнавіць доступ" : "Обновить доступ"}</button></section>
+    ) : monitorBlocked ? (
       <section className="maintenance-screen panel">
         <div className="brand-mark large">M</div>
         <h2>{maintenanceMessage}</h2>
@@ -351,10 +357,9 @@ export default function App() {
           <button disabled={!access.profile.isAdmin && access.monitors.find((item) => item.monitorKey === "social_economic")?.enabled === false} title={!access.profile.isAdmin && access.monitors.find((item) => item.monitorKey === "social_economic")?.enabled === false ? (locale === "be" ? "Тэхнічныя работы" : "Технические работы") : ""} className={monitorKey === "social_economic" ? "active" : ""} onClick={() => switchMonitor("social_economic")}>SEP-Monitor</button>
           <button disabled={!access.profile.isAdmin && access.monitors.find((item) => item.monitorKey === "lukashenko")?.enabled === false} title={!access.profile.isAdmin && access.monitors.find((item) => item.monitorKey === "lukashenko")?.enabled === false ? (locale === "be" ? "Тэхнічныя работы" : "Технические работы") : ""} className={monitorKey === "lukashenko" ? "active" : ""} onClick={() => switchMonitor("lukashenko")}>L-Monitor</button>
           <button
-            disabled={!wReviewAllowed}
             title={!wReviewAllowed ? (locale === "be" ? "W-Review пакуль недаступны для вашага ўліковага запісу" : "W-Review пока недоступен для вашей учётной записи") : ""}
             className={wReviewOpen ? "active" : ""}
-            onClick={() => { if (!wReviewAllowed) return; setWReviewOpen(true); setTranscriptionOpen(false); setWReviewSection("review"); setWorkroomOpen(false); }}
+            onClick={() => { if (!wReviewAllowed) { setWReviewDenied(true); setTranscriptionOpen(false); void access.refreshAccess(); return; } setWReviewDenied(false); setWReviewOpen(true); setTranscriptionOpen(false); setWReviewSection("review"); setWorkroomOpen(false); }}
           >W-Review</button>
         </div>
         <button className="account-button" onClick={access.logout} title={locale === "be" ? "Выйсці" : "Выйти"}><span>{access.profile.displayName}</span><small>{access.profile.isAdmin ? (locale === "be" ? "адміністратар" : "администратор") : (locale === "be" ? "аператар" : "оператор")}</small></button>
