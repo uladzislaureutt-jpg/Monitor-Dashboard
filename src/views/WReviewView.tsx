@@ -148,7 +148,6 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   const [auditOpen,setAuditOpen] = useState(false);
   const [editFragment,setEditFragment] = useState("");
   const [replacement,setReplacement] = useState("");
-  const [ignoreReason,setIgnoreReason] = useState("");
   const [usage, setUsage] = useState<WUsage>({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
 
   useEffect(() => { localStorage.setItem(WORKSPACES_KEY, JSON.stringify(workspaces)); }, [workspaces]);
@@ -463,16 +462,15 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     setMessage("Изменение сохранено. Для экспорта повторите проверку фактов.");
   }
   function ignoreAuditIssue(index:number) {
-    if(ignoreReason.trim().length<15){setError("Укажите обоснование решения (не менее 15 символов): например, оценочное высказывание с атрибуцией.");return;}
-    setState(current=>({...current,auditDecisions:{...(current.auditDecisions||{}),[String(index)]:{action:"ignore",reason:ignoreReason.trim()}}}));
-    setIgnoreReason("");setError("");
+    setState(current=>({...current,auditDecisions:{...(current.auditDecisions||{}),[String(index)]:{action:"ignore",reason:"Решение оператора"}}}));
+    setError("");
   }
   function approveEditorReview() {
     const issues=state.factCheck?.issues||[];
     if(!issues.length || issues.some((_,index)=>!state.auditDecisions?.[String(index)]))return;
     setState(current=>({...current,factCheck:current.factCheck?{...current.factCheck,verified:true}:null,factCheckContract:W_CONTRACT_VERSION}));
     setAuditOpen(false);
-    setMessage("Замечания рассмотрены оператором. Решения сохранены в рабочем пространстве; DOCX доступен по редакторскому подтверждению.");
+    setMessage("Замечания рассмотрены оператором. Исходный текст сохранён; экспорт DOCX доступен.");
   }
 
   async function exportDocx() {
@@ -557,12 +555,11 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
           <p>Черновик не изменён. Оценочные и тенденциозные суждения допустимы при явной атрибуции автору. Проверяйте отдельно фактические утверждения внутри цитат: их нельзя выдавать за установленные факты. Игнорирование — ответственное решение оператора.</p>
           {state.factCheck.issues.map((issue,index)=><div key={index} style={{padding:12,border:"1px solid #8885",borderRadius:8,marginBottom:12}}>
             <b>{index+1}. {issue}</b>
-            {state.auditDecisions?.[String(index)] ? <p>✓ Оставлено по решению оператора: {state.auditDecisions[String(index)].reason}</p> :
+            {state.auditDecisions?.[String(index)] ? <p>✓ Замечание проигнорировано оператором; исходный текст сохранён</p> :
             <div style={{display:"grid",gap:8,marginTop:10}}>
               <label>Фрагмент в обзоре (вставьте точную цитату для замены или удаления)<textarea rows={2} value={editFragment} onChange={e=>setEditFragment(e.target.value)} /></label>
               <label>Исправленная редакция<textarea rows={2} value={replacement} onChange={e=>setReplacement(e.target.value)} /></label>
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}><button className="secondary-button" onClick={()=>applyAuditEdit("replace")}>Исправить / переписать</button><button className="secondary-button" onClick={()=>applyAuditEdit("delete")}>Удалить фрагмент</button></div>
-              <label>Причина сохранения без изменений<input value={ignoreReason} onChange={e=>setIgnoreReason(e.target.value)} placeholder="Например: оценка политика, прямо приписанная ему" /></label>
               <button className="secondary-button" onClick={()=>ignoreAuditIssue(index)}>Игнорировать замечание</button>
             </div>}
           </div>)}
