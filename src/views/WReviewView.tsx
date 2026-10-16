@@ -10,7 +10,7 @@ const W_CONTRACT_VERSION = 4;
 const MAX_ITEMS = 25;
 const HARD_MAX_ITEMS = 30;
 const MAX_SAMPLES = 5;
-const BATCH_MAX_ITEMS = HARD_MAX_ITEMS;
+const BATCH_MAX_ITEMS = 2; // Keep evidence calls small so completed cards survive an upstream model failure.
 const BATCH_MAX_CHARS = 120_000;
 const MAX_ITEM_CHARS = 24_000;
 
