@@ -152,25 +152,40 @@ export async function wSynthesize(input: {
     density: input.density,
     source_names: input.sourceNames,
   };
-  let payload = await call({ action: "synthesize", ...baseBody }, onRetry);
-  let totalUsage = usage(payload.usage);
-  let reviewText = String(payload.review_text || "");
-  let sectionTitles = Array.isArray(payload.section_titles) ? payload.section_titles.map((value: unknown) => String(value || "").trim()).filter(Boolean) : [];
-  let boldPhrases = Array.isArray(payload.bold_phrases) ? payload.bold_phrases.map((value: unknown) => String(value || "").trim()).filter(Boolean) : [];
-
-  if (reviewText.length < Math.floor(input.targetChars * 0.88)) {
-    payload = await call({ action: "expand_review", ...baseBody, draft: reviewText }, onRetry);
+  // Two independent synthesis passes share the evidence instead of exceeding Groq's per-request TPM ceiling.
+  const split = Math.ceil(input.evidenceCards.length / 2);
+  const chunks = input.evidenceCards.length >= 4
+    ? [input.evidenceCards.slice(0, split), input.evidenceCards.slice(split)]
+    : [input.evidenceCards];
+  const target = Math.min(8000, input.targetChars);
+  const texts: string[] = [];
+  let totalUsage: WUsage = {promptTokens: 0, completionTokens: 0, totalTokens: 0};
+  const sectionTitles: string[] = [];
+  const boldPhrases: string[] = [];
+  let model = "openai/gpt-oss-120b";
+  for (const [index, cards] of chunks.entries()) {
+    const partTarget = Math.round(target / chunks.length);
+    const payload = await call({
+      action: "synthesize", ...baseBody,
+      target_chars: partTarget, evidence_cards: cards,
+      stage_note: chunks.length > 1
+        ? `Часть ${index + 1} из ${chunks.length}. Раскрой только факты переданных карточек; не делай общего вывода и не повторяй вводную часть.`
+        : "",
+    }, onRetry);
+    const part = String(payload.review_text || "").trim();
+    if (!part) throw new Error("W_REVIEW_EMPTY_SYNTHESIS_PART");
+    texts.push(part);
     const extra = usage(payload.usage);
     totalUsage = {
       promptTokens: totalUsage.promptTokens + extra.promptTokens,
       completionTokens: totalUsage.completionTokens + extra.completionTokens,
       totalTokens: totalUsage.totalTokens + extra.totalTokens,
     };
-    reviewText = String(payload.review_text || reviewText);
-    sectionTitles = Array.isArray(payload.section_titles) ? payload.section_titles.map((value: unknown) => String(value || "").trim()).filter(Boolean) : sectionTitles;
-    boldPhrases = Array.isArray(payload.bold_phrases) ? payload.bold_phrases.map((value: unknown) => String(value || "").trim()).filter(Boolean) : boldPhrases;
+    if (Array.isArray(payload.section_titles)) sectionTitles.push(...payload.section_titles.map((v: unknown) => String(v || "").trim()).filter(Boolean));
+    if (Array.isArray(payload.bold_phrases)) boldPhrases.push(...payload.bold_phrases.map((v: unknown) => String(v || "").trim()).filter(Boolean));
+    model = String(payload.model || model);
   }
-
+  let reviewText = texts.join("\n\n");
   let verification: Awaited<ReturnType<typeof wVerifyReview>> | null = null;
   let verificationError = "";
   try {
@@ -199,7 +214,7 @@ export async function wSynthesize(input: {
       suspiciousAnchors: 0, issues: ["Проверка фактов не завершена. Не экспортируйте обзор без повторной проверки."],
     },
     verificationError,
-    model: String(payload.model || "openai/gpt-oss-120b"),
+    model,
     verifierModel: verification?.model || "",
     usage: totalUsage,
   };
