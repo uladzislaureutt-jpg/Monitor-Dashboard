@@ -424,26 +424,13 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         density: state.density,
         sourceNames: Array.from(new Set(state.items.map((item) => item.source.trim()).filter(Boolean))),
       }, (seconds) => setMessage(be ? `Ліміт Groq. Генерацыя працягнецца праз ~${seconds} с…` : `Лимит Groq. Генерация продолжится автоматически через ~${seconds} с…`));
-      setState((current) => ({
-        ...current,
-        reviewText: result.reviewText,
-        sectionTitles: result.sectionTitles,
-        boldPhrases: result.boldPhrases,
-        factCheck: result.factCheck,
-        factCheckContract: W_CONTRACT_VERSION,
-        auditDecisions: {},
-      }));
-      setAuditOpen(!result.factCheck.verified);
+      setState(current=>({...current,reviewText:result.reviewText,
+        sectionTitles:result.sectionTitles,boldPhrases:result.boldPhrases,
+        factCheck:null,factCheckContract:0,auditDecisions:{}}));
       addUsage(result.usage);
-      if (!result.factCheck.verified) {
-        setError("Черновик сохранён, но факт-проверка недоступна: " + result.verificationError + ". Для экспорта необходимо отдельно нажать «Проверить факты».");
-        return;
-      }
-      const removed = result.factCheck.unsupportedClaimsRemoved;
-      const partial = result.factCheck.partialClaimsRewritten;
-      setMessage(be
-        ? `Агляд сфарміраваны і правераны па Evidence. Выпраўлена частковых: ${partial}, выдалена непацверджаных: ${removed}.`
-        : `Обзор сформирован и проверен по Evidence. Исправлено частичных: ${partial}, удалено неподтверждённых: ${removed}.`);
+      const warning=result.preflightWarnings.length
+        ? " Возможные расхождения по Evidence: "+result.preflightWarnings.join("; ").slice(0,360) : "";
+      setMessage((be?"Агляд сфарміраваны. Яго можна рэдагаваць і экспартаваць у DOCX.":"Обзор сформирован. Можно редактировать и экспортировать в DOCX.")+warning);
     } catch (reason) {
       const text = String(reason);
       setError(text.includes("w_review_daily_generation_limit")
@@ -454,57 +441,8 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     } finally { setBusy(""); }
   }
 
-  async function verifyCurrentReview() {
-    if (!state.reviewText.trim() || prepared !== state.items.length) return;
-    setBusy("verify"); setError(""); setMessage("");
-    try {
-      const result = await wVerifyReview({
-        task: state.task,
-        reviewText: state.reviewText,
-        evidenceCards: evidenceCards(state.items),
-      }, (seconds) => setMessage(be ? `Ліміт AI. Праверка працягнецца праз ~${seconds} с…` : `Лимит AI. Проверка продолжится автоматически через ~${seconds} с…`));
-      setState((current) => ({
-        ...current,
-        reviewText: result.verifiedText,
-        sectionTitles: current.sectionTitles.filter((value) => result.verifiedText.includes(value)),
-        boldPhrases: current.boldPhrases.filter((value) => result.verifiedText.includes(value)),
-        factCheck: result.factCheck,
-        factCheckContract: W_CONTRACT_VERSION,
-      }));
-      addUsage(result.usage);
-      setMessage(be
-        ? `Праверка завершана. Удакладнена: ${result.factCheck.partialClaimsRewritten}, выдалена непацверджаных: ${result.factCheck.unsupportedClaimsRemoved}.`
-        : `Проверка завершена. Уточнено: ${result.factCheck.partialClaimsRewritten}, удалено неподтверждённых: ${result.factCheck.unsupportedClaimsRemoved}.`);
-    } catch (reason) { setError(String(reason)); } finally { setBusy(""); }
-  }
-
-  function applyAuditEdit(action:"replace"|"delete",index:number) {
-    if(!editFragment.trim() || !state.reviewText.includes(editFragment)) {
-      setError("Укажите точный фрагмент, присутствующий в обзоре.");return;
-    }
-    if(action==="replace" && !replacement.trim()){setError("Введите исправленный текст.");return;}
-    const next=state.reviewText.replace(editFragment,action==="delete"?"":replacement);
-    setState(current=>({...current,reviewText:next,sectionTitles:current.sectionTitles.filter(x=>next.includes(x)),boldPhrases:current.boldPhrases.filter(x=>next.includes(x)),auditDecisions:{...(current.auditDecisions||{}),[String(index)]:{action,reason:"Редакторская правка"}}}));
-    setEditFragment("");setReplacement("");
-    setMessage("Правка сохранена. Повторная проверка ИИ не требуется.");
-  }
-  function ignoreAuditIssue(index:number) {
-    setState(current=>({...current,auditDecisions:{...(current.auditDecisions||{}),[String(index)]:{action:"ignore",reason:"Решение оператора"}}}));
-    setError("");
-  }
-  function approveEditorReview() {
-    const issues=state.factCheck?.issues||[];
-    if(!issues.length || issues.some((_,index)=>!state.auditDecisions?.[String(index)]))return;
-    setState(current=>({...current,factCheck:current.factCheck?{...current.factCheck,verified:true}:null,factCheckContract:W_CONTRACT_VERSION}));
-    setAuditOpen(false);
-    setMessage("Все замечания рассмотрены оператором. Экспорт DOCX доступен без повторной проверки ИИ.");
-  }
-
   async function exportDocx() {
-    if (!state.reviewText.trim() || !state.factCheck?.verified || state.factCheckContract !== W_CONTRACT_VERSION) {
-      setError(be ? "Перад экспартам патрэбна актуальная праверка фактаў па Evidence." : "Перед экспортом требуется актуальная проверка фактов по Evidence.");
-      return;
-    }
+    if (!state.reviewText.trim()) { setError(be?"Агляд пусты.":"Обзор пуст."); return; }
     const path = await save({ title: "W-Review DOCX", defaultPath: "W-Review.docx", filters: [{ name: "Word", extensions: ["docx"] }] });
     if (!path) return;
     await desktopApi.exportWReview(path, state.reviewText.trim(), Array.from(new Set(state.items.map((item) => item.source.trim()).filter(Boolean))), state.sectionTitles, state.boldPhrases);
@@ -568,31 +506,8 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
 
     <section className="panel w-review-final"><div className="panel-head"><div><h3>{be?"4. Выніковы агляд":"4. Итоговый обзор"}</h3><p>{be?"AI будуе тэкст па выбраных тэндэнцыях.":"AI строит текст по выбранным тенденциям."}</p></div></div>
       <div className="w-review-readiness"><span className={prepared===state.items.length&&state.items.length?"ready":""}>{prepared===state.items.length&&state.items.length?"✓":"○"} {be?"Матэрыялы прааналізаваны":"Материалы проанализированы"}</span><span className={selectedTrends.length?"ready":""}>{selectedTrends.length?"✓":"○"} {be?"Тэндэнцыі выбраны":"Тенденции выбраны"}</span><span className={state.task.trim()?"ready":""}>{state.task.trim()?"✓":"○"} {be?"Заданне запоўнена":"Задание заполнено"}</span><span className={styleReady?"ready optional": "optional"}>{styleReady?"✓":"○"} {be?"Профіль стылю":"Профиль стиля"} ({be?"неабавязкова":"необязательно"})</span></div>
-      <div className="w-review-final-actions"><label className="w-review-length-control"><span>{be?"Аб\’ём, знакаў":"Объём, знаков"}</span><select value={state.targetChars} onChange={(e)=>setState({...state,targetChars:Number(e.target.value),reviewText:"",sectionTitles:[],boldPhrases:[],factCheck:null,factCheckContract:0})}><option value={1000}>1 000</option><option value={2000}>2 000</option><option value={3000}>3 000</option><option value={6000}>6 000</option><option value={8000}>8 000</option></select></label><button className="primary-button" disabled={busy!==""||!reviewReady} onClick={synthesize}>{busy==="synthesize"?"…":be?"Сфарміраваць агляд":"Сформировать обзор"}</button><button className="secondary-button" disabled={busy!==""||!state.reviewText.trim()||prepared!==state.items.length} onClick={verifyCurrentReview}>{busy==="verify"?"…":be?"Праверыць факты":"Проверить факты"}</button><button className="secondary-button" disabled={!state.reviewText.trim()||!state.factCheck?.verified||state.factCheckContract!==W_CONTRACT_VERSION} onClick={exportDocx}>DOCX</button></div>
-      <textarea className="report-editor-textarea w-review-final-text" lang={be?"be":"ru"} spellCheck={true} value={state.reviewText} onChange={(e)=>setState({...state,reviewText:e.target.value,factCheck:null,factCheckContract:0})} placeholder={be?"Тут з'явіцца выніковы агляд…":"Здесь появится итоговый обзор…"}/>
-      {state.reviewText.trim()&&<div className={`w-review-fact-check ${state.factCheck?.verified&&state.factCheckContract===W_CONTRACT_VERSION?"verified":"pending"}`}>
-        {state.factCheck?.verified&&state.factCheckContract===W_CONTRACT_VERSION
-          ? <><b>✓ {be?"Факты правераны па Evidence":"Факты проверены по Evidence"}</b><span>{be?"сцвярджэнняў":"утверждений"}: {state.factCheck.claimsTotal} · {be?"падцверджана":"подтверждено"}: {state.factCheck.supportedClaims} · {be?"удакладнена":"уточнено"}: {state.factCheck.partialClaimsRewritten} · {be?"выдалена":"удалено"}: {state.factCheck.unsupportedClaimsRemoved}</span></>
-          : <><b>{be?"○ Патрабуецца праверка фактаў":"○ Требуется проверка фактов"}</b><span>{be?"Пасля ручной праўкі экспарт заблакаваны да новай генерацыі/праверкі.":"После ручной правки экспорт заблокирован до новой генерации/проверки."}</span></>}
-      </div>}
-      {(state.factCheck?.issues?.length ?? 0)>0 && state.factCheck?.verified === false && <button className="secondary-button" onClick={()=>setAuditOpen(true)}>Замечания к факт-проверке ({state.factCheck?.issues?.length ?? 0})</button>}
-      {auditOpen && state.factCheck && <div role="dialog" aria-modal="true" aria-label="Редакторская проверка фактов" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,.55)",display:"flex",justifyContent:"center",alignItems:"center",padding:20}}>
-        <div style={{background:"var(--surface,#fff)",color:"var(--text,#222)",padding:22,borderRadius:12,maxWidth:850,width:"100%",maxHeight:"90vh",overflowY:"auto"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}><h3>Замечания к факт-проверке</h3><button className="secondary-button" onClick={()=>setAuditOpen(false)}>Закрыть</button></div>
-          <p>Черновик не изменён. Оценочные и тенденциозные суждения допустимы при явной атрибуции автору. Проверяйте отдельно фактические утверждения внутри цитат: их нельзя выдавать за установленные факты. Игнорирование — ответственное решение оператора.</p>
-          {state.factCheck.issues.map((issue,index)=><div key={index} style={{padding:12,border:"1px solid #8885",borderRadius:8,marginBottom:12}}>
-            <b>{index+1}. {issue}</b>
-            {state.auditDecisions?.[String(index)] ? <p>✓ Замечание проигнорировано оператором; исходный текст сохранён</p> :
-            <div style={{display:"grid",gap:8,marginTop:10}}>
-              <label>Фрагмент в обзоре (вставьте точную цитату для замены или удаления)<textarea rows={2} value={editFragment} onChange={e=>setEditFragment(e.target.value)} /></label>
-              <label>Исправленная редакция<textarea rows={2} value={replacement} onChange={e=>setReplacement(e.target.value)} /></label>
-              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}><button className="secondary-button" onClick={()=>applyAuditEdit("replace",index)}>Исправить / переписать</button><button className="secondary-button" onClick={()=>applyAuditEdit("delete",index)}>Удалить фрагмент</button></div>
-              <button className="secondary-button" onClick={()=>ignoreAuditIssue(index)}>Игнорировать замечание</button>
-            </div>}
-          </div>)}
-          <button className="primary-button" disabled={!(state.factCheck?.issues?.length) || Boolean(state.factCheck?.issues?.some((_,index)=>!state.auditDecisions?.[String(index)]))} onClick={approveEditorReview}>Подтвердить редакторские решения и разрешить экспорт</button>
-        </div>
-      </div>}
+      <div className="w-review-final-actions"><label className="w-review-length-control"><span>{be?"Аб\’ём, знакаў":"Объём, знаков"}</span><select value={state.targetChars} onChange={(e)=>setState({...state,targetChars:Number(e.target.value),reviewText:"",sectionTitles:[],boldPhrases:[],factCheck:null,factCheckContract:0})}><option value={1000}>1 000</option><option value={2000}>2 000</option><option value={3000}>3 000</option><option value={6000}>6 000</option><option value={8000}>8 000</option></select></label><button className="primary-button" disabled={busy!==""||!reviewReady} onClick={synthesize}>{busy==="synthesize"?"…":be?"Сфарміраваць агляд":"Сформировать обзор"}</button><button className="secondary-button" disabled={!state.reviewText.trim()||busy!==""} onClick={exportDocx}>DOCX</button></div>
+      <textarea className="report-editor-textarea w-review-final-text" lang={be?"be":"ru"} spellCheck={true} value={state.reviewText} onChange={(e)=>setState({...state,reviewText:e.target.value})} placeholder={be?"Тут з'явіцца выніковы агляд…":"Здесь появится итоговый обзор…"}/>
       <div className="w-review-usage">{be?"Сімвалаў":"Символов"}: {state.reviewText.length.toLocaleString()} · {be?"Токенаў у гэтай сесіі":"Токенов в этой сессии"}: {usage.totalTokens.toLocaleString()}</div>
     </section>
   </div>;
