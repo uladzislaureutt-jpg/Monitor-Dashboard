@@ -142,7 +142,7 @@ fn parse_bundle(input_bytes: Vec<u8>) -> Result<ParsedBundle, String> {
     let mut outer = ZipArchive::new(Cursor::new(input_bytes.as_slice()))
         .map_err(|e| format!("Файл не является читаемым ZIP: {e}"))?;
 
-    let direct = outer.file_names().any(|name| name == "manifest.json");
+    let direct = outer.file_names().any(|name| name.as_ref().map(|n| n.as_ref() == "manifest.json").unwrap_or(false));
 
     let (bundle_bytes, input_kind) = if direct {
         (input_bytes.clone(), "direct_bundle".to_string())
@@ -150,7 +150,7 @@ fn parse_bundle(input_bytes: Vec<u8>) -> Result<ParsedBundle, String> {
         let mut candidates = Vec::new();
         for i in 0..outer.len() {
             let file = outer.by_index(i).map_err(|e| format!("Ошибка чтения ZIP: {e}"))?;
-            let name = file.name().to_string();
+            let name = file.name().map_err(|e| format!("Ошибка имени файла ZIP: {e}"))?.to_string();
             if name.to_ascii_lowercase().ends_with(".zip") && name.contains("dashboard") {
                 candidates.push(name);
             }
