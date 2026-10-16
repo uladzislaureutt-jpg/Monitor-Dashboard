@@ -312,7 +312,9 @@ export default function App() {
   const wReviewAccess = access.monitors.find((item) => item.monitorKey === "w_review");
   const wReviewAllowed = access.profile.isAdmin || wReviewAccess?.enabled === true;
   const monitorBlocked = !access.profile.isAdmin && activeMonitorAccess?.enabled === false;
-  if (wReviewDenied && wReviewAllowed) { queueMicrotask(() => { setWReviewOpen(true); setWReviewDenied(false); }); }
+  useEffect(() => {
+    if (wReviewDenied && wReviewAllowed) { setWReviewOpen(true); setWReviewDenied(false); }
+  }, [wReviewDenied, wReviewAllowed]);
   const maintenanceMessage = locale === "be"
     ? activeMonitorAccess?.maintenanceMessageBe || "Тэхнічныя работы"
     : activeMonitorAccess?.maintenanceMessageRu || "Технические работы";
