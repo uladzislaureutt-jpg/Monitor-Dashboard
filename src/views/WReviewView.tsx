@@ -35,6 +35,7 @@ type WState = {
   boldPhrases: string[];
   factCheck: WFactCheck | null;
   factCheckContract?: number;
+  auditDecisions?: Record<string, {action:string;reason:string}>;
 };
 
 const STORAGE_KEY = "monitor-w-review-v1";
@@ -42,7 +43,7 @@ const EMPTY: WState = {
   items: [], task: "", targetChars: 3000, samples: [], styleProfile: "", styleContract: 0,
   editorialMap: null, mapContract: 0, selectedTrendIds: [],
   density: { quotes: "moderate", headlines: "moderate", experts: "moderate" }, reviewText: "", sectionTitles: [], boldPhrases: [],
-  factCheck: null, factCheckContract: 0,
+  factCheck: null, factCheckContract: 0, auditDecisions: {},
 };
 
 function id(prefix = "w") { return `${prefix}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`; }
@@ -79,6 +80,7 @@ function loadState(): WState {
       boldPhrases: Array.isArray(raw.boldPhrases) ? raw.boldPhrases.map(String).slice(0, 4) : [],
       factCheck: raw.factCheck && typeof raw.factCheck === "object" ? raw.factCheck as WFactCheck : null,
       factCheckContract: Number(raw.factCheckContract || 0),
+      auditDecisions: raw.auditDecisions && typeof raw.auditDecisions === "object" ? raw.auditDecisions : {},
     };
   } catch { return EMPTY; }
 }
@@ -143,6 +145,10 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   const [error, setError] = useState("");
   const [compressionMode, setCompressionMode] = useState<CompressionMode>("standard");
   const [analysisText, setAnalysisText] = useState("");
+  const [auditOpen,setAuditOpen] = useState(false);
+  const [editFragment,setEditFragment] = useState("");
+  const [replacement,setReplacement] = useState("");
+  const [ignoreReason,setIgnoreReason] = useState("");
   const [usage, setUsage] = useState<WUsage>({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
 
   useEffect(() => { localStorage.setItem(WORKSPACES_KEY, JSON.stringify(workspaces)); }, [workspaces]);
@@ -152,7 +158,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     if(busy || index===activeSlot) return;
     setWorkspaces(current=>({...current,activeSlot:index}));
     setActiveId(workspaces.slots[index].items[0]?.id??null);
-    setUrl("");setManualOpen(false);setAnalysisText("");setMessage("");setError("");
+    setUrl("");setManualOpen(false);setAnalysisText("");setMessage("");setError("");setAuditOpen(false);
   }
   function renameWorkspace(index:number,value:string) {
     setWorkspaces(current=>({...current,names:current.names.map((name,i)=>i===index?value.slice(0,60):name)}));
@@ -406,7 +412,9 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         boldPhrases: result.boldPhrases,
         factCheck: result.factCheck,
         factCheckContract: W_CONTRACT_VERSION,
+        auditDecisions: {},
       }));
+      setAuditOpen(!result.factCheck.verified);
       addUsage(result.usage);
       if (!result.factCheck.verified) {
         setError("Черновик сохранён, но факт-проверка недоступна: " + result.verificationError + ". Для экспорта необходимо отдельно нажать «Проверить факты».");
@@ -442,6 +450,29 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         ? `Праверка завершана. Удакладнена: ${result.factCheck.partialClaimsRewritten}, выдалена непацверджаных: ${result.factCheck.unsupportedClaimsRemoved}.`
         : `Проверка завершена. Уточнено: ${result.factCheck.partialClaimsRewritten}, удалено неподтверждённых: ${result.factCheck.unsupportedClaimsRemoved}.`);
     } catch (reason) { setError(String(reason)); } finally { setBusy(""); }
+  }
+
+  function applyAuditEdit(action:"replace"|"delete") {
+    if(!editFragment.trim() || !state.reviewText.includes(editFragment)) {
+      setError("Укажите точный фрагмент, присутствующий в обзоре.");return;
+    }
+    if(action==="replace" && !replacement.trim()){setError("Введите исправленный текст.");return;}
+    const next=state.reviewText.replace(editFragment,action==="delete"?"":replacement);
+    setState(current=>({...current,reviewText:next,factCheck:null,factCheckContract:0,auditDecisions:{}}));
+    setEditFragment("");setReplacement("");setAuditOpen(false);
+    setMessage("Изменение сохранено. Для экспорта повторите проверку фактов.");
+  }
+  function ignoreAuditIssue(index:number) {
+    if(ignoreReason.trim().length<15){setError("Укажите обоснование решения (не менее 15 символов): например, оценочное высказывание с атрибуцией.");return;}
+    setState(current=>({...current,auditDecisions:{...(current.auditDecisions||{}),[String(index)]:{action:"ignore",reason:ignoreReason.trim()}}}));
+    setIgnoreReason("");setError("");
+  }
+  function approveEditorReview() {
+    const issues=state.factCheck?.issues||[];
+    if(!issues.length || issues.some((_,index)=>!state.auditDecisions?.[String(index)]))return;
+    setState(current=>({...current,factCheck:current.factCheck?{...current.factCheck,verified:true}:null,factCheckContract:W_CONTRACT_VERSION}));
+    setAuditOpen(false);
+    setMessage("Замечания рассмотрены оператором. Решения сохранены в рабочем пространстве; DOCX доступен по редакторскому подтверждению.");
   }
 
   async function exportDocx() {
@@ -518,6 +549,25 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         {state.factCheck?.verified&&state.factCheckContract===W_CONTRACT_VERSION
           ? <><b>✓ {be?"Факты правераны па Evidence":"Факты проверены по Evidence"}</b><span>{be?"сцвярджэнняў":"утверждений"}: {state.factCheck.claimsTotal} · {be?"падцверджана":"подтверждено"}: {state.factCheck.supportedClaims} · {be?"удакладнена":"уточнено"}: {state.factCheck.partialClaimsRewritten} · {be?"выдалена":"удалено"}: {state.factCheck.unsupportedClaimsRemoved}</span></>
           : <><b>{be?"○ Патрабуецца праверка фактаў":"○ Требуется проверка фактов"}</b><span>{be?"Пасля ручной праўкі экспарт заблакаваны да новай генерацыі/праверкі.":"После ручной правки экспорт заблокирован до новой генерации/проверки."}</span></>}
+      </div>}
+      {state.factCheck?.issues?.length>0 && !state.factCheck.verified && <button className="secondary-button" onClick={()=>setAuditOpen(true)}>Замечания к факт-проверке ({state.factCheck.issues.length})</button>}
+      {auditOpen && state.factCheck && <div role="dialog" aria-modal="true" aria-label="Редакторская проверка фактов" style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,.55)",display:"flex",justifyContent:"center",alignItems:"center",padding:20}}>
+        <div style={{background:"var(--surface,#fff)",color:"var(--text,#222)",padding:22,borderRadius:12,maxWidth:850,width:"100%",maxHeight:"90vh",overflowY:"auto"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}><h3>Замечания к факт-проверке</h3><button className="secondary-button" onClick={()=>setAuditOpen(false)}>Закрыть</button></div>
+          <p>Черновик не изменён. Оценочные и тенденциозные суждения допустимы при явной атрибуции автору. Проверяйте отдельно фактические утверждения внутри цитат: их нельзя выдавать за установленные факты. Игнорирование — ответственное решение оператора.</p>
+          {state.factCheck.issues.map((issue,index)=><div key={index} style={{padding:12,border:"1px solid #8885",borderRadius:8,marginBottom:12}}>
+            <b>{index+1}. {issue}</b>
+            {state.auditDecisions?.[String(index)] ? <p>✓ Оставлено по решению оператора: {state.auditDecisions[String(index)].reason}</p> :
+            <div style={{display:"grid",gap:8,marginTop:10}}>
+              <label>Фрагмент в обзоре (вставьте точную цитату для замены или удаления)<textarea rows={2} value={editFragment} onChange={e=>setEditFragment(e.target.value)} /></label>
+              <label>Исправленная редакция<textarea rows={2} value={replacement} onChange={e=>setReplacement(e.target.value)} /></label>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}><button className="secondary-button" onClick={()=>applyAuditEdit("replace")}>Исправить / переписать</button><button className="secondary-button" onClick={()=>applyAuditEdit("delete")}>Удалить фрагмент</button></div>
+              <label>Причина сохранения без изменений<input value={ignoreReason} onChange={e=>setIgnoreReason(e.target.value)} placeholder="Например: оценка политика, прямо приписанная ему" /></label>
+              <button className="secondary-button" onClick={()=>ignoreAuditIssue(index)}>Игнорировать замечание</button>
+            </div>}
+          </div>)}
+          <button className="primary-button" disabled={!state.factCheck.issues.length || state.factCheck.issues.some((_,index)=>!state.auditDecisions?.[String(index)])} onClick={approveEditorReview}>Подтвердить редакторские решения и разрешить экспорт</button>
+        </div>
       </div>}
       <div className="w-review-usage">{be?"Сімвалаў":"Символов"}: {state.reviewText.length.toLocaleString()} · {be?"Токенаў у гэтай сесіі":"Токенов в этой сессии"}: {usage.totalTokens.toLocaleString()}</div>
     </section>
