@@ -160,8 +160,8 @@ export async function wSynthesize(input: {
   const target = Math.min(8000, input.targetChars);
   const texts: string[] = [];
   let totalUsage: WUsage = {promptTokens: 0, completionTokens: 0, totalTokens: 0};
-  const sectionTitles: string[] = [];
-  const boldPhrases: string[] = [];
+  let sectionTitles: string[] = [];
+  let boldPhrases: string[] = [];
   let model = "openai/gpt-oss-120b";
   for (const [index, cards] of chunks.entries()) {
     const partTarget = Math.round(target / chunks.length);
