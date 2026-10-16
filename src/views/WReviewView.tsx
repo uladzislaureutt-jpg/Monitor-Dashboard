@@ -451,15 +451,15 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     } catch (reason) { setError(String(reason)); } finally { setBusy(""); }
   }
 
-  function applyAuditEdit(action:"replace"|"delete") {
+  function applyAuditEdit(action:"replace"|"delete",index:number) {
     if(!editFragment.trim() || !state.reviewText.includes(editFragment)) {
       setError("Укажите точный фрагмент, присутствующий в обзоре.");return;
     }
     if(action==="replace" && !replacement.trim()){setError("Введите исправленный текст.");return;}
     const next=state.reviewText.replace(editFragment,action==="delete"?"":replacement);
-    setState(current=>({...current,reviewText:next,factCheck:null,factCheckContract:0,auditDecisions:{}}));
-    setEditFragment("");setReplacement("");setAuditOpen(false);
-    setMessage("Изменение сохранено. Для экспорта повторите проверку фактов.");
+    setState(current=>({...current,reviewText:next,sectionTitles:current.sectionTitles.filter(x=>next.includes(x)),boldPhrases:current.boldPhrases.filter(x=>next.includes(x)),auditDecisions:{...(current.auditDecisions||{}),[String(index)]:{action,reason:"Редакторская правка"}}}));
+    setEditFragment("");setReplacement("");
+    setMessage("Правка сохранена. Повторная проверка ИИ не требуется.");
   }
   function ignoreAuditIssue(index:number) {
     setState(current=>({...current,auditDecisions:{...(current.auditDecisions||{}),[String(index)]:{action:"ignore",reason:"Решение оператора"}}}));
@@ -470,7 +470,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     if(!issues.length || issues.some((_,index)=>!state.auditDecisions?.[String(index)]))return;
     setState(current=>({...current,factCheck:current.factCheck?{...current.factCheck,verified:true}:null,factCheckContract:W_CONTRACT_VERSION}));
     setAuditOpen(false);
-    setMessage("Замечания рассмотрены оператором. Исходный текст сохранён; экспорт DOCX доступен.");
+    setMessage("Все замечания рассмотрены оператором. Экспорт DOCX доступен без повторной проверки ИИ.");
   }
 
   async function exportDocx() {
@@ -559,11 +559,11 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
             <div style={{display:"grid",gap:8,marginTop:10}}>
               <label>Фрагмент в обзоре (вставьте точную цитату для замены или удаления)<textarea rows={2} value={editFragment} onChange={e=>setEditFragment(e.target.value)} /></label>
               <label>Исправленная редакция<textarea rows={2} value={replacement} onChange={e=>setReplacement(e.target.value)} /></label>
-              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}><button className="secondary-button" onClick={()=>applyAuditEdit("replace")}>Исправить / переписать</button><button className="secondary-button" onClick={()=>applyAuditEdit("delete")}>Удалить фрагмент</button></div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}><button className="secondary-button" onClick={()=>applyAuditEdit("replace",index)}>Исправить / переписать</button><button className="secondary-button" onClick={()=>applyAuditEdit("delete",index)}>Удалить фрагмент</button></div>
               <button className="secondary-button" onClick={()=>ignoreAuditIssue(index)}>Игнорировать замечание</button>
             </div>}
           </div>)}
-          <button className="primary-button" disabled={!state.factCheck.issues.length || state.factCheck.issues.some((_,index)=>!state.auditDecisions?.[String(index)])} onClick={approveEditorReview}>Подтвердить редакторские решения и разрешить экспорт</button>
+          <button className="primary-button" disabled={!(state.factCheck?.issues?.length) || Boolean(state.factCheck?.issues?.some((_,index)=>!state.auditDecisions?.[String(index)]))} onClick={approveEditorReview}>Подтвердить редакторские решения и разрешить экспорт</button>
         </div>
       </div>}
       <div className="w-review-usage">{be?"Сімвалаў":"Символов"}: {state.reviewText.length.toLocaleString()} · {be?"Токенаў у гэтай сесіі":"Токенов в этой сессии"}: {usage.totalTokens.toLocaleString()}</div>
