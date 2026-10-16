@@ -66,8 +66,8 @@ function loadState(): WState {
       items: Array.isArray(raw.items) ? raw.items.slice(0, HARD_MAX_ITEMS) : [],
       topic: String(raw.topic || "").slice(0, 140),
       tasks: Array.isArray(raw.tasks) && raw.tasks.length
-        ? raw.tasks.slice(0,5).map((v:unknown)=>String(v||"").slice(0,160))
-        : [String(raw.task||"").slice(0,160)],
+        ? raw.tasks.slice(0,5).map((v:unknown)=>String(v||"").slice(0,500))
+        : [String(raw.task||"").slice(0,500)],
       exclusions: String(raw.exclusions || "").slice(0, 300),
       targetChars: [1000, 2000, 3000, 6000, 8000].includes(Number(raw.targetChars)) ? Number(raw.targetChars) : 3000,
       samples,
@@ -110,7 +110,7 @@ function loadWorkspaceStore(): WWorkspaceStore {
       ...emptyWorkspace(), ...slot,
       items:Array.isArray(slot?.items)?slot.items.slice(0,HARD_MAX_ITEMS):[],
       topic:String(slot?.topic||"").slice(0,140),
-      tasks:Array.isArray(slot?.tasks)&&slot.tasks.length ? slot.tasks.slice(0,5).map((v:unknown)=>String(v||"").slice(0,160)) : [String(slot?.task||"").slice(0,160)],
+      tasks:Array.isArray(slot?.tasks)&&slot.tasks.length ? slot.tasks.slice(0,5).map((v:unknown)=>String(v||"").slice(0,500)) : [String(slot?.task||"").slice(0,500)],
       exclusions:String(slot?.exclusions||"").slice(0,300),
       targetChars:[1000,2000,3000,6000,8000].includes(Number(slot?.targetChars))?Number(slot.targetChars):3000,
       density:{quotes:densityValue(slot?.density?.quotes),headlines:densityValue(slot?.density?.headlines),experts:densityValue(slot?.density?.experts)},
@@ -349,9 +349,6 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     setState((current) => ({
       ...current,
       items: [],
-      topic: "",
-      tasks: [""],
-      exclusions: "",
       editorialMap: null,
       mapContract: 0,
       selectedTrendIds: [],
@@ -531,7 +528,11 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
       <div className="w-review-readiness"><span className={prepared===state.items.length&&state.items.length?"ready":""}>{prepared===state.items.length&&state.items.length?"✓":"○"} {be?"Матэрыялы прааналізаваны":"Материалы проанализированы"}</span><span className={selectedTrends.length?"ready":""}>{selectedTrends.length?"✓":"○"} {be?"Тэндэнцыі выбраны":"Тенденции выбраны"}</span><span className={topicReady?"ready":""}>{topicReady?"✓":"○"} {be?"Тэма ўказана":"Тема указана"}</span><span className={styleReady?"ready":""}>{styleReady?"✓":"○"} {be?"Аўтарскі стыль (абавязкова)":"Авторский стиль (обязательно)"}</span></div>
       {!styleReady&&<p style={{fontSize:11,color:"#9a443b",margin:"0 0 10px"}}>{be?"Перад фарміраваннем агляду стварыце профіль на ўкладцы «Аўтарскі стыль».":"Перед формированием обзора создайте профиль на вкладке «Авторский стиль»."}</p>}
       <div className="w-review-final-actions"><label className="w-review-length-control"><span>{be?"Аб\’ём, знакаў":"Объём, знаков"}</span><select value={state.targetChars} onChange={(e)=>setState({...state,targetChars:Number(e.target.value),reviewText:"",sectionTitles:[],boldPhrases:[],factCheck:null,factCheckContract:0})}><option value={1000}>1 000</option><option value={2000}>2 000</option><option value={3000}>3 000</option><option value={6000}>6 000</option><option value={8000}>8 000</option></select></label><button className="primary-button" disabled={busy!==""||!reviewReady} onClick={synthesize}>{busy==="synthesize"?"…":be?"Сфарміраваць агляд":"Сформировать обзор"}</button><button className="secondary-button" disabled={!state.reviewText.trim()||busy!==""} onClick={exportDocx}>DOCX</button></div>
-      <textarea className="report-editor-textarea w-review-final-text" lang={be?"be":"ru"} spellCheck={true} value={state.reviewText} onChange={(e)=>setState({...state,reviewText:e.target.value})} placeholder={be?"Тут з'явіцца выніковы агляд…":"Здесь появится итоговый обзор…"}/>
+      <textarea className="report-editor-textarea w-review-final-text" lang={be?"be":"ru"} spellCheck={true} value={state.reviewText} onChange={(e)=>setState(current=>({
+          ...current,reviewText:e.target.value,
+          sectionTitles:current.sectionTitles.filter(value=>e.target.value.includes(value)),
+          boldPhrases:current.boldPhrases.filter(value=>e.target.value.includes(value)),
+        }))} placeholder={be?"Тут з'явіцца выніковы агляд…":"Здесь появится итоговый обзор…"}/>
       <div className="w-review-usage">{be?"Сімвалаў":"Символов"}: {state.reviewText.length.toLocaleString()} · {be?"Токенаў у гэтай сесіі":"Токенов в этой сессии"}: {usage.totalTokens.toLocaleString()}</div>
     </section>
   </div>;
