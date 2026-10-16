@@ -351,6 +351,10 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         factCheckContract: W_CONTRACT_VERSION,
       }));
       addUsage(result.usage);
+      if (!result.factCheck.verified) {
+        setError("Черновик сохранён, но факт-проверка недоступна: " + result.verificationError + ". Для экспорта необходимо отдельно нажать «Проверить факты».");
+        return;
+      }
       const removed = result.factCheck.unsupportedClaimsRemoved;
       const partial = result.factCheck.partialClaimsRewritten;
       setMessage(be
