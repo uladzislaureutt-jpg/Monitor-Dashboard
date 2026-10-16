@@ -1190,3 +1190,10 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 .transcription-text-pane .transcription-main-editor{min-height:320px;resize:vertical}
 .transcription-text-pane textarea[readonly]{background:#f7f5f1;color:#4b5660}
 @media(max-width:1050px){.transcription-text-columns{grid-template-columns:minmax(0,1fr)}}
+
+/* 0.8.52 — streamlined W-Review operator instructions */
+.w-review-task input{box-sizing:border-box;width:100%;border:1px solid #d8d0c4;border-radius:10px;padding:10px 12px;background:#fff;color:#273844;margin-top:5px}
+.w-review-task label strong{display:inline-block;font-size:11px;color:#31566c}
+.w-review-task label textarea{min-height:65px;margin-top:5px}
+.w-review-task label{min-width:0}
+.w-review-task button.small-button{min-height:28px}
