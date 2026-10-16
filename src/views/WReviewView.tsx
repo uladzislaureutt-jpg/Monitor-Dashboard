@@ -83,10 +83,57 @@ function loadState(): WState {
   } catch { return EMPTY; }
 }
 
+type WWorkspaceStore = { activeSlot: number; names: string[]; slots: WState[] };
+const WORKSPACES_KEY = "monitor-w-review-workspaces-v1";
+function emptyWorkspace(): WState {
+  return {...EMPTY,items:[],samples:[],density:{...EMPTY.density},selectedTrendIds:[],sectionTitles:[],boldPhrases:[]};
+}
+function loadWorkspaceStore(): WWorkspaceStore {
+  const legacy = loadState();
+  const initial: WWorkspaceStore = {
+    activeSlot:0, names:["Тема 1","Тема 2","Тема 3"],
+    slots:[legacy, {...emptyWorkspace(),samples:legacy.samples,styleProfile:legacy.styleProfile,styleContract:legacy.styleContract},
+      {...emptyWorkspace(),samples:legacy.samples,styleProfile:legacy.styleProfile,styleContract:legacy.styleContract}]
+  };
+  try {
+    const saved = JSON.parse(localStorage.getItem(WORKSPACES_KEY)||"null");
+    if (!saved || !Array.isArray(saved.slots) || saved.slots.length!==3) return initial;
+    const slots = saved.slots.map((slot:any)=>({
+      ...emptyWorkspace(), ...slot,
+      items:Array.isArray(slot?.items)?slot.items.slice(0,MAX_ITEMS):[],
+      targetChars:[1000,2000,3000,6000,8000].includes(Number(slot?.targetChars))?Number(slot.targetChars):3000,
+      density:{quotes:densityValue(slot?.density?.quotes),headlines:densityValue(slot?.density?.headlines),experts:densityValue(slot?.density?.experts)},
+      selectedTrendIds:Array.isArray(slot?.selectedTrendIds)?slot.selectedTrendIds:[],
+      sectionTitles:Array.isArray(slot?.sectionTitles)?slot.sectionTitles:[],
+      boldPhrases:Array.isArray(slot?.boldPhrases)?slot.boldPhrases:[]
+    })) as WState[];
+    const shared=slots[0];
+    for(let i=1;i<3;i++){slots[i].samples=shared.samples;slots[i].styleProfile=shared.styleProfile;slots[i].styleContract=shared.styleContract;}
+    return {activeSlot:[0,1,2].includes(saved.activeSlot)?saved.activeSlot:0,
+      names:Array.from({length:3},(_,i)=>String(saved.names?.[i]||`Тема ${i+1}`).slice(0,60)), slots};
+  }catch{return initial;}
+}
+
 export function WReviewView({ section = "review", onCloseStyle }: { section?: "review" | "style"; onCloseStyle?: () => void }) {
   const { locale } = useI18n();
   const be = locale === "be";
-  const [state, setState] = useState<WState>(loadState);
+  const [workspaces, setWorkspaces] = useState<WWorkspaceStore>(loadWorkspaceStore);
+  const activeSlot = workspaces.activeSlot;
+  const state = workspaces.slots[activeSlot];
+  function setState(next: WState | ((current: WState) => WState)) {
+    setWorkspaces((store) => {
+      const current=store.slots[store.activeSlot];
+      const updated=typeof next==="function" ? next(current) : next;
+      const sharedChanged=updated.samples!==current.samples || updated.styleProfile!==current.styleProfile || updated.styleContract!==current.styleContract;
+      const slots=store.slots.map((slot,i)=>{
+        if(i===store.activeSlot)return updated;
+        if(!sharedChanged)return slot;
+        return {...slot,samples:updated.samples,styleProfile:updated.styleProfile,styleContract:updated.styleContract,
+          reviewText:"",sectionTitles:[],boldPhrases:[],factCheck:null,factCheckContract:0};
+      });
+      return {...store,slots};
+    });
+  }
   const [activeId, setActiveId] = useState<string | null>(state.items[0]?.id ?? null);
   const [url, setUrl] = useState("");
   const [manualOpen, setManualOpen] = useState(false);
@@ -98,8 +145,18 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   const [analysisText, setAnalysisText] = useState("");
   const [usage, setUsage] = useState<WUsage>({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
 
-  useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }, [state]);
+  useEffect(() => { localStorage.setItem(WORKSPACES_KEY, JSON.stringify(workspaces)); }, [workspaces]);
   useEffect(() => { if (activeId && !state.items.some((item) => item.id === activeId)) setActiveId(state.items[0]?.id ?? null); }, [state.items, activeId]);
+
+  function switchWorkspace(index:number) {
+    if(busy || index===activeSlot) return;
+    setWorkspaces(current=>({...current,activeSlot:index}));
+    setActiveId(workspaces.slots[index].items[0]?.id??null);
+    setUrl("");setManualOpen(false);setAnalysisText("");setMessage("");setError("");
+  }
+  function renameWorkspace(index:number,value:string) {
+    setWorkspaces(current=>({...current,names:current.names.map((name,i)=>i===index?value.slice(0,60):name)}));
+  }
 
   const active = state.items.find((item) => item.id === activeId) ?? state.items[0] ?? null;
   const totalChars = useMemo(() => state.items.reduce((sum, item) => sum + item.editorialText.length, 0), [state.items]);
@@ -419,6 +476,13 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
 
   return <div className="view-stack w-review">
     <section className="view-heading"><div><div className="eyebrow dark">W-REVIEW</div><h2>{be ? "Папярэдні агляд" : "Предварительный обзор"}</h2><p>{be ? "Збярыце матэрыялы, задайце тэму і атрымаеце абагульнены погляд на медыяполе." : "Соберите материалы, задайте тему и получите обобщённый взгляд на медиаполе."}</p></div><div className="w-review-metrics"><b>{state.items.length}/{MAX_ITEMS}</b><span>~{estimateTokens(totalChars).toLocaleString()} input tokens</span></div></section>
+    <div role="tablist" aria-label={be?"Тэмы W-Review":"Темы W-Review"} style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:12}}>
+      {workspaces.names.map((name,index)=><div key={index} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 8px",borderRadius:8,border:index===activeSlot?"2px solid var(--accent, #b91c1c)":"1px solid #8885",maxWidth:260}}>
+        <button role="tab" aria-selected={index===activeSlot} disabled={busy!==""} onClick={()=>switchWorkspace(index)} className={index===activeSlot?"primary-button":"secondary-button"} style={{padding:"6px 10px",whiteSpace:"nowrap"}}>{index+1}</button>
+        <input aria-label={`Название темы ${index+1}`} disabled={busy!==""} value={name} onChange={event=>renameWorkspace(index,event.target.value)} style={{minWidth:0,width:140,border:"none",background:"transparent",fontWeight:index===activeSlot?700:400}}/>
+        <span title={be?"Матэрыялаў у пуле":"Материалов в пуле"}>{workspaces.slots[index].items.length}</span>
+      </div>)}
+    </div>
     {message && <div className="notice success">{message}</div>}{error && <div className="notice error">{error}</div>}
 
     <section className="panel w-review-import"><div className="panel-head"><div><h3>{be ? "1. Матэрыялы" : "1. Материалы"}</h3><p>{be ? "Прамая загрузка, закладка → Monitor або ручны ўвод." : "Прямая загрузка, закладка → Monitor или ручной ввод."}</p></div></div>
