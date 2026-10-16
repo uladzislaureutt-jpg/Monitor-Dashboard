@@ -156,8 +156,8 @@ export async function wSynthesize(input: {
   const payload = await call({action:"synthesize",...baseBody,target_chars:Math.min(8000,input.targetChars)},onRetry);
   let reviewText = String(payload.review_text || "").trim();
   if (!reviewText) throw new Error("W_REVIEW_EMPTY_SYNTHESIS");
-  const sectionTitles: string[] = Array.isArray(payload.section_titles) ? payload.section_titles.map((v:unknown)=>String(v||"").trim()).filter(Boolean) : [];
-  const boldPhrases: string[] = Array.isArray(payload.bold_phrases) ? payload.bold_phrases.map((v:unknown)=>String(v||"").trim()).filter(Boolean) : [];
+  let sectionTitles: string[] = Array.isArray(payload.section_titles) ? payload.section_titles.map((v:unknown)=>String(v||"").trim()).filter(Boolean) : [];
+  let boldPhrases: string[] = Array.isArray(payload.bold_phrases) ? payload.bold_phrases.map((v:unknown)=>String(v||"").trim()).filter(Boolean) : [];
   let totalUsage: WUsage = usage(payload.usage);
   const model = String(payload.model || "@cf/openai/gpt-oss-120b");
   let verification: Awaited<ReturnType<typeof wVerifyReview>> | null = null;
