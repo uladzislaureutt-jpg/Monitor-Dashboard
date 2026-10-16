@@ -171,17 +171,21 @@ export async function wSynthesize(input: {
     boldPhrases = Array.isArray(payload.bold_phrases) ? payload.bold_phrases.map((value: unknown) => String(value || "").trim()).filter(Boolean) : boldPhrases;
   }
 
-  const verification = await wVerifyReview({
-    task: input.task,
-    reviewText,
-    evidenceCards: input.evidenceCards,
-  }, onRetry);
-  totalUsage = {
-    promptTokens: totalUsage.promptTokens + verification.usage.promptTokens,
-    completionTokens: totalUsage.completionTokens + verification.usage.completionTokens,
-    totalTokens: totalUsage.totalTokens + verification.usage.totalTokens,
-  };
-  reviewText = verification.verifiedText || reviewText;
+  let verification: Awaited<ReturnType<typeof wVerifyReview>> | null = null;
+  let verificationError = "";
+  try {
+    verification = await wVerifyReview({task: input.task, reviewText, evidenceCards: input.evidenceCards}, onRetry);
+  } catch (reason) {
+    verificationError = String(reason);
+  }
+  if (verification) {
+    totalUsage = {
+      promptTokens: totalUsage.promptTokens + verification.usage.promptTokens,
+      completionTokens: totalUsage.completionTokens + verification.usage.completionTokens,
+      totalTokens: totalUsage.totalTokens + verification.usage.totalTokens,
+    };
+    reviewText = verification.verifiedText || reviewText;
+  }
   sectionTitles = sectionTitles.filter((value: string) => reviewText.includes(value));
   boldPhrases = boldPhrases.filter((value: string) => reviewText.includes(value));
 
@@ -189,9 +193,14 @@ export async function wSynthesize(input: {
     reviewText,
     sectionTitles,
     boldPhrases,
-    factCheck: verification.factCheck,
+    factCheck: verification?.factCheck ?? {
+      verified: false, claimsTotal: 0, supportedClaims: 0,
+      partialClaimsRewritten: 0, unsupportedClaimsRemoved: 0,
+      suspiciousAnchors: 0, issues: ["Проверка фактов не завершена. Не экспортируйте обзор без повторной проверки."],
+    },
+    verificationError,
     model: String(payload.model || "openai/gpt-oss-120b"),
-    verifierModel: verification.model,
+    verifierModel: verification?.model || "",
     usage: totalUsage,
   };
 }
