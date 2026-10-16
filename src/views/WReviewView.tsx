@@ -396,6 +396,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     setBusy("synthesize"); setError(""); setMessage("");
     try {
       const result = await wSynthesize({
+        topicKey: `workspace-${activeSlot + 1}`,
         task: state.task,
         targetChars: state.targetChars,
         evidenceCards: evidenceCards(state.items),
