@@ -55,7 +55,7 @@ async function call(body: Record<string, unknown>, onRetry?: RetryNotice) {
       continue;
     }
     const retry = payload.retry_after ? `: retry_after=${payload.retry_after}` : "";
-    throw new Error(`${String(payload.error || `HTTP_${response.status}`)}${retry}`);
+    throw new Error(`${String(payload.error || `HTTP_${response.status}`)}${retry}${payload.detail ? `: ${String(payload.detail).slice(0, 350)}` : ""}`);
   }
   throw new Error("groq_rate_limit");
 }
