@@ -152,40 +152,14 @@ export async function wSynthesize(input: {
     density: input.density,
     source_names: input.sourceNames,
   };
-  // Two independent synthesis passes share the evidence instead of exceeding Groq's per-request TPM ceiling.
-  const split = Math.ceil(input.evidenceCards.length / 2);
-  const chunks = input.evidenceCards.length >= 4
-    ? [input.evidenceCards.slice(0, split), input.evidenceCards.slice(split)]
-    : [input.evidenceCards];
-  const target = Math.min(8000, input.targetChars);
-  const texts: string[] = [];
-  let totalUsage: WUsage = {promptTokens: 0, completionTokens: 0, totalTokens: 0};
-  let sectionTitles: string[] = [];
-  let boldPhrases: string[] = [];
-  let model = "openai/gpt-oss-120b";
-  for (const [index, cards] of chunks.entries()) {
-    const partTarget = Math.round(target / chunks.length);
-    const payload = await call({
-      action: "synthesize", ...baseBody,
-      target_chars: partTarget, evidence_cards: cards,
-      stage_note: chunks.length > 1
-        ? `Часть ${index + 1} из ${chunks.length}. Раскрой только факты переданных карточек; не делай общего вывода и не повторяй вводную часть.`
-        : "",
-    }, onRetry);
-    const part = String(payload.review_text || "").trim();
-    if (!part) throw new Error("W_REVIEW_EMPTY_SYNTHESIS_PART");
-    texts.push(part);
-    const extra = usage(payload.usage);
-    totalUsage = {
-      promptTokens: totalUsage.promptTokens + extra.promptTokens,
-      completionTokens: totalUsage.completionTokens + extra.completionTokens,
-      totalTokens: totalUsage.totalTokens + extra.totalTokens,
-    };
-    if (Array.isArray(payload.section_titles)) sectionTitles.push(...payload.section_titles.map((v: unknown) => String(v || "").trim()).filter(Boolean));
-    if (Array.isArray(payload.bold_phrases)) boldPhrases.push(...payload.bold_phrases.map((v: unknown) => String(v || "").trim()).filter(Boolean));
-    model = String(payload.model || model);
-  }
-  let reviewText = texts.join("\n\n");
+  // Cloudflare receives the complete evidence pool in a single synthesis request.
+  const payload = await call({action:"synthesize",...baseBody,target_chars:Math.min(8000,input.targetChars)},onRetry);
+  let reviewText = String(payload.review_text || "").trim();
+  if (!reviewText) throw new Error("W_REVIEW_EMPTY_SYNTHESIS");
+  const sectionTitles: string[] = Array.isArray(payload.section_titles) ? payload.section_titles.map((v:unknown)=>String(v||"").trim()).filter(Boolean) : [];
+  const boldPhrases: string[] = Array.isArray(payload.bold_phrases) ? payload.bold_phrases.map((v:unknown)=>String(v||"").trim()).filter(Boolean) : [];
+  let totalUsage: WUsage = usage(payload.usage);
+  const model = String(payload.model || "@cf/openai/gpt-oss-120b");
   let verification: Awaited<ReturnType<typeof wVerifyReview>> | null = null;
   let verificationError = "";
   try {
