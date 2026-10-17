@@ -149,5 +149,8 @@ export async function wSynthesize(input: {
     model: String(payload.model || "@cf/openai/gpt-oss-120b"),
     usage: usage(payload.usage),
     preflightWarnings: Array.isArray(payload.preflight_warnings) ? payload.preflight_warnings.map(String).slice(0, 6) : [] as string[],
+    targetChars: Number(payload.target_chars || input.targetChars),
+    actualChars: Number(payload.actual_chars || reviewText.length),
+    lengthWithinTolerance: payload.length_within_tolerance === true,
   };
 }
