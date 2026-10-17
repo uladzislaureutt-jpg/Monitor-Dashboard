@@ -492,7 +492,16 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     if (!state.reviewText.trim()) { setError(be?"Агляд пусты.":"Обзор пуст."); return; }
     const path = await save({ title: "W-Review DOCX", defaultPath: "W-Review.docx", filters: [{ name: "Word", extensions: ["docx"] }] });
     if (!path) return;
-    await desktopApi.exportWReview(path, state.reviewText.trim(), Array.from(new Set(state.items.map((item) => item.source.trim()).filter(Boolean))), state.sectionTitles, state.boldPhrases);
+    // Only one unique URL per media outlet may be linked automatically.
+    // Multiple different articles by the same outlet are left unlinked to
+    // avoid sending the reader to the wrong publication.
+    const sourceLinks=Array.from(new Set(state.items.map(item=>item.source.trim()).filter(Boolean)))
+      .map(name=>{
+        const urls=Array.from(new Set(state.items.filter(item=>item.source.trim()===name)
+          .map(item=>item.url.trim()).filter(url=>/^https?:\/\//i.test(url))));
+        return urls.length===1?{name,url:urls[0]}:null;
+      }).filter((item):item is {name:string;url:string}=>Boolean(item));
+    await desktopApi.exportWReview(path, state.reviewText.trim(), Array.from(new Set(state.items.map((item) => item.source.trim()).filter(Boolean))), state.sectionTitles, state.boldPhrases, sourceLinks);
     setMessage(be ? "DOCX захаваны ў фармаце W-Review." : "DOCX сохранён в формате W-Review.");
   }
 
