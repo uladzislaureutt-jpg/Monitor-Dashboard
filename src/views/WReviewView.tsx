@@ -60,7 +60,6 @@ type WState = {
   reviewText: string;
   sectionTitles: string[];
   boldPhrases: string[];
-  docxTemplatePath?: string;
   factCheck: WFactCheck | null;
   factCheckContract?: number;
   auditDecisions?: Record<string, {action:string;reason:string}>;
@@ -71,7 +70,7 @@ const EMPTY: WState = {
   items: [], topic: "", tasks: [""], exclusions: "", targetChars: 3000, samples: [], styleProfile: "", styleContract: 0,
   editorialMap: null, mapContract: 0, selectedTrendIds: [],
   density: { quotes: "moderate", headlines: "moderate", experts: "moderate" }, reviewText: "", sectionTitles: [], boldPhrases: [],
-  factCheck: null, factCheckContract: 0, auditDecisions: {}, docxTemplatePath: "",
+  factCheck: null, factCheckContract: 0, auditDecisions: {}
 };
 
 function id(prefix = "w") { return `${prefix}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`; }
@@ -98,7 +97,6 @@ function loadState(): WState {
       targetChars: [1000, 2000, 3000, 4000, 6000, 8000].includes(Number(raw.targetChars)) ? Number(raw.targetChars) : 3000,
       samples,
       styleProfile: String(raw.styleProfile || "").slice(0, 10000),
-      docxTemplatePath: String(raw.docxTemplatePath || "").slice(0, 1000),
       styleContract: Number(raw.styleContract || 0),
       editorialMap: raw.editorialMap && typeof raw.editorialMap === "object" ? raw.editorialMap as WEditorialMap : null,
       mapContract: Number(raw.mapContract || 0),
@@ -491,17 +489,6 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     } finally { setBusy(""); }
   }
 
-  async function chooseDocxTemplate() {
-    const selected=await open({
-      title:be?"Абраць арыгінальны ўзор Word":"Выбрать оригинальный образец Word",
-      multiple:false,filters:[{name:"Word DOCX",extensions:["docx"]}]
-    });
-    if(typeof selected==="string"){
-      setState(current=>({...current,docxTemplatePath:selected}));
-      setMessage(be?"Узор Word захаваны.":"Образец Word выбран для оформления DOCX.");
-    }
-  }
-
   async function exportDocx() {
     if (!state.reviewText.trim()) { setError(be?"Агляд пусты.":"Обзор пуст."); return; }
     const path = await save({ title: "W-Review DOCX", defaultPath: "W-Review.docx", filters: [{ name: "Word", extensions: ["docx"] }] });
@@ -515,7 +502,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
           .map(item=>item.url.trim()).filter(url=>/^https?:\/\//i.test(url))));
         return urls.length===1?{name,url:urls[0]}:null;
       }).filter((item):item is {name:string;url:string}=>Boolean(item));
-    await desktopApi.exportWReview(path, state.reviewText.trim(), Array.from(new Set(state.items.map((item) => item.source.trim()).filter(Boolean))), state.sectionTitles, state.boldPhrases, sourceLinks, state.docxTemplatePath||null);
+    await desktopApi.exportWReview(path, state.reviewText.trim(), Array.from(new Set(state.items.map((item) => item.source.trim()).filter(Boolean))), state.sectionTitles, state.boldPhrases, sourceLinks);
     setMessage(be ? "DOCX захаваны ў фармаце W-Review." : "DOCX сохранён в формате W-Review.");
   }
 
@@ -631,10 +618,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
       <div className="w-review-readiness"><span className={prepared===state.items.length&&state.items.length?"ready":""}>{prepared===state.items.length&&state.items.length?"✓":"○"} {be?"Матэрыялы прааналізаваны":"Материалы проанализированы"}</span><span className={selectedTrends.length?"ready":""}>{selectedTrends.length?"✓":"○"} {be?"Тэндэнцыі выбраны":"Тенденции выбраны"}</span><span className={topicReady?"ready":""}>{topicReady?"✓":"○"} {be?"Тэма ўказана":"Тема указана"}</span><span className={styleReady?"ready":""}>{styleReady?"✓":"○"} {be?"Аўтарскі стыль (абавязкова)":"Авторский стиль (обязательно)"}</span></div>
       {!styleReady&&<p style={{fontSize:11,color:"#9a443b",margin:"0 0 10px"}}>{be?"Перад фарміраваннем агляду стварыце профіль на ўкладцы «Аўтарскі стыль».":"Перед формированием обзора создайте профиль на вкладке «Авторский стиль»."}</p>}
       <div className="w-review-final-actions"><label className="w-review-length-control"><span>{be?"Аб\’ём, знакаў":"Объём, знаков"}</span><select value={state.targetChars} onChange={(e)=>setState({...state,targetChars:Number(e.target.value),reviewText:"",sectionTitles:[],boldPhrases:[],factCheck:null,factCheckContract:0})}><option value={1000}>1 000</option><option value={2000}>2 000</option><option value={3000}>3 000</option><option value={4000}>4 000</option><option value={6000}>6 000</option><option value={8000}>8 000</option></select></label><button className="primary-button" disabled={busy!==""||!reviewReady} onClick={synthesize}>{busy==="synthesize"?"…":be?"Сфарміраваць агляд":"Сформировать обзор"}</button><button className="secondary-button" disabled={!state.reviewText.trim()||busy!==""} onClick={exportDocx}>DOCX</button>
-       <button className="ghost-button small-button" disabled={busy!==""} onClick={chooseDocxTemplate}
-         title={state.docxTemplatePath||"Выбрать оригинальный файл DOCX для оформления"}>
-         {state.docxTemplatePath?(be?"Узор Word ✓":"Образец Word ✓"):(be?"Узор Word":"Образец Word")}
-       </button></div>
+</div>
       <textarea className="report-editor-textarea w-review-final-text" lang={be?"be":"ru"} spellCheck={true} value={state.reviewText} onChange={(e)=>setState(current=>({
           ...current,reviewText:e.target.value,
           sectionTitles:current.sectionTitles.filter(value=>e.target.value.includes(value)),
