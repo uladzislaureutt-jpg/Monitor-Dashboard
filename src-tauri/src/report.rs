@@ -150,6 +150,82 @@ fn range_contains(ranges: &[(usize, usize)], start: usize, end: usize) -> bool {
     ranges.iter().any(|(a, b)| start >= *a && end <= *b)
 }
 
+// Format canonical outlet names and trailing citations without asking the model
+// or the operator to place guillemets or punctuation. Preserve the facts and
+// wording of the editor's master text.
+fn w_review_media_key(value: &str) -> String {
+    value.trim()
+        .trim_matches(|ch: char| matches!(ch, '«' | '»' | '"' | '“' | '”'))
+        .replace(['‑', '–', '—'], "-")
+        .to_lowercase()
+}
+
+fn w_review_media_name(value: &str, names: &[String]) -> Option<String> {
+    let wanted=w_review_media_key(value);
+    names.iter()
+        .map(|x|x.trim().trim_matches('«').trim_matches('»').trim())
+        .find(|x|!x.is_empty()&&w_review_media_key(x)==wanted)
+        .map(|x|x.to_string())
+}
+
+fn w_review_wrap_media_names(value: &str, names: &[String]) -> String {
+    let mut sources=names.iter().map(|x|x.trim().trim_matches('«').trim_matches('»').trim().to_string())
+        .filter(|x|!x.is_empty()).collect::<Vec<_>>();
+    sources.sort_by_key(|x|std::cmp::Reverse(x.len()));
+    sources.dedup();
+    let mut result=value.to_string();
+    for name in sources {
+        // Accept English straight-quoted names but output Russian guillemets.
+        result=result.replace(&format!("\"{name}\""),&format!("«{name}»"));
+        let Ok(re)=Regex::new(&regex::escape(&name)) else {continue};
+        let original=result.clone();
+        let mut out=String::new();
+        let mut cursor=0;
+        for matched in re.find_iter(&original) {
+            let prev=original[..matched.start()].chars().next_back();
+            let next=original[matched.end()..].chars().next();
+            let whole_word=!prev.is_some_and(|c|c.is_alphanumeric()||c=='_')
+                && !next.is_some_and(|c|c.is_alphanumeric()||c=='_');
+            out.push_str(&original[cursor..matched.start()]);
+            if whole_word && !(prev==Some('«')&&next==Some('»')) {
+                out.push_str(&format!("«{}»",matched.as_str()));
+            } else {
+                out.push_str(matched.as_str());
+            }
+            cursor=matched.end();
+        }
+        out.push_str(&original[cursor..]);
+        result=out;
+    }
+    result
+}
+
+// A citation belongs before the sentence's final period:
+//   "Text. (CNN, Bloomberg)" -> "Text («CNN», «Bloomberg»)."
+// Only transform parentheses when EVERY item is a known source. Other
+// parentheses, dates, or editorial explanations remain intact.
+fn w_review_format_media_citations(text: &str, source_names: &[String]) -> String {
+    let citation=Regex::new(r"(?s)^(.*?)\s*\(([^()\n]{2,240})\)\s*\.?\s*$")
+        .expect("valid trailing source list pattern");
+    let mut fixed=text.trim().to_string();
+    if let Some(caps)=citation.captures(&fixed) {
+        let raw=caps.get(2).map(|m|m.as_str()).unwrap_or("");
+        let candidates=raw.split(',').map(str::trim).collect::<Vec<_>>();
+        let resolved=candidates.iter()
+            .map(|c|w_review_media_name(c,source_names))
+            .collect::<Option<Vec<_>>>();
+        if !candidates.is_empty() {
+            if let Some(names)=resolved {
+                let body=caps.get(1).map(|m|m.as_str()).unwrap_or("")
+                    .trim_end().trim_end_matches('.').trim_end();
+                fixed=format!("{body} ({}).",names.iter()
+                    .map(|name|format!("«{name}»")).collect::<Vec<_>>().join(", "));
+            }
+        }
+    }
+    w_review_wrap_media_names(&fixed,source_names)
+}
+
 fn w_review_runs(text: &str, first_paragraph: bool, source_names: &[String], bold_phrases: &[String], source_link_rels: &[(String, String)]) -> String {
     let source_ranges = w_review_source_ranges(text, source_names);
     let normalized_bold_phrases: Vec<String> = bold_phrases.iter().map(|phrase| sanitize_l_monitor_text(phrase).replace("**", "").replace("__", "")).collect();
@@ -173,8 +249,9 @@ fn w_review_runs(text: &str, first_paragraph: bool, source_names: &[String], bol
         let start = pair[0]; let end = pair[1];
         if start >= end { continue; }
         let slice = &text[start..end];
-        let bold = range_contains(&bold_ranges, start, end);
-        let italic = bold || range_contains(&source_ranges, start, end);
+        let is_source = range_contains(&source_ranges, start, end);
+        let bold = !is_source && range_contains(&bold_ranges, start, end);
+        let italic = bold || is_source;
         let formatted = run_w_review(slice, bold, italic, false);
         if let Some((_, rel_id)) = source_link_rels.iter().find(|(name, _)| {
             let quoted = format!("«{name}»");
@@ -487,7 +564,8 @@ pub fn export_w_review_docx(path: &Path, text: &str, source_names: &[String], se
             let runs = run_w_review(block, false, true, true);
             body.push_str(&paragraph_w_review(&runs, true));
         } else {
-            let runs = w_review_runs(block, prose_index == 0, source_names, bold_phrases, &source_link_rels);
+            let formatted_block = w_review_format_media_citations(block, source_names);
+            let runs = w_review_runs(&formatted_block, prose_index == 0, source_names, bold_phrases, &source_link_rels);
             body.push_str(&paragraph_w_review(&runs, false));
             prose_index += 1;
         }
@@ -604,4 +682,44 @@ pub fn export_docx(path: &Path, date: &str, items: &[ReportExportItem], monitor_
     }
     zip.finish().map_err(|e| format!("Не удалось завершить DOCX: {e}"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod w_review_format_contract_tests {
+    use super::*;
+
+    fn names()->Vec<String> {
+        ["CNN","Bloomberg","NBC News","The Guardian","Financial Times",
+          "The Hill","cfr.org","Интерфакс-Украина"]
+          .iter().map(|x|x.to_string()).collect()
+    }
+    #[test]
+    fn citation_ends_after_parentheses_with_italicizable_quotes(){
+        let text="Детали события подтверждены. (CNN, Bloomberg)";
+        let actual=w_review_format_media_citations(text,&names());
+        assert_eq!(actual,"Детали события подтверждены («CNN», «Bloomberg»).");
+        assert_eq!(w_review_source_ranges(&actual,&names()).len(),2);
+    }
+    #[test]
+    fn source_names_inside_prose_get_guillemets() {
+        let actual=w_review_format_media_citations(
+          "Как сообщила CNN, публикация Financial Times приводит цитату. (The Guardian, NBC News)",&names());
+        assert_eq!(actual,
+          "Как сообщила «CNN», публикация «Financial Times» приводит цитату («The Guardian», «NBC News»).");
+    }
+    #[test]
+    fn normal_parentheses_are_not_misidentified_as_media(){
+        let actual=w_review_format_media_citations("Указ подписан (в 2026 году).",&names());
+        assert_eq!(actual,"Указ подписан (в 2026 году).");
+    }
+    #[test]
+    fn non_breaking_hyphen_and_domain_citation_are_canonicalized(){
+        let actual=w_review_format_media_citations("Документ. (Интерфакс‑Украина, cfr.org)",&names());
+        assert_eq!(actual,"Документ («Интерфакс-Украина», «cfr.org»).");
+    }
+    #[test]
+    fn already_quoted_names_remain_single_quoted(){
+        let actual=w_review_format_media_citations("«CNN» и «Bloomberg» привели данные",&names());
+        assert_eq!(actual,"«CNN» и «Bloomberg» привели данные");
+    }
 }
