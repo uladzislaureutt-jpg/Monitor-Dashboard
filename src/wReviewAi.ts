@@ -25,7 +25,7 @@ export type WEvidenceRecord = {
   speaker: string; role: string;
 };
 export type WEvidenceData = {
-  version: 2; publication_id: string; title_original: string; title_ru: string;
+  version: 2; publication_id: string; title_original: string; title_ru: string; source_sha256: string;
   records: WEvidenceRecord[];
   validation: { proposed: number; accepted: number; rejected: number;
     covered_passages: number; total_passages: number };
