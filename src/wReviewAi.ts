@@ -1,5 +1,6 @@
 import { ensureWorkroomSession, loadWorkroomConfig, loadWorkroomSession } from "./workroom";
 import { getVersion } from "@tauri-apps/api/app";
+import type { WStyleExcerpt, WStylePattern } from "./wReviewStyle";
 
 export type WUsage = { promptTokens: number; completionTokens: number; totalTokens: number };
 export type WDensity = "minimum" | "moderate" | "many" | "all";
@@ -159,7 +160,8 @@ export async function wSynthesize(input: {
   targetChars: number;
   evidenceCards: string[];
   styleProfile: string;
-  styleExcerpts: Array<{name:string;text:string}>;
+  styleExcerpts: WStyleExcerpt[];
+  styleComposition: Omit<WStylePattern,"excerpts">;
   trends: WEditorialTrend[];
   dossier: WEditorialMap;
   density: { quotes: WDensity; headlines: WDensity; experts: WDensity };
@@ -172,6 +174,7 @@ export async function wSynthesize(input: {
     evidence_cards: input.evidenceCards,
     style_profile: input.styleProfile,
     style_excerpts: input.styleExcerpts,
+    style_composition: input.styleComposition,
     trends: input.trends,
     editorial_dossier: input.dossier,
     density: input.density,
