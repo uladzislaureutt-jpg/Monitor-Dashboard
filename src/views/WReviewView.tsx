@@ -6,7 +6,8 @@ import { exactCompressForProfile, type CompressionMode } from "../editorialCompr
 import { wEditorialMap, wEvidenceBatch, wStyleProfile, wSynthesize, type WDensity, type WEditorialMap, type WEditorialTrend, type WFactCheck, type WUsage, type WEvidenceData } from "../wReviewAi";
 import { useI18n } from "../i18n";
 
-const W_CONTRACT_VERSION = 6;
+const W_EVIDENCE_CONTRACT_VERSION = 6; // Preserve verified evidence and do not reanalyse articles.
+const W_MAP_CONTRACT_VERSION = 7; // Recalculate only the editorial dossier.
 const W_STYLE_CONTRACT_VERSION = 4; // Keep existing style profiles; Evidence v2 and its map are recalculated.
 const MAX_ITEMS = 18;
 const HARD_MAX_ITEMS = 30; // Legacy pools remain intact; the operator can trim them manually.
@@ -196,8 +197,8 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     return workspaces.slots.reduce((sum, slot) =>
       sum + slot.items.reduce((inside, item) => inside + item.sourceText.length + item.editorialText.length, 0), 0);
   }
-  const prepared = state.items.filter((item) => item.evidence.trim() && item.evidenceContract === W_CONTRACT_VERSION).length;
-  const mapReady = Boolean(state.editorialMap?.trends?.length && state.mapContract === W_CONTRACT_VERSION);
+  const prepared = state.items.filter((item) => item.evidence.trim() && item.evidenceContract === W_EVIDENCE_CONTRACT_VERSION).length;
+  const mapReady = Boolean(state.editorialMap?.version === 3 && state.editorialMap?.trends?.length && state.mapContract === W_MAP_CONTRACT_VERSION);
   const selectedTrends = mapReady ? state.editorialMap!.trends.filter((trend) => state.selectedTrendIds.includes(trend.id)) : [];
   const styleReady = Boolean(state.styleProfile.trim() && state.styleContract === W_STYLE_CONTRACT_VERSION);
   const topicReady = state.topic.trim().length > 0;
@@ -311,7 +312,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
 
   function buildBatches(items: WItem[]) {
     const pending = items.map((item, index) => ({ item, index }))
-      .filter(({ item }) => !(item.evidence.trim() && item.evidenceContract === W_CONTRACT_VERSION));
+      .filter(({ item }) => !(item.evidence.trim() && item.evidenceContract === W_EVIDENCE_CONTRACT_VERSION));
     const batches: Array<Array<{ item: WItem; index: number }>> = [];
     let current: Array<{ item: WItem; index: number }> = [];
     let chars = 0;
@@ -341,7 +342,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
       const batches = buildBatches(next);
       let evidenceRejected = 0;
       let evidenceAccepted = 0;
-      let done = next.filter((item) => item.evidence.trim() && item.evidenceContract === W_CONTRACT_VERSION).length;
+      let done = next.filter((item) => item.evidence.trim() && item.evidenceContract === W_EVIDENCE_CONTRACT_VERSION).length;
       setAnalysisText(be ? `Аналіз матэрыялаў: ${done} з ${next.length}` : `Анализ материалов: ${done} из ${next.length}`);
       for (const batch of batches) {
         const result = await wEvidenceBatch(
@@ -354,14 +355,14 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
           evidenceRejected += card.evidenceData.validation.rejected;
           evidenceAccepted += card.evidenceData.validation.accepted;
           next[target.index] = { ...next[target.index], evidence: card.evidence,
-            evidenceData: card.evidenceData, evidenceContract: W_CONTRACT_VERSION };
+            evidenceData: card.evidenceData, evidenceContract: W_EVIDENCE_CONTRACT_VERSION };
         }
-        done = next.filter((item) => item.evidence.trim() && item.evidenceContract === W_CONTRACT_VERSION).length;
+        done = next.filter((item) => item.evidence.trim() && item.evidenceContract === W_EVIDENCE_CONTRACT_VERSION).length;
         setState((currentState) => invalidateMap({ ...currentState, items: [...next] }));
         addUsage(result.usage);
         setAnalysisText(be ? `Аналіз матэрыялаў: ${done} з ${next.length}` : `Анализ материалов: ${done} из ${next.length}`);
       }
-      if (done !== next.length) { const missing = next.filter((item) => !(item.evidence.trim() && item.evidenceContract === W_CONTRACT_VERSION)).map((item) => item.title).slice(0, 4); throw new Error(`Проанализировано ${done} из ${next.length}. Не обработаны: ${missing.join("; ")}${next.length - done > missing.length ? "…" : ""}. Нажмите «Проанализировать пул» ещё раз — готовые материалы повторно не обрабатываются.`); }
+      if (done !== next.length) { const missing = next.filter((item) => !(item.evidence.trim() && item.evidenceContract === W_EVIDENCE_CONTRACT_VERSION)).map((item) => item.title).slice(0, 4); throw new Error(`Проанализировано ${done} из ${next.length}. Не обработаны: ${missing.join("; ")}${next.length - done > missing.length ? "…" : ""}. Нажмите «Проанализировать пул» ещё раз — готовые материалы повторно не обрабатываются.`); }
       setAnalysisText(be ? "Вызначаю тэндэнцыі медыяполя…" : "Выявляю тенденции медиаполя…");
       const mapResult = await wEditorialMap(
         { task: operatorTask, evidenceCards: evidenceCards(next) },
@@ -372,7 +373,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         ...currentState,
         items: [...next],
         editorialMap: mapResult.editorialMap,
-        mapContract: W_CONTRACT_VERSION,
+        mapContract: W_MAP_CONTRACT_VERSION,
         selectedTrendIds: mapResult.editorialMap.trends.map((trend: WEditorialTrend) => trend.id),
         reviewText: "",
       }));
@@ -398,7 +399,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
       );
       addUsage(result.usage);
       setState((current) => ({
-        ...current, editorialMap: result.editorialMap, mapContract: W_CONTRACT_VERSION,
+        ...current, editorialMap: result.editorialMap, mapContract: W_MAP_CONTRACT_VERSION,
         selectedTrendIds: result.editorialMap.trends.map((trend: WEditorialTrend) => trend.id), reviewText: "", factCheck: null, factCheckContract: 0,
       }));
       setMessage(be ? "Тэндэнцыі пералічаны." : "Тенденции пересчитаны.");
@@ -480,6 +481,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         styleProfile: state.styleProfile,
         styleExcerpts: selectStyleExcerpts(state.samples),
         trends: selectedTrends,
+        dossier: state.editorialMap!,
         density: state.density,
         sourceNames: Array.from(new Set(state.items.map((item) => item.source.trim()).filter(Boolean))),
       }, (seconds) => setMessage(be ? `Ліміт Groq. Генерацыя працягнецца праз ~${seconds} с…` : `Лимит Groq. Генерация продолжится автоматически через ~${seconds} с…`));
@@ -586,7 +588,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
 
     <section className="w-review-grid">
       <aside className="panel w-review-pool"><div className="panel-head"><div><h3>{be?"Пул матэрыялаў":"Пул материалов"}</h3><p>{state.items.length ? (prepared === state.items.length ? (be?"усе матэрыялы гатовыя да аналізу":"все материалы проанализированы") : (be?`прааналізавана ${prepared} з ${state.items.length}`:`проанализировано ${prepared} из ${state.items.length}`)) : (be?"пакуль пуста":"пока пусто")}</p></div><button className="ghost-button small-button" disabled={busy!==""||!state.items.length} onClick={clearPool}>{be?"Ачысціць":"Очистить"}</button></div>
-        {state.items.map((item,index)=><button key={item.id} className={`w-review-item ${active?.id===item.id?"active":""}`} onClick={()=>setActiveId(item.id)}><span>P{String(index+1).padStart(2,"0")}</span><div><b>{item.title}</b><small>{item.source}{item.evidence&&item.evidenceContract===W_CONTRACT_VERSION?" · ✓ "+(item.evidenceData?.records.length||0)+" доказательств"+(item.evidenceData?.validation ? " · "+item.evidenceData.validation.covered_passages+"/"+item.evidenceData.validation.total_passages+" фрагментов" : ""):""}
+        {state.items.map((item,index)=><button key={item.id} className={`w-review-item ${active?.id===item.id?"active":""}`} onClick={()=>setActiveId(item.id)}><span>P{String(index+1).padStart(2,"0")}</span><div><b>{item.title}</b><small>{item.source}{item.evidence&&item.evidenceContract===W_EVIDENCE_CONTRACT_VERSION?" · ✓ "+(item.evidenceData?.records.length||0)+" доказательств"+(item.evidenceData?.validation ? " · "+item.evidenceData.validation.covered_passages+"/"+item.evidenceData.validation.total_passages+" фрагментов" : ""):""}
           {item.editorialText.length>MAX_ITEM_CHARS?` · +${(item.editorialText.length-MAX_ITEM_CHARS).toLocaleString()} знаков`:""}</small></div></button>)}
         <div className="w-review-pool-action"><button className="primary-button" disabled={busy!==""||!state.items.length||state.items.length>MAX_ITEMS||!topicReady||overLimitCount>0} onClick={analyzePool}>{analysisButtonText}</button>{busy==="analyze"&&<small>{analysisText}</small>}{error&&<small style={{color:"#b42318",whiteSpace:"normal"}}>{error}</small>}{overLimitCount>0&&<small className="w-review-limit-warning" role="alert">
             {be ? `Скараціце ${overLimitCount} публікац. да ${MAX_ITEM_CHARS.toLocaleString()} знакаў: пакуль аналіз адключаны.`
@@ -619,7 +621,20 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     </section>
 
     {mapReady&&state.editorialMap&&<section className="panel w-review-map"><div className="panel-head"><div><h3>{be?"3. Тэндэнцыі медыяполя":"3. Тенденции медиаполя"}</h3><p>{be?"Зніміце галачку толькі з тых акцэнтаў, якія не павінны ўваходзіць у агляд." : "Снимите галочку только с тех акцентов, которые не должны входить в обзор."}</p></div><button className="ghost-button small-button" disabled={busy!==""} onClick={recalculateTrends}>{be?"Пералічыць":"Пересчитать"}</button></div>
-      <div className="w-review-trends">{state.editorialMap.trends.map((trend,index)=><label key={trend.id} className={`w-review-trend ${state.selectedTrendIds.includes(trend.id)?"selected":""}`}><input type="checkbox" checked={state.selectedTrendIds.includes(trend.id)} onChange={()=>setState((current)=>({...current,selectedTrendIds:current.selectedTrendIds.includes(trend.id)?current.selectedTrendIds.filter((value)=>value!==trend.id):[...current.selectedTrendIds,trend.id],reviewText:"",factCheck:null,factCheckContract:0}))}/><span><b>{index+1}. {trend.title}</b><small>{trend.summary}</small></span></label>)}</div>
+      <div className="w-review-trends">{state.editorialMap.trends.map((trend,index)=><label key={trend.id} className={`w-review-trend ${state.selectedTrendIds.includes(trend.id)?"selected":""}`}><input type="checkbox" checked={state.selectedTrendIds.includes(trend.id)} onChange={()=>setState((current)=>({...current,selectedTrendIds:current.selectedTrendIds.includes(trend.id)?current.selectedTrendIds.filter((value)=>value!==trend.id):[...current.selectedTrendIds,trend.id],reviewText:"",factCheck:null,factCheckContract:0}))}/><span><b>{index+1}. {trend.title}</b><small>{trend.summary}</small>
+        <small>{be?"Сюжэтныя лініі":"Сюжетные ветки"}: {trend.branches.length} · {be?"абавязковыя":"обязательные"}: {trend.branches.filter(b=>b.required).length}</small>
+        <small>{trend.branches.filter(b=>b.required).map(b=>b.title).join(" · ")}</small>
+        </span></label>)}</div>
+      <details style={{margin:"10px 0",fontSize:12}}>
+        <summary>{be?"Улік усіх публікацый":"Учёт всех публикаций"} — {state.editorialMap.coverage.length};
+          {" "}{be?"выкарыстана":"использовано"}: {state.editorialMap.coverage.filter(c=>c.status==="used"||c.status==="supporting").length}
+        </summary>
+        <div style={{maxHeight:220,overflowY:"auto",padding:"8px 4px"}}>
+          {state.editorialMap.coverage.map(c=><p key={c.publication_id} style={{margin:"4px 0"}}>
+            <strong>{c.publication_id}</strong> · {c.status} — {c.reason}
+          </p>)}
+        </div>
+      </details>
       <div className="w-review-inventory">{be?"Знойдзена ў пуле":"Найдено в пуле"}: <b>{state.editorialMap.inventory.quotes}</b> {be?"цытат":"цитат"} · <b>{state.editorialMap.inventory.headlines}</b> {be?"загалоўкаў":"заголовков"} · <b>{state.editorialMap.inventory.experts}</b> {be?"экспертных каментарыяў":"экспертных комментариев"}</div>
       <div className="w-review-density">
         <label><span>{be?"Цытаты":"Цитаты"}</span><select value={state.density.quotes} onChange={(e)=>setState({...state,density:{...state.density,quotes:e.target.value as WDensity},reviewText:"",factCheck:null,factCheckContract:0})}>{densityOptions}</select></label>

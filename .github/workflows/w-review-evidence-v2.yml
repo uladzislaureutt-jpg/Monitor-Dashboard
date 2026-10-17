@@ -1,4 +1,4 @@
-name: W-Review Evidence v2 contract checks
+name: W-Review evidence and dossier checks
 
 on:
   pull_request:
@@ -24,6 +24,8 @@ jobs:
           cache: npm
       - name: Validate anchored evidence
         run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/evidence-v2.test.mjs
+      - name: Validate editorial dossier and coverage
+        run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/editorial-dossier.test.mjs
       - name: Install frontend dependencies
         run: npm ci --ignore-scripts
       - name: Type-check desktop client

@@ -3,7 +3,19 @@ import { getVersion } from "@tauri-apps/api/app";
 
 export type WUsage = { promptTokens: number; completionTokens: number; totalTokens: number };
 export type WDensity = "minimum" | "moderate" | "many" | "all";
-export type WEditorialTrend = { id: string; title: string; summary: string; sources: string[] };
+export type WEditorialBranch = {
+  id: string; title: string; claim: string; mechanism: string; counterpoint: string;
+  limitation: string; significance: string; priority: "high"|"medium"|"low";
+  required: boolean; evidence_ids: string[]; contrary_evidence_ids: string[];
+};
+export type WEditorialTrend = {
+  id: string; title: string; summary: string; thesis: string;
+  sources: string[]; branches: WEditorialBranch[];
+};
+export type WEditorialCoverage = {
+  publication_id: string; status: "used"|"supporting"|"duplicate"|"excluded"|"insufficient"|"reserve";
+  reason: string; evidence_ids: string[];
+};
 export type WFactCheck = {
   verified: boolean;
   claimsTotal: number;
@@ -14,7 +26,9 @@ export type WFactCheck = {
   issues: string[];
 };
 export type WEditorialMap = {
+  version: 3;
   trends: WEditorialTrend[];
+  coverage: WEditorialCoverage[];
   inventory: { quotes: number; headlines: number; experts: number };
 };
 
@@ -103,21 +117,36 @@ export async function wStyleProfile(samples: string[], onRetry?: RetryNotice) {
 export async function wEditorialMap(input: { task: string; evidenceCards: string[] }, onRetry?: RetryNotice) {
   const payload = await call({ action: "editorial_map", task: input.task, evidence_cards: input.evidenceCards }, onRetry);
   const raw = payload.editorial_map || {};
-  const trends = Array.isArray(raw.trends) ? raw.trends.slice(0, 5).map((item: any, index: number) => ({
-    id: String(item?.id || `trend-${index + 1}`),
-    title: String(item?.title || "").trim(),
-    summary: String(item?.summary || "").trim(),
-    sources: Array.isArray(item?.sources) ? item.sources.map((value: unknown) => String(value)).filter(Boolean) : [],
-  })).filter((item: WEditorialTrend) => item.title) : [];
-  const inventory = raw.inventory || {};
+  if(raw.version!==3) throw new Error("W_REVIEW_DOSSIER_V3_REQUIRED");
+  const trends:WEditorialTrend[] = Array.isArray(raw.trends) ? raw.trends.slice(0,5).map((t:any)=>({
+    id:String(t?.id||""),title:String(t?.title||""),summary:String(t?.summary||""),
+    thesis:String(t?.thesis||""),
+    sources:Array.isArray(t?.sources)?t.sources.map(String):[],
+    branches:Array.isArray(t?.branches)?t.branches.map((b:any)=>({
+      id:String(b?.id||""),title:String(b?.title||""),claim:String(b?.claim||""),
+      mechanism:String(b?.mechanism||""),counterpoint:String(b?.counterpoint||""),
+      limitation:String(b?.limitation||""),significance:String(b?.significance||""),
+      priority:b?.priority==="high"?"high":b?.priority==="low"?"low":"medium",
+      required:b?.required===true,
+      evidence_ids:Array.isArray(b?.evidence_ids)?b.evidence_ids.map(String):[],
+      contrary_evidence_ids:Array.isArray(b?.contrary_evidence_ids)?b.contrary_evidence_ids.map(String):[]
+    })):[]
+  })):[];
+  const coverage:WEditorialCoverage[] = Array.isArray(raw.coverage)?raw.coverage.map((c:any)=>({
+    publication_id:String(c?.publication_id||""),
+    status:c?.status as WEditorialCoverage["status"],
+    reason:String(c?.reason||""),
+    evidence_ids:Array.isArray(c?.evidence_ids)?c.evidence_ids.map(String):[]
+  })):[];
+  const inventory=raw.inventory||{};
   return {
-    editorialMap: {
-      trends,
-      inventory: {
-        quotes: Math.max(0, Number(inventory.quotes || 0)),
-        headlines: Math.max(0, Number(inventory.headlines || 0)),
-        experts: Math.max(0, Number(inventory.experts || 0)),
-      },
+    editorialMap:{
+      version:3,trends,coverage,
+      inventory:{
+        quotes:Math.max(0,Number(inventory.quotes||0)),
+        headlines:Math.max(0,Number(inventory.headlines||0)),
+        experts:Math.max(0,Number(inventory.experts||0))
+      }
     } satisfies WEditorialMap,
     model: String(payload.model || "openai/gpt-oss-20b"),
     usage: usage(payload.usage),
@@ -132,6 +161,7 @@ export async function wSynthesize(input: {
   styleProfile: string;
   styleExcerpts: Array<{name:string;text:string}>;
   trends: WEditorialTrend[];
+  dossier: WEditorialMap;
   density: { quotes: WDensity; headlines: WDensity; experts: WDensity };
   sourceNames: string[];
 }, onRetry?: RetryNotice) {
@@ -143,6 +173,7 @@ export async function wSynthesize(input: {
     style_profile: input.styleProfile,
     style_excerpts: input.styleExcerpts,
     trends: input.trends,
+    editorial_dossier: input.dossier,
     density: input.density,
     source_names: input.sourceNames,
   };
