@@ -684,21 +684,45 @@ ${styleProfile || "Живой сдержанный редакционный ст
     if (submittedCards.length > 18) return json({error:"w_review_max_articles",limit:18},400);
     const cards = submittedCards.map((v: unknown) => String(v || "").trim()).filter(Boolean);
     const styleProfile = String(body?.style_profile || "").trim().slice(0, 10000);
-    // Stable excerpts of adjacent source paragraphs show the model how the
-    // author connects evidence and interpretation; they are STYLE_ONLY.
-    const styleExcerpts = Array.isArray(body?.style_excerpts)
-      ? body.style_excerpts.slice(0,4).map((item:any)=>({
-          name:String(item?.name||"Образец").slice(0,120),
-          text:String(item?.text||"").trim().slice(0,1400)
-        })).filter((item:any)=>item.text.length>=100) : [];
-    let excerptBudget=4200;
-    const styleOnlyText=styleExcerpts.map((item:any,index:number)=>{
-      const excerpt=item.text.slice(0,excerptBudget);
-      excerptBudget=Math.max(0,excerptBudget-excerpt.length);
-      return excerpt?"STYLE_ONLY_"+(index+1)+" / "+item.name+
-        "\nНЕ ИСТОЧНИК ФАКТОВ ДЛЯ ТЕКУЩЕГО ОБЗОРА:\n"+excerpt:"";
-    }).filter(Boolean).join("\n\n");
-
+    // Complete author paragraphs only. Older clients with unlabelled excerpts
+    // remain accepted; this never changes source evidence or author samples.
+    const roleNames=new Set(["opening","development","comparison","ending"]);
+    const proposed=Array.isArray(body?.style_excerpts)?body.style_excerpts.slice(0,12):[];
+    let excerptBudget=7200;
+    const styleExcerpts:{name:string;role:string;text:string}[]=[];
+    for(const item of proposed){
+      const role=String(item?.role||"development");
+      const text=String(item?.text||"").trim();
+      if(!roleNames.has(role)||text.length<90||text.length>1250||text.length>excerptBudget)continue;
+      styleExcerpts.push({name:String(item?.name||"Образец").slice(0,120),role,text});
+      excerptBudget-=text.length; // A complete excerpt is kept or skipped; never cut.
+    }
+    const labels:Record<string,string>={
+      opening:"ЗАЧИН",development:"РАЗВИТИЕ АРГУМЕНТА",
+      comparison:"СОПОСТАВЛЕНИЕ ОЦЕНОК",ending:"ЗАВЕРШЕНИЕ"
+    };
+    const styleOnlyText=styleExcerpts.map((item,index)=>
+      "STYLE_ONLY_"+(index+1)+" / "+item.name+" / "+labels[item.role]+
+      "\nИСКЛЮЧИТЕЛЬНО ПРИМЕР КОМПОЗИЦИИ И ИНТОНАЦИИ, НЕ ИСТОЧНИК ФАКТОВ:\n"+
+      item.text
+    ).join("\n\n");
+    const rawComposition=body?.style_composition&&typeof body.style_composition==="object"
+      ?body.style_composition:{};
+    const numeric=(value:unknown,max:number)=>{
+      const n=Number(value);return Number.isFinite(n)?Math.max(0,Math.min(max,Math.round(n))):0;
+    };
+    const measuredMedian=numeric(rawComposition.medianParagraphChars,3000);
+    const styleSampleCount=numeric(rawComposition.sampleCount,5);
+    const compositionNote=styleSampleCount>0&&measuredMedian>=90
+      ? "ПАРАМЕТРЫ АВТОРСКОГО КОРПУСА (ориентиры, НЕ требования к каждому абзацу): "+
+        "образцов "+styleSampleCount+
+        ", медианная длина абзаца "+measuredMedian+" знаков"+
+        ", типичный зачин "+numeric(rawComposition.openingMedianChars,3000)+
+        ", типичное завершение "+numeric(rawComposition.endingMedianChars,3000)+
+        ", коротких абзацев "+numeric(rawComposition.shortParagraphPct,100)+"%"+
+        ", абзацев с атрибуцией "+numeric(rawComposition.attributionParagraphPct,100)+"%"+
+        ", с сопоставлением "+numeric(rawComposition.comparisonParagraphPct,100)+"%."
+      :"Композиционные метрики не получены: опирайся на STYLE_PROFILE и связные образцы.";
     if (!styleProfile) return json({error:"w_review_style_required",detail:"Сначала сформируйте профиль авторского стиля."},400);
     const trends = Array.isArray(body?.trends) ? body.trends.slice(0, 5) : [];
     // Validate references against this exact Evidence pool before consuming any quota.
@@ -726,10 +750,15 @@ ${styleProfile || "Живой сдержанный редакционный ст
     const lengthMaximum=Math.round(targetChars*1.05);
     // One generation, structured into natural adjacent paragraphs. The user
     // still receives ONE continuous editor text; not an item-by-item digest.
-    const paragraphTarget=targetChars>=7000?12:
+    const fallbackParagraphs=targetChars>=7000?12:
       targetChars>=5500?9:targetChars>=3500?7:
       targetChars>=2500?6:targetChars>=1800?4:2;
-    const paragraphMinChars=Math.ceil((lengthMinimum-(paragraphTarget-1)*2)/paragraphTarget);
+    const paragraphTarget=measuredMedian>=90
+      ?Math.max(2,Math.min(22,Math.round(targetChars/Math.max(260,Math.min(950,measuredMedian)))))
+      :fallbackParagraphs;
+    // Natural author rhythm: allow short bridges and longer analytical blocks.
+    const paragraphFloor=Math.max(2,Math.floor(paragraphTarget*0.7));
+    const paragraphCeiling=paragraphTarget+Math.max(3,Math.ceil(paragraphTarget*0.4));
     const payload = {
       model: "openai/gpt-oss-120b", reasoning_effort: "low", reasoning_format: "hidden", temperature: 0.2,
       max_completion_tokens: Math.min(2500, Math.max(1300, Math.ceil(targetChars / 3.0) + 450)),
@@ -748,7 +777,7 @@ ${styleProfile || "Живой сдержанный редакционный ст
 
 ЯЗЫК. Весь видимый текст ОБЗОРА, включая прямую речь, заголовки и цитаты, пиши НА РУССКОМ ЯЗЫКЕ. Исключение: цитаты на белорусском языке можно оставить по-белорусски. Иностранный оригинал из поля ORIGINAL не вставляй — используй точный перевод из TITLE_RU или QUOTES_WITH_SPEAKERS.RU. Названия зарубежных СМИ, организаций и собственные имена сохраняй в принятом написании, например «CNN», «The Guardian»; это НЕ разрешение оставлять английские цитаты. Никаких непереведённых английских предложений, английских цитатных вставок, Markdown или искусственных заголовков. Кавычки « », тире –.
 
-МАНЕРА. STYLE_PROFILE и настоящие связные абзацы STYLE_ONLY задают индивидуальный зачин, интонацию, ритм, способ сопоставления СМИ и развитие сюжета, а не только отдельные обороты. Не копируй содержание образцов. Построй общую аналитику по тенденциям: раскрывай подтверждённые детали, аргументы и контрпозиции, а не последовательность публикаций. Не навязывай абзацам одинаковую длину. Не начинай заключительный абзац формулами «Таким образом», «Итоговый вывод», «Суммарно», «В совокупности» или «В заключение». Не сочиняй собственную итоговую цитату, выдавая её за подлинный заголовок. Законченный обзор заверши доказательной содержательной мыслью, а не школьным повтором написанного.
+МАНЕРА. STYLE_PROFILE и настоящие связные абзацы STYLE_ONLY задают индивидуальный зачин, интонацию, ритм, способ сопоставления СМИ, развитие сюжета и способ смыслового завершения, а не только отдельные обороты. Метки ЗАЧИН / РАЗВИТИЕ / СОПОСТАВЛЕНИЕ / ЗАВЕРШЕНИЕ обозначают место фрагмента в авторском оригинале, а не обязательные рубрики итогового текста. Не копируй содержание образцов. Построй общую аналитику по тенденциям: раскрывай подтверждённые детали, аргументы и контрпозиции, а не последовательность публикаций. Не навязывай абзацам одинаковую длину. Следуй измеренному авторскому ритму, чередуй короткие связки и развернутые аналитические абзацы в той мере, в какой это характерно автору. Не превращай финал в механическое повторение зачина. Не начинай заключительный абзац формулами «Таким образом», «Итоговый вывод», «Суммарно», «В совокупности» или «В заключение». Не сочиняй собственную итоговую цитату, выдавая её за подлинный заголовок. Законченный обзор заверши доказательной содержательной мыслью, а не школьным повтором написанного.
 
 АТРИБУЦИЯ В ТЕКСТЕ. Все названия СМИ — в русских кавычках «ёлочках», как в основном тексте, так и в библиографических скобках. Названия СМИ будут автоматически выделены курсивом при экспорте DOCX. Ссылки на публикации указывай перед ЗАКЛЮЧИТЕЛЬНОЙ точкой предложения, без точки непосредственно перед скобками: «... оценка («CNN», «Bloomberg»).», а НЕ «... оценка. (CNN, Bloomberg)». Приводи только те конкретные СМИ, чьи Evidence Cards подтверждают данное утверждение; не прикрывай спорные выводы перечнем всех изданий. Канонические источники: ${canonicalSources}.
 Цитаты: ${densityRule("Цитаты",quoteDensity)}
@@ -758,15 +787,18 @@ ${styleProfile || "Живой сдержанный редакционный ст
 STYLE_PROFILE:
 ${styleProfile}
 
+КОМПОЗИЦИОННАЯ СТАТИСТИКА:
+${compositionNote}
+
 STYLE_ONLY (образцы авторской манеры, НЕ ИСТОЧНИК ФАКТОВ):
 ${styleOnlyText || "Дополнительные фрагменты недоступны. Следуй STYLE_PROFILE."}
 
-РЕЗУЛЬТАТ. Верни ОДИН JSON со строковым массивом paragraphs, массивами section_titles и bold_phrases. paragraphs — единое непрерывное аналитическое повествование, разбитое на естественные абзацы, НЕ набор отдельных СМИ или подзаголовков. Нужно не менее ${paragraphTarget} развёрнутых абзацев, ориентировочно не короче ${paragraphMinChars} знаков каждый; размер и ритм могут свободно различаться. В пределах ОДНОГО ответа полностью раскрой все выбранные тенденции, подробные факты и противоречащие ракурсы; не заверши после краткого обзора первых источников. section_titles:[] и bold_phrases:[] допустимы. Никогда не выдумывай подзаголовки и не вставляй Markdown ** или __. Не выдавай планы и промежуточные замечания.` },
-        { role: "user", content: `ЗАДАНИЕ ОПЕРАТОРА:\n${task}\n\nРЕДАКЦИОННОЕ ДОСЬЕ И РАСПРЕДЕЛЕНИЕ ОБЪЁМА:\n${trendText}\n\nИНСТРУКЦИЯ ДЛЯ ЭТАПА:\n${String(body?.stage_note || "").slice(0,500)}\n\nEVIDENCE CARDS:\n${evidenceText}\n\nФИНАЛЬНОЕ ЗАДАНИЕ: создай ОДИН непрерывный авторский аналитический обзор в массиве paragraphs, с общим объёмом после соединения абзацев ${targetChars} знаков с пробелами, допустимый коридор ${lengthMinimum}–${lengthMaximum}. Минимум ${paragraphTarget} содержательных соседних абзацев, ориентир каждого от ${paragraphMinChars} знаков. Каждый следующий развивает общую мысль, а не описывает следующее СМИ. После обработки всех тенденций заверши подтверждённым содержательным акцентом, не формальной сводкой. Не допускай ни одной непереведённой англоязычной цитаты (кроме официальных названий), расставляй источники только по образцу «... («CNN», «BBC News»).», не создавай собственных псевдоцитат и шаблонной итоговой концовки. Не используй Markdown, ненужные подзаголовки и списки источников.` }],
+РЕЗУЛЬТАТ. Верни ОДИН JSON со строковым массивом paragraphs, массивами section_titles и bold_phrases. paragraphs — единое непрерывное аналитическое повествование, разбитое на естественные абзацы, НЕ набор отдельных СМИ или подзаголовков. Ориентир — около ${paragraphTarget} абзацев, допустимо ${paragraphFloor}–${paragraphCeiling} естественных абзацев разного объёма. Количество не является самоцелью; обязательны раскрытие веток и заданная ОБЩАЯ длина, а не равные куски. В пределах ОДНОГО ответа полностью раскрой все выбранные тенденции, подробные факты и противоречащие ракурсы; не заверши после краткого обзора первых источников. section_titles:[] и bold_phrases:[] допустимы. Никогда не выдумывай подзаголовки и не вставляй Markdown ** или __. Не выдавай планы и промежуточные замечания.` },
+        { role: "user", content: `ЗАДАНИЕ ОПЕРАТОРА:\n${task}\n\nРЕДАКЦИОННОЕ ДОСЬЕ И РАСПРЕДЕЛЕНИЕ ОБЪЁМА:\n${trendText}\n\nИНСТРУКЦИЯ ДЛЯ ЭТАПА:\n${String(body?.stage_note || "").slice(0,500)}\n\nEVIDENCE CARDS:\n${evidenceText}\n\nФИНАЛЬНОЕ ЗАДАНИЕ: создай ОДИН непрерывный авторский аналитический обзор в массиве paragraphs, с общим объёмом после соединения абзацев ${targetChars} знаков с пробелами, допустимый коридор ${lengthMinimum}–${lengthMaximum}. Ориентир ${paragraphTarget} абзацев (допустимо ${paragraphFloor}–${paragraphCeiling}), в авторском ритме, без принудительно одинаковой длины. Каждый следующий развивает общую мысль, а не описывает следующее СМИ. После обработки всех тенденций заверши подтверждённым содержательным акцентом, не формальной сводкой. Не допускай ни одной непереведённой англоязычной цитаты (кроме официальных названий), расставляй источники только по образцу «... («CNN», «BBC News»).», не создавай собственных псевдоцитат и шаблонной итоговой концовки. Не используй Markdown, ненужные подзаголовки и списки источников.` }],
       response_format: { type:"json_schema",json_schema:{name:"w_review_v7_paragraphs",strict:true,schema:{
         type:"object",
         properties:{
-          paragraphs:{type:"array",minItems:paragraphTarget,maxItems:paragraphTarget+4,items:{type:"string",minLength:paragraphMinChars}},
+          paragraphs:{type:"array",minItems:paragraphFloor,maxItems:paragraphCeiling,items:{type:"string",minLength:80}},
           section_titles:{type:"array",items:{type:"string"},maxItems:2},
           bold_phrases:{type:"array",items:{type:"string"},maxItems:4}
         },
