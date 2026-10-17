@@ -3,23 +3,23 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { desktopApi } from "../api";
 import { MONITOR_BOOKMARKLET, parseBrowserCapture } from "../browserImport";
 import { exactCompressForProfile, type CompressionMode } from "../editorialCompression";
-import { wEditorialMap, wEvidenceBatch, wStyleProfile, wSynthesize, type WDensity, type WEditorialMap, type WEditorialTrend, type WFactCheck, type WUsage } from "../wReviewAi";
+import { wEditorialMap, wEvidenceBatch, wStyleProfile, wSynthesize, type WDensity, type WEditorialMap, type WEditorialTrend, type WFactCheck, type WUsage, type WEvidenceData } from "../wReviewAi";
 import { useI18n } from "../i18n";
 
-const W_CONTRACT_VERSION = 5;
-const W_STYLE_CONTRACT_VERSION = 4; // Existing profiles remain valid; only Evidence Cards/Map changed.
+const W_CONTRACT_VERSION = 6;
+const W_STYLE_CONTRACT_VERSION = 4; // Keep existing style profiles; Evidence v2 and its map are recalculated.
 const MAX_ITEMS = 18;
 const HARD_MAX_ITEMS = 30; // Legacy pools remain intact; the operator can trim them manually.
 const MAX_SAMPLES = 5;
 const BATCH_MAX_ITEMS = 2; // Keep evidence calls small so completed cards survive an upstream model failure.
 const BATCH_MAX_CHARS = 20_000;
-const MAX_ITEM_CHARS = 10_000; // Only the highlighted first 10k characters enter AI analysis.
+const MAX_ITEM_CHARS = 10_000; // Operator must trim longer articles before any AI analysis.
 const MAX_IMPORT_CHARS = 40_000; // Allow an editable tail but reject book-length imports.
 const MAX_SAVED_TEXT_CHARS = 1_200_000; // Guard three local workspaces against WebView storage exhaustion.
 
 type WItem = {
   id: string; title: string; source: string; region: string; url: string;
-  sourceText: string; editorialText: string; evidence: string; evidenceContract?: number;
+  sourceText: string; editorialText: string; evidence: string; evidenceData?: WEvidenceData; evidenceContract?: number;
 };
 type WSample = { id: string; name: string; text: string };
 
@@ -294,7 +294,9 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     setState((current) => {
       const edited = patch.editorialText !== undefined;
       const items = current.items.map((item) => item.id === itemId
-        ? { ...item, ...patch, evidence: edited ? "" : item.evidence, evidenceContract: edited ? 0 : item.evidenceContract }
+        ? { ...item, ...patch, evidence: edited ? "" : item.evidence,
+            evidenceData: edited ? undefined : item.evidenceData,
+            evidenceContract: edited ? 0 : item.evidenceContract }
         : item);
       return edited ? invalidateMap({ ...current, items }) : { ...current, items };
     });
@@ -337,17 +339,22 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     const next = [...state.items];
     try {
       const batches = buildBatches(next);
+      let evidenceRejected = 0;
+      let evidenceAccepted = 0;
       let done = next.filter((item) => item.evidence.trim() && item.evidenceContract === W_CONTRACT_VERSION).length;
       setAnalysisText(be ? `Аналіз матэрыялаў: ${done} з ${next.length}` : `Анализ материалов: ${done} из ${next.length}`);
       for (const batch of batches) {
         const result = await wEvidenceBatch(
-          batch.map(({ item }) => ({ title: item.title, source: item.source, text: item.editorialText })),
+          batch.map(({ item }) => ({ publication_id: item.id, title: item.title, source: item.source, text: item.editorialText })),
           (seconds) => setAnalysisText(be ? `Ліміт AI. Працяг аўтаматычна праз ~${seconds} с…` : `Лимит AI. Продолжение автоматически через ~${seconds} с…`)
         );
         for (const card of result.cards) {
           const target = batch[card.index];
-          if (!target || !card.evidence) continue;
-          next[target.index] = { ...next[target.index], evidence: card.evidence, evidenceContract: W_CONTRACT_VERSION };
+          if (!target || !card.evidence || card.evidenceData?.version !== 2) continue;
+          evidenceRejected += card.evidenceData.validation.rejected;
+          evidenceAccepted += card.evidenceData.validation.accepted;
+          next[target.index] = { ...next[target.index], evidence: card.evidence,
+            evidenceData: card.evidenceData, evidenceContract: W_CONTRACT_VERSION };
         }
         done = next.filter((item) => item.evidence.trim() && item.evidenceContract === W_CONTRACT_VERSION).length;
         setState((currentState) => invalidateMap({ ...currentState, items: [...next] }));
@@ -370,7 +377,11 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         reviewText: "",
       }));
       setAnalysisText("");
-      setMessage(be ? "Пул прааналізаваны. Праверце выяўленыя тэндэнцыі." : "Пул проанализирован. Проверьте выявленные тенденции.");
+      const quality= evidenceAccepted > 0 || evidenceRejected > 0
+        ? (be ? " Пацверджана запісаў: " : " Проверено записей: ")+
+          evidenceAccepted+(evidenceRejected ? (be ? "; адхілена прывязак: " : "; отклонено привязок: ")+evidenceRejected : "")+"."
+        : "";
+      setMessage((be ? "Пул прааналізаваны. Праверце выяўленыя тэндэнцыі." : "Пул проанализирован. Проверьте выявленные тенденции.")+quality);
     } catch (reason) {
       setAnalysisText("");
       setError(String(reason));
@@ -575,7 +586,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
 
     <section className="w-review-grid">
       <aside className="panel w-review-pool"><div className="panel-head"><div><h3>{be?"Пул матэрыялаў":"Пул материалов"}</h3><p>{state.items.length ? (prepared === state.items.length ? (be?"усе матэрыялы гатовыя да аналізу":"все материалы проанализированы") : (be?`прааналізавана ${prepared} з ${state.items.length}`:`проанализировано ${prepared} из ${state.items.length}`)) : (be?"пакуль пуста":"пока пусто")}</p></div><button className="ghost-button small-button" disabled={busy!==""||!state.items.length} onClick={clearPool}>{be?"Ачысціць":"Очистить"}</button></div>
-        {state.items.map((item,index)=><button key={item.id} className={`w-review-item ${active?.id===item.id?"active":""}`} onClick={()=>setActiveId(item.id)}><span>P{String(index+1).padStart(2,"0")}</span><div><b>{item.title}</b><small>{item.source}{item.evidence&&item.evidenceContract===W_CONTRACT_VERSION?" · ✓":""}
+        {state.items.map((item,index)=><button key={item.id} className={`w-review-item ${active?.id===item.id?"active":""}`} onClick={()=>setActiveId(item.id)}><span>P{String(index+1).padStart(2,"0")}</span><div><b>{item.title}</b><small>{item.source}{item.evidence&&item.evidenceContract===W_CONTRACT_VERSION?" · ✓ "+(item.evidenceData?.records.length||0)+" доказательств"+(item.evidenceData?.validation ? " · "+item.evidenceData.validation.covered_passages+"/"+item.evidenceData.validation.total_passages+" фрагментов" : ""):""}
           {item.editorialText.length>MAX_ITEM_CHARS?` · +${(item.editorialText.length-MAX_ITEM_CHARS).toLocaleString()} знаков`:""}</small></div></button>)}
         <div className="w-review-pool-action"><button className="primary-button" disabled={busy!==""||!state.items.length||state.items.length>MAX_ITEMS||!topicReady||overLimitCount>0} onClick={analyzePool}>{analysisButtonText}</button>{busy==="analyze"&&<small>{analysisText}</small>}{error&&<small style={{color:"#b42318",whiteSpace:"normal"}}>{error}</small>}{overLimitCount>0&&<small className="w-review-limit-warning" role="alert">
             {be ? `Скараціце ${overLimitCount} публікац. да ${MAX_ITEM_CHARS.toLocaleString()} знакаў: пакуль аналіз адключаны.`

@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { evidenceV2Instructions, evidenceV2Schema, makeEvidenceDocuments, renderEvidenceMaterials, verifyEvidenceCards, formatEvidenceCard, type EvidenceCard } from "./evidence-v2.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -236,7 +237,7 @@ function aiError(provider: "groq" | "gemini" | "cloudflare", result: AiFailure) 
   }, rate ? 429 : 502);
 }
 
-const evidencePrompt = "Ты готовишь одну доказательную Evidence Card на один исходный материал для обзора тенденций медиаполя.\nКаждый материал анализируй ОТДЕЛЬНО, не добавляй внешних знаний и не подменяй позицию одного издания позицией другого.\nВ поле evidence выдай структурированный текст с названиями полей в указанном порядке:\nTITLE_ORIGINAL: исходный заголовок, дословно.\nTITLE_RU: точный русский перевод заголовка, если исходник иноязычный; иначе исходный.\nMAIN_FACTS: важные подтвержденные факты, даты, имена, цифры; не придумывать.\nMEDIA_ANGLE: смысловой акцент редакции и уникальный подход публикации, не реферат.\nEDITORIAL_STANCE: supportive | critical | concerned | neutral | mixed | unestablished — только собственная подтвержденная позиция редакции, НЕ тональность цитируемого политика, эксперта или чужой газеты.\nSTANCE_EVIDENCE: явное подтверждение собственной оценки редакции; если нет — не установлена.\nQUOTES_WITH_SPEAKERS: до 4 подлинных цитат/заголовков; для каждой раздельно ORIGINAL, RU, SPEAKER, ROLE (editorial, journalist, expert, politician, other, unknown), KIND (headline, direct_quote, attributed_quote).\nEXPERTS: именованные независимые эксперты, их должности и аргументы из публикации; политический лидер не считается экспертом автоматически.\nEXPLANATIONS: только реально приведенные объяснения и прогнозы с именем автора.\nUNIQUE_DETAILS: важные необычные факты и противоречащие оценки из источника.\nLIMITS: ограничения выводов, особенно если собственная позиция редакции не установлена.\nЕсли материал богат фактурой, сохраняй достаточную подробность для полноценного аналитического обзора.\nЧужая цитата не делает ее позицией редакции. Различай поддержку, критику, беспокойство и нейтральное сообщение.\nОтвет пачки — JSON {cards:[{index:0,evidence:\"...\"},...]} с полем evidence как СТРОКОЙ. Не добавляй никаких самостоятельных этапов проверки.";
+const evidencePrompt = evidenceV2Instructions;
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -280,31 +281,20 @@ Deno.serve(async (req: Request) => {
     const normalized = items.map((item: any, index: number) => {
       const text = String(item?.text || "").trim();
       totalChars += text.length;
-      return { index, source: String(item?.source || "").trim().slice(0, 300), title: String(item?.title || "").trim().slice(0, 600), text };
+      return { index, publication_id:String(item?.publication_id || "batch-"+index).trim().slice(0,120),
+        source: String(item?.source || "").trim().slice(0, 300), title: String(item?.title || "").trim().slice(0, 600), text };
     });
     if (normalized.some((item: any) => !item.text || item.text.length > 10000) || totalChars > 20000)
       return json({error:"evidence_article_too_long",max_article_chars:10000,max_batch_chars:20000,max_items:2},400);
-    const materialText = normalized.map((item: any) => `MATERIAL_${item.index + 1}\nИСТОЧНИК: «${item.source}»\nЗАГОЛОВОК: ${item.title}\nТЕКСТ:\n${item.text}`).join("\n\n---\n\n");
-    const schema = {
-      type: "OBJECT",
-      properties: {
-        cards: {
-          type: "ARRAY",
-          minItems: normalized.length,
-          maxItems: normalized.length,
-          items: {
-            type: "OBJECT",
-            properties: { index: { type: "INTEGER" }, evidence: { type: "STRING" } },
-            required: ["index", "evidence"],
-          },
-        },
-      },
-      required: ["cards"],
-    };
-    const prompt = `${evidencePrompt}\n\nВерни ровно ${normalized.length} карточек в том же порядке. Поле index: 0 для MATERIAL_1, 1 для MATERIAL_2 и так далее.\n\n${materialText}`;
+    const documents = makeEvidenceDocuments(normalized);
+    const materialText = renderEvidenceMaterials(documents);
+    const schema = evidenceV2Schema(normalized.length);
+    const prompt = evidencePrompt+"\n\nВерни ровно "+normalized.length+
+      " карточек, строго в порядке MATERIAL_1, MATERIAL_2 и т. д.\n\n"+materialText;
     const models = geminiApiKey ? [...new Set(["gemini-3.5-flash-lite", geminiModel])] : [];
     let result: AiResult | null = null;
     let parsed: any = null;
+    let verifiedCards: EvidenceCard[] = [];
     let usedModel = "";
     let lastError = "";
     let lastGeminiFailure:AiFailure|null=null;
@@ -313,11 +303,11 @@ Deno.serve(async (req: Request) => {
         const candidate = await callGemini(geminiApiKey, model, prompt, schema, 0.1, "evidence_batch");
         if (candidate.ok) {
           const data = parseModelJson(candidate);
-          if (data && Array.isArray(data.cards) && data.cards.length === normalized.length &&
-              data.cards.every((c: any, i: number) => Number(c.index) === i && String(c.evidence || "").trim())) {
-            result = candidate; parsed = data; usedModel = model; break;
+          const verified=verifyEvidenceCards(data,documents);
+          if(!verified.error){
+            result=candidate;parsed=data;verifiedCards=verified.cards;usedModel=model;break;
           }
-          lastError = model + ": invalid evidence cards";
+          lastError=model+": "+verified.error;
         } else {
           lastGeminiFailure=candidate;
           lastError = model + ": HTTP " + candidate.status + " " + candidate.detail;
@@ -337,26 +327,40 @@ Deno.serve(async (req: Request) => {
         reasoning_format: "hidden",
         temperature: 0.1,
         response_format: { type: "json_object" },
-        max_completion_tokens: 5000,
+        max_completion_tokens: 7000,
         messages: [
-          {role: "system", content: "Создай Evidence Cards строго по текстам пользователя. Ответ только валидный JSON-объект с полем cards — массивом объектов index (целое число с нуля) и evidence (непустая строка). Число карточек должно соответствовать числу исходных материалов. Никаких вымышленных фактов."},
+          {role: "system", content: evidencePrompt},
           {role: "user", content: prompt}
         ]
       });
       if (groqResult.ok) {
         const data = parseModelJson(groqResult);
-        if (Array.isArray(data?.cards) && data.cards.length === normalized.length &&
-            data.cards.every((c: any, i: number) => Number(c.index) === i && String(c.evidence || "").trim())) {
-          result = groqResult; parsed = data; usedModel = "openai/gpt-oss-20b";
-        } else lastError += "; groq_invalid_cards";
+        const verified=verifyEvidenceCards(data,documents);
+        if(!verified.error){
+          result=groqResult;parsed=data;verifiedCards=verified.cards;usedModel="openai/gpt-oss-20b";
+        } else lastError += "; groq_"+verified.error;
       } else lastError += "; groq_HTTP_" + groqResult.status + ": " + groqResult.detail.slice(0, 200);
     }
     if (!result || !parsed) return json({error:"evidence_providers_unavailable",
       detail:lastError.slice(0,350),provider:"gemini_groq",issue:lastGeminiFailure?.diagnostic||null,
       retryable:false},503);
-    const cards = parsed.cards.map((card: any) => ({index: Number(card.index), evidence: String(card.evidence || "").trim()}));
-    if (cards.length !== normalized.length || cards.some((card: any, index: number) => card.index !== index || !card.evidence)) return json({error:"invalid_evidence_cards",provider:"gemini",model:usedModel},502);
-    return json({ cards, model: usedModel, provider: usedModel.startsWith("openai/") ? "groq" : "gemini", usage: result.usage });
+    const sourceDigests=await Promise.all(normalized.map(async (item)=>{
+      const bytes=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(item.text));
+      return Array.from(new Uint8Array(bytes),value=>value.toString(16).padStart(2,"0")).join("");
+    }));
+    const cards=verifiedCards.map((card,index)=>({
+      index,evidence:formatEvidenceCard(card),
+      evidence_data:{...card,source_sha256:sourceDigests[index]}
+    }));
+    console.info("w_review_evidence_v2 "+JSON.stringify({
+      cards:cards.length,accepted:verifiedCards.reduce((n,c)=>n+c.validation.accepted,0),
+      rejected:verifiedCards.reduce((n,c)=>n+c.validation.rejected,0),
+      covered_passages:verifiedCards.reduce((n,c)=>n+c.validation.covered_passages,0),
+      total_passages:verifiedCards.reduce((n,c)=>n+c.validation.total_passages,0),
+      provider:usedModel
+    }));
+    return json({cards,model:usedModel,
+      provider:usedModel.startsWith("openai/")?"groq":"gemini",usage:result.usage});
   }
 
   if (action === "style_profile") {
@@ -432,7 +436,7 @@ ${sections.join("; ")}.
     const cards = submittedCards.map((v: unknown) => String(v || "").trim()).filter(Boolean);
     if (!cards.length) return json({ error: "no_evidence_cards" }, 400);
     const evidenceText = cards.map((card: string, index: number) => `P${String(index + 1).padStart(2, "0")}\n${card}`).join("\n\n");
-    if (evidenceText.length > 85000) return json({ error: "evidence_too_large", max_chars: 85000 }, 400);
+    if (evidenceText.length > 180000) return json({ error: "evidence_too_large", max_chars: 180000 }, 400);
     const schema = {
       type: "OBJECT",
       properties: {
@@ -461,7 +465,7 @@ ${sections.join("; ")}.
 quotes — содержательные прямые цитаты;
 headlines — выразительные заголовки/формулировки;
 experts — отдельные комментарии реально названных профильных экспертов; политических лидеров и непосредственных участников события экспертами не считать.
-Считай только реально присутствующие элементы.
+Считай только реально присутствующие элементы. Формат Evidence v2: E01 [fact/P001], E02 [quote/P002], E03 [expert/P003]. Каждая запись содержит SOURCE — проверенную дословную выдержку. Не считай как отдельные факты повторы и не приписывай редакции чужую критику.
 
 ЗАДАНИЕ ОПЕРАТОРА:
 ${task}
@@ -495,7 +499,7 @@ ${evidenceText}`;
     const cards = Array.isArray(body?.evidence_cards) ? body.evidence_cards.map((v: unknown) => String(v || "").trim()).filter(Boolean).slice(0, 30) : [];
     if (!review || !cards.length) return json({ error: "missing_verify_input" }, 400);
     const evidenceText = cards.map((card: string, index: number) => `P${String(index + 1).padStart(2, "0")}\n${card}`).join("\n\n");
-    if (evidenceText.length > 85000) return json({ error: "evidence_too_large", max_chars: 85000 }, 400);
+    if (evidenceText.length > 180000) return json({ error: "evidence_too_large", max_chars: 180000 }, 400);
     const anchors = suspiciousAnchors(review, evidenceText);
     const schema = {
       type: "OBJECT",
@@ -598,7 +602,7 @@ ${evidenceText}`;
     const d = body?.density || {};
     const quoteDensity = density(d.quotes), headlineDensity = density(d.headlines), expertDensity = density(d.experts);
     const evidenceText = cards.map((card: string, index: number) => `P${String(index + 1).padStart(2, "0")}\n${card}`).join("\n\n");
-    if (evidenceText.length > 85000) return json({ error: "evidence_too_large", max_chars: 85000 }, 400);
+    if (evidenceText.length > 180000) return json({ error: "evidence_too_large", max_chars: 180000 }, 400);
     const trendText = trends.map((trend: any, index: number) => `${index + 1}. ${String(trend?.title || "")}: ${String(trend?.summary || "")}`).join("\n");
     const canonicalSources = sourceNames.length ? sourceNames.map((name: string) => `«${name}»`).join(", ") : "используй названия из Evidence Cards";
     const densityRule = (name: string, value: string) => value === "minimum" ? `${name}: редко, только самые сильные 1–2 элемента, если доступны.` : value === "all" ? `${name}: использовать все реально найденные пригодные элементы этого типа, без выдумывания.` : value === "many" ? `${name}: насыщенно, использовать большинство сильных элементов без перегруза.` : `${name}: умеренно, несколько лучших элементов.`;
@@ -714,7 +718,7 @@ ${styleProfile || "Живой сдержанный редакционный ст
     const quoteDensity = density(d.quotes), headlineDensity = density(d.headlines), expertDensity = density(d.experts);
     // Limit synthesis context only. Original Evidence Cards remain unchanged for fact verification.
     const evidenceText = cards.map((card: string, index: number) => `P${String(index + 1).padStart(2, "0")}\n${card}`).join("\n\n");
-    if (evidenceText.length > 85000) return json({ error: "evidence_too_large", max_chars: 85000 }, 400);
+    if (evidenceText.length > 180000) return json({ error: "evidence_too_large", max_chars: 180000 }, 400);
     const trendText = trends.map((trend: any, index: number) => {
       const related = Array.isArray(trend?.sources)
         ? trend.sources.map((v:unknown) => String(v||"").trim()).filter(Boolean) : [];
@@ -742,11 +746,11 @@ ${styleProfile || "Живой сдержанный редакционный ст
 
 ИСТОЧНИКИ. Прочитай ВСЕ Evidence Cards. Сохраняй уникальные сведения каждого содержательного материала: факты, цифры, цитаты, заголовки, аргументы, позиции реальных экспертов, дополнительные обстоятельства. Не требуется механически упоминать каждую повторную публикацию агентства; не пропускай самостоятельный ракурс менее известного СМИ.
 
-АТРИБУЦИЯ. Различай собственную редакционную позицию, нейтральное сообщение, цитату другого СМИ, высказывание конкретного политика/эксперта и газетный заголовок. Используй EDITORIAL_STANCE, STANCE_EVIDENCE, QUOTES_WITH_SPEAKERS и MEDIA_ANGLE. Газета, приведшая чужую критику, не обязательно разделяет эту критику. Не меняй знак оценки и не приписывай одному СМИ чужие слова.
+АТРИБУЦИЯ. Различай собственную редакционную позицию, нейтральное сообщение, цитату другого СМИ, высказывание конкретного политика/эксперта и газетный заголовок. Используй подтверждённые записи с адресами E01, E02 и типами [editorial_stance/P...], [media_angle/P...], [quote/P...], [counterposition/P...] и [expert/P...]. У каждой записи после SOURCE приведена дословная выдержка, проверенная на наличие в исходной публикации; это не автоматическая проверка смысла пересказа. Газета, приведшая чужую критику, не обязательно разделяет эту критику. Не меняй знак оценки и не приписывай одному СМИ чужие слова.
 
 ОБОБЩЕНИЯ. Содержательные аналитические выводы обязательны. Общая позиция группы изданий требует подтверждения несколькими самостоятельными источниками соответствующей группы. Один источник может подтверждать конкретный факт, но не консенсус национального медиаполя. Когда оценки противоположны, прямо раскрывай это различие без искусственного единодушия.
 
-ТОЛЬКО ДОКАЗАТЕЛЬНАЯ ФАКТУРА. Даты, лица, цитаты, переводы, числа, экспертные оценки и причинные связи — исключительно из текущих Evidence Cards. Никаких внешних сведений, догадок или фактов из STYLE_ONLY. Исключения оператора обязательны. Недостающую фактуру не восполняй выдумками или повторами.
+ТОЛЬКО ДОКАЗАТЕЛЬНАЯ ФАКТУРА. Даты, лица, цитаты, переводы, числа, экспертные оценки и причинные связи — исключительно из текущих Evidence Cards. Используй ID записей внутри публикаций как адреса доказательств, не превращай ID в видимый текст обзора. Никаких внешних сведений, догадок или фактов из STYLE_ONLY. Исключения оператора обязательны. Недостающую фактуру не восполняй выдумками или повторами.
 
 ЯЗЫК. Весь видимый текст ОБЗОРА, включая прямую речь, заголовки и цитаты, пиши НА РУССКОМ ЯЗЫКЕ. Исключение: цитаты на белорусском языке можно оставить по-белорусски. Иностранный оригинал из поля ORIGINAL не вставляй — используй точный перевод из TITLE_RU или QUOTES_WITH_SPEAKERS.RU. Названия зарубежных СМИ, организаций и собственные имена сохраняй в принятом написании, например «CNN», «The Guardian»; это НЕ разрешение оставлять английские цитаты. Никаких непереведённых английских предложений, английских цитатных вставок, Markdown или искусственных заголовков. Кавычки « », тире –.
 

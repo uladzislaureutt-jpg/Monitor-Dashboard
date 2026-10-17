@@ -19,7 +19,18 @@ export type WEditorialMap = {
 };
 
 type RetryNotice = (seconds: number) => void;
-type EvidenceInput = { title: string; source: string; text: string };
+export type WEvidenceRecord = {
+  id: string; kind: string; statement_ru: string; anchor_id: string;
+  source_excerpt: string; original_quote: string; quote_ru: string;
+  speaker: string; role: string;
+};
+export type WEvidenceData = {
+  version: 2; publication_id: string; title_original: string; title_ru: string; source_sha256: string;
+  records: WEvidenceRecord[];
+  validation: { proposed: number; accepted: number; rejected: number;
+    covered_passages: number; total_passages: number };
+};
+type EvidenceInput = { publication_id: string; title: string; source: string; text: string };
 
 function retrySeconds(value: unknown): number | null {
   // Never guess a wait time for quota exhaustion; only honor short provider hints.
@@ -79,6 +90,7 @@ export async function wEvidenceBatch(items: EvidenceInput[], onRetry?: RetryNoti
   const cards = Array.isArray(payload.cards) ? payload.cards.map((card: any) => ({
     index: Number(card?.index || 0),
     evidence: String(card?.evidence || "").trim(),
+    evidenceData: card?.evidence_data as WEvidenceData | undefined,
   })) : [];
   return { cards, model: String(payload.model || "openai/gpt-oss-20b"), usage: usage(payload.usage) };
 }
