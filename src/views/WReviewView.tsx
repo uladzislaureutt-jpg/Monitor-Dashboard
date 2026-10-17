@@ -11,8 +11,10 @@ const MAX_ITEMS = 18;
 const HARD_MAX_ITEMS = 30; // Legacy pools remain intact; the operator can trim them manually.
 const MAX_SAMPLES = 5;
 const BATCH_MAX_ITEMS = 2; // Keep evidence calls small so completed cards survive an upstream model failure.
-const BATCH_MAX_CHARS = 120_000;
-const MAX_ITEM_CHARS = 24_000;
+const BATCH_MAX_CHARS = 20_000;
+const MAX_ITEM_CHARS = 10_000; // Only the highlighted first 10k characters enter AI analysis.
+const MAX_IMPORT_CHARS = 40_000; // Allow an editable tail but reject book-length imports.
+const MAX_SAVED_TEXT_CHARS = 1_200_000; // Guard three local workspaces against WebView storage exhaustion.
 
 type WItem = {
   id: string; title: string; source: string; region: string; url: string;
@@ -166,6 +168,11 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   }
   const active = state.items.find((item) => item.id === activeId) ?? state.items[0] ?? null;
   const totalChars = useMemo(() => state.items.reduce((sum, item) => sum + item.editorialText.length, 0), [state.items]);
+  const overLimitCount = state.items.filter(item => item.editorialText.length > MAX_ITEM_CHARS).length;
+  function storedTextChars() {
+    return workspaces.slots.reduce((sum, slot) =>
+      sum + slot.items.reduce((inside, item) => inside + item.sourceText.length + item.editorialText.length, 0), 0);
+  }
   const prepared = state.items.filter((item) => item.evidence.trim() && item.evidenceContract === W_CONTRACT_VERSION).length;
   const mapReady = Boolean(state.editorialMap?.trends?.length && state.mapContract === W_CONTRACT_VERSION);
   const selectedTrends = mapReady ? state.editorialMap!.trends.filter((trend) => state.selectedTrendIds.includes(trend.id)) : [];
@@ -200,6 +207,10 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     if (state.items.length >= MAX_ITEMS) throw new Error("W_REVIEW_MAX_ITEMS");
     const text = input.text.trim();
     if (!input.title.trim() || !text) throw new Error("W_REVIEW_ITEM_REQUIRED");
+    if (text.length > MAX_IMPORT_CHARS) throw new Error(
+      `Материал содержит ${text.length.toLocaleString()} знаков. Максимальный объём загружаемого исходника — ${MAX_IMPORT_CHARS.toLocaleString()}. Предварительно удалите лишние разделы.`);
+    if (storedTextChars() + text.length * 2 > MAX_SAVED_TEXT_CHARS)
+      throw new Error("Достигнут безопасный предел локального хранилища трёх рабочих пространств. Удалите лишние публикации.");
     const next: WItem = {
       id: id(), title: input.title.trim(), source: input.source.trim() || "Источник",
       region: input.region?.trim() || "", url: input.url?.trim() || "",
@@ -245,6 +256,18 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   }
 
   function updateItem(itemId: string, patch: Partial<WItem>) {
+    if (patch.editorialText !== undefined) {
+      const before = state.items.find(item => item.id === itemId)?.editorialText.length || 0;
+      const after = patch.editorialText.length;
+      if (after > MAX_IMPORT_CHARS && after > before) {
+        setError(`Максимальный размер редактируемого исходника — ${MAX_IMPORT_CHARS.toLocaleString()} знаков.`);
+        return;
+      }
+      if (storedTextChars() + after - before > MAX_SAVED_TEXT_CHARS && after > before) {
+        setError("Недостаточно места для сохранения текста в трёх рабочих пространствах. Сократите публикации.");
+        return;
+      }
+    }
     setState((current) => {
       const edited = patch.editorialText !== undefined;
       const items = current.items.map((item) => item.id === itemId
@@ -283,6 +306,10 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     if (!state.items.length) { setError(be ? "Спачатку дадайце матэрыялы." : "Сначала добавьте материалы."); return; }
     if (!topicReady) { setError(be?"Укажыце тэму агляду.":"Укажите тему обзора."); return; }
     if (state.items.length>MAX_ITEMS) { setError(`Сократите пул до ${MAX_ITEMS} публикаций.`); return; }
+    if (overLimitCount) {
+      setError(`Сначала сократите ${overLimitCount} публикац. до ${MAX_ITEM_CHARS.toLocaleString()} знаков; приглушённый хвост пока не обрабатывается.`);
+      return;
+    }
     setBusy("analyze"); setError(""); setMessage("");
     const next = [...state.items];
     try {
@@ -507,11 +534,36 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
 
     <section className="w-review-grid">
       <aside className="panel w-review-pool"><div className="panel-head"><div><h3>{be?"Пул матэрыялаў":"Пул материалов"}</h3><p>{state.items.length ? (prepared === state.items.length ? (be?"усе матэрыялы гатовыя да аналізу":"все материалы проанализированы") : (be?`прааналізавана ${prepared} з ${state.items.length}`:`проанализировано ${prepared} из ${state.items.length}`)) : (be?"пакуль пуста":"пока пусто")}</p></div><button className="ghost-button small-button" disabled={busy!==""||!state.items.length} onClick={clearPool}>{be?"Ачысціць":"Очистить"}</button></div>
-        {state.items.map((item,index)=><button key={item.id} className={`w-review-item ${active?.id===item.id?"active":""}`} onClick={()=>setActiveId(item.id)}><span>P{String(index+1).padStart(2,"0")}</span><div><b>{item.title}</b><small>{item.source}{item.evidence&&item.evidenceContract===W_CONTRACT_VERSION?" · ✓":""}</small></div></button>)}
-        <div className="w-review-pool-action"><button className="primary-button" disabled={busy!==""||!state.items.length||state.items.length>MAX_ITEMS||!topicReady} onClick={analyzePool}>{analysisButtonText}</button>{busy==="analyze"&&<small>{analysisText}</small>}{error&&<small style={{color:"#b42318",whiteSpace:"normal"}}>{error}</small>}{!topicReady&&state.items.length>0&&<small>{be?"Для аналізу ўкажыце тэму вышэй.":"Для анализа укажите тему выше."}</small>}
+        {state.items.map((item,index)=><button key={item.id} className={`w-review-item ${active?.id===item.id?"active":""}`} onClick={()=>setActiveId(item.id)}><span>P{String(index+1).padStart(2,"0")}</span><div><b>{item.title}</b><small>{item.source}{item.evidence&&item.evidenceContract===W_CONTRACT_VERSION?" · ✓":""}
+          {item.editorialText.length>MAX_ITEM_CHARS?` · +${(item.editorialText.length-MAX_ITEM_CHARS).toLocaleString()} знаков`:""}</small></div></button>)}
+        <div className="w-review-pool-action"><button className="primary-button" disabled={busy!==""||!state.items.length||state.items.length>MAX_ITEMS||!topicReady||overLimitCount>0} onClick={analyzePool}>{analysisButtonText}</button>{busy==="analyze"&&<small>{analysisText}</small>}{error&&<small style={{color:"#b42318",whiteSpace:"normal"}}>{error}</small>}{overLimitCount>0&&<small className="w-review-limit-warning" role="alert">
+            {be ? `Скараціце ${overLimitCount} публікац. да ${MAX_ITEM_CHARS.toLocaleString()} знакаў: пакуль аналіз адключаны.`
+              : `Сократите ${overLimitCount} публикац. до ${MAX_ITEM_CHARS.toLocaleString()} знаков: анализ пока недоступен.`}
+          </small>}
+          {!topicReady&&state.items.length>0&&<small>{be?"Для аналізу ўкажыце тэму вышэй.":"Для анализа укажите тему выше."}</small>}
           {state.items.length>MAX_ITEMS&&<small style={{color:"#b42318"}}>Сократите пул до {MAX_ITEMS} публикаций. Сохранённые материалы не удаляются автоматически.</small>}</div>
       </aside>
-      <div className="panel w-review-editor">{active?<><div className="panel-head"><div><h3>{active.title}</h3><p>{active.source}{active.region?` · ${active.region}`:""}</p></div><button className="ghost-button small-button" onClick={()=>setState((current)=>invalidateMap({...current,items:current.items.filter((item)=>item.id!==active.id)}))}>{be?"Выдаліць":"Удалить"}</button></div><div className="w-review-exact"><select value={compressionMode} onChange={(e)=>setCompressionMode(e.target.value as CompressionMode)}><option value="light">20–30%</option><option value="standard">30–50%</option><option value="maximum">50–70%</option><option value="extract">70–90%</option></select><button className="secondary-button small-button" onClick={exact}>Exact</button><button className="ghost-button small-button" onClick={()=>updateItem(active.id,{editorialText:active.sourceText})}>{be?"Вярнуць зыходны":"Вернуть исходный"}</button></div><textarea className="report-editor-textarea" lang={be?"be":"ru"} spellCheck={true} value={active.editorialText} onChange={(e)=>updateItem(active.id,{editorialText:e.target.value})}/></>:<div className="report-empty">{be?"Выберыце матэрыял.":"Выберите материал."}</div>}</div>
+      <div className="panel w-review-editor">{active?<><div className="panel-head"><div><h3>{active.title}</h3><p>{active.source}{active.region?` · ${active.region}`:""}</p></div><button className="ghost-button small-button" onClick={()=>setState((current)=>invalidateMap({...current,items:current.items.filter((item)=>item.id!==active.id)}))}>{be?"Выдаліць":"Удалить"}</button></div><div className="w-review-exact"><select value={compressionMode} onChange={(e)=>setCompressionMode(e.target.value as CompressionMode)}><option value="light">20–30%</option><option value="standard">30–50%</option><option value="maximum">50–70%</option><option value="extract">70–90%</option></select><button className="secondary-button small-button" onClick={exact}>Exact</button><button className="ghost-button small-button" onClick={()=>updateItem(active.id,{editorialText:active.sourceText})}>{be?"Вярнуць зыходны":"Вернуть исходный"}</button></div><div className="w-review-length-state">
+  <span className={active.editorialText.length>MAX_ITEM_CHARS?"exceeded":"within"}>
+    {active.editorialText.length.toLocaleString()} / {MAX_ITEM_CHARS.toLocaleString()} {be?"знакаў для ІІ":"знаков для ИИ"}
+  </span>
+  {active.editorialText.length>MAX_ITEM_CHARS&&<strong>
+    {be?`Не змяшчаецца ${(active.editorialText.length-MAX_ITEM_CHARS).toLocaleString()} знакаў. Выдаліце неважныя фрагменты перад аналізам.`
+      :`Не помещается ${(active.editorialText.length-MAX_ITEM_CHARS).toLocaleString()} знаков. Удалите малозначимые фрагменты перед анализом.`}
+  </strong>}
+</div>
+<div className="w-review-text-guard">
+  <div className="w-review-text-backdrop" aria-hidden="true">
+    <span>{active.editorialText.slice(0,MAX_ITEM_CHARS)}</span><span className="w-review-text-tail">{active.editorialText.slice(MAX_ITEM_CHARS)}</span>{"\n"}
+  </div>
+  <textarea className="report-editor-textarea w-review-edit-input" lang={be?"be":"ru"} spellCheck={true}
+    aria-label={be?"Рэдагуемы тэкст публікацыі":"Редактируемый текст публикации"}
+    value={active.editorialText} onChange={(e)=>updateItem(active.id,{editorialText:e.target.value})}
+    onScroll={(event)=>{
+      const backdrop=event.currentTarget.previousElementSibling as HTMLDivElement|null;
+      if(backdrop){backdrop.scrollTop=event.currentTarget.scrollTop;backdrop.scrollLeft=event.currentTarget.scrollLeft;}
+    }}/>
+</div></>:<div className="report-empty">{be?"Выберыце матэрыял.":"Выберите материал."}</div>}</div>
     </section>
 
     {mapReady&&state.editorialMap&&<section className="panel w-review-map"><div className="panel-head"><div><h3>{be?"3. Тэндэнцыі медыяполя":"3. Тенденции медиаполя"}</h3><p>{be?"Зніміце галачку толькі з тых акцэнтаў, якія не павінны ўваходзіць у агляд." : "Снимите галочку только с тех акцентов, которые не должны входить в обзор."}</p></div><button className="ghost-button small-button" disabled={busy!==""} onClick={recalculateTrends}>{be?"Пералічыць":"Пересчитать"}</button></div>

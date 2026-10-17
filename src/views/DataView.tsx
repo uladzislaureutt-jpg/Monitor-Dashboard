@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { AdminSnapshot, DatabaseStats, RunSummary, SyncSettings } from "../types";
 import { useI18n } from "../i18n";
 import { useMonitorAccess } from "../access";
+import { AdminNotebook } from "../components/AdminNotebook";
 import { adminAccessAction, getAdminSnapshot, loadWorkroomConfig } from "../workroom";
 
 export function DataView({
@@ -133,5 +134,6 @@ export function DataView({
     <section className="kpi-grid"><article className="kpi"><strong>{stats?.runs ?? "—"}</strong><span>{t("data.importedRuns")}</span></article><article className="kpi"><strong>{stats?.documents ?? "—"}</strong><span>{t("data.uniquePublications")}</span></article><article className="kpi"><strong>{stats?.sources ?? "—"}</strong><span>{t("data.sources")}</span></article><article className="kpi"><strong>{productionRuns}</strong><span>{t("data.productionRuns")}</span></article><article className="kpi"><strong>{latest?.runNumber ?? "—"}</strong><span>{t("data.latestRun")}</span></article></section>
     <section className="panel"><div className="panel-head"><div><h3>{t("data.runsTitle")}</h3><p>{t("data.runsHelp")}</p></div><span className="badge">{t("data.contract")}</span></div><div className="table-wrap"><table><thead><tr><th>{t("data.run")}</th><th>{t("data.mode")}</th><th>{t("data.start")}</th><th>{t("data.publications")}</th><th>{t("data.sourcesCol")}</th><th>{t("data.imported")}</th></tr></thead><tbody>{runs.length === 0 ? <tr><td colSpan={6} className="empty">{t("data.noBundles")}</td></tr> : runs.map((run) => <tr key={run.id}><td><b>#{run.runNumber ?? "—"}</b><small>{run.monitorKey === "social_economic" ? t("data.monitorSocial") : run.monitorName}</small></td><td><span className={`mode mode-${run.dryRun === true ? "dry" : run.dryRun === false ? "prod" : "unknown"}`}>{formatMode(run.dryRun)}</span></td><td>{formatDate(run.startedAt)}</td><td>{run.publications}</td><td>{run.sourcesInCoverage}</td><td>{formatDate(run.importedAt)}</td></tr>)}</tbody></table></div></section>
     <section className="panel db-path"><span>{t("data.sqliteShared")}</span><code title={stats?.databasePath}>{stats?.databasePath ?? t("status.initializing")}</code></section>
+    {access.profile.isAdmin && <AdminNotebook session={access.session} be={be}/>} 
   </div>;
 }
