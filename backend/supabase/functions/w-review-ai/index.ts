@@ -715,7 +715,12 @@ ${styleProfile || "Живой сдержанный редакционный ст
     // Limit synthesis context only. Original Evidence Cards remain unchanged for fact verification.
     const evidenceText = cards.map((card: string, index: number) => `P${String(index + 1).padStart(2, "0")}\n${card}`).join("\n\n");
     if (evidenceText.length > 85000) return json({ error: "evidence_too_large", max_chars: 85000 }, 400);
-    const trendText = trends.map((trend: any, index: number) => `${index + 1}. ${String(trend?.title || "")}: ${String(trend?.summary || "")}`).join("\n");
+    const trendText = trends.map((trend: any, index: number) => {
+      const related = Array.isArray(trend?.sources)
+        ? trend.sources.map((v:unknown) => String(v||"").trim()).filter(Boolean) : [];
+      return `${index+1}. ${String(trend?.title||"")}: ${String(trend?.summary||"")}`+
+        (related.length ? "\nИсточники этой линии: "+related.join(", ") : "");
+    }).join("\n");
     const densityRule = (name: string, value: string) => value === "minimum" ? `${name}: редко, только самые сильные 1–2 элемента, если доступны.` : value === "all" ? `${name}: использовать все реально найденные пригодные элементы этого типа, но не выдумывать и не повторять один и тот же элемент.` : value === "many" ? `${name}: насыщенно, использовать большинство сильных элементов без перегруза и повторов.` : `${name}: умеренно, несколько лучших элементов по ходу текста.`;
     const canonicalSources = sourceNames.length ? sourceNames.map((name: string) => `«${name}»`).join(", ") : "используй названия из Evidence Cards";
 
