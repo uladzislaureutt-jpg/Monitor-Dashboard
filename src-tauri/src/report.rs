@@ -179,7 +179,7 @@ fn w_review_media_name(value: &str, names: &[String]) -> Option<String> {
     let domain=Regex::new(r"(?i)^(?:[a-z0-9-]+\.)+[a-z]{2,24}$")
         .expect("valid media website domain regex");
     if domain.is_match(&wanted) { Some(wanted) } else { None }
-
+}
 
 fn w_review_wrap_media_names(value: &str, names: &[String]) -> String {
     let mut sources=names.iter().map(|x|x.trim().trim_matches('«').trim_matches('»').trim().to_string())
