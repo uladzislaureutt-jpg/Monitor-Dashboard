@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { evidenceV2Instructions, evidenceV2Schema, makeEvidenceDocuments, renderEvidenceMaterials, verifyEvidenceCards, formatEvidenceCard, type EvidenceCard } from "./evidence-v2.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -236,7 +237,7 @@ function aiError(provider: "groq" | "gemini" | "cloudflare", result: AiFailure) 
   }, rate ? 429 : 502);
 }
 
-const evidencePrompt = "Ты готовишь одну доказательную Evidence Card на один исходный материал для обзора тенденций медиаполя.\nКаждый материал анализируй ОТДЕЛЬНО, не добавляй внешних знаний и не подменяй позицию одного издания позицией другого.\nВ поле evidence выдай структурированный текст с названиями полей в указанном порядке:\nTITLE_ORIGINAL: исходный заголовок, дословно.\nTITLE_RU: точный русский перевод заголовка, если исходник иноязычный; иначе исходный.\nMAIN_FACTS: важные подтвержденные факты, даты, имена, цифры; не придумывать.\nMEDIA_ANGLE: смысловой акцент редакции и уникальный подход публикации, не реферат.\nEDITORIAL_STANCE: supportive | critical | concerned | neutral | mixed | unestablished — только собственная подтвержденная позиция редакции, НЕ тональность цитируемого политика, эксперта или чужой газеты.\nSTANCE_EVIDENCE: явное подтверждение собственной оценки редакции; если нет — не установлена.\nQUOTES_WITH_SPEAKERS: до 4 подлинных цитат/заголовков; для каждой раздельно ORIGINAL, RU, SPEAKER, ROLE (editorial, journalist, expert, politician, other, unknown), KIND (headline, direct_quote, attributed_quote).\nEXPERTS: именованные независимые эксперты, их должности и аргументы из публикации; политический лидер не считается экспертом автоматически.\nEXPLANATIONS: только реально приведенные объяснения и прогнозы с именем автора.\nUNIQUE_DETAILS: важные необычные факты и противоречащие оценки из источника.\nLIMITS: ограничения выводов, особенно если собственная позиция редакции не установлена.\nЕсли материал богат фактурой, сохраняй достаточную подробность для полноценного аналитического обзора.\nЧужая цитата не делает ее позицией редакции. Различай поддержку, критику, беспокойство и нейтральное сообщение.\nОтвет пачки — JSON {cards:[{index:0,evidence:\"...\"},...]} с полем evidence как СТРОКОЙ. Не добавляй никаких самостоятельных этапов проверки.";
+const evidencePrompt = evidenceV2Instructions;
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -280,31 +281,20 @@ Deno.serve(async (req: Request) => {
     const normalized = items.map((item: any, index: number) => {
       const text = String(item?.text || "").trim();
       totalChars += text.length;
-      return { index, source: String(item?.source || "").trim().slice(0, 300), title: String(item?.title || "").trim().slice(0, 600), text };
+      return { index, publication_id:String(item?.publication_id || "batch-"+index).trim().slice(0,120),
+        source: String(item?.source || "").trim().slice(0, 300), title: String(item?.title || "").trim().slice(0, 600), text };
     });
     if (normalized.some((item: any) => !item.text || item.text.length > 10000) || totalChars > 20000)
       return json({error:"evidence_article_too_long",max_article_chars:10000,max_batch_chars:20000,max_items:2},400);
-    const materialText = normalized.map((item: any) => `MATERIAL_${item.index + 1}\nИСТОЧНИК: «${item.source}»\nЗАГОЛОВОК: ${item.title}\nТЕКСТ:\n${item.text}`).join("\n\n---\n\n");
-    const schema = {
-      type: "OBJECT",
-      properties: {
-        cards: {
-          type: "ARRAY",
-          minItems: normalized.length,
-          maxItems: normalized.length,
-          items: {
-            type: "OBJECT",
-            properties: { index: { type: "INTEGER" }, evidence: { type: "STRING" } },
-            required: ["index", "evidence"],
-          },
-        },
-      },
-      required: ["cards"],
-    };
-    const prompt = `${evidencePrompt}\n\nВерни ровно ${normalized.length} карточек в том же порядке. Поле index: 0 для MATERIAL_1, 1 для MATERIAL_2 и так далее.\n\n${materialText}`;
+    const documents = makeEvidenceDocuments(normalized);
+    const materialText = renderEvidenceMaterials(documents);
+    const schema = evidenceV2Schema(normalized.length);
+    const prompt = evidencePrompt+"\n\nВерни ровно "+normalized.length+
+      " карточек, строго в порядке MATERIAL_1, MATERIAL_2 и т. д.\n\n"+materialText;
     const models = geminiApiKey ? [...new Set(["gemini-3.5-flash-lite", geminiModel])] : [];
     let result: AiResult | null = null;
     let parsed: any = null;
+    let verifiedCards: EvidenceCard[] = [];
     let usedModel = "";
     let lastError = "";
     let lastGeminiFailure:AiFailure|null=null;
@@ -313,11 +303,11 @@ Deno.serve(async (req: Request) => {
         const candidate = await callGemini(geminiApiKey, model, prompt, schema, 0.1, "evidence_batch");
         if (candidate.ok) {
           const data = parseModelJson(candidate);
-          if (data && Array.isArray(data.cards) && data.cards.length === normalized.length &&
-              data.cards.every((c: any, i: number) => Number(c.index) === i && String(c.evidence || "").trim())) {
-            result = candidate; parsed = data; usedModel = model; break;
+          const verified=verifyEvidenceCards(data,documents);
+          if(!verified.error){
+            result=candidate;parsed=data;verifiedCards=verified.cards;usedModel=model;break;
           }
-          lastError = model + ": invalid evidence cards";
+          lastError=model+": "+verified.error;
         } else {
           lastGeminiFailure=candidate;
           lastError = model + ": HTTP " + candidate.status + " " + candidate.detail;
@@ -337,26 +327,35 @@ Deno.serve(async (req: Request) => {
         reasoning_format: "hidden",
         temperature: 0.1,
         response_format: { type: "json_object" },
-        max_completion_tokens: 5000,
+        max_completion_tokens: 7000,
         messages: [
-          {role: "system", content: "Создай Evidence Cards строго по текстам пользователя. Ответ только валидный JSON-объект с полем cards — массивом объектов index (целое число с нуля) и evidence (непустая строка). Число карточек должно соответствовать числу исходных материалов. Никаких вымышленных фактов."},
+          {role: "system", content: evidencePrompt},
           {role: "user", content: prompt}
         ]
       });
       if (groqResult.ok) {
         const data = parseModelJson(groqResult);
-        if (Array.isArray(data?.cards) && data.cards.length === normalized.length &&
-            data.cards.every((c: any, i: number) => Number(c.index) === i && String(c.evidence || "").trim())) {
-          result = groqResult; parsed = data; usedModel = "openai/gpt-oss-20b";
-        } else lastError += "; groq_invalid_cards";
+        const verified=verifyEvidenceCards(data,documents);
+        if(!verified.error){
+          result=groqResult;parsed=data;verifiedCards=verified.cards;usedModel="openai/gpt-oss-20b";
+        } else lastError += "; groq_"+verified.error;
       } else lastError += "; groq_HTTP_" + groqResult.status + ": " + groqResult.detail.slice(0, 200);
     }
     if (!result || !parsed) return json({error:"evidence_providers_unavailable",
       detail:lastError.slice(0,350),provider:"gemini_groq",issue:lastGeminiFailure?.diagnostic||null,
       retryable:false},503);
-    const cards = parsed.cards.map((card: any) => ({index: Number(card.index), evidence: String(card.evidence || "").trim()}));
-    if (cards.length !== normalized.length || cards.some((card: any, index: number) => card.index !== index || !card.evidence)) return json({error:"invalid_evidence_cards",provider:"gemini",model:usedModel},502);
-    return json({ cards, model: usedModel, provider: usedModel.startsWith("openai/") ? "groq" : "gemini", usage: result.usage });
+    const cards=verifiedCards.map((card,index)=>({
+      index,evidence:formatEvidenceCard(card),evidence_data:card
+    }));
+    console.info("w_review_evidence_v2 "+JSON.stringify({
+      cards:cards.length,accepted:verifiedCards.reduce((n,c)=>n+c.validation.accepted,0),
+      rejected:verifiedCards.reduce((n,c)=>n+c.validation.rejected,0),
+      covered_passages:verifiedCards.reduce((n,c)=>n+c.validation.covered_passages,0),
+      total_passages:verifiedCards.reduce((n,c)=>n+c.validation.total_passages,0),
+      provider:usedModel
+    }));
+    return json({cards,model:usedModel,
+      provider:usedModel.startsWith("openai/")?"groq":"gemini",usage:result.usage});
   }
 
   if (action === "style_profile") {
@@ -432,7 +431,7 @@ ${sections.join("; ")}.
     const cards = submittedCards.map((v: unknown) => String(v || "").trim()).filter(Boolean);
     if (!cards.length) return json({ error: "no_evidence_cards" }, 400);
     const evidenceText = cards.map((card: string, index: number) => `P${String(index + 1).padStart(2, "0")}\n${card}`).join("\n\n");
-    if (evidenceText.length > 85000) return json({ error: "evidence_too_large", max_chars: 85000 }, 400);
+    if (evidenceText.length > 180000) return json({ error: "evidence_too_large", max_chars: 180000 }, 400);
     const schema = {
       type: "OBJECT",
       properties: {
@@ -495,7 +494,7 @@ ${evidenceText}`;
     const cards = Array.isArray(body?.evidence_cards) ? body.evidence_cards.map((v: unknown) => String(v || "").trim()).filter(Boolean).slice(0, 30) : [];
     if (!review || !cards.length) return json({ error: "missing_verify_input" }, 400);
     const evidenceText = cards.map((card: string, index: number) => `P${String(index + 1).padStart(2, "0")}\n${card}`).join("\n\n");
-    if (evidenceText.length > 85000) return json({ error: "evidence_too_large", max_chars: 85000 }, 400);
+    if (evidenceText.length > 180000) return json({ error: "evidence_too_large", max_chars: 180000 }, 400);
     const anchors = suspiciousAnchors(review, evidenceText);
     const schema = {
       type: "OBJECT",
@@ -598,7 +597,7 @@ ${evidenceText}`;
     const d = body?.density || {};
     const quoteDensity = density(d.quotes), headlineDensity = density(d.headlines), expertDensity = density(d.experts);
     const evidenceText = cards.map((card: string, index: number) => `P${String(index + 1).padStart(2, "0")}\n${card}`).join("\n\n");
-    if (evidenceText.length > 85000) return json({ error: "evidence_too_large", max_chars: 85000 }, 400);
+    if (evidenceText.length > 180000) return json({ error: "evidence_too_large", max_chars: 180000 }, 400);
     const trendText = trends.map((trend: any, index: number) => `${index + 1}. ${String(trend?.title || "")}: ${String(trend?.summary || "")}`).join("\n");
     const canonicalSources = sourceNames.length ? sourceNames.map((name: string) => `«${name}»`).join(", ") : "используй названия из Evidence Cards";
     const densityRule = (name: string, value: string) => value === "minimum" ? `${name}: редко, только самые сильные 1–2 элемента, если доступны.` : value === "all" ? `${name}: использовать все реально найденные пригодные элементы этого типа, без выдумывания.` : value === "many" ? `${name}: насыщенно, использовать большинство сильных элементов без перегруза.` : `${name}: умеренно, несколько лучших элементов.`;
@@ -714,7 +713,7 @@ ${styleProfile || "Живой сдержанный редакционный ст
     const quoteDensity = density(d.quotes), headlineDensity = density(d.headlines), expertDensity = density(d.experts);
     // Limit synthesis context only. Original Evidence Cards remain unchanged for fact verification.
     const evidenceText = cards.map((card: string, index: number) => `P${String(index + 1).padStart(2, "0")}\n${card}`).join("\n\n");
-    if (evidenceText.length > 85000) return json({ error: "evidence_too_large", max_chars: 85000 }, 400);
+    if (evidenceText.length > 180000) return json({ error: "evidence_too_large", max_chars: 180000 }, 400);
     const trendText = trends.map((trend: any, index: number) => {
       const related = Array.isArray(trend?.sources)
         ? trend.sources.map((v:unknown) => String(v||"").trim()).filter(Boolean) : [];
