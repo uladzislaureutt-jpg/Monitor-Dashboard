@@ -488,8 +488,9 @@ fn export_w_review_docx(
     section_titles: Vec<String>,
     bold_phrases: Vec<String>,
     source_links: Vec<report::WReviewSourceLink>,
+    template_path: Option<String>,
 ) -> Result<(), String> {
-    report::export_w_review_docx(&PathBuf::from(path), &text, &source_names, &section_titles, &bold_phrases, &source_links)
+    report::export_w_review_docx(&PathBuf::from(path), &text, &source_names, &section_titles, &bold_phrases, &source_links, template_path.as_deref().map(std::path::Path::new))
 }
 
 #[tauri::command]
