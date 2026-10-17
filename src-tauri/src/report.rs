@@ -498,6 +498,9 @@ pub fn export_w_review_docx(path: &Path, text: &str, source_names: &[String], se
     if path.extension().and_then(|value| value.to_str()).map(|value| value.eq_ignore_ascii_case("docx")) != Some(true) {
         return Err("Файл W-Review должен иметь расширение .docx".to_string());
     }
+    if template_path.map(|reference| reference == path).unwrap_or(false) {
+        return Err("Нельзя сохранять обзор поверх исходного Word-образца.".to_string());
+    }
     let template=match template_path {
         Some(reference)=>Some(read_w_review_template(reference)?),
         None=>None
