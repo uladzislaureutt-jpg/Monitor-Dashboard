@@ -6,7 +6,7 @@ import { exactCompressForProfile, type CompressionMode } from "../editorialCompr
 import { wEditorialMap, wEvidenceBatch, wStyleProfile, wSynthesize, type WDensity, type WEditorialMap, type WEditorialTrend, type WFactCheck, type WUsage } from "../wReviewAi";
 import { useI18n } from "../i18n";
 
-const W_CONTRACT_VERSION = 4;
+const W_CONTRACT_VERSION = 5;
 const MAX_ITEMS = 18;
 const HARD_MAX_ITEMS = 30; // Legacy pools remain intact; the operator can trim them manually.
 const MAX_SAMPLES = 5;
@@ -21,6 +21,28 @@ type WItem = {
   sourceText: string; editorialText: string; evidence: string; evidenceContract?: number;
 };
 type WSample = { id: string; name: string; text: string };
+
+// Deterministically select complete adjacent paragraphs from the author's
+// own samples. These are STYLE_ONLY, never evidence about current events.
+function selectStyleExcerpts(samples: WSample[]): Array<{name:string;text:string}> {
+  const excerpts:Array<{name:string;text:string}> = [];
+  let total = 0;
+  for(const sample of samples.slice(0,3)){
+    const paragraphs=sample.text.split(/\n\s*\n/).map(p=>p.trim()).filter(p=>p.length>=80);
+    if(paragraphs.length<2) continue;
+    // Prefer a piece that contains both editorial interpretation and source attribution.
+    const matches=(p:string)=>/«[^»]{2,90}»|\b(?:Reuters|CNN|BBC|Bloomberg)\b/i.test(p);
+    const start=Math.max(0,paragraphs.findIndex((p,i)=>i<paragraphs.length-1&&matches(p)));
+    const chosen=paragraphs.slice(start,start+3).join("\n\n").slice(0,1400);
+    if(chosen.length<200)continue;
+    const room=4000-total;
+    if(room<300||excerpts.length===4)break;
+    const text=chosen.slice(0,room);
+    excerpts.push({name:sample.name.slice(0,120),text});
+    total+=text.length;
+  }
+  return excerpts;
+}
 type WState = {
   items: WItem[];
   topic: string;
@@ -200,7 +222,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     }));
   }
   function evidenceCards(items: WItem[]) {
-    return items.map((item) => `ИСТОЧНИК: «${item.source}»\nЗАГОЛОВОК: ${item.title}\n${item.evidence}`);
+    return items.map((item,index) => `ID: P${String(index+1).padStart(2,"0")}\nИСТОЧНИК: «${item.source}»\nЗАГОЛОВОК: ${item.title}\nURL: ${item.url||"не указан"}\n${item.evidence}`);
   }
 
   function addItem(input: { title: string; source: string; region?: string; url?: string; text: string }) {
@@ -444,6 +466,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         targetChars: state.targetChars,
         evidenceCards: evidenceCards(state.items),
         styleProfile: state.styleProfile,
+        styleExcerpts: selectStyleExcerpts(state.samples),
         trends: selectedTrends,
         density: state.density,
         sourceNames: Array.from(new Set(state.items.map((item) => item.source.trim()).filter(Boolean))),
@@ -590,7 +613,13 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
           sectionTitles:current.sectionTitles.filter(value=>e.target.value.includes(value)),
           boldPhrases:current.boldPhrases.filter(value=>e.target.value.includes(value)),
         }))} placeholder={be?"Тут з'явіцца выніковы агляд…":"Здесь появится итоговый обзор…"}/>
-      <div className="w-review-usage">{be?"Сімвалаў":"Символов"}: {state.reviewText.length.toLocaleString()} · {be?"Токенаў у гэтай сесіі":"Токенов в этой сессии"}: {usage.totalTokens.toLocaleString()}</div>
+      <div className="w-review-usage">
+         {be?"Знакаў":"Знаков"}: {state.reviewText.length.toLocaleString()} / {state.targetChars.toLocaleString()}
+         {" · "}{be?"Дапушчальна":"Допуск"}: {Math.round(state.targetChars*.95).toLocaleString()}–{Math.round(state.targetChars*1.05).toLocaleString()}
+         {state.reviewText.trim()&& (state.reviewText.length<Math.round(state.targetChars*.95)||state.reviewText.length>Math.round(state.targetChars*1.05))?
+           <strong style={{color:"#9a443b"}}> · {be?"Адхіленне ад аб'ёму":"Отклонение от объёма"}</strong>:null}
+         {" · "}{be?"Токенаў у гэтай сесіі":"Токенов в этой сессии"}: {usage.totalTokens.toLocaleString()}
+       </div>
     </section>
   </div>;
 }
