@@ -1,0 +1,30 @@
+name: W-Review Evidence v2 contract checks
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/supabase/functions/w-review-ai/**'
+      - 'src/wReviewAi.ts'
+      - 'src/views/WReviewView.tsx'
+      - '.github/workflows/w-review-evidence-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evidence-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Validate anchored evidence
+        run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/evidence-v2.test.mjs
+      - name: Install frontend dependencies
+        run: npm ci --ignore-scripts
+      - name: Type-check desktop client
+        run: npx tsc --noEmit
