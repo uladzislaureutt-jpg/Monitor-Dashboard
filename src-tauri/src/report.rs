@@ -1,5 +1,5 @@
 use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::Path;
 
 use serde::Deserialize;
@@ -438,73 +438,17 @@ pub fn extract_w_review_sample(path: &Path) -> Result<String, String> {
     Ok(result)
 }
 
-#[derive(Default)]
-struct WReviewTemplate {
-    font: Option<String>,
-    size: Option<String>,
-    spacing: Option<String>,
-    first_line: Option<String>,
-    section: Option<String>,
-    styles: Option<String>,
-}
-
-// A DOCX selected by the operator supplies real typography and page geometry.
-// We copy only safe layout settings: no stale body text, footnotes or links.
-fn read_w_review_template(path: &Path) -> Result<WReviewTemplate, String> {
-    let file=File::open(path).map_err(|e|format!("Невозможно открыть Word-образец: {e}"))?;
-    let mut zip=ZipArchive::new(file).map_err(|e|format!("Word-образец должен быть DOCX: {e}"))?;
-    let mut doc=String::new();
-    zip.by_name("word/document.xml")
-        .map_err(|e|format!("В образце нет document.xml: {e}"))?
-        .read_to_string(&mut doc).map_err(|e|format!("Не прочитан образец: {e}"))?;
-    let mut styles=String::new();
-    if let Ok(mut entry)=zip.by_name("word/styles.xml") {
-        entry.read_to_string(&mut styles).map_err(|e|format!("Не прочитаны стили: {e}"))?;
-    }
-    let cap=|xml:&str,pat:&str|->Option<String>{
-        Regex::new(pat).ok()?.captures(xml)?.get(1).map(|m|m.as_str().to_string())
-    };
-    let font=cap(&styles,r#"<w:rFonts[^>]*w:ascii="([^"]+)""#)
-        .or_else(||cap(&doc,r#"<w:rFonts[^>]*w:ascii="([^"]+)""#));
-    let size=cap(&styles,r#"<w:sz\s+w:val="(\d+)""#)
-        .or_else(||cap(&doc,r#"<w:sz\s+w:val="(\d+)""#));
-    let spacing=cap(&styles,r#"<w:spacing\s+w:val="(-?\d+)""#);
-    let first_line=cap(&doc,r#"<w:ind[^>]*w:firstLine="(\d+)""#);
-    let sect=Regex::new(r"(?s)<w:sectPr(?:\s+[^>]*)?>.*?</w:sectPr>").unwrap()
-        .find_iter(&doc).last().map(|m|m.as_str().to_string());
-    let section=sect.and_then(|block|{
-        let mut result=String::new();
-        for tag in ["w:pgSz","w:pgMar","w:docGrid"] {
-            if let Ok(re)=Regex::new(&format!(r#"<{}(?:\s+[^>]*)?/>"#,tag)){
-                if let Some(m)=re.find(&block){result.push_str(m.as_str());}
-            }
-        }
-        if result.is_empty(){None}else{Some(format!("<w:sectPr>{result}</w:sectPr>"))}
-    });
-    Ok(WReviewTemplate{
-        font,size,spacing,first_line,section,
-        styles:if styles.is_empty(){None}else{Some(styles)}
-    })
-}
-
 #[derive(Debug, Deserialize)]
 pub struct WReviewSourceLink {
     pub name: String,
     pub url: String,
 }
 
-pub fn export_w_review_docx(path: &Path, text: &str, source_names: &[String], section_titles: &[String], bold_phrases: &[String], source_links: &[WReviewSourceLink], template_path: Option<&Path>) -> Result<(), String> {
+pub fn export_w_review_docx(path: &Path, text: &str, source_names: &[String], section_titles: &[String], bold_phrases: &[String], source_links: &[WReviewSourceLink]) -> Result<(), String> {
     if text.trim().is_empty() { return Err("Итоговый текст W-Review пуст.".to_string()); }
     if path.extension().and_then(|value| value.to_str()).map(|value| value.eq_ignore_ascii_case("docx")) != Some(true) {
         return Err("Файл W-Review должен иметь расширение .docx".to_string());
     }
-    if template_path.map(|reference| reference == path).unwrap_or(false) {
-        return Err("Нельзя сохранять обзор поверх исходного Word-образца.".to_string());
-    }
-    let template=match template_path {
-        Some(reference)=>Some(read_w_review_template(reference)?),
-        None=>None
-    };
     if let Some(parent) = path.parent() { fs::create_dir_all(parent).map_err(|e| format!("Не удалось создать каталог W-Review: {e}"))?; }
     let file = File::create(path).map_err(|e| format!("Не удалось создать DOCX W-Review: {e}"))?;
     let mut zip = ZipWriter::new(file);
@@ -512,12 +456,12 @@ pub fn export_w_review_docx(path: &Path, text: &str, source_names: &[String], se
 
     // The document is a view of the current operator master text, not a
     // model rewrite or an implicit typographic rewrite.
-    // Ignore only model-control Markdown, never remove factual prose.
-    // Some old model outputs appended pseudo-headings as **«... »** to
-    // EVERY paragraph; these are not part of the authorial Word template.
-    let fake_headings = Regex::new(r"(?m)[ \t]+\*\*«[^»\n]{5,95}»\*\*[ \t]*$").expect("valid pseudo-heading regex");
-    let without_fake_headings = fake_headings.replace_all(text.trim(), "");
-    let cleaned = without_fake_headings.replace("**", "").replace("__", "");
+    // Permanent built-in W-Review Word styling, like the SEP exporter.
+    // Remove only model-control Markdown / standalone pseudo headings.
+    // Never use stylistic sample texts or a path to a user Word template.
+    let pseudo_heading=Regex::new(r"(?m)[ \t]+\*\*«[^»\n]{5,95}»\*\*[ \t]*$").expect("pseudo heading regex");
+    let prose=pseudo_heading.replace_all(text.trim(),"");
+    let cleaned=prose.replace("**","").replace("__","");
     // Hyperlink only names that have an unambiguous original publication URL.
     let mut source_link_rels: Vec<(String, String)> = Vec::new();
     let mut source_hyperlinks = String::new();
@@ -548,25 +492,10 @@ pub fn export_w_review_docx(path: &Path, text: &str, source_names: &[String], se
             prose_index += 1;
         }
     }
-    if let Some(reference)=template.as_ref() {
-        if let Some(font)=reference.font.as_ref(){body=body.replace("Arial",&xml_attr(font));}
-        if let Some(size)=reference.size.as_ref(){
-            body=body.replace("w:sz w:val=\"32\"",&format!("w:sz w:val=\"{size}\""))
-                     .replace("w:szCs w:val=\"32\"",&format!("w:szCs w:val=\"{size}\""));
-        }
-        if let Some(spacing)=reference.spacing.as_ref(){
-            body=body.replace("w:spacing w:val=\"-6\"",&format!("w:spacing w:val=\"{spacing}\""));
-        }
-        if let Some(indent)=reference.first_line.as_ref(){
-            body=body.replace("w:firstLine=\"720\"",&format!("w:firstLine=\"{indent}\""));
-        }
-    }
-    let fallback_section="<w:sectPr><w:type w:val=\"nextPage\"/><w:pgSz w:w=\"11906\" w:h=\"16838\"/><w:pgMar w:left=\"1260\" w:right=\"747\" w:gutter=\"0\" w:header=\"0\" w:top=\"1418\" w:footer=\"0\" w:bottom=\"851\"/><w:pgNumType w:fmt=\"decimal\"/><w:docGrid w:type=\"default\" w:linePitch=\"360\" w:charSpace=\"0\"/></w:sectPr>";
-    body.push_str(template.as_ref().and_then(|r|r.section.as_deref()).unwrap_or(fallback_section));
+    body.push_str("<w:sectPr><w:type w:val=\"nextPage\"/><w:pgSz w:w=\"11906\" w:h=\"16838\"/><w:pgMar w:left=\"1260\" w:right=\"747\" w:gutter=\"0\" w:header=\"0\" w:top=\"1418\" w:footer=\"0\" w:bottom=\"851\"/><w:pgNumType w:fmt=\"decimal\"/><w:docGrid w:type=\"default\" w:linePitch=\"360\" w:charSpace=\"0\"/></w:sectPr>");
 
     let document = format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><w:body>{body}</w:body></w:document>");
     let styles = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:styles xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii=\"Arial\" w:hAnsi=\"Arial\" w:eastAsia=\"Arial\" w:cs=\"Arial\"/><w:spacing w:val=\"-6\"/><w:sz w:val=\"32\"/><w:szCs w:val=\"32\"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr/></w:pPrDefault></w:docDefaults><w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"Normal\"><w:name w:val=\"Normal\"/><w:qFormat/><w:rPr><w:rFonts w:ascii=\"Arial\" w:hAnsi=\"Arial\" w:eastAsia=\"Arial\" w:cs=\"Arial\"/><w:spacing w:val=\"-6\"/><w:sz w:val=\"32\"/><w:szCs w:val=\"32\"/></w:rPr></w:style></w:styles>";
-    let styles = template.as_ref().and_then(|r|r.styles.clone()).unwrap_or_else(||styles.to_string());
     let root_rels = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/></Relationships>";
     let doc_rels = format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>{source_hyperlinks}</Relationships>");
     let content_types = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/><Override PartName=\"/word/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml\"/></Types>";
