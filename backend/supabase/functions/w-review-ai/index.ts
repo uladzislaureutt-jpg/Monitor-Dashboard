@@ -422,7 +422,7 @@ ${sections.join("; ")}.
     const cards = submittedCards.map((v: unknown) => String(v || "").trim()).filter(Boolean);
     if (!cards.length) return json({ error: "no_evidence_cards" }, 400);
     const evidenceText = cards.map((card: string, index: number) => `P${String(index + 1).padStart(2, "0")}\n${card}`).join("\n\n");
-    if (evidenceText.length > 50000) return json({ error: "evidence_too_large", max_chars: 50000 }, 400);
+    if (evidenceText.length > 85000) return json({ error: "evidence_too_large", max_chars: 85000 }, 400);
     const schema = {
       type: "OBJECT",
       properties: {
@@ -485,7 +485,7 @@ ${evidenceText}`;
     const cards = Array.isArray(body?.evidence_cards) ? body.evidence_cards.map((v: unknown) => String(v || "").trim()).filter(Boolean).slice(0, 30) : [];
     if (!review || !cards.length) return json({ error: "missing_verify_input" }, 400);
     const evidenceText = cards.map((card: string, index: number) => `P${String(index + 1).padStart(2, "0")}\n${card}`).join("\n\n");
-    if (evidenceText.length > 50000) return json({ error: "evidence_too_large", max_chars: 50000 }, 400);
+    if (evidenceText.length > 85000) return json({ error: "evidence_too_large", max_chars: 85000 }, 400);
     const anchors = suspiciousAnchors(review, evidenceText);
     const schema = {
       type: "OBJECT",
@@ -588,7 +588,7 @@ ${evidenceText}`;
     const d = body?.density || {};
     const quoteDensity = density(d.quotes), headlineDensity = density(d.headlines), expertDensity = density(d.experts);
     const evidenceText = cards.map((card: string, index: number) => `P${String(index + 1).padStart(2, "0")}\n${card}`).join("\n\n");
-    if (evidenceText.length > 50000) return json({ error: "evidence_too_large", max_chars: 50000 }, 400);
+    if (evidenceText.length > 85000) return json({ error: "evidence_too_large", max_chars: 85000 }, 400);
     const trendText = trends.map((trend: any, index: number) => `${index + 1}. ${String(trend?.title || "")}: ${String(trend?.summary || "")}`).join("\n");
     const canonicalSources = sourceNames.length ? sourceNames.map((name: string) => `«${name}»`).join(", ") : "используй названия из Evidence Cards";
     const densityRule = (name: string, value: string) => value === "minimum" ? `${name}: редко, только самые сильные 1–2 элемента, если доступны.` : value === "all" ? `${name}: использовать все реально найденные пригодные элементы этого типа, без выдумывания.` : value === "many" ? `${name}: насыщенно, использовать большинство сильных элементов без перегруза.` : `${name}: умеренно, несколько лучших элементов.`;
@@ -704,7 +704,7 @@ ${styleProfile || "Живой сдержанный редакционный ст
     const quoteDensity = density(d.quotes), headlineDensity = density(d.headlines), expertDensity = density(d.experts);
     // Limit synthesis context only. Original Evidence Cards remain unchanged for fact verification.
     const evidenceText = cards.map((card: string, index: number) => `P${String(index + 1).padStart(2, "0")}\n${card}`).join("\n\n");
-    if (evidenceText.length > 50000) return json({ error: "evidence_too_large", max_chars: 50000 }, 400);
+    if (evidenceText.length > 85000) return json({ error: "evidence_too_large", max_chars: 85000 }, 400);
     const trendText = trends.map((trend: any, index: number) => `${index + 1}. ${String(trend?.title || "")}: ${String(trend?.summary || "")}`).join("\n");
     const densityRule = (name: string, value: string) => value === "minimum" ? `${name}: редко, только самые сильные 1–2 элемента, если доступны.` : value === "all" ? `${name}: использовать все реально найденные пригодные элементы этого типа, но не выдумывать и не повторять один и тот же элемент.` : value === "many" ? `${name}: насыщенно, использовать большинство сильных элементов без перегруза и повторов.` : `${name}: умеренно, несколько лучших элементов по ходу текста.`;
     const canonicalSources = sourceNames.length ? sourceNames.map((name: string) => `«${name}»`).join(", ") : "используй названия из Evidence Cards";
@@ -865,6 +865,8 @@ ${styleOnlyText || "Дополнительные фрагменты недост
       finish_reason:result.ok?result.finish_reason||"not_reported":"error",
       reasoning_tokens:result.ok?result.reasoning_tokens||0:0,
       style_chars:styleProfile.length,style_excerpt_chars:styleOnlyText.length,evidence_chars:evidenceText.length,
+      source_mentions:sourceNames.filter((name:string)=>reviewText.includes("«"+name+"»")).length,
+      source_names:sourceNames.length,
       cards:cards.length,trends:trends.length
     }));
     if (!(await finishQuota(true))) return json({error:"w_review_quota_commit_failed",detail:"Результат модели получен, но суточный учёт не завершён; повторная попытка не будет безопасной."},503);
