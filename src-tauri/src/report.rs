@@ -456,7 +456,12 @@ pub fn export_w_review_docx(path: &Path, text: &str, source_names: &[String], se
 
     // The document is a view of the current operator master text, not a
     // model rewrite or an implicit typographic rewrite.
-    let cleaned = text.trim().to_string();
+    // Ignore only model-control Markdown, never remove factual prose.
+    // Some old model outputs appended pseudo-headings as **«... »** to
+    // EVERY paragraph; these are not part of the authorial Word template.
+    let fake_headings = Regex::new(r"(?m)[ \t]+\*\*«[^»\n]{5,95}»\*\*[ \t]*$").expect("valid pseudo-heading regex");
+    let without_fake_headings = fake_headings.replace_all(text.trim(), "");
+    let cleaned = without_fake_headings.replace("**", "").replace("__", "");
     // Hyperlink only names that have an unambiguous original publication URL.
     let mut source_link_rels: Vec<(String, String)> = Vec::new();
     let mut source_hyperlinks = String::new();
