@@ -124,6 +124,13 @@ fn w_review_source_ranges(text: &str, source_names: &[String]) -> Vec<(usize, us
             }
         }
     }
+    // A bibliographic website name may be absent from the article pool's
+    // source_names. Still italicize it once the citation is canonicalized.
+    let domain = Regex::new(r"(?i)«(?:[a-z0-9-]+\.)+[a-z]{2,24}»")
+        .expect("valid quoted website source regex");
+    for matched in domain.find_iter(text) {
+        ranges.push((matched.start(), matched.end()));
+    }
     ranges.sort_unstable();
     ranges.dedup();
     ranges
@@ -162,11 +169,17 @@ fn w_review_media_key(value: &str) -> String {
 
 fn w_review_media_name(value: &str, names: &[String]) -> Option<String> {
     let wanted=w_review_media_key(value);
-    names.iter()
+    let known=names.iter()
         .map(|x|x.trim().trim_matches('«').trim_matches('»').trim())
         .find(|x|!x.is_empty()&&w_review_media_key(x)==wanted)
-        .map(|x|x.to_string())
-}
+        .map(|x|x.to_string());
+    if known.is_some() { return known; }
+    // Accept a bare website only inside a trailing source list.
+    // Never rewrite ordinary parenthetical explanations or dates.
+    let domain=Regex::new(r"(?i)^(?:[a-z0-9-]+\.)+[a-z]{2,24}$")
+        .expect("valid media website domain regex");
+    if domain.is_match(&wanted) { Some(wanted) } else { None }
+
 
 fn w_review_wrap_media_names(value: &str, names: &[String]) -> String {
     let mut sources=names.iter().map(|x|x.trim().trim_matches('«').trim_matches('»').trim().to_string())
@@ -716,6 +729,25 @@ mod w_review_format_contract_tests {
     fn non_breaking_hyphen_and_domain_citation_are_canonicalized(){
         let actual=w_review_format_media_citations("Документ. (Интерфакс‑Украина, cfr.org)",&names());
         assert_eq!(actual,"Документ («Интерфакс-Украина», «cfr.org»).");
+    }
+    #[test]
+    fn website_domain_in_mixed_citation_is_canonicalized_and_italicized(){
+        let actual=w_review_format_media_citations(
+            "На поле боя. (cfr.org, «NBC News»)",&names());
+        assert_eq!(actual,"На поле боя («cfr.org», «NBC News»).");
+        assert_eq!(w_review_source_ranges(&actual,&names()).len(),2);
+        let runs=w_review_runs(&actual,false,&names(),&[],&[]);
+        assert!(runs.contains("<w:t xml:space=\"preserve\">«cfr.org»</w:t>"));
+        assert_eq!(runs.matches("<w:i/><w:iCs/>").count(),2);
+    }
+    #[test]
+    fn only_domains_and_known_outlets_are_citation_sources(){
+        assert_eq!(w_review_format_media_citations(
+            "Факты. (cfr.org)",&names()),"Факты («cfr.org»).");
+        assert_eq!(w_review_format_media_citations(
+            "Текст (в октябре 2026 года).",&names()),"Текст (в октябре 2026 года).");
+        assert_eq!(w_review_format_media_citations(
+            "Текст. (cfr.org, в октябре)",&names()),"Текст. (cfr.org, в октябре)");
     }
     #[test]
     fn already_quoted_names_remain_single_quoted(){
