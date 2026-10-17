@@ -150,7 +150,7 @@ fn range_contains(ranges: &[(usize, usize)], start: usize, end: usize) -> bool {
     ranges.iter().any(|(a, b)| start >= *a && end <= *b)
 }
 
-fn w_review_runs(text: &str, first_paragraph: bool, source_names: &[String], bold_phrases: &[String]) -> String {
+fn w_review_runs(text: &str, first_paragraph: bool, source_names: &[String], bold_phrases: &[String], source_link_rels: &[(String, String)]) -> String {
     let source_ranges = w_review_source_ranges(text, source_names);
     let normalized_bold_phrases: Vec<String> = bold_phrases.iter().map(|phrase| sanitize_l_monitor_text(phrase).replace("**", "").replace("__", "")).collect();
     let mut bold_ranges = w_review_exact_ranges(text, &normalized_bold_phrases);
@@ -175,7 +175,15 @@ fn w_review_runs(text: &str, first_paragraph: bool, source_names: &[String], bol
         let slice = &text[start..end];
         let bold = range_contains(&bold_ranges, start, end);
         let italic = bold || range_contains(&source_ranges, start, end);
-        result.push_str(&run_w_review(slice, bold, italic, false));
+        let formatted = run_w_review(slice, bold, italic, false);
+        if let Some((_, rel_id)) = source_link_rels.iter().find(|(name, _)| {
+            let quoted = format!("«{name}»");
+            quoted == slice || quoted.eq_ignore_ascii_case(slice)
+        }) {
+            result.push_str(&format!("<w:hyperlink r:id=\"{}\" w:history=\"1\">{formatted}</w:hyperlink>", rel_id));
+        } else {
+            result.push_str(&formatted);
+        }
     }
     if result.is_empty() { result.push_str(&run_w_review(text, false, false, false)); }
     result
@@ -430,7 +438,13 @@ pub fn extract_w_review_sample(path: &Path) -> Result<String, String> {
     Ok(result)
 }
 
-pub fn export_w_review_docx(path: &Path, text: &str, source_names: &[String], section_titles: &[String], bold_phrases: &[String]) -> Result<(), String> {
+#[derive(Debug, Deserialize)]
+pub struct WReviewSourceLink {
+    pub name: String,
+    pub url: String,
+}
+
+pub fn export_w_review_docx(path: &Path, text: &str, source_names: &[String], section_titles: &[String], bold_phrases: &[String], source_links: &[WReviewSourceLink]) -> Result<(), String> {
     if text.trim().is_empty() { return Err("Итоговый текст W-Review пуст.".to_string()); }
     if path.extension().and_then(|value| value.to_str()).map(|value| value.eq_ignore_ascii_case("docx")) != Some(true) {
         return Err("Файл W-Review должен иметь расширение .docx".to_string());
@@ -440,7 +454,25 @@ pub fn export_w_review_docx(path: &Path, text: &str, source_names: &[String], se
     let mut zip = ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
-    let cleaned = sanitize_l_monitor_text(text).replace("**", "").replace("__", "");
+    // The document is a view of the current operator master text, not a
+    // model rewrite or an implicit typographic rewrite.
+    let cleaned = text.trim().to_string();
+    // Hyperlink only names that have an unambiguous original publication URL.
+    let mut source_link_rels: Vec<(String, String)> = Vec::new();
+    let mut source_hyperlinks = String::new();
+    for link in source_links.iter().filter(|item| {
+        let url = item.url.trim();
+        (url.starts_with("https://") || url.starts_with("http://"))
+            && !item.name.trim().is_empty() && url.len() <= 2048
+    }) {
+        if source_link_rels.iter().any(|(name, _)| name == link.name.trim()) { continue; }
+        let rid = format!("rId{}", source_link_rels.len() + 2);
+        source_hyperlinks.push_str(&format!(
+          "<Relationship Id=\"{rid}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"{}\" TargetMode=\"External\"/>",
+          xml_attr(link.url.trim())
+        ));
+        source_link_rels.push((link.name.trim().to_string(), rid));
+    }
     let blocks = Regex::new(r"\n\s*\n+").expect("valid paragraph split regex");
     let mut body = String::new();
     let mut prose_index = 0usize;
@@ -450,7 +482,7 @@ pub fn export_w_review_docx(path: &Path, text: &str, source_names: &[String], se
             let runs = run_w_review(block, false, true, true);
             body.push_str(&paragraph_w_review(&runs, true));
         } else {
-            let runs = w_review_runs(block, prose_index == 0, source_names, bold_phrases);
+            let runs = w_review_runs(block, prose_index == 0, source_names, bold_phrases, &source_link_rels);
             body.push_str(&paragraph_w_review(&runs, false));
             prose_index += 1;
         }
@@ -460,7 +492,7 @@ pub fn export_w_review_docx(path: &Path, text: &str, source_names: &[String], se
     let document = format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><w:body>{body}</w:body></w:document>");
     let styles = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:styles xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii=\"Arial\" w:hAnsi=\"Arial\" w:eastAsia=\"Arial\" w:cs=\"Arial\"/><w:spacing w:val=\"-6\"/><w:sz w:val=\"32\"/><w:szCs w:val=\"32\"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr/></w:pPrDefault></w:docDefaults><w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"Normal\"><w:name w:val=\"Normal\"/><w:qFormat/><w:rPr><w:rFonts w:ascii=\"Arial\" w:hAnsi=\"Arial\" w:eastAsia=\"Arial\" w:cs=\"Arial\"/><w:spacing w:val=\"-6\"/><w:sz w:val=\"32\"/><w:szCs w:val=\"32\"/></w:rPr></w:style></w:styles>";
     let root_rels = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/></Relationships>";
-    let doc_rels = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/></Relationships>";
+    let doc_rels = format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>{source_hyperlinks}</Relationships>");
     let content_types = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/><Override PartName=\"/word/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml\"/></Types>";
 
     for (name, content) in [

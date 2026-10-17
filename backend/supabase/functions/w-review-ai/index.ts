@@ -1,0 +1,889 @@
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2";
+
+const cors = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+function versionAtLeast(current: string, minimum: string) {
+  const parse = (value: string) => value.split(".").map((part) => Number(part.replace(/\D.*$/, "")) || 0);
+  const a = parse(current), b = parse(minimum);
+  for (let i = 0; i < Math.max(a.length, b.length, 3); i += 1) {
+    const left = a[i] || 0, right = b[i] || 0;
+    if (left > right) return true;
+    if (left < right) return false;
+  }
+  return true;
+}
+
+async function enforceVersion(admin: any, appVersion: string) {
+  const { data, error } = await admin.from("monitor_runtime_config")
+    .select("minimum_allowed_version,latest_version,update_mode")
+    .eq("id", true)
+    .maybeSingle();
+  if (error) return { ok: false, response: json({ error: "VERSION_CHECK_FAILED" }, 503) };
+  const minimumSupported = String(data?.minimum_allowed_version || "0.0.0");
+  const latest = String(data?.latest_version || minimumSupported);
+  const updateMode = data?.update_mode === "required" ? "required" : "optional";
+  const effectiveMinimum = updateMode === "required" ? latest : minimumSupported;
+  if (!versionAtLeast(appVersion, effectiveMinimum)) {
+    return { ok: false, response: json({
+      error: "APP_UPDATE_REQUIRED",
+      minimum_supported_version: minimumSupported,
+      latest_version: latest,
+      update_mode: updateMode,
+      effective_minimum_version: effectiveMinimum,
+    }, 426) };
+  }
+  return { ok: true, minimumSupported, latest, updateMode, effectiveMinimum };
+}
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
+}
+type Usage = { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+type ProviderDiagnostic = {kind:string;http_status:number;google_status:string;quota_metric:string;quota_id:string;retry_after:string|null;retryable:boolean};
+type AiFailure = { ok: false; status: number; retryAfter: string | null; detail: string; diagnostic?: ProviderDiagnostic };
+type AiSuccess = { ok: true; content: string; usage: Usage; finish_reason?: string; reasoning_tokens?: number };
+type AiResult = AiFailure | AiSuccess;
+
+async function callGroq(apiKey: string, payload: unknown): Promise<AiResult> {
+  try {
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const raw = await response.text();
+    if (!response.ok) return { ok: false, status: response.status, retryAfter: response.headers.get("retry-after"), detail: raw.slice(0, 1400) };
+    let decoded: any;
+    try { decoded = JSON.parse(raw); } catch { return { ok: false, status: 502, retryAfter: null, detail: "groq_invalid_response" }; }
+    const content = decoded?.choices?.[0]?.message?.content;
+    if (!content) return { ok: false, status: 502, retryAfter: null, detail: "groq_empty_response" };
+    const usage = decoded?.usage || {};
+    return { ok: true, content: String(content), usage: {
+      prompt_tokens: Number(usage.prompt_tokens || 0),
+      completion_tokens: Number(usage.completion_tokens || 0),
+      total_tokens: Number(usage.total_tokens || 0),
+    } };
+  } catch (error) {
+    return { ok: false, status: 502, retryAfter: null, detail: `groq_network_error: ${String(error).slice(0, 240)}` };
+  }
+}
+async function callCloudflare(accountId: string, token: string, payload: any, timeoutMs=0): Promise<AiResult> {
+  try {
+    const r = await fetch("https://api.cloudflare.com/client/v4/accounts/"+encodeURIComponent(accountId)+"/ai/run/@cf/openai/gpt-oss-120b", {
+      method:"POST",headers:{"Authorization":"Bearer "+token,"Content-Type":"application/json"},
+      signal:timeoutMs>0?AbortSignal.timeout(timeoutMs):undefined,
+      body:JSON.stringify({messages:payload.messages,temperature:Math.max(0,Math.min(1,Number(payload.temperature??0.1))),reasoning_effort:["low","medium","high"].includes(String(payload.reasoning_effort))?payload.reasoning_effort:"low",max_tokens:Math.max(800,Math.min(11000,payload.max_tokens||Math.min(4500,payload.max_completion_tokens||2400))),response_format:{type:"json_object"}})
+    });
+    const raw=await r.text();
+    if(!r.ok)return {ok:false,status:r.status,retryAfter:r.headers.get("retry-after"),detail:raw.slice(0,900)};
+    let data:any;try{data=JSON.parse(raw)}catch{return {ok:false,status:502,retryAfter:null,detail:"cloudflare_invalid_json"}}
+    const answer=data.result||data;
+    const rawContent=answer.response||answer.choices?.[0]?.message?.content||answer.output_text||answer.output?.filter((item:any)=>item.type==="message").flatMap((item:any)=>item.content||[]).filter((item:any)=>item.type==="output_text").map((item:any)=>item.text).join("\n")||answer.output?.[0]?.content?.[0]?.text;
+    const content=typeof rawContent==="object" && rawContent!==null ? JSON.stringify(rawContent) : rawContent;
+    if(typeof content!=="string"||!content.trim())return {ok:false,status:502,retryAfter:null,detail:"cloudflare_empty_reply: "+JSON.stringify({keys:Object.keys(answer||{}).slice(0,12),status:answer.status,finish_reason:answer.choices?.[0]?.finish_reason,usage:answer.usage,output_types:Array.isArray(answer.output)?answer.output.map((v:any)=>v.type).slice(0,5):undefined,errors:data.errors}).slice(0,500)};
+    const u=answer.usage||{};
+    return {ok:true,content,usage:{prompt_tokens:Number(u.prompt_tokens||0),completion_tokens:Number(u.completion_tokens||0),total_tokens:Number(u.total_tokens||0)},finish_reason:String(answer?.choices?.[0]?.finish_reason||answer?.finish_reason||"" ).slice(0,30),reasoning_tokens:Number(u?.completion_tokens_details?.reasoning_tokens||u?.output_tokens_details?.reasoning_tokens||0)};
+  }catch(e){return {ok:false,status:502,retryAfter:null,detail:String(e).slice(0,150)}}
+}
+// Safe provider metadata only: never record model input, raw HTTP body, user ID or keys.
+function providerField(v:unknown){return String(v||"").replace(/[^A-Za-z0-9._:/-]/g,"").slice(0,150);}
+function geminiDiagnostic(status:number, raw:string, header:string|null):ProviderDiagnostic{
+  let parsed:any={};try{parsed=JSON.parse(raw)}catch{ /* non-JSON upstream response */ }
+  const err=parsed&&typeof parsed.error==="object"?parsed.error:{};
+  const details=Array.isArray(err.details)?err.details:[];
+  const violations=details.flatMap((x:any)=>Array.isArray(x?.violations)?x.violations:[]);
+  const v=violations[0]||{};
+  const quota_metric=providerField(v.quotaMetric||v.quota_metric);
+  const quota_id=providerField(v.quotaId||v.quota_id);
+  const msg=[String(err.message||""),quota_metric,quota_id,...violations.map((x:any)=>String(x.description||""))].join(" ").toLowerCase();
+  let kind="provider_error";
+  if(status===429){
+    if(/rpd|daily|per.?day|perday|per_day|requests.?per.?day/i.test(msg))kind="daily_quota";
+    else if(/tpm|token.{0,20}minute|minute.{0,20}token|tokensperminute|tokens_per_minute/i.test(msg))kind="minute_tokens";
+    else if(/rpm|per.?minute|requests.{0,20}minute|requestsperminute|requests_per_minute/i.test(msg))kind="minute_requests";
+    else if(/spend.?cap|prepay.{0,20}(deplet|exhaust)|billing.?account.{0,20}(disabled|suspended)|credit.?balance.{0,20}(deplet|exhaust)/i.test(msg))kind="billing_limit";
+    else kind="quota_unknown";
+  }else if([500,502,503].includes(status)&&/overload|high.?demand|capacity|model.?busy/i.test(msg))kind="overloaded";
+  else if([500,502,503,504].includes(status))kind="unavailable";
+  const retryInfo=details.find((x:any)=>typeof x?.retryDelay==="string");
+  const hint=String(header||retryInfo?.retryDelay||"").trim();
+  const retry_after=/^\d+(?:\.\d+)?s?$/.test(hint)?hint:null;
+  return {kind,http_status:status,google_status:providerField(err.status),quota_metric,quota_id,retry_after,
+    retryable:kind==="minute_tokens"||kind==="minute_requests"};
+}
+function reportGeminiFailure(stage:string,model:string,diagnostic:ProviderDiagnostic){
+  console.warn("w_review_provider_failure "+JSON.stringify({provider:"gemini",stage,model:providerField(model),...diagnostic}));
+}
+
+async function callGemini(apiKey: string, model: string, prompt: string, schema: unknown, temperature = 0.1, stage = "unknown", timeoutMs=0, options?:{maxOutputTokens?:number;thinkingLevel?:"minimal"|"low"|"medium"|"high"}): Promise<AiResult> {
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+      method: "POST",
+      headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
+      signal: timeoutMs>0?AbortSignal.timeout(timeoutMs):undefined,
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature,
+          responseMimeType: "application/json",
+          responseSchema: schema,
+          ...(options?.maxOutputTokens?{maxOutputTokens:options.maxOutputTokens}:{}),
+          ...(options?.thinkingLevel?{thinkingConfig:{thinkingLevel:options.thinkingLevel}}:{}),
+        },
+      }),
+    });
+    const raw = await response.text();
+    if (!response.ok) {
+      const diagnostic=geminiDiagnostic(response.status,raw,response.headers.get("retry-after"));
+      reportGeminiFailure(stage,model,diagnostic);
+      return {ok:false,status:response.status,retryAfter:diagnostic.retry_after,detail:"gemini_"+diagnostic.kind,diagnostic};
+    }
+    let decoded: any;
+    try { decoded = JSON.parse(raw); } catch {
+      const diagnostic:ProviderDiagnostic={kind:"invalid_response",http_status:200,google_status:"",
+        quota_metric:"",quota_id:"",retry_after:null,retryable:false};
+      reportGeminiFailure(stage,model,diagnostic);
+      return {ok:false,status:502,retryAfter:null,detail:"gemini_invalid_response",diagnostic};
+    }
+    const parts = decoded?.candidates?.[0]?.content?.parts;
+    const content = Array.isArray(parts) ? parts.map((part: any) => String(part?.text || "")).join("").trim() : "";
+    if (!content) {
+      const diagnostic:ProviderDiagnostic={kind:"empty_response",http_status:200,google_status:"",
+        quota_metric:"",quota_id:"",retry_after:null,retryable:false};
+      reportGeminiFailure(stage,model,diagnostic);
+      return {ok:false,status:502,retryAfter:null,detail:"gemini_empty_response",diagnostic};
+    }
+    const usage = decoded?.usageMetadata || {};
+    return { ok: true, content, usage: {
+      prompt_tokens: Number(usage.promptTokenCount || 0),
+      completion_tokens: Number(usage.candidatesTokenCount || 0),
+      total_tokens: Number(usage.totalTokenCount || 0),
+    },finish_reason:String(decoded?.candidates?.[0]?.finishReason||"").slice(0,30),
+    reasoning_tokens:Number(usage.thoughtsTokenCount||0) };
+  } catch (_error) {
+    const diagnostic:ProviderDiagnostic={kind:"network_error",http_status:502,google_status:"",
+      quota_metric:"",quota_id:"",retry_after:null,retryable:false};
+    reportGeminiFailure(stage,model,diagnostic);
+    return {ok:false,status:502,retryAfter:null,detail:"gemini_network_error",diagnostic};
+  }
+}
+function density(value: unknown) { return value === "minimum" || value === "many" || value === "all" ? value : "moderate"; }
+function normalizeAnchor(value: string) {
+  return value.toLocaleLowerCase("ru-RU").replace(/[\s\u00a0]+/g, " ").trim();
+}
+function suspiciousAnchors(review: string, evidence: string) {
+  const found = new Set<string>();
+  const candidates = [
+    ...(review.match(/\b\d[\d\s.,%–—-]{0,24}\b/g) || []),
+    ...(review.match(/«[^»]{10,220}»/g) || []),
+  ];
+  const haystack = normalizeAnchor(evidence);
+  for (const raw of candidates) {
+    const value = raw.trim();
+    if (value.length < 2) continue;
+    if (!haystack.includes(normalizeAnchor(value))) found.add(value);
+    if (found.size >= 30) break;
+  }
+  return Array.from(found);
+}
+
+function lightPreflightWarnings(review: string, evidence: string): string[] {
+  // No second model call: inexpensive diagnostic checks before returning the one generated draft.
+  // Signals are advisory, never block the editor or DOCX export.
+  const warnings: string[] = [];
+  const numbers = (value: string) => Array.from(value.matchAll(/\b\d+(?:[ \u00a0]\d{3})*(?:[.,]\d+)?\b/g))
+    .map((entry) => entry[0].replace(/[\s\u00a0]/g, "").replace(",", "."));
+  const knownNumbers = new Set(numbers(evidence));
+  for (const number of new Set(numbers(review))) {
+    if (!knownNumbers.has(number)) warnings.push("число " + number);
+    if (warnings.length >= 4) break;
+  }
+  // Check only plausible personal names; inflected surnames are compared by a stable root.
+  const haystack = evidence.toLocaleLowerCase("ru-RU");
+  const properNames = Array.from(new Set(review.match(/[А-ЯЁ][а-яё]{2,}\s+[А-ЯЁ][а-яё]{3,}/g) || []));
+  for (const fullName of properNames) {
+    const surname = fullName.split(/\s+/).at(-1)!.toLocaleLowerCase("ru-RU");
+    const root = surname.slice(0, Math.max(4, surname.length - 2));
+    if (root.length >= 4 && !haystack.includes(root)) warnings.push("имя/название «" + fullName + "»");
+    if (warnings.length >= 6) break;
+  }
+  return warnings.slice(0, 6);
+}
+
+function parseModelJson(result: { content: string }) { try { return JSON.parse(result.content); } catch { return null; } }
+function aiError(provider: "groq" | "gemini", result: AiFailure) {
+  const rate = result.status === 429;
+  return json({
+    error: rate ? `${provider}_rate_limit` : `${provider}_error`,
+    detail: result.detail,
+    retry_after: result.retryAfter,
+    provider,
+  }, rate ? 429 : 502);
+}
+
+const evidencePrompt = "Ты готовишь одну доказательную Evidence Card на один исходный материал для обзора тенденций медиаполя.\nКаждый материал анализируй ОТДЕЛЬНО, не добавляй внешних знаний и не подменяй позицию одного издания позицией другого.\nВ поле evidence выдай структурированный текст с названиями полей в указанном порядке:\nTITLE_ORIGINAL: исходный заголовок, дословно.\nTITLE_RU: точный русский перевод заголовка, если исходник иноязычный; иначе исходный.\nMAIN_FACTS: важные подтвержденные факты, даты, имена, цифры; не придумывать.\nMEDIA_ANGLE: смысловой акцент редакции и уникальный подход публикации, не реферат.\nEDITORIAL_STANCE: supportive | critical | concerned | neutral | mixed | unestablished — только собственная подтвержденная позиция редакции, НЕ тональность цитируемого политика, эксперта или чужой газеты.\nSTANCE_EVIDENCE: явное подтверждение собственной оценки редакции; если нет — не установлена.\nQUOTES_WITH_SPEAKERS: до 4 подлинных цитат/заголовков; для каждой раздельно ORIGINAL, RU, SPEAKER, ROLE (editorial, journalist, expert, politician, other, unknown), KIND (headline, direct_quote, attributed_quote).\nEXPERTS: именованные независимые эксперты, их должности и аргументы из публикации; политический лидер не считается экспертом автоматически.\nEXPLANATIONS: только реально приведенные объяснения и прогнозы с именем автора.\nUNIQUE_DETAILS: важные необычные факты и противоречащие оценки из источника.\nLIMITS: ограничения выводов, особенно если собственная позиция редакции не установлена.\nЕсли материал богат фактурой, сохраняй достаточную подробность для полноценного аналитического обзора.\nЧужая цитата не делает ее позицией редакции. Различай поддержку, критику, беспокойство и нейтральное сообщение.\nОтвет пачки — JSON {cards:[{index:0,evidence:\"...\"},...]} с полем evidence как СТРОКОЙ. Не добавляй никаких самостоятельных этапов проверки.";
+
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const authHeader = req.headers.get("Authorization") || "";
+  const client = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: authHeader } }, auth: { persistSession: false } });
+  const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+  const { data: authData, error: authError } = await client.auth.getUser();
+  if (authError || !authData.user) return json({ error: "unauthorized" }, 401);
+  const { data: profile, error: profileError } = await admin.from("monitor_profiles").select("is_admin,status").eq("id", authData.user.id).maybeSingle();
+  if (profileError || !profile || profile.status !== "active") return json({ error: "access_denied" }, 403);
+  if (!profile.is_admin) {
+    const [{ data: moduleAccess, error: moduleError }, { data: personalAccess, error: personalError }] = await Promise.all([
+      admin.from("monitor_access").select("enabled").eq("monitor_key", "w_review").maybeSingle(),
+      admin.from("user_monitor_access").select("enabled").eq("user_id", authData.user.id).eq("monitor_key", "w_review").maybeSingle(),
+    ]);
+    if (moduleError || personalError) return json({ error: "w_review_access_check_failed" }, 503);
+    if (!moduleAccess?.enabled || !personalAccess?.enabled) return json({ error: "w_review_disabled" }, 403);
+  }
+
+  const groqApiKey = Deno.env.get("GROQ_W_REVIEW_API_KEY") || "";
+  const geminiApiKey = Deno.env.get("GEMINI_API_KEY") || Deno.env.get("GOOGLE_GEMINI_API_KEY") || Deno.env.get("GOOGLE_API_KEY") || "";
+  const geminiModel = Deno.env.get("GEMINI_W_REVIEW_MODEL") || "gemini-3.6-flash";
+
+  let body: any;
+  try { body = await req.json(); } catch { return json({ error: "invalid_json" }, 400); }
+  const versionCheck = await enforceVersion(admin, String(body?.app_version || "0.8.11"));
+  if (!versionCheck.ok) return versionCheck.response;
+  const action = String(body?.action || "");
+
+  if (action === "evidence_batch") {
+    if (!geminiApiKey && !groqApiKey) return json({ error: "w_review_evidence_providers_not_configured" }, 503);
+    const items = Array.isArray(body?.items) ? body.items : [];
+    if (!items.length) return json({ error: "no_items" }, 400);
+    if (items.length > 2) return json({ error:"evidence_batch_too_large", max_items:2 },400);
+    let totalChars = 0;
+    const normalized = items.map((item: any, index: number) => {
+      const text = String(item?.text || "").trim();
+      totalChars += text.length;
+      return { index, source: String(item?.source || "").trim().slice(0, 300), title: String(item?.title || "").trim().slice(0, 600), text };
+    });
+    if (normalized.some((item: any) => !item.text || item.text.length > 10000) || totalChars > 20000)
+      return json({error:"evidence_article_too_long",max_article_chars:10000,max_batch_chars:20000,max_items:2},400);
+    const materialText = normalized.map((item: any) => `MATERIAL_${item.index + 1}\nИСТОЧНИК: «${item.source}»\nЗАГОЛОВОК: ${item.title}\nТЕКСТ:\n${item.text}`).join("\n\n---\n\n");
+    const schema = {
+      type: "OBJECT",
+      properties: {
+        cards: {
+          type: "ARRAY",
+          minItems: normalized.length,
+          maxItems: normalized.length,
+          items: {
+            type: "OBJECT",
+            properties: { index: { type: "INTEGER" }, evidence: { type: "STRING" } },
+            required: ["index", "evidence"],
+          },
+        },
+      },
+      required: ["cards"],
+    };
+    const prompt = `${evidencePrompt}\n\nВерни ровно ${normalized.length} карточек в том же порядке. Поле index: 0 для MATERIAL_1, 1 для MATERIAL_2 и так далее.\n\n${materialText}`;
+    const models = geminiApiKey ? [...new Set(["gemini-3.5-flash-lite", geminiModel])] : [];
+    let result: AiResult | null = null;
+    let parsed: any = null;
+    let usedModel = "";
+    let lastError = "";
+    let lastGeminiFailure:AiFailure|null=null;
+    gemini_models: for (const model of models) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const candidate = await callGemini(geminiApiKey, model, prompt, schema, 0.1, "evidence_batch");
+        if (candidate.ok) {
+          const data = parseModelJson(candidate);
+          if (data && Array.isArray(data.cards) && data.cards.length === normalized.length &&
+              data.cards.every((c: any, i: number) => Number(c.index) === i && String(c.evidence || "").trim())) {
+            result = candidate; parsed = data; usedModel = model; break;
+          }
+          lastError = model + ": invalid evidence cards";
+        } else {
+          lastGeminiFailure=candidate;
+          lastError = model + ": HTTP " + candidate.status + " " + candidate.detail;
+          if (candidate.status === 429) break gemini_models; // Immediately use Groq instead of repeating Gemini.
+          if (![500, 502, 503, 504].includes(candidate.status)) break;
+        }
+        if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 1200));
+      }
+      if (result) break;
+    }
+    if ((!result || !parsed) && groqApiKey) {
+      console.info("w_review_provider_fallback "+JSON.stringify({stage:"evidence_batch",from:"gemini",to:"groq",
+        trigger:lastGeminiFailure?.diagnostic?.kind||"other",http_status:lastGeminiFailure?.status||null}));
+      const groqResult = await callGroq(groqApiKey, {
+        model: "openai/gpt-oss-20b",
+        reasoning_effort: "low",
+        reasoning_format: "hidden",
+        temperature: 0.1,
+        response_format: { type: "json_object" },
+        max_completion_tokens: 5000,
+        messages: [
+          {role: "system", content: "Создай Evidence Cards строго по текстам пользователя. Ответ только валидный JSON-объект с полем cards — массивом объектов index (целое число с нуля) и evidence (непустая строка). Число карточек должно соответствовать числу исходных материалов. Никаких вымышленных фактов."},
+          {role: "user", content: prompt}
+        ]
+      });
+      if (groqResult.ok) {
+        const data = parseModelJson(groqResult);
+        if (Array.isArray(data?.cards) && data.cards.length === normalized.length &&
+            data.cards.every((c: any, i: number) => Number(c.index) === i && String(c.evidence || "").trim())) {
+          result = groqResult; parsed = data; usedModel = "openai/gpt-oss-20b";
+        } else lastError += "; groq_invalid_cards";
+      } else lastError += "; groq_HTTP_" + groqResult.status + ": " + groqResult.detail.slice(0, 200);
+    }
+    if (!result || !parsed) return json({error:"evidence_providers_unavailable",
+      detail:lastError.slice(0,350),provider:"gemini_groq",issue:lastGeminiFailure?.diagnostic||null,
+      retryable:false},503);
+    const cards = parsed.cards.map((card: any) => ({index: Number(card.index), evidence: String(card.evidence || "").trim()}));
+    if (cards.length !== normalized.length || cards.some((card: any, index: number) => card.index !== index || !card.evidence)) return json({error:"invalid_evidence_cards",provider:"gemini",model:usedModel},502);
+    return json({ cards, model: usedModel, provider: usedModel.startsWith("openai/") ? "groq" : "gemini", usage: result.usage });
+  }
+
+  if (action === "style_profile") {
+    // Author samples are kept intact. Groq's free-tier TPM cannot reliably process 4-5 full samples.
+    const samples = Array.isArray(body?.samples)
+      ? body.samples.map((v: unknown) => String(v || "").trim()).filter(Boolean).slice(0, 5) : [];
+    const combined = samples.join("\n\n--- SAMPLE ---\n\n");
+    if (!samples.length || combined.length > 70000) return json({ error: "invalid_samples", max_chars: 70000 }, 400);
+    const cfAccount = Deno.env.get("CLOUDFLARE_ACCOUNT_ID") || "";
+    const cfToken = Deno.env.get("CLOUDFLARE_API_TOKEN") || "";
+    if (!(cfAccount && cfToken) && !geminiApiKey) return json({error:"w_review_style_providers_not_configured"},503);
+    const sections = ["OPENING","COMPOSITION","PARAGRAPH_RHYTHM","QUOTES","HEADLINES",
+      "SOURCE_ATTRIBUTION","EXPERTS","FACT_VS_INTERPRETATION","TRANSITIONS","GENERALIZATION",
+      "ENDING","LEXICON","AVOID","FORMATTING_CUES"];
+    const styleInstruction = `Построй STYLE PROFILE V2 по авторским образцам медиаобзоров. Не пересказывай содержание образцов и не копируй длинные фразы. Базовый жанр W-Review задан отдельно: обобщающий взгляд на медиаполе через главные смысловые акценты, а не последовательный разбор источников.
+Желательно раскрыть все 14 тематических разделов со следующими заголовками (допустимы заголовки на русском языке и небольшие отклонения в оформлении):
+${sections.join("; ")}.
+В каждом разделе опиши конкретные повторяющиеся стилистические особенности, которые видны в образцах. Пиши по-русски. Объясни, КАК автор строит обзор, а не ЧТО он сообщил. Не выдумывай признаки, которых нельзя вывести из образцов.
+Целевой объём самого style_profile — 5000–8000 знаков. Верни ОДИН JSON-объект с полем style_profile (строка), без Markdown вокруг JSON.`;
+    const stylePrompt = styleInstruction + "\n\nАВТОРСКИЕ ОБРАЗЦЫ:\n" + combined;
+    const schema={type:"OBJECT",properties:{style_profile:{type:"STRING"}},required:["style_profile"]};
+    const quality = (value:AiResult) => {
+      const data = value.ok ? parseModelJson(value) : null;
+      const profile = typeof data?.style_profile === "string" ? data.style_profile.trim() : "";
+      const found = sections.filter((name:string) => new RegExp("(?:^|\\n)\\s*(?:\\d{1,2}[.)]\\s*)?(?:\\*\\*)?" + name + "\\b", "im").test(profile));
+      // Provider output may use Russian titles, bullets or inline labels. A missing
+      // literal English heading is not evidence that a substantive profile is invalid.
+      // Treat section count as advisory telemetry, not a hard pass/fail condition.
+      return {profile,sectionsFound:found.length,ok:profile.length>=2000 && profile.length<=10000};
+    };
+    let result:AiResult=cfAccount && cfToken
+      ? await callCloudflare(cfAccount,cfToken,{
+          messages:[{role:"system",content:styleInstruction},{role:"user",content:combined}],
+          max_tokens:6500
+        })
+      : {ok:false,status:503,retryAfter:null,detail:"cloudflare_unconfigured"};
+    let check=quality(result);
+    let usedProvider="cloudflare",usedModel="@cf/openai/gpt-oss-120b";
+    if (!check.ok && geminiApiKey) {
+      console.info("w_review_provider_fallback "+JSON.stringify({
+        stage:"style_profile",from:"cloudflare",to:"gemini",
+        trigger:result.ok?"insufficient_style_profile":"provider_error",
+        http_status:result.ok?200:result.status,sections_found:check.sectionsFound
+      }));
+      const backup=await callGemini(geminiApiKey,"gemini-3.5-flash-lite",stylePrompt,schema,0.1,"style_profile_backup");
+      const checkBackup=quality(backup);
+      if (checkBackup.ok || (!check.ok && checkBackup.sectionsFound>check.sectionsFound && checkBackup.profile.length>=2500)) {
+        result=backup;check=checkBackup;usedProvider="gemini";usedModel="gemini-3.5-flash-lite";
+      } else if (!result.ok) {
+        result=backup;check=checkBackup;usedProvider="gemini";usedModel="gemini-3.5-flash-lite";
+      }
+    }
+    if (!check.ok) {
+      console.warn("w_review_style_profile_incomplete "+JSON.stringify({
+        provider:usedProvider,sections_found:check.sectionsFound,chars:check.profile.length
+      }));
+      if (!result.ok) return json({error:"style_providers_unavailable",provider:usedProvider,
+        status:result.status,detail:String(result.detail).slice(0,180)},503);
+      return json({error:"invalid_style_profile",provider:usedProvider,
+        sections_found:check.sectionsFound,chars:check.profile.length,min_chars:2000},502);
+    }
+    return json({style_profile:check.profile,model:usedModel,provider:usedProvider,
+      style_chars:check.profile.length,sections_found:check.sectionsFound,
+      usage:result.ok?result.usage:{prompt_tokens:0,completion_tokens:0,total_tokens:0}});
+  }
+
+  if (action === "editorial_map") {
+    if (!geminiApiKey && !groqApiKey) return json({ error: "w_review_map_providers_not_configured" }, 503);
+    const task = String(body?.task || "").trim();
+    if (!task || task.length > 2000) return json({ error: "invalid_task", max_chars: 2000 }, 400);
+    const submittedCards = Array.isArray(body?.evidence_cards) ? body.evidence_cards : [];
+    if (submittedCards.length > 18) return json({error:"w_review_max_articles",limit:18},400);
+    const cards = submittedCards.map((v: unknown) => String(v || "").trim()).filter(Boolean);
+    if (!cards.length) return json({ error: "no_evidence_cards" }, 400);
+    const evidenceText = cards.map((card: string, index: number) => `P${String(index + 1).padStart(2, "0")}\n${card}`).join("\n\n");
+    if (evidenceText.length > 85000) return json({ error: "evidence_too_large", max_chars: 85000 }, 400);
+    const schema = {
+      type: "OBJECT",
+      properties: {
+        trends: { type: "ARRAY", minItems: 1, maxItems: 5, items: {
+          type: "OBJECT",
+          properties: {
+            id: { type: "STRING" }, title: { type: "STRING" }, summary: { type: "STRING" },
+            sources: { type: "ARRAY", items: { type: "STRING" } },
+          },
+          required: ["id", "title", "summary", "sources"],
+        } },
+        inventory: { type: "OBJECT", properties: {
+          quotes: { type: "INTEGER" }, headlines: { type: "INTEGER" }, experts: { type: "INTEGER" },
+        }, required: ["quotes", "headlines", "experts"] },
+      },
+      required: ["trends", "inventory"],
+    };
+    const prompt = `Ты редактор, который строит короткую Editorial Map перед написанием обзора. Определи от 1 до 5 наиболее ярких и содержательных ТЕНДЕНЦИЙ/АКЦЕНТОВ всего медиаполя по задаче оператора. Это смысловые линии темы, а не группы "какие СМИ сказали X, а какие Y". Не создавай тренд из-за отсутствия позиции у части источников. Строго выполняй поле ИСКЛЮЧЕНИЯ из задания оператора: запрещённые аспекты не должны попасть в тенденции.
+
+Для каждой тенденции:
+- title: короткое редакционное название;
+- summary: 1–2 предложения, что проявилось и почему это важно для обзора;
+- sources: несколько СМИ, дающих материал для линии.
+
+Также посчитай пригодные элементы во всём пуле:
+quotes — содержательные прямые цитаты;
+headlines — выразительные заголовки/формулировки;
+experts — отдельные комментарии реально названных профильных экспертов; политических лидеров и непосредственных участников события экспертами не считать.
+Считай только реально присутствующие элементы.
+
+ЗАДАНИЕ ОПЕРАТОРА:
+${task}
+
+EVIDENCE CARDS:
+${evidenceText}`;
+    let result:AiResult=geminiApiKey
+      ? await callGemini(geminiApiKey, geminiModel, prompt, schema, 0.1, "editorial_map")
+      : {ok:false,status:503,retryAfter:null,detail:"gemini_not_configured"};
+    if (!result.ok && result.status !== 429 && geminiApiKey && geminiModel !== "gemini-3.5-flash-lite") {
+      result = await callGemini(geminiApiKey, "gemini-3.5-flash-lite", prompt, schema, 0.1, "editorial_map_fallback");
+    }
+    let provider = "gemini";
+    const geminiProblem = !result.ok ? result.diagnostic||null : null;
+    if (!result.ok && groqApiKey) {
+      console.info("w_review_provider_fallback "+JSON.stringify({stage:"editorial_map",from:"gemini",to:"groq",trigger:!result.ok?result.diagnostic?.kind||"other":"other",http_status:!result.ok?result.status:null}));
+      const fallback = await callGroq(groqApiKey, {model:"openai/gpt-oss-20b",response_format:{type:"json_object"},reasoning_effort:"low",reasoning_format:"hidden",max_completion_tokens:3500,messages:[{role:"system",content:"Верни JSON с массивом trends (id,title,summary,sources) и объектом inventory (quotes,headlines,experts). Основывайся только на данных пользователя."},{role:"user",content:prompt}]});
+      if (fallback.ok) {result = fallback;provider = "groq";}
+    }
+    if (!result.ok) return json({error:"editorial_map_providers_unavailable",
+      provider:"gemini_groq",issue:geminiProblem,retryable:false},503);
+    const parsed = parseModelJson(result);
+    if (!parsed || !Array.isArray(parsed.trends) || !parsed.inventory) return json({ error: "invalid_editorial_map", provider }, 502);
+    return json({ editorial_map: parsed, model: provider === "groq" ? "openai/gpt-oss-20b" : geminiModel, provider, usage: result.usage });
+  }
+
+  if (action === "verify_review") {
+    if (!geminiApiKey) return json({ error: "w_review_gemini_not_configured" }, 503);
+    const review = String(body?.review_text || "").trim();
+    const task = String(body?.task || "").trim();
+    const cards = Array.isArray(body?.evidence_cards) ? body.evidence_cards.map((v: unknown) => String(v || "").trim()).filter(Boolean).slice(0, 30) : [];
+    if (!review || !cards.length) return json({ error: "missing_verify_input" }, 400);
+    const evidenceText = cards.map((card: string, index: number) => `P${String(index + 1).padStart(2, "0")}\n${card}`).join("\n\n");
+    if (evidenceText.length > 85000) return json({ error: "evidence_too_large", max_chars: 85000 }, 400);
+    const anchors = suspiciousAnchors(review, evidenceText);
+    const schema = {
+      type: "OBJECT",
+      properties: {
+        verified_text: { type: "STRING" },
+        claims_total: { type: "INTEGER" },
+        supported_claims: { type: "INTEGER" },
+        partial_claims_rewritten: { type: "INTEGER" },
+        unsupported_claims_removed: { type: "INTEGER" },
+        issues: { type: "ARRAY", maxItems: 12, items: { type: "STRING" } }
+      },
+      required: ["verified_text","claims_total","supported_claims","partial_claims_rewritten","unsupported_claims_removed","issues"]
+    };
+    const prompt = `Ты независимый факт-верификатор W-Review. Проверяй ТОЛЬКО по Evidence Cards ниже. Запрещено использовать собственные знания, память модели, интернет или правдоподобные догадки.
+
+ЗАДАЧА:
+1. Разбей черновик на проверяемые фактические утверждения.
+2. Для каждого имени, должности, числа, даты, события, прямой цитаты, причинной связи и утверждения о позиции стороны требуй опору в Evidence.
+3. SUPPORTED — смысл прямо подтверждён Evidence.
+4. PARTIAL — подтверждена только часть: перепиши фразу ровно до подтверждённого уровня.
+5. UNSUPPORTED — подтверждения нет: полностью удали это утверждение.
+6. Прямые цитаты сохраняй только если они дословно присутствуют в Evidence.
+7. Не добавляй НИКАКОЙ новой фактуры при исправлении.
+8. Редакционные обобщения разрешены лишь как явно аналитические формулировки ("в публикациях просматривается", "медиа акцентируют"), если они выводятся минимум из двух Evidence Cards.
+9. Сохрани композицию, язык, подзаголовки и стиль насколько возможно.
+10. verified_text должен содержать уже очищенный финальный текст, в котором не осталось неподтверждённых фактических утверждений.
+
+Особенно проверь эти автоматически подозрительные якоря, которых нет дословно в Evidence; это сигнал для проверки, а не автоматический приговор:
+${anchors.length ? anchors.map((v) => "- " + v).join("\n") : "нет"}
+
+ЗАДАНИЕ ОПЕРАТОРА:
+${task || "не указано"}
+
+ЧЕРНОВИК:
+${review}
+
+EVIDENCE CARDS:
+${evidenceText}`;
+    const cfToken = Deno.env.get("CLOUDFLARE_API_TOKEN") || "";
+    const cfAccount = Deno.env.get("CLOUDFLARE_ACCOUNT_ID") || "";
+    if (!cfToken || !cfAccount) return json({error:"cloudflare_verifier_not_configured"},503);
+    // Return audit findings only: never ask a verifier to rewrite the entire review.
+    const auditPrompt = "Проверяй текст строго по предоставленным Evidence Cards. КРИТИЧЕСКОЕ ПРАВИЛО: для подтверждения факта, числа, цитаты или позиции достаточно ОДНОЙ Evidence Card. НЕЛЬЗЯ считать факт спорным лишь потому, что остальные источники его не повторяют. Разные издания вправе сообщать разные факты об одном событии. Проверяй также точность атрибуции: если написано, что число приводит конкретное СМИ, оно должно присутствовать именно в карточке этого СМИ. Если источник не указан, достаточно любой одной карточки. Не требуй консенсуса между СМИ. Не применяй правило двух источников к обычным фактам. Русский перевод иностранной цитаты или заголовка НЕ является вымышленной цитатой: проверяй точность передачи смысла по оригиналу Evidence Card, а не буквальное совпадение разных языков. Белорусские цитаты можно сохранять в оригинале. Не переписывай обзор. В issues включай только конкретные фактические ошибки, неверные атрибуции или сведения, которых нет ни в одной карточке. НЕ заноси в issues отсутствие повторения факта в других карточках. Числа partial_claims_rewritten и unsupported_claims_removed учитывают ТОЛЬКО такие реальные ошибки. Если не можешь доказать ошибку, не объявляй её. Верни JSON с claims_total, supported_claims, partial_claims_rewritten, unsupported_claims_removed и issues (массив строк).\\n\\nЗАДАНИЕ: "+task+"\\n\\nЧЕРНОВИК:\\n"+review+"\\n\\nEVIDENCE CARDS:\\n"+evidenceText;
+    const result = await callCloudflare(cfAccount,cfToken,{
+      messages:[{role:"system",content:"Ты строгий аудитор достоверности. Только JSON. Не генерируй новую редакцию обзора; только проверочные замечания и числовые показатели."},{role:"user",content:auditPrompt}],
+      max_completion_tokens:3500
+    });
+    if (!result.ok) return json({error:"cloudflare_fact_verifier_unavailable",detail:result.detail.slice(0,700),http_status:result.status},503);
+    const parsed = parseModelJson(result);
+    const required = ["claims_total","supported_claims","partial_claims_rewritten","unsupported_claims_removed"];
+    if (!parsed || !Array.isArray(parsed.issues) || !required.every((key)=>Number.isFinite(Number(parsed[key]))))
+      return json({error:"cloudflare_invalid_audit_json",detail:"Верификатор не вернул проверочные показатели. Черновик сохранён."},502);
+    const verifierModel = "@cf/openai/gpt-oss-120b";
+    const provider = "cloudflare";
+
+    // A verifier must NEVER silently rewrite the operator's reviewed draft.
+    // Report questionable claims as an error instead of destructively replacing the draft.
+    const reportedIssues: string[] = Array.isArray(parsed.issues) ? parsed.issues.map((v: unknown) => String(v || "").trim()).filter(Boolean).slice(0,12) : [];
+    const invalidConsensusReason = (issue:string) => /(?:другие|остальные|других|остальных)\\s+(?:источник|издан|сми)|не\\s+(?:приводят|повторяют|подтверждают)\\s+(?:остальные|другие)|подтвержден[аоы]?\\s+только\\s+в\\s+P\\d+/i.test(issue) && !/неверн[аоы]?\\s+атрибуц|приписан[аоы]?\\s+не\\s+тому/i.test(issue);
+    const issues = reportedIssues.filter((issue)=>!invalidConsensusReason(issue));
+    const partialCount = issues.length ? Math.max(0, Number(parsed.partial_claims_rewritten || 0)) : 0;
+    const removedCount = issues.length ? Math.max(0, Number(parsed.unsupported_claims_removed || 0)) : 0;
+    if (partialCount > 0 || removedCount > 0 || issues.length > 0) {
+      return json({verified_text:review,fact_check:{
+        verified:false, claims_total:Math.max(0,Number(parsed.claims_total||0)),
+        supported_claims:Math.max(0,Number(parsed.supported_claims||0)),
+        partial_claims_rewritten:partialCount,unsupported_claims_removed:removedCount,
+        suspicious_anchors:0,issues:issues.length?issues:["Проверка указала на спорные утверждения без детализации. Требуется дополнительная проверка."]
+      },model:verifierModel,provider,usage:result.usage});
+    }
+    if (review.length > 500 && Number(parsed.claims_total || 0) < 1) return json({error:"fact_verification_incomplete",provider,detail:"Нет подтверждения проверки утверждений."},409);
+    const verifiedText = review;
+    return json({
+      verified_text: verifiedText,
+      fact_check: {
+        verified: true,
+        claims_total: Math.max(0, Number(parsed.claims_total || 0)),
+        supported_claims: Math.max(0, Number(parsed.supported_claims || 0)),
+        partial_claims_rewritten: Math.max(0, Number(parsed.partial_claims_rewritten || 0)),
+        unsupported_claims_removed: Math.max(0, Number(parsed.unsupported_claims_removed || 0)),
+        suspicious_anchors: anchors.length,
+        issues: Array.isArray(parsed.issues) ? parsed.issues.map((v: unknown) => String(v || "").trim()).filter(Boolean).slice(0, 12) : [],
+      },
+      model: verifierModel,
+      provider,
+      usage: result.usage
+    });
+  }
+
+  if (action === "expand_review") {
+    if (!geminiApiKey) return json({ error: "w_review_gemini_not_configured" }, 503);
+    const task = String(body?.task || "").trim();
+    const targetChars = Math.max(1000, Math.min(12000, Number(body?.target_chars || 3000)));
+    const draft = String(body?.draft || "").trim();
+    const cards = Array.isArray(body?.evidence_cards) ? body.evidence_cards.map((v: unknown) => String(v || "").trim()).filter(Boolean).slice(0, 30) : [];
+    const styleProfile = String(body?.style_profile || "").trim().slice(0, 10000);
+    const trends = Array.isArray(body?.trends) ? body.trends.slice(0, 5) : [];
+    const sourceNames = Array.isArray(body?.source_names) ? body.source_names.map((v: unknown) => String(v || "").trim()).filter(Boolean).slice(0, 30) : [];
+    if (!task || !draft || !cards.length || !trends.length) return json({ error: "missing_expand_input" }, 400);
+    const d = body?.density || {};
+    const quoteDensity = density(d.quotes), headlineDensity = density(d.headlines), expertDensity = density(d.experts);
+    const evidenceText = cards.map((card: string, index: number) => `P${String(index + 1).padStart(2, "0")}\n${card}`).join("\n\n");
+    if (evidenceText.length > 85000) return json({ error: "evidence_too_large", max_chars: 85000 }, 400);
+    const trendText = trends.map((trend: any, index: number) => `${index + 1}. ${String(trend?.title || "")}: ${String(trend?.summary || "")}`).join("\n");
+    const canonicalSources = sourceNames.length ? sourceNames.map((name: string) => `«${name}»`).join(", ") : "используй названия из Evidence Cards";
+    const densityRule = (name: string, value: string) => value === "minimum" ? `${name}: редко, только самые сильные 1–2 элемента, если доступны.` : value === "all" ? `${name}: использовать все реально найденные пригодные элементы этого типа, без выдумывания.` : value === "many" ? `${name}: насыщенно, использовать большинство сильных элементов без перегруза.` : `${name}: умеренно, несколько лучших элементов.`;
+    const minChars = Math.floor(targetChars * 0.90);
+    const maxChars = Math.ceil(targetChars * 1.08);
+
+    const payload = {
+      model: "openai/gpt-oss-120b",
+      reasoning_effort: "low",
+      reasoning_format: "hidden",
+      temperature: 0.18,
+      max_completion_tokens: Math.min(2600, Math.max(1400, Math.ceil(targetChars / 3.0) + 500)),
+      messages: [
+        { role: "system", content: `Ты редактор W-Review. Тебе дан уже написанный, но слишком короткий обзор. НЕ переписывай его в более кратком виде и НЕ начинай заново с иной концепцией. Расширь существующий текст содержательно до ${minChars}–${maxChars} знаков видимого review_text.
+
+Добавляй только подтверждённые Evidence Cards детали, цитаты, имена, факты и аспекты уже утверждённых тенденций. Не создавай новый факт ради объёма и не повторяй уже сказанное другими словами.
+
+EVIDENCE-ONLY CONTRACT:
+- не используй внешние знания модели, память или догадки;
+- каждое имя, должность, число, дата, цитата, событие и причинная связь должны подтверждаться Evidence;
+- если подтверждения недостаточно — не добавляй утверждение;
+- не склеивай разные детали в новый факт;
+- объём никогда не важнее доказательности.
+
+Сохрани редакционный контракт:
+- обзор строится по тенденциям, а не поочерёдно по источникам;
+- названия СМИ только в «ёлочках»;
+- группы источников в круглых скобках только в конце законченного предложения перед точкой;
+- если в Evidence есть имя эксперта, используй имя; если имени нет — не придумывай;
+- не используй Markdown;
+- не заканчивай автоматически «Таким образом»;
+- канонические источники: ${canonicalSources};
+- ${densityRule("Цитаты", quoteDensity)}
+- ${densityRule("Заголовки", headlineDensity)}
+- ${densityRule("Эксперты", expertDensity)}
+
+Верни 3–4 точные фразы из итогового текста в bold_phrases и подзаголовки в section_titles. Проверка длины обязательна: review_text короче ${minChars} знаков недопустим.
+
+STYLE PROFILE:
+${styleProfile || "Живой сдержанный редакционный стиль."}` },
+        { role: "user", content: `ЗАДАНИЕ:\n${task}\n\nУТВЕРЖДЁННЫЕ ТЕНДЕНЦИИ:\n${trendText}\n\nТЕКУЩИЙ СЛИШКОМ КОРОТКИЙ ОБЗОР:\n${draft}\n\nEVIDENCE CARDS:\n${evidenceText}` }
+      ],
+      response_format: { type: "json_schema", json_schema: { name: "w_review_expand_v1", strict: true, schema: {
+        type: "object",
+        properties: {
+          review_text: { type: "string" },
+          section_titles: { type: "array", items: { type: "string" }, maxItems: 5 },
+          bold_phrases: { type: "array", items: { type: "string" }, minItems: 3, maxItems: 4 }
+        },
+        required: ["review_text", "section_titles", "bold_phrases"],
+        additionalProperties: false
+      } } }
+    };
+    const synthesisModel = "gemini-3.5-flash";
+    const synthesisSchema = {type:"OBJECT",properties:{review_text:{type:"STRING"},section_titles:{type:"ARRAY",items:{type:"STRING"}},bold_phrases:{type:"ARRAY",items:{type:"STRING"}}},required:["review_text","section_titles","bold_phrases"]};
+    const synthesisPrompt = payload.messages.map((m: any) => m.content).join("\n\n");
+    let result = await callGemini(geminiApiKey, synthesisModel, synthesisPrompt, synthesisSchema, 0.2, "expand_review");
+    let selectedModel = synthesisModel;
+    let parsed = result.ok ? parseModelJson(result) : null;
+    if ((!result.ok && result.status !== 429) || (result.ok && !String(parsed?.review_text || "").trim())) {
+      const fallbackModel = "gemini-3.6-flash";
+      const fallback = await callGemini(geminiApiKey, fallbackModel, synthesisPrompt, synthesisSchema, 0.2, "expand_review_fallback");
+      if (fallback.ok && String(parseModelJson(fallback)?.review_text || "").trim()) {
+        result = fallback; parsed = parseModelJson(fallback); selectedModel = fallbackModel;
+      } else if (!result.ok) result = fallback;
+    }
+    if (!result.ok) return aiError("gemini", result);
+    if (!parsed || !String(parsed.review_text || "").trim()) return json({error:"invalid_synthesis_output"},502);
+    return json({
+      review_text: String(parsed.review_text || "").trim(),
+      section_titles: Array.isArray(parsed.section_titles) ? parsed.section_titles.map((v: unknown) => String(v || "").trim()).filter(Boolean).slice(0, 5) : [],
+      bold_phrases: Array.isArray(parsed.bold_phrases) ? parsed.bold_phrases.map((v: unknown) => String(v || "").trim()).filter(Boolean).slice(0, 4) : [],
+      model: selectedModel,
+      provider: "gemini",
+      target_chars: targetChars,
+      usage: result.usage
+    });
+  }
+
+  if (action === "synthesize") {
+    const cloudflareConfigured = Boolean(
+      (Deno.env.get("CLOUDFLARE_API_TOKEN") && Deno.env.get("CLOUDFLARE_ACCOUNT_ID"))
+      || (Deno.env.get("CLOUDFLARE_BACKUP_API_TOKEN") && Deno.env.get("CLOUDFLARE_BACKUP_ACCOUNT_ID"))
+    );
+    if (!cloudflareConfigured && !groqApiKey) return json({ error: "w_review_no_synthesis_provider" }, 503);
+    const task = String(body?.task || "").trim();
+    if (!task || task.length > 2000) return json({ error: "invalid_task", max_chars: 2000 }, 400);
+    const targetChars = Math.max(1000, Math.min(8000, Number(body?.target_chars || 3000)));
+    const submittedCards = Array.isArray(body?.evidence_cards) ? body.evidence_cards : [];
+    if (submittedCards.length > 18) return json({error:"w_review_max_articles",limit:18},400);
+    const cards = submittedCards.map((v: unknown) => String(v || "").trim()).filter(Boolean);
+    const styleProfile = String(body?.style_profile || "").trim().slice(0, 10000);
+    // Stable excerpts of adjacent source paragraphs show the model how the
+    // author connects evidence and interpretation; they are STYLE_ONLY.
+    const styleExcerpts = Array.isArray(body?.style_excerpts)
+      ? body.style_excerpts.slice(0,4).map((item:any)=>({
+          name:String(item?.name||"Образец").slice(0,120),
+          text:String(item?.text||"").trim().slice(0,1400)
+        })).filter((item:any)=>item.text.length>=100) : [];
+    let excerptBudget=4200;
+    const styleOnlyText=styleExcerpts.map((item:any,index:number)=>{
+      const excerpt=item.text.slice(0,excerptBudget);
+      excerptBudget=Math.max(0,excerptBudget-excerpt.length);
+      return excerpt?"STYLE_ONLY_"+(index+1)+" / "+item.name+
+        "\nНЕ ИСТОЧНИК ФАКТОВ ДЛЯ ТЕКУЩЕГО ОБЗОРА:\n"+excerpt:"";
+    }).filter(Boolean).join("\n\n");
+
+    if (!styleProfile) return json({error:"w_review_style_required",detail:"Сначала сформируйте профиль авторского стиля."},400);
+    const trends = Array.isArray(body?.trends) ? body.trends.slice(0, 5) : [];
+    const sourceNames = Array.isArray(body?.source_names) ? body.source_names.map((v: unknown) => String(v || "").trim()).filter(Boolean).slice(0, 30) : [];
+    if (!cards.length || !trends.length) return json({ error: "missing_synthesis_input" }, 400);
+    const d = body?.density || {};
+    const quoteDensity = density(d.quotes), headlineDensity = density(d.headlines), expertDensity = density(d.experts);
+    // Limit synthesis context only. Original Evidence Cards remain unchanged for fact verification.
+    const evidenceText = cards.map((card: string, index: number) => `P${String(index + 1).padStart(2, "0")}\n${card}`).join("\n\n");
+    if (evidenceText.length > 85000) return json({ error: "evidence_too_large", max_chars: 85000 }, 400);
+    const trendText = trends.map((trend: any, index: number) => `${index + 1}. ${String(trend?.title || "")}: ${String(trend?.summary || "")}`).join("\n");
+    const densityRule = (name: string, value: string) => value === "minimum" ? `${name}: редко, только самые сильные 1–2 элемента, если доступны.` : value === "all" ? `${name}: использовать все реально найденные пригодные элементы этого типа, но не выдумывать и не повторять один и тот же элемент.` : value === "many" ? `${name}: насыщенно, использовать большинство сильных элементов без перегруза и повторов.` : `${name}: умеренно, несколько лучших элементов по ходу текста.`;
+    const canonicalSources = sourceNames.length ? sourceNames.map((name: string) => `«${name}»`).join(", ") : "используй названия из Evidence Cards";
+
+    const lengthMinimum=Math.round(targetChars*0.95);
+    const lengthMaximum=Math.round(targetChars*1.05);
+    const payload = {
+      model: "openai/gpt-oss-120b", reasoning_effort: "low", reasoning_format: "hidden", temperature: 0.2,
+      max_completion_tokens: Math.min(2500, Math.max(1300, Math.ceil(targetChars / 3.0) + 450)),
+      messages: [{ role: "system", content: `Ты редактор W-Review. Подготовь ЦЕЛЬНЫЙ АНАЛИТИЧЕСКИЙ ОБЗОР МЕДИАПОЛЯ в индивидуальном авторском стиле из STYLE PROFILE. Это не каталог публикаций и не последовательный пересказ статей.
+
+ГЛАВНЫЙ РЕДАКЦИОННЫЙ ПРИНЦИП:
+- Осмысли выбранные ТЕНДЕНЦИИ, а затем объедини относящиеся к ним сведения разных источников в связное повествование. Выявляй общие акценты, совпадения и расхождения оценок. Публикации используются как доказательная основа, а не как порядок изложения.
+- Ознакомься со всеми Evidence Cards. Привлекай СМИ тогда, когда они добавляют значимый факт, аргумент, цитату, экспертную оценку или самостоятельный ракурс. Не перечисляй источники ради количества.
+- Не строй текст по схеме «первое СМИ сообщило, второе отметило, третье заявило». В каждом абзаце раскрывай смысловую линию, а не содержание очередной статьи. Переходы должны развивать общую мысль.
+- Аналитические обобщения необходимы. Показывай как общую тенденцию, так и существенные расхождения в трактовках. Противоположные оценки разных групп СМИ нельзя объединять в мнимое единодушие.
+
+СТРОГАЯ ДОКАЗАТЕЛЬНОСТЬ И АТРИБУЦИЯ:
+- Единственный источник конкретных фактов — Evidence Cards. Не выдумывай даты, числа, имена, должности, экспертов, цитаты, заголовки, причины и последствия. Не соединяй сведения разных публикаций в новый неподтверждённый факт.
+- Различай собственную позицию редакции, приводимый СМИ чужой комментарий, цитату политика или эксперта, заголовок и нейтральный журналистский пересказ. Чужая критика, приведённая газетой, НЕ означает, что редакция сама её поддерживает.
+- Не меняй полярность оценок: одобрение, осуждение, опасение и нейтральное сообщение не взаимозаменяемы. Не приписывай российским изданиям оценку западных СМИ и наоборот.
+- Обобщение о позиции целой группы изданий допустимо при достаточных подтверждениях в соответствующих карточках. Для отдельного факта достаточно одной карточки. Противоречия между источниками следует показывать, а не скрывать.
+- Соблюдай тематические границы и исключения оператора. Если фактуры недостаточно, не компенсируй это догадками или повторениями.
+
+ОРГАНИЧНАЯ АТРИБУЦИЯ И ТЕКСТ:
+- Канонические источники: ${canonicalSources}. Упоминаемые названия СМИ заключай в «ёлочки». Встраивай указания на источники в повествование либо ставь их в скобках в конце законченного предложения перед точкой. Не вставляй перечисления СМИ в середину предложения.
+- Цитаты и заголовки точно передавай по Evidence. Иноязычные цитаты переводи на русский, белорусские можно оставлять без перевода. Не создавай псевдоцитаты. Эксперта называй по имени и должности, если эти сведения есть в карточке.
+- Обзор пишется по-русски, если оператор прямо не указал другой язык. Используй «ёлочки», тире –. Не вставляй Markdown, списки и технические метки в review_text.
+- Подзаголовки используй только если они присущи авторскому стилю. В section_titles перечисли лишь подзаголовки, буквально имеющиеся в review_text; в bold_phrases — 3–4 короткие акцентные фразы, также буквально присутствующие в тексте.
+
+АВТОРСКАЯ МАНЕРА:
+- STYLE PROFILE определяет зачин, композицию, переходы, лексику, ритм абзацев, выбор цитат и характер выводов. Применяй его к ОБЗОРУ В ЦЕЛОМ, а не только к первым абзацам.
+- Обобщения не должны становиться школьными выводами «Таким образом» или «В заключение». Естественный финал развивает подтверждённое смысловое противоречие, существенную позицию источника или аналитическое наблюдение.
+- Не вводи заданное количество абзацев и одинаковые по размеру части: естественная композиция определяется материалом и авторским стилем.
+
+Настройки насыщенности:
+- ${densityRule("Прямые цитаты",quoteDensity)}
+- ${densityRule("Цитируемые заголовки",headlineDensity)}
+- ${densityRule("Экспертные оценки",expertDensity)}
+
+STYLE PROFILE (соблюдай полностью):
+${styleProfile}
+
+СТИЛЕВЫЕ ОБРАЗЦЫ (ТОЛЬКО МАНЕРА, НЕ ФАКТЫ):
+${styleOnlyText || "Дополнительные фрагменты недоступны — следуй STYLE PROFILE."}
+Ни одна дата, персона, цитата или событие из STYLE_ONLY не может переходить в обзор без подтверждения в текущих Evidence Cards.` },
+        { role: "user", content: `ЗАДАНИЕ ОПЕРАТОРА:\n${task}\n\nУТВЕРЖДЁННЫЕ ТЕНДЕНЦИИ:\n${trendText}\n\nИНСТРУКЦИЯ ДЛЯ ЭТАПА:\n${String(body?.stage_note || "").slice(0,500)}\n\nEVIDENCE CARDS:\n${evidenceText}\n\nФИНАЛЬНОЕ ЗАДАНИЕ: составь ОДИН цельный аналитический обзор медиаполя, поле review_text — ${targetChars} знаков С ПРОБЕЛАМИ, допустимое отклонение ±5% (${lengthMinimum}–${lengthMaximum} знаков). Это объём только review_text, не JSON или служебных полей. Раскрой утверждённые тенденции в авторском стиле, опираясь на весь пул, без последовательного пересказа отдельных публикаций, фактических выдумок и повторов. Не выдавай план, промежуточный анализ или пояснения.` }],
+      response_format: { type: "json_schema", json_schema: { name: "w_review_v6", strict: true, schema: {
+        type: "object",
+        properties: {
+          review_text: { type: "string" },
+          section_titles: { type: "array", items: { type: "string" }, maxItems: 5 },
+          bold_phrases: { type: "array", items: { type: "string" }, minItems: 3, maxItems: 4 }
+        },
+        required: ["review_text", "section_titles", "bold_phrases"],
+        additionalProperties: false,
+      } } },
+    };
+    const cfToken = Deno.env.get("CLOUDFLARE_API_TOKEN") || "";
+    const cfId = Deno.env.get("CLOUDFLARE_ACCOUNT_ID") || "";
+    const cfBackupToken = Deno.env.get("CLOUDFLARE_BACKUP_API_TOKEN") || "";
+    const cfBackupId = Deno.env.get("CLOUDFLARE_BACKUP_ACCOUNT_ID") || "";
+    const cfPrimaryReady = Boolean(cfToken && cfId);
+    const cfBackupReady = Boolean(cfBackupToken && cfBackupId && (!cfPrimaryReady || cfBackupId !== cfId));
+    const groqPayload = {
+      model:"openai/gpt-oss-120b",reasoning_effort:"low",reasoning_format:"hidden",temperature:0.2,
+      // Groq stays quota-limited; Cloudflare has its own higher output budget.
+      max_completion_tokens:Math.min(3000,Math.max(1000,Math.ceil(targetChars/2.5)+400)),
+      messages:payload.messages,response_format:payload.response_format
+    };
+    // Dynamic output budget is tied to the requested visible Russian-language
+    // character count. The budget must also accommodate model reasoning and the
+    // JSON wrapper. It is a CEILING, not a guaranteed response length.
+    const estimatedVisibleTokens=Math.ceil(targetChars/1.25);
+    const estimatedReasoningTokens=Math.max(1000,
+      Math.min(3000,Math.ceil(estimatedVisibleTokens*0.4)));
+    const synthesisOutputTokenBudget=Math.min(11000,
+      Math.max(1500,Math.ceil((estimatedVisibleTokens+
+        estimatedReasoningTokens+450)/500)*500));
+    const cloudflareSynthesisPayload = {
+      ...groqPayload,
+      temperature:0.36,
+      reasoning_effort:"medium",
+      max_tokens:synthesisOutputTokenBudget,
+    };
+    const topicKeyRaw = String(body?.topic_key || "legacy-workspace").trim();
+    const topicKey = /^workspace-[1-3]$/.test(topicKeyRaw) ? topicKeyRaw : "legacy-workspace";
+    let reservationId = "";
+    if (!profile.is_admin) {
+      const {data: quota, error: quotaError} = await admin.rpc("w_review_quota_reserve",
+        {p_user: authData.user.id, p_topic: topicKey});
+      if (quotaError || !quota || typeof quota.allowed !== "boolean")
+        return json({error:"w_review_quota_check_failed"},503);
+      if (!quota.allowed)
+        return json({error:"w_review_daily_generation_limit",detail:"На эту тему уже сформировано 2 обзора за сегодня. Лимит обновится в 00:00 по Минску.",limit:2,used:quota.used,topic_key:topicKey},403);
+      reservationId = String(quota.reservation_id || "");
+      if (!reservationId) return json({error:"w_review_quota_reservation_missing"},503);
+    }
+    async function finishQuota(success:boolean) {
+      if (!reservationId) return true;
+      const {data,error} = await admin.rpc("w_review_quota_finish",{p_id:reservationId,p_success:success});
+      return !error && data===true;
+    }
+    // GPT-OSS-120B ONLY for the final review, regardless of length:
+    // independent Cloudflare account 1 -> account 2 -> Groq.
+    // Gemini is deliberately excluded from synthesis because of instability.
+    // No rewriting or length-driven provider switching after a usable result.
+    let cloudflareRoute:"primary"|"backup"|null=
+      cfPrimaryReady?"primary":cfBackupReady?"backup":null;
+    let result:AiResult=cfPrimaryReady
+      ? await callCloudflare(cfId,cfToken,cloudflareSynthesisPayload)
+      : cfBackupReady
+        ? await callCloudflare(cfBackupId,cfBackupToken,cloudflareSynthesisPayload)
+        : {ok:false,status:503,retryAfter:null,detail:"cloudflare_unconfigured"};
+    let selectedProvider="cloudflare";
+    let selectedModel="@cf/openai/gpt-oss-120b";
+    let parsed=result.ok?parseModelJson(result):null;
+    const usable=(r:AiResult,p:any)=>r.ok&&typeof p?.review_text==="string"&&Boolean(p.review_text.trim());
+    const temporaryOrAccountError=result.ok||[401,403,408,429,500,502,503,504,520,522,523,524].includes(result.status);
+    if(cfPrimaryReady&&cfBackupReady&&!usable(result,parsed)&&temporaryOrAccountError){
+      console.info("w_review_provider_fallback "+JSON.stringify({
+        stage:"synthesis",from:"cloudflare_primary",to:"cloudflare_backup",
+        http_status:result.ok?200:result.status,trigger:result.ok?"invalid_output":"provider_failure"
+      }));
+      result=await callCloudflare(cfBackupId,cfBackupToken,cloudflareSynthesisPayload);
+      parsed=result.ok?parseModelJson(result):null;
+      cloudflareRoute="backup";
+    }
+    if(!usable(result,parsed)&&groqApiKey){
+      const groq=await callGroq(groqApiKey,{...groqPayload,
+        max_completion_tokens:Math.min(1800,Math.max(850,Math.ceil(targetChars/3.3)+200))});
+      const gp=groq.ok?parseModelJson(groq):null;
+      if(usable(groq,gp)){
+        result=groq;parsed=gp;selectedProvider="groq";
+        selectedModel="openai/gpt-oss-120b";cloudflareRoute=null;
+      }else if(!result.ok)result=groq;
+    }
+    // SINGLE-PASS: no rewriting, expansion, independent AI audit, or deletion.
+    // Fallback to a different provider is used only if the chosen provider
+    // is technically unavailable or did not return usable JSON.
+    if (!result.ok) {await finishQuota(false); return aiError("groq",result);}
+    if (!parsed || typeof parsed.review_text!=="string" || !parsed.review_text.trim()) {
+      await finishQuota(false);
+      return json({error:"invalid_synthesis_output"},502);
+    }
+    const reviewText=parsed.review_text.trim();
+    const actualChars=reviewText.length;
+    const lengthOk=actualChars>=lengthMinimum
+      && actualChars<=lengthMaximum;
+    console.info("w_review_single_pass "+JSON.stringify({
+      provider:selectedProvider,model:selectedModel,target_chars:targetChars,
+      actual_chars:actualChars,within_tolerance:lengthOk,
+      requested_output_token_budget:selectedProvider==="cloudflare"?synthesisOutputTokenBudget:
+        result.ok?result.usage.completion_tokens:0,
+      length_window:{min:lengthMinimum,max:lengthMaximum},
+      prompt_tokens:result.ok?result.usage.prompt_tokens:0,
+      completion_tokens:result.ok?result.usage.completion_tokens:0,
+      finish_reason:result.ok?result.finish_reason||"not_reported":"error",
+      reasoning_tokens:result.ok?result.reasoning_tokens||0:0,
+      style_chars:styleProfile.length,style_excerpt_chars:styleOnlyText.length,evidence_chars:evidenceText.length,
+      source_mentions:sourceNames.filter((name:string)=>reviewText.includes("«"+name+"»")).length,
+      source_names:sourceNames.length,
+      cards:cards.length,trends:trends.length
+    }));
+    if (!(await finishQuota(true))) return json({error:"w_review_quota_commit_failed",detail:"Результат модели получен, но суточный учёт не завершён; повторная попытка не будет безопасной."},503);
+    return json({
+      review_text:reviewText,
+      section_titles:Array.isArray(parsed.section_titles)
+        ?parsed.section_titles.map((v:unknown)=>String(v||"").trim())
+           .filter((v:string)=>v&&reviewText.includes(v)).slice(0,5):[],
+      bold_phrases:Array.isArray(parsed.bold_phrases)
+        ?parsed.bold_phrases.map((v:unknown)=>String(v||"").trim())
+           .filter((v:string)=>v&&reviewText.includes(v)).slice(0,4):[],
+      model:selectedModel,provider:selectedProvider,cloudflare_route:cloudflareRoute,
+      target_chars:targetChars,actual_chars:actualChars,
+      length_within_tolerance:lengthOk,usage:result.usage,preflight_warnings:[]
+
+    });
+  }
+
+  return json({ error: "unknown_action" }, 400);
+});

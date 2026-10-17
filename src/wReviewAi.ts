@@ -118,6 +118,7 @@ export async function wSynthesize(input: {
   targetChars: number;
   evidenceCards: string[];
   styleProfile: string;
+  styleExcerpts: Array<{name:string;text:string}>;
   trends: WEditorialTrend[];
   density: { quotes: WDensity; headlines: WDensity; experts: WDensity };
   sourceNames: string[];
@@ -128,6 +129,7 @@ export async function wSynthesize(input: {
     target_chars: input.targetChars,
     evidence_cards: input.evidenceCards,
     style_profile: input.styleProfile,
+    style_excerpts: input.styleExcerpts,
     trends: input.trends,
     density: input.density,
     source_names: input.sourceNames,
