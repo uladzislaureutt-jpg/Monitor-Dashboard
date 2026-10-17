@@ -67,17 +67,27 @@ async function callGroq(apiKey: string, payload: unknown): Promise<AiResult> {
       prompt_tokens: Number(usage.prompt_tokens || 0),
       completion_tokens: Number(usage.completion_tokens || 0),
       total_tokens: Number(usage.total_tokens || 0),
-    } };
+    }, finish_reason: String(decoded?.choices?.[0]?.finish_reason || "").slice(0,30),
+      reasoning_tokens: Number(usage?.completion_tokens_details?.reasoning_tokens ?? 0) };
   } catch (error) {
     return { ok: false, status: 502, retryAfter: null, detail: `groq_network_error: ${String(error).slice(0, 240)}` };
   }
+}
+// Cloudflare's raw Workers AI endpoint expects a plain schema; Groq accepts
+// the OpenAI named schema wrapper. Enable schema only after endpoint testing:
+// this GPT-OSS variant is absent from Cloudflare's documented supported list.
+function cloudflareResponseFormat(payload:any) {
+  if (Deno.env.get("W_REVIEW_CF_SCHEMA_MODE") !== "true") return {type:"json_object"};
+  const requested=payload?.response_format;
+  if (requested?.type !== "json_schema" || !requested?.json_schema) return {type:"json_object"};
+  return {type:"json_schema",json_schema:requested.json_schema.schema || requested.json_schema};
 }
 async function callCloudflare(accountId: string, token: string, payload: any, timeoutMs=0): Promise<AiResult> {
   try {
     const r = await fetch("https://api.cloudflare.com/client/v4/accounts/"+encodeURIComponent(accountId)+"/ai/run/@cf/openai/gpt-oss-120b", {
       method:"POST",headers:{"Authorization":"Bearer "+token,"Content-Type":"application/json"},
       signal:timeoutMs>0?AbortSignal.timeout(timeoutMs):undefined,
-      body:JSON.stringify({messages:payload.messages,temperature:Math.max(0,Math.min(1,Number(payload.temperature??0.1))),reasoning_effort:["low","medium","high"].includes(String(payload.reasoning_effort))?payload.reasoning_effort:"low",max_tokens:Math.max(800,Math.min(11000,payload.max_tokens||Math.min(4500,payload.max_completion_tokens||2400))),response_format:{type:"json_object"}})
+      body:JSON.stringify({messages:payload.messages,temperature:Math.max(0,Math.min(1,Number(payload.temperature??0.1))),reasoning_effort:["low","medium","high"].includes(String(payload.reasoning_effort))?payload.reasoning_effort:"low",max_tokens:Math.max(800,Math.min(11000,payload.max_tokens||Math.min(4500,payload.max_completion_tokens||2400))),response_format:cloudflareResponseFormat(payload)})
     });
     const raw=await r.text();
     if(!r.ok)return {ok:false,status:r.status,retryAfter:r.headers.get("retry-after"),detail:raw.slice(0,900)};
@@ -705,7 +715,12 @@ ${styleProfile || "Живой сдержанный редакционный ст
     // Limit synthesis context only. Original Evidence Cards remain unchanged for fact verification.
     const evidenceText = cards.map((card: string, index: number) => `P${String(index + 1).padStart(2, "0")}\n${card}`).join("\n\n");
     if (evidenceText.length > 85000) return json({ error: "evidence_too_large", max_chars: 85000 }, 400);
-    const trendText = trends.map((trend: any, index: number) => `${index + 1}. ${String(trend?.title || "")}: ${String(trend?.summary || "")}`).join("\n");
+    const trendText = trends.map((trend: any, index: number) => {
+      const related = Array.isArray(trend?.sources)
+        ? trend.sources.map((v:unknown) => String(v||"").trim()).filter(Boolean) : [];
+      return `${index+1}. ${String(trend?.title||"")}: ${String(trend?.summary||"")}`+
+        (related.length ? "\nИсточники этой линии: "+related.join(", ") : "");
+    }).join("\n");
     const densityRule = (name: string, value: string) => value === "minimum" ? `${name}: редко, только самые сильные 1–2 элемента, если доступны.` : value === "all" ? `${name}: использовать все реально найденные пригодные элементы этого типа, но не выдумывать и не повторять один и тот же элемент.` : value === "many" ? `${name}: насыщенно, использовать большинство сильных элементов без перегруза и повторов.` : `${name}: умеренно, несколько лучших элементов по ходу текста.`;
     const canonicalSources = sourceNames.length ? sourceNames.map((name: string) => `«${name}»`).join(", ") : "используй названия из Evidence Cards";
 
@@ -767,10 +782,13 @@ ${styleOnlyText || "Дополнительные фрагменты недост
     const cfBackupId = Deno.env.get("CLOUDFLARE_BACKUP_ACCOUNT_ID") || "";
     const cfPrimaryReady = Boolean(cfToken && cfId);
     const cfBackupReady = Boolean(cfBackupToken && cfBackupId && (!cfPrimaryReady || cfBackupId !== cfId));
+    // Output ceiling != organizational TPM. Groq Free may reject this
+    // context entirely; never silently discard cards to force a fallback.
+    const groqSynthesisOutputTokenBudget=Math.min(7000,
+      Math.max(2000,Math.ceil((targetChars/1.25+800)/250)*250));
     const groqPayload = {
       model:"openai/gpt-oss-120b",reasoning_effort:"low",reasoning_format:"hidden",temperature:0.2,
-      // Groq stays quota-limited; Cloudflare has its own higher output budget.
-      max_completion_tokens:Math.min(3000,Math.max(1000,Math.ceil(targetChars/2.5)+400)),
+      max_completion_tokens:groqSynthesisOutputTokenBudget,
       messages:payload.messages,response_format:payload.response_format
     };
     // Dynamic output budget is tied to the requested visible Russian-language
@@ -845,18 +863,17 @@ ${styleOnlyText || "Дополнительные фрагменты недост
       cloudflareRoute="backup";
     }
     if(!usable(result,parsed)&&groqApiKey){
-      const groq=await callGroq(groqApiKey,{...groqPayload,
-        max_completion_tokens:Math.min(1800,Math.max(850,Math.ceil(targetChars/3.3)+200))});
+      const groq=await callGroq(groqApiKey,groqPayload);
       const gp=groq.ok?normalizeReview(parseModelJson(groq)):null;
       if(usable(groq,gp)){
         result=groq;parsed=gp;selectedProvider="groq";
         selectedModel="openai/gpt-oss-120b";cloudflareRoute=null;
-      }else if(!result.ok)result=groq;
+      }else if(!result.ok){result=groq;selectedProvider="groq";selectedModel="openai/gpt-oss-120b";cloudflareRoute=null;}
     }
     // SINGLE-PASS: no rewriting, expansion, independent AI audit, or deletion.
     // Fallback to a different provider is used only if the chosen provider
     // is technically unavailable or did not return usable JSON.
-    if (!result.ok) {await finishQuota(false); return aiError("groq",result);}
+    if (!result.ok) {await finishQuota(false); return aiError(selectedProvider,result);}
     if (!parsed || typeof parsed.review_text!=="string" || !parsed.review_text.trim()) {
       await finishQuota(false);
       return json({error:"invalid_synthesis_output"},502);
@@ -865,11 +882,17 @@ ${styleOnlyText || "Дополнительные фрагменты недост
     const actualChars=reviewText.length;
     const lengthOk=actualChars>=lengthMinimum
       && actualChars<=lengthMaximum;
+    // Only deterministic warnings. Keep the draft even when outside tolerance.
+    const preflightWarnings:string[]=[];
+    if(!lengthOk) preflightWarnings.push(`Объём ${actualChars} знаков вне допуска ${lengthMinimum}–${lengthMaximum}; текст сохранён для редактирования.`);
+    const rawParagraphs=Array.isArray(parsed.paragraphs)?parsed.paragraphs:[];
+    if(rawParagraphs.length>0 && rawParagraphs.length<paragraphTarget)
+      preflightWarnings.push(`Абзацев ${rawParagraphs.length}, ориентир ${paragraphTarget}; не добавляйте пустые абзацы ради числа.`);
     console.info("w_review_single_pass "+JSON.stringify({
       provider:selectedProvider,model:selectedModel,target_chars:targetChars,
       actual_chars:actualChars,within_tolerance:lengthOk,
       requested_output_token_budget:selectedProvider==="cloudflare"?synthesisOutputTokenBudget:
-        result.ok?result.usage.completion_tokens:0,
+        groqSynthesisOutputTokenBudget,
       length_window:{min:lengthMinimum,max:lengthMaximum},
       paragraph_target:paragraphTarget,paragraph_min:paragraphMinChars,
       actual_paragraphs:reviewText.split(/\n\s*\n/).length,
@@ -893,7 +916,7 @@ ${styleOnlyText || "Дополнительные фрагменты недост
            .filter((v:string)=>v&&reviewText.includes(v)).slice(0,4):[],
       model:selectedModel,provider:selectedProvider,cloudflare_route:cloudflareRoute,
       target_chars:targetChars,actual_chars:actualChars,
-      length_within_tolerance:lengthOk,usage:result.usage,preflight_warnings:[]
+      length_within_tolerance:lengthOk,usage:result.usage,preflight_warnings:preflightWarnings
 
     });
   }

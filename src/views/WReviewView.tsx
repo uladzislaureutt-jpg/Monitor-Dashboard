@@ -478,7 +478,10 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
       addUsage(result.usage);
       const warning=result.preflightWarnings.length
         ? " Возможные расхождения по Evidence: "+result.preflightWarnings.join("; ").slice(0,360) : "";
-      setMessage((be?"Агляд сфарміраваны. Яго можна рэдагаваць і экспартаваць у DOCX.":"Обзор сформирован. Можно редактировать и экспортировать в DOCX.")+warning);
+      const lengthNotice=result.lengthWithinTolerance?"":(be
+        ? ` Аб'ём ${result.actualChars} знакаў замест ${result.targetChars}; праверце паўнату і пры неабходнасці дапрацуйце.`
+        : ` Объём ${result.actualChars} знаков вместо ${result.targetChars}; проверьте полноту и при необходимости доработайте.`);
+      setMessage((be?"Агляд атрыманы. Яго можна рэдагаваць і экспартаваць у DOCX.":"Обзор получен. Можно редактировать и экспортировать в DOCX.")+lengthNotice+warning);
     } catch (reason) {
       const text = String(reason);
       setError(text.includes("w_review_daily_generation_limit")
