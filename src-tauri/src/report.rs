@@ -156,7 +156,7 @@ fn range_contains(ranges: &[(usize, usize)], start: usize, end: usize) -> bool {
 fn w_review_media_key(value: &str) -> String {
     value.trim()
         .trim_matches(|ch: char| matches!(ch, '«' | '»' | '"' | '“' | '”'))
-        .replace(['‑', '–', '—'], "-")
+        .replace('‑', "-").replace('–', "-").replace('—', "-")
         .to_lowercase()
 }
 
