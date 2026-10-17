@@ -421,11 +421,16 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     try {
       const result = await wStyleProfile(
         samples,
-        (seconds) => setMessage(be ? `Ліміт Groq. Профіль працягнецца праз ~${seconds} с…` : `Лимит Groq. Профиль продолжится автоматически через ~${seconds} с…`)
+        (seconds) => setMessage(be ? `Ліміт правайдара ШІ. Паўтор праз ~${seconds} с…` : `Временный лимит провайдера ИИ. Повтор через ~${seconds} с…`)
       );
       setState((current) => ({ ...current, styleProfile: result.styleProfile, styleContract: W_CONTRACT_VERSION }));
       addUsage(result.usage);
-      setMessage(be ? "Профіль стылю гатовы." : "Профиль стиля готов.");
+      const styleModel = result.model.startsWith("@cf/") ? "Cloudflare GPT-OSS-120B"
+        : result.model === "gemini-3.5-flash-lite" ? "Gemini 3.5 Flash-Lite" : result.model;
+      const tokens = Math.max(0, result.usage.totalTokens).toLocaleString();
+      setMessage(be
+        ? `Профіль стылю гатовы. Мадэль: ${styleModel}. Токенаў: ${tokens}.`
+        : `Профиль стиля готов. Модель: ${styleModel}. Токенов: ${tokens}.`);
     } catch (reason) { setError(String(reason)); } finally { setBusy(""); }
   }
 
