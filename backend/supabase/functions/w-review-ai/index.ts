@@ -701,6 +701,16 @@ ${styleProfile || "Живой сдержанный редакционный ст
 
     if (!styleProfile) return json({error:"w_review_style_required",detail:"Сначала сформируйте профиль авторского стиля."},400);
     const trends = Array.isArray(body?.trends) ? body.trends.slice(0, 5) : [];
+    // Validate references against this exact Evidence pool before consuming any quota.
+    const checkedDossier=normalizeDossier(body?.editorial_dossier,cards);
+    if(checkedDossier.error||!checkedDossier.dossier)
+      return json({error:"w_review_dossier_v3_required",
+        detail:checkedDossier.error||"reanalyse_pool"},426);
+    const selectedIds=trends.map((t:any)=>String(t?.id||""));
+    if(!selectedIds.length||new Set(selectedIds).size!==selectedIds.length||
+       selectedIds.some(id=>!checkedDossier.dossier!.trends.some(t=>t.id===id)))
+      return json({error:"w_review_invalid_selected_dossier_lines"},400);
+    const synthesisDossier=makeSynthesisDossier(checkedDossier.dossier,selectedIds,targetChars,cards);
     const sourceNames = Array.isArray(body?.source_names) ? body.source_names.map((v: unknown) => String(v || "").trim()).filter(Boolean).slice(0, 30) : [];
     if (!cards.length || !trends.length) return json({ error: "missing_synthesis_input" }, 400);
     const d = body?.density || {};
@@ -708,12 +718,7 @@ ${styleProfile || "Живой сдержанный редакционный ст
     // Limit synthesis context only. Original Evidence Cards remain unchanged for fact verification.
     const evidenceText = cards.map((card: string, index: number) => `P${String(index + 1).padStart(2, "0")}\n${card}`).join("\n\n");
     if (evidenceText.length > 180000) return json({ error: "evidence_too_large", max_chars: 180000 }, 400);
-    const trendText = trends.map((trend: any, index: number) => {
-      const related = Array.isArray(trend?.sources)
-        ? trend.sources.map((v:unknown) => String(v||"").trim()).filter(Boolean) : [];
-      return `${index+1}. ${String(trend?.title||"")}: ${String(trend?.summary||"")}`+
-        (related.length ? "\nИсточники этой линии: "+related.join(", ") : "");
-    }).join("\n");
+    const trendText=synthesisDossier.text;
     const densityRule = (name: string, value: string) => value === "minimum" ? `${name}: редко, только самые сильные 1–2 элемента, если доступны.` : value === "all" ? `${name}: использовать все реально найденные пригодные элементы этого типа, но не выдумывать и не повторять один и тот же элемент.` : value === "many" ? `${name}: насыщенно, использовать большинство сильных элементов без перегруза и повторов.` : `${name}: умеренно, несколько лучших элементов по ходу текста.`;
     const canonicalSources = sourceNames.length ? sourceNames.map((name: string) => `«${name}»`).join(", ") : "используй названия из Evidence Cards";
 
@@ -731,7 +736,7 @@ ${styleProfile || "Живой сдержанный редакционный ст
       messages: [{ role: "system", content: `Навык: РЕДАКЦИОННЫЙ МЕДИАОБЗОР W-REVIEW 1.0.
 Напиши ОДИН связный аналитический обзор тенденций медиаполя в индивидуальном стиле автора. Это не каталог статей и не последовательный пересказ каждого издания.
 
-ЖАНР. Сначала осмысли утверждённые тенденции, затем объедини публикации разных СМИ в содержательное повествование. Анализируй совпадения, противоречия, акценты и аргументы. Не строй абзацы по механическому порядку карточек или названий СМИ.
+ЖАНР. Следуй проверенному редакционному досье: раскрой все обязательные ветки, механизмы, аргументы и контрпозиции, затем объедини публикации разных СМИ в содержательное повествование. Анализируй совпадения, противоречия, акценты и аргументы. Не строй абзацы по механическому порядку карточек или названий СМИ.
 
 ИСТОЧНИКИ. Прочитай ВСЕ Evidence Cards. Сохраняй уникальные сведения каждого содержательного материала: факты, цифры, цитаты, заголовки, аргументы, позиции реальных экспертов, дополнительные обстоятельства. Не требуется механически упоминать каждую повторную публикацию агентства; не пропускай самостоятельный ракурс менее известного СМИ.
 
@@ -757,7 +762,7 @@ STYLE_ONLY (образцы авторской манеры, НЕ ИСТОЧНИ�
 ${styleOnlyText || "Дополнительные фрагменты недоступны. Следуй STYLE_PROFILE."}
 
 РЕЗУЛЬТАТ. Верни ОДИН JSON со строковым массивом paragraphs, массивами section_titles и bold_phrases. paragraphs — единое непрерывное аналитическое повествование, разбитое на естественные абзацы, НЕ набор отдельных СМИ или подзаголовков. Нужно не менее ${paragraphTarget} развёрнутых абзацев, ориентировочно не короче ${paragraphMinChars} знаков каждый; размер и ритм могут свободно различаться. В пределах ОДНОГО ответа полностью раскрой все выбранные тенденции, подробные факты и противоречащие ракурсы; не заверши после краткого обзора первых источников. section_titles:[] и bold_phrases:[] допустимы. Никогда не выдумывай подзаголовки и не вставляй Markdown ** или __. Не выдавай планы и промежуточные замечания.` },
-        { role: "user", content: `ЗАДАНИЕ ОПЕРАТОРА:\n${task}\n\nУТВЕРЖДЁННЫЕ ТЕНДЕНЦИИ:\n${trendText}\n\nИНСТРУКЦИЯ ДЛЯ ЭТАПА:\n${String(body?.stage_note || "").slice(0,500)}\n\nEVIDENCE CARDS:\n${evidenceText}\n\nФИНАЛЬНОЕ ЗАДАНИЕ: создай ОДИН непрерывный авторский аналитический обзор в массиве paragraphs, с общим объёмом после соединения абзацев ${targetChars} знаков с пробелами, допустимый коридор ${lengthMinimum}–${lengthMaximum}. Минимум ${paragraphTarget} содержательных соседних абзацев, ориентир каждого от ${paragraphMinChars} знаков. Каждый следующий развивает общую мысль, а не описывает следующее СМИ. После обработки всех тенденций заверши подтверждённым содержательным акцентом, не формальной сводкой. Не допускай ни одной непереведённой англоязычной цитаты (кроме официальных названий), расставляй источники только по образцу «... («CNN», «BBC News»).», не создавай собственных псевдоцитат и шаблонной итоговой концовки. Не используй Markdown, ненужные подзаголовки и списки источников.` }],
+        { role: "user", content: `ЗАДАНИЕ ОПЕРАТОРА:\n${task}\n\nРЕДАКЦИОННОЕ ДОСЬЕ И РАСПРЕДЕЛЕНИЕ ОБЪЁМА:\n${trendText}\n\nИНСТРУКЦИЯ ДЛЯ ЭТАПА:\n${String(body?.stage_note || "").slice(0,500)}\n\nEVIDENCE CARDS:\n${evidenceText}\n\nФИНАЛЬНОЕ ЗАДАНИЕ: создай ОДИН непрерывный авторский аналитический обзор в массиве paragraphs, с общим объёмом после соединения абзацев ${targetChars} знаков с пробелами, допустимый коридор ${lengthMinimum}–${lengthMaximum}. Минимум ${paragraphTarget} содержательных соседних абзацев, ориентир каждого от ${paragraphMinChars} знаков. Каждый следующий развивает общую мысль, а не описывает следующее СМИ. После обработки всех тенденций заверши подтверждённым содержательным акцентом, не формальной сводкой. Не допускай ни одной непереведённой англоязычной цитаты (кроме официальных названий), расставляй источники только по образцу «... («CNN», «BBC News»).», не создавай собственных псевдоцитат и шаблонной итоговой концовки. Не используй Markdown, ненужные подзаголовки и списки источников.` }],
       response_format: { type:"json_schema",json_schema:{name:"w_review_v7_paragraphs",strict:true,schema:{
         type:"object",
         properties:{
@@ -896,7 +901,8 @@ ${styleOnlyText || "Дополнительные фрагменты недост
       style_chars:styleProfile.length,style_excerpt_chars:styleOnlyText.length,evidence_chars:evidenceText.length,
       source_mentions:sourceNames.filter((name:string)=>reviewText.includes("«"+name+"»")).length,
       source_names:sourceNames.length,
-      cards:cards.length,trends:trends.length
+      cards:cards.length,trends:trends.length,required_branches:synthesisDossier.requiredBranches,
+      dossier_chars:trendText.length,publications_with_selected_evidence:synthesisDossier.coveredPublications
     }));
     if (!(await finishQuota(true))) return json({error:"w_review_quota_commit_failed",detail:"Результат модели получен, но суточный учёт не завершён; повторная попытка не будет безопасной."},503);
     return json({
