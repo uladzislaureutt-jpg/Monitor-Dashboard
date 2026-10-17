@@ -226,7 +226,7 @@ function lightPreflightWarnings(review: string, evidence: string): string[] {
 }
 
 function parseModelJson(result: { content: string }) { try { return JSON.parse(result.content); } catch { return null; } }
-function aiError(provider: "groq" | "gemini", result: AiFailure) {
+function aiError(provider: "groq" | "gemini" | "cloudflare", result: AiFailure) {
   const rate = result.status === 429;
   return json({
     error: rate ? `${provider}_rate_limit` : `${provider}_error`,
@@ -873,7 +873,7 @@ ${styleOnlyText || "Дополнительные фрагменты недост
     // SINGLE-PASS: no rewriting, expansion, independent AI audit, or deletion.
     // Fallback to a different provider is used only if the chosen provider
     // is technically unavailable or did not return usable JSON.
-    if (!result.ok) {await finishQuota(false); return aiError(selectedProvider,result);}
+    if (!result.ok) {await finishQuota(false); return aiError(selectedProvider==="groq"?"groq":"cloudflare",result);}
     if (!parsed || typeof parsed.review_text!=="string" || !parsed.review_text.trim()) {
       await finishQuota(false);
       return json({error:"invalid_synthesis_output"},502);
