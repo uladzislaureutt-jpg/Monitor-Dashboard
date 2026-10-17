@@ -5,6 +5,7 @@ import { MONITOR_BOOKMARKLET, parseBrowserCapture } from "../browserImport";
 import { exactCompressForProfile, type CompressionMode } from "../editorialCompression";
 import { wEditorialMap, wEvidenceBatch, wStyleProfile, wSynthesize, type WDensity, type WEditorialMap, type WEditorialTrend, type WFactCheck, type WUsage, type WEvidenceData } from "../wReviewAi";
 import { useI18n } from "../i18n";
+import { buildStylePattern } from "../wReviewStyle";
 
 const W_EVIDENCE_CONTRACT_VERSION = 6; // Preserve verified evidence and do not reanalyse articles.
 const W_MAP_CONTRACT_VERSION = 7; // Recalculate only the editorial dossier.
@@ -24,27 +25,6 @@ type WItem = {
 };
 type WSample = { id: string; name: string; text: string };
 
-// Deterministically select complete adjacent paragraphs from the author's
-// own samples. These are STYLE_ONLY, never evidence about current events.
-function selectStyleExcerpts(samples: WSample[]): Array<{name:string;text:string}> {
-  const excerpts:Array<{name:string;text:string}> = [];
-  let total = 0;
-  for(const sample of samples.slice(0,3)){
-    const paragraphs=sample.text.split(/\n\s*\n/).map(p=>p.trim()).filter(p=>p.length>=80);
-    if(paragraphs.length<2) continue;
-    // Prefer a piece that contains both editorial interpretation and source attribution.
-    const matches=(p:string)=>/«[^»]{2,90}»|\b(?:Reuters|CNN|BBC|Bloomberg)\b/i.test(p);
-    const start=Math.max(0,paragraphs.findIndex((p,i)=>i<paragraphs.length-1&&matches(p)));
-    const chosen=paragraphs.slice(start,start+3).join("\n\n").slice(0,1400);
-    if(chosen.length<200)continue;
-    const room=4000-total;
-    if(room<300||excerpts.length===4)break;
-    const text=chosen.slice(0,room);
-    excerpts.push({name:sample.name.slice(0,120),text});
-    total+=text.length;
-  }
-  return excerpts;
-}
 type WState = {
   items: WItem[];
   topic: string;
@@ -479,7 +459,8 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         targetChars: state.targetChars,
         evidenceCards: evidenceCards(state.items),
         styleProfile: state.styleProfile,
-        styleExcerpts: selectStyleExcerpts(state.samples),
+        styleExcerpts: buildStylePattern(state.samples).excerpts,
+        stylePattern: buildStylePattern(state.samples),
         trends: selectedTrends,
         dossier: state.editorialMap!,
         density: state.density,
