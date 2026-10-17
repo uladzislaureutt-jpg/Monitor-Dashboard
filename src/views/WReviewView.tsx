@@ -452,6 +452,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   async function synthesize() {
     if (!reviewReady) return;
     setBusy("synthesize"); setError(""); setMessage("");
+    const {excerpts:styleExcerpts,...styleComposition}=buildStylePattern(state.samples);
     try {
       const result = await wSynthesize({
         topicKey: `workspace-${activeSlot + 1}`,
@@ -459,8 +460,8 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         targetChars: state.targetChars,
         evidenceCards: evidenceCards(state.items),
         styleProfile: state.styleProfile,
-        styleExcerpts: buildStylePattern(state.samples).excerpts,
-        stylePattern: buildStylePattern(state.samples),
+        styleExcerpts,
+        styleComposition,
         trends: selectedTrends,
         dossier: state.editorialMap!,
         density: state.density,
