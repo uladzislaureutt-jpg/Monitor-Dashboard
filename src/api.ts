@@ -80,7 +80,7 @@ export const desktopApi = {
   writeClipboardText: (text: string) => invoke<void>("write_clipboard_text", { text }),
   exportReport: (path: string, date: string, items: ReportExportItem[], monitorKey = activeMonitorKey) =>
     invoke<void>("export_report_docx", { path, date, items, monitorKey }),
-  exportWReview: (path: string, text: string, sourceNames: string[], sectionTitles: string[], boldPhrases: string[], sourceLinks: {name:string;url:string}[]) => invoke<void>("export_w_review_docx", { path, text, sourceNames, sectionTitles, boldPhrases, sourceLinks }),
+  exportWReview: (path: string, text: string, sourceNames: string[], sectionTitles: string[], boldPhrases: string[], sourceLinks: {name:string;url:string}[], templatePath: string|null) => invoke<void>("export_w_review_docx", { path, text, sourceNames, sectionTitles, boldPhrases, sourceLinks, templatePath }),
   extractWReviewSample: (path: string) => invoke<string>("extract_w_review_sample", { path }),
   exportTikTokTranscript: (path: string, text: string, comments: string[], accents: string[]) =>
     invoke<void>("export_tiktok_transcript_docx", { path, text, comments, accents }),
