@@ -1197,3 +1197,47 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 .w-review-task label textarea{min-height:65px;margin-top:5px}
 .w-review-task label{min-width:0}
 .w-review-task button.small-button{min-height:28px}
+
+
+/* 0.8.54 — W-Review article input guard (whole text stays editable). */
+.w-review-length-state{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:9px 0;font-size:10px}
+.w-review-length-state span{font-weight:700;color:#477250}
+.w-review-length-state .exceeded{color:#ad4a30}
+.w-review-length-state strong{font-size:9.5px;font-weight:600;color:#ad4a30}
+.w-review-limit-warning{color:#ad4a30!important;font-weight:700}
+.w-review-text-guard{position:relative;width:100%;background:#fff;border-radius:14px}
+.w-review-text-backdrop{position:absolute;inset:0;box-sizing:border-box;padding:16px;border:1px solid transparent;
+  overflow:hidden;white-space:pre-wrap;overflow-wrap:break-word;word-break:normal;tab-size:8;
+  font:16px/1.55 Georgia,"Times New Roman",serif;color:#173047;pointer-events:none}
+.w-review-text-backdrop .w-review-text-tail{color:#a8afb8;background:#f5f4f2}
+.w-review-editor .report-editor-textarea.w-review-edit-input{position:relative;display:block;width:100%;height:450px;min-height:430px;
+  box-sizing:border-box;resize:vertical;background:transparent;color:transparent;caret-color:#173047;
+  font:16px/1.55 Georgia,"Times New Roman",serif;white-space:pre-wrap;tab-size:8}
+.w-review-edit-input::selection{background:#b4d2e9b0;color:transparent}
+.w-review-text-guard:focus-within{box-shadow:0 0 0 2px #92b6cb55}
+
+/* Administrator-only notebook in the Data tab. */
+.admin-notebook{margin-top:14px}
+.admin-notebook-top-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.admin-notebook-layout{display:grid;grid-template-columns:minmax(205px, .29fr) minmax(0,1fr);gap:16px}
+.admin-notebook-list{display:grid;gap:6px;align-content:start;max-height:560px;overflow:auto}
+.admin-notebook-list-item{display:grid;gap:6px;text-align:left;background:#fbf9f6;border:1px solid #ddd5ca;border-radius:10px;padding:11px;cursor:pointer;color:#2f4959}
+.admin-notebook-list-item.selected{background:#eef5f7;border-color:#9dbdcc;box-shadow:inset 3px 0 #729bad}
+.admin-notebook-list-item strong{font-size:11px;line-height:1.35;overflow-wrap:anywhere}
+.admin-notebook-list-item small{font-size:9px;color:#797770}
+.admin-notebook-editor{min-width:0;display:grid;gap:10px;align-content:start}
+.admin-notebook-label{display:grid;gap:5px;font-size:10px;font-weight:700;color:#34566a}
+.admin-notebook-label input,.admin-notebook-label textarea{width:100%;box-sizing:border-box;border:1px solid #d7cfc5;border-radius:10px;
+  background:#fff;color:#273844;padding:10px 12px;font:12px/1.55 "Segoe UI",Arial,sans-serif}
+.admin-notebook-label textarea{resize:vertical;min-height:245px}
+.admin-notebook-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.admin-notebook-toolbar>span{margin-left:auto;font-size:9px;color:#7b746c}
+.admin-notebook-upload{position:relative;display:inline-flex;align-items:center;cursor:pointer}
+.admin-notebook-upload input{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}
+.admin-notebook-upload.disabled{opacity:.5;cursor:not-allowed;pointer-events:none}
+.admin-notebook-hint{font-size:9px;color:#7b746c;line-height:1.5;margin:0}
+.admin-notebook-images{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
+.admin-notebook-images figure{border:1px solid #ddd5ca;border-radius:9px;background:#fbfaf8;padding:7px;display:grid;gap:6px;margin:0}
+.admin-notebook-images img{display:block;max-width:100%;max-height:270px;object-fit:contain;margin:auto;border-radius:6px}
+.admin-notebook-images button{justify-self:end}
+@media(max-width:850px){.admin-notebook-layout{grid-template-columns:1fr}.admin-notebook-list{max-height:210px}}
