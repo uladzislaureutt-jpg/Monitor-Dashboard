@@ -10,7 +10,7 @@ const MAX_EXCERPT_CHARS=1250;
 const MAX_TOTAL_CHARS=7200;
 const MAX_EXCERPTS=12;
 const patterns={
-  comparison:/\b(?:однак[о]?|впрочем|между тем|в отличие|в то же время|вместе с тем|при этом|с другой стороны|напротив|в сравнении|тогда как|в противоположность)\b/iu,
+  comparison:/(?:однако|впрочем|между тем|в отличие|в то же время|вместе с тем|при этом|с другой стороны|напротив|в сравнении|тогда как|в противоположность)/iu,
   attribution:/«[^»]{2,110}»|\b(?:Reuters|Bloomberg|BBC|CNN|Financial Times|The Guardian|Associated Press|NYT)\b/iu
 };
 const median=(items:number[])=>{
