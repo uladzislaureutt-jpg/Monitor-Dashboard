@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { DOSSIER_INSTRUCTIONS, dossierSchema, normalizeDossier, makeSynthesisDossier } from "./editorial-dossier.ts";
 import { evidenceV2Instructions, evidenceV2Schema, makeEvidenceDocuments, renderEvidenceMaterials, verifyEvidenceCards, formatEvidenceCard, type EvidenceCard } from "./evidence-v2.ts";
 
 const cors = {
@@ -437,59 +438,47 @@ ${sections.join("; ")}.
     if (!cards.length) return json({ error: "no_evidence_cards" }, 400);
     const evidenceText = cards.map((card: string, index: number) => `P${String(index + 1).padStart(2, "0")}\n${card}`).join("\n\n");
     if (evidenceText.length > 180000) return json({ error: "evidence_too_large", max_chars: 180000 }, 400);
-    const schema = {
-      type: "OBJECT",
-      properties: {
-        trends: { type: "ARRAY", minItems: 1, maxItems: 5, items: {
-          type: "OBJECT",
-          properties: {
-            id: { type: "STRING" }, title: { type: "STRING" }, summary: { type: "STRING" },
-            sources: { type: "ARRAY", items: { type: "STRING" } },
-          },
-          required: ["id", "title", "summary", "sources"],
-        } },
-        inventory: { type: "OBJECT", properties: {
-          quotes: { type: "INTEGER" }, headlines: { type: "INTEGER" }, experts: { type: "INTEGER" },
-        }, required: ["quotes", "headlines", "experts"] },
-      },
-      required: ["trends", "inventory"],
-    };
-    const prompt = `Ты редактор, который строит короткую Editorial Map перед написанием обзора. Определи от 1 до 5 наиболее ярких и содержательных ТЕНДЕНЦИЙ/АКЦЕНТОВ всего медиаполя по задаче оператора. Это смысловые линии темы, а не группы "какие СМИ сказали X, а какие Y". Не создавай тренд из-за отсутствия позиции у части источников. Строго выполняй поле ИСКЛЮЧЕНИЯ из задания оператора: запрещённые аспекты не должны попасть в тенденции.
-
-Для каждой тенденции:
-- title: короткое редакционное название;
-- summary: 1–2 предложения, что проявилось и почему это важно для обзора;
-- sources: несколько СМИ, дающих материал для линии.
-
-Также посчитай пригодные элементы во всём пуле:
-quotes — содержательные прямые цитаты;
-headlines — выразительные заголовки/формулировки;
-experts — отдельные комментарии реально названных профильных экспертов; политических лидеров и непосредственных участников события экспертами не считать.
-Считай только реально присутствующие элементы. Формат Evidence v2: E01 [fact/P001], E02 [quote/P002], E03 [expert/P003]. Каждая запись содержит SOURCE — проверенную дословную выдержку. Не считай как отдельные факты повторы и не приписывай редакции чужую критику.
-
-ЗАДАНИЕ ОПЕРАТОРА:
-${task}
-
-EVIDENCE CARDS:
-${evidenceText}`;
+    const schema=dossierSchema(cards.length);
+    const prompt=DOSSIER_INSTRUCTIONS+"\n\nЗАДАНИЕ ОПЕРАТОРА:\n"+task+
+      "\n\nДОКАЗАТЕЛЬНАЯ БАЗА (P01:E01 — E01 в статье P01):\n"+evidenceText;
     let result:AiResult=geminiApiKey
-      ? await callGemini(geminiApiKey, geminiModel, prompt, schema, 0.1, "editorial_map")
+      ? await callGemini(geminiApiKey, geminiModel, prompt, schema, 0.1, "editorial_map", 0, {maxOutputTokens:8192})
       : {ok:false,status:503,retryAfter:null,detail:"gemini_not_configured"};
     if (!result.ok && result.status !== 429 && geminiApiKey && geminiModel !== "gemini-3.5-flash-lite") {
-      result = await callGemini(geminiApiKey, "gemini-3.5-flash-lite", prompt, schema, 0.1, "editorial_map_fallback");
+      result = await callGemini(geminiApiKey, "gemini-3.5-flash-lite", prompt, schema, 0.1, "editorial_map_fallback", 0, {maxOutputTokens:8192});
     }
-    let provider = "gemini";
-    const geminiProblem = !result.ok ? result.diagnostic||null : null;
-    if (!result.ok && groqApiKey) {
-      console.info("w_review_provider_fallback "+JSON.stringify({stage:"editorial_map",from:"gemini",to:"groq",trigger:!result.ok?result.diagnostic?.kind||"other":"other",http_status:!result.ok?result.status:null}));
-      const fallback = await callGroq(groqApiKey, {model:"openai/gpt-oss-20b",response_format:{type:"json_object"},reasoning_effort:"low",reasoning_format:"hidden",max_completion_tokens:3500,messages:[{role:"system",content:"Верни JSON с массивом trends (id,title,summary,sources) и объектом inventory (quotes,headlines,experts). Основывайся только на данных пользователя."},{role:"user",content:prompt}]});
-      if (fallback.ok) {result = fallback;provider = "groq";}
+    let provider="gemini";
+    const geminiProblem=!result.ok?result.diagnostic||null:null;
+    const parsed=result.ok?parseModelJson(result):null;
+    let checked=normalizeDossier(parsed,cards);
+    if((!result.ok||checked.error)&&groqApiKey){
+      console.info("w_review_provider_fallback "+JSON.stringify({
+        stage:"editorial_dossier",from:"gemini",to:"groq",
+        trigger:checked.error||(!result.ok?result.diagnostic?.kind:"invalid_schema")||"other"
+      }));
+      const fallback=await callGroq(groqApiKey,{
+        model:"openai/gpt-oss-20b",response_format:{type:"json_object"},
+        reasoning_effort:"low",reasoning_format:"hidden",max_completion_tokens:7600,
+        messages:[{role:"system",content:DOSSIER_INSTRUCTIONS},{role:"user",content:prompt}]
+      });
+      if(fallback.ok){
+        const candidate=normalizeDossier(parseModelJson(fallback),cards);
+        if(!candidate.error){result=fallback;checked=candidate;provider="groq";}
+      }
     }
-    if (!result.ok) return json({error:"editorial_map_providers_unavailable",
+    if(!result.ok)return json({error:"editorial_dossier_providers_unavailable",
       provider:"gemini_groq",issue:geminiProblem,retryable:false},503);
-    const parsed = parseModelJson(result);
-    if (!parsed || !Array.isArray(parsed.trends) || !parsed.inventory) return json({ error: "invalid_editorial_map", provider }, 502);
-    return json({ editorial_map: parsed, model: provider === "groq" ? "openai/gpt-oss-20b" : geminiModel, provider, usage: result.usage });
+    if(checked.error||!checked.dossier)return json({error:"invalid_editorial_dossier",
+      detail:checked.error||"unknown_dossier_error",provider},502);
+    const docket=checked.dossier;
+    console.info("w_review_dossier_v3 "+JSON.stringify({
+      trends:docket.trends.length,branches:docket.trends.reduce((n,t)=>n+t.branches.length,0),
+      mandatory:docket.trends.reduce((n,t)=>n+t.branches.filter(b=>b.required).length,0),
+      publications:docket.coverage.length,
+      used:docket.coverage.filter(c=>["used","supporting"].includes(c.status)).length
+    }));
+    return json({editorial_map:docket,model:provider==="groq"?"openai/gpt-oss-20b":geminiModel,
+      provider,usage:result.usage});
   }
 
   if (action === "verify_review") {
