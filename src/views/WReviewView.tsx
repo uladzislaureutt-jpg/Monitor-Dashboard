@@ -7,6 +7,7 @@ import { wEditorialMap, wEvidenceBatch, wStyleProfile, wSynthesize, type WDensit
 import { useI18n } from "../i18n";
 
 const W_CONTRACT_VERSION = 5;
+const W_STYLE_CONTRACT_VERSION = 4; // Existing profiles remain valid; only Evidence Cards/Map changed.
 const MAX_ITEMS = 18;
 const HARD_MAX_ITEMS = 30; // Legacy pools remain intact; the operator can trim them manually.
 const MAX_SAMPLES = 5;
@@ -93,7 +94,7 @@ function loadState(): WState {
         ? raw.tasks.slice(0,5).map((v:unknown)=>String(v||"").slice(0,500))
         : [String(raw.task||"").slice(0,500)],
       exclusions: String(raw.exclusions || "").slice(0, 300),
-      targetChars: [1000, 2000, 3000, 6000, 8000].includes(Number(raw.targetChars)) ? Number(raw.targetChars) : 3000,
+      targetChars: [1000, 2000, 3000, 4000, 6000, 8000].includes(Number(raw.targetChars)) ? Number(raw.targetChars) : 3000,
       samples,
       styleProfile: String(raw.styleProfile || "").slice(0, 10000),
       styleContract: Number(raw.styleContract || 0),
@@ -136,7 +137,7 @@ function loadWorkspaceStore(): WWorkspaceStore {
       topic:String(slot?.topic||"").slice(0,140),
       tasks:Array.isArray(slot?.tasks)&&slot.tasks.length ? slot.tasks.slice(0,5).map((v:unknown)=>String(v||"").slice(0,500)) : [String(slot?.task||"").slice(0,500)],
       exclusions:String(slot?.exclusions||"").slice(0,300),
-      targetChars:[1000,2000,3000,6000,8000].includes(Number(slot?.targetChars))?Number(slot.targetChars):3000,
+      targetChars:[1000,2000,3000,4000,6000,8000].includes(Number(slot?.targetChars))?Number(slot.targetChars):3000,
       density:{quotes:densityValue(slot?.density?.quotes),headlines:densityValue(slot?.density?.headlines),experts:densityValue(slot?.density?.experts)},
       selectedTrendIds:Array.isArray(slot?.selectedTrendIds)?slot.selectedTrendIds:[],
       sectionTitles:Array.isArray(slot?.sectionTitles)?slot.sectionTitles:[],
@@ -198,7 +199,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   const prepared = state.items.filter((item) => item.evidence.trim() && item.evidenceContract === W_CONTRACT_VERSION).length;
   const mapReady = Boolean(state.editorialMap?.trends?.length && state.mapContract === W_CONTRACT_VERSION);
   const selectedTrends = mapReady ? state.editorialMap!.trends.filter((trend) => state.selectedTrendIds.includes(trend.id)) : [];
-  const styleReady = Boolean(state.styleProfile.trim() && state.styleContract === W_CONTRACT_VERSION);
+  const styleReady = Boolean(state.styleProfile.trim() && state.styleContract === W_STYLE_CONTRACT_VERSION);
   const topicReady = state.topic.trim().length > 0;
   const operatorTask = useMemo(() => {
     const tasks=state.tasks.map(v=>v.trim()).filter(Boolean);
@@ -445,7 +446,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         samples,
         (seconds) => setMessage(be ? `Ліміт правайдара ШІ. Паўтор праз ~${seconds} с…` : `Временный лимит провайдера ИИ. Повтор через ~${seconds} с…`)
       );
-      setState((current) => ({ ...current, styleProfile: result.styleProfile, styleContract: W_CONTRACT_VERSION }));
+      setState((current) => ({ ...current, styleProfile: result.styleProfile, styleContract: W_STYLE_CONTRACT_VERSION }));
       addUsage(result.usage);
       const styleModel = result.model.startsWith("@cf/") ? "Cloudflare GPT-OSS-120B"
         : result.model === "gemini-3.5-flash-lite" ? "Gemini 3.5 Flash-Lite" : result.model;
@@ -616,7 +617,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     <section className="panel w-review-final"><div className="panel-head"><div><h3>{be?"4. Выніковы агляд":"4. Итоговый обзор"}</h3><p>{be?"AI будуе тэкст па выбраных тэндэнцыях.":"AI строит текст по выбранным тенденциям."}</p></div></div>
       <div className="w-review-readiness"><span className={prepared===state.items.length&&state.items.length?"ready":""}>{prepared===state.items.length&&state.items.length?"✓":"○"} {be?"Матэрыялы прааналізаваны":"Материалы проанализированы"}</span><span className={selectedTrends.length?"ready":""}>{selectedTrends.length?"✓":"○"} {be?"Тэндэнцыі выбраны":"Тенденции выбраны"}</span><span className={topicReady?"ready":""}>{topicReady?"✓":"○"} {be?"Тэма ўказана":"Тема указана"}</span><span className={styleReady?"ready":""}>{styleReady?"✓":"○"} {be?"Аўтарскі стыль (абавязкова)":"Авторский стиль (обязательно)"}</span></div>
       {!styleReady&&<p style={{fontSize:11,color:"#9a443b",margin:"0 0 10px"}}>{be?"Перад фарміраваннем агляду стварыце профіль на ўкладцы «Аўтарскі стыль».":"Перед формированием обзора создайте профиль на вкладке «Авторский стиль»."}</p>}
-      <div className="w-review-final-actions"><label className="w-review-length-control"><span>{be?"Аб\’ём, знакаў":"Объём, знаков"}</span><select value={state.targetChars} onChange={(e)=>setState({...state,targetChars:Number(e.target.value),reviewText:"",sectionTitles:[],boldPhrases:[],factCheck:null,factCheckContract:0})}><option value={1000}>1 000</option><option value={2000}>2 000</option><option value={3000}>3 000</option><option value={6000}>6 000</option><option value={8000}>8 000</option></select></label><button className="primary-button" disabled={busy!==""||!reviewReady} onClick={synthesize}>{busy==="synthesize"?"…":be?"Сфарміраваць агляд":"Сформировать обзор"}</button><button className="secondary-button" disabled={!state.reviewText.trim()||busy!==""} onClick={exportDocx}>DOCX</button></div>
+      <div className="w-review-final-actions"><label className="w-review-length-control"><span>{be?"Аб\’ём, знакаў":"Объём, знаков"}</span><select value={state.targetChars} onChange={(e)=>setState({...state,targetChars:Number(e.target.value),reviewText:"",sectionTitles:[],boldPhrases:[],factCheck:null,factCheckContract:0})}><option value={1000}>1 000</option><option value={2000}>2 000</option><option value={3000}>3 000</option><option value={4000}>4 000</option><option value={6000}>6 000</option><option value={8000}>8 000</option></select></label><button className="primary-button" disabled={busy!==""||!reviewReady} onClick={synthesize}>{busy==="synthesize"?"…":be?"Сфарміраваць агляд":"Сформировать обзор"}</button><button className="secondary-button" disabled={!state.reviewText.trim()||busy!==""} onClick={exportDocx}>DOCX</button></div>
       <textarea className="report-editor-textarea w-review-final-text" lang={be?"be":"ru"} spellCheck={true} value={state.reviewText} onChange={(e)=>setState(current=>({
           ...current,reviewText:e.target.value,
           sectionTitles:current.sectionTitles.filter(value=>e.target.value.includes(value)),
