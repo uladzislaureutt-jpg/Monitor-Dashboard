@@ -711,6 +711,12 @@ ${styleProfile || "Живой сдержанный редакционный ст
 
     const lengthMinimum=Math.round(targetChars*0.95);
     const lengthMaximum=Math.round(targetChars*1.05);
+    // One generation, structured into natural adjacent paragraphs. The user
+    // still receives ONE continuous editor text; not an item-by-item digest.
+    const paragraphTarget=targetChars>=7000?12:
+      targetChars>=5500?9:targetChars>=3500?7:
+      targetChars>=2500?6:targetChars>=1800?4:2;
+    const paragraphMinChars=Math.ceil((lengthMinimum-(paragraphTarget-1)*2)/paragraphTarget);
     const payload = {
       model: "openai/gpt-oss-120b", reasoning_effort: "low", reasoning_format: "hidden", temperature: 0.2,
       max_completion_tokens: Math.min(2500, Math.max(1300, Math.ceil(targetChars / 3.0) + 450)),
@@ -742,18 +748,18 @@ ${styleProfile}
 STYLE_ONLY (образцы авторской манеры, НЕ ИСТОЧНИК ФАКТОВ):
 ${styleOnlyText || "Дополнительные фрагменты недоступны. Следуй STYLE_PROFILE."}
 
-РЕЗУЛЬТАТ. Верни один JSON: review_text, section_titles (только дословные подзаголовки из обзора), bold_phrases (3–4 дословные значимые фразы из обзора). Не выводи промежуточные оценки, планы, замечания и результаты проверок.` },
-        { role: "user", content: `ЗАДАНИЕ ОПЕРАТОРА:\n${task}\n\nУТВЕРЖДЁННЫЕ ТЕНДЕНЦИИ:\n${trendText}\n\nИНСТРУКЦИЯ ДЛЯ ЭТАПА:\n${String(body?.stage_note || "").slice(0,500)}\n\nEVIDENCE CARDS:\n${evidenceText}\n\nФИНАЛЬНОЕ ЗАДАНИЕ: составь ОДИН цельный аналитический обзор медиаполя, поле review_text — ${targetChars} знаков С ПРОБЕЛАМИ, допустимое отклонение ±5% (${lengthMinimum}–${lengthMaximum} знаков). Это объём только review_text, не JSON или служебных полей. Раскрой утверждённые тенденции в авторском стиле, опираясь на весь пул, без последовательного пересказа отдельных публикаций, фактических выдумок и повторов. Не выдавай план, промежуточный анализ или пояснения.` }],
-      response_format: { type: "json_schema", json_schema: { name: "w_review_v6", strict: true, schema: {
-        type: "object",
-        properties: {
-          review_text: { type: "string" },
-          section_titles: { type: "array", items: { type: "string" }, maxItems: 5 },
-          bold_phrases: { type: "array", items: { type: "string" }, minItems: 3, maxItems: 4 }
+РЕЗУЛЬТАТ. Верни ОДИН JSON со строковым массивом paragraphs, массивами section_titles и bold_phrases. paragraphs — единое непрерывное аналитическое повествование, разбитое на естественные абзацы, НЕ набор отдельных СМИ или подзаголовков. Нужно не менее ${paragraphTarget} развёрнутых абзацев, ориентировочно не короче ${paragraphMinChars} знаков каждый; размер и ритм могут свободно различаться. В пределах ОДНОГО ответа полностью раскрой все выбранные тенденции, подробные факты и противоречащие ракурсы; не заверши после краткого обзора первых источников. section_titles:[] и bold_phrases:[] допустимы. Никогда не выдумывай подзаголовки и не вставляй Markdown ** или __. Не выдавай планы и промежуточные замечания.` },
+        { role: "user", content: `ЗАДАНИЕ ОПЕРАТОРА:\n${task}\n\nУТВЕРЖДЁННЫЕ ТЕНДЕНЦИИ:\n${trendText}\n\nИНСТРУКЦИЯ ДЛЯ ЭТАПА:\n${String(body?.stage_note || "").slice(0,500)}\n\nEVIDENCE CARDS:\n${evidenceText}\n\nФИНАЛЬНОЕ ЗАДАНИЕ: создай ОДИН непрерывный авторский аналитический обзор в массиве paragraphs, с общим объёмом после соединения абзацев ${targetChars} знаков с пробелами, допустимый коридор ${lengthMinimum}–${lengthMaximum}. Минимум ${paragraphTarget} содержательных соседних абзацев, ориентир каждого от ${paragraphMinChars} знаков. Каждый следующий развивает общую мысль, а не описывает следующее СМИ. После обработки всех тенденций заверши подтверждённым содержательным акцентом, не формальной сводкой. Никаких самодельных заголовков, Markdown, англоязычных цитат без русского перевода, фактологических выдумок, списков источников.` }],
+      response_format: { type:"json_schema",json_schema:{name:"w_review_v7_paragraphs",strict:true,schema:{
+        type:"object",
+        properties:{
+          paragraphs:{type:"array",minItems:paragraphTarget,maxItems:paragraphTarget+4,items:{type:"string",minLength:paragraphMinChars}},
+          section_titles:{type:"array",items:{type:"string"},maxItems:2},
+          bold_phrases:{type:"array",items:{type:"string"},maxItems:4}
         },
-        required: ["review_text", "section_titles", "bold_phrases"],
-        additionalProperties: false,
-      } } },
+        required:["paragraphs","section_titles","bold_phrases"],
+        additionalProperties:false
+      }}},
     };
     const cfToken = Deno.env.get("CLOUDFLARE_API_TOKEN") || "";
     const cfId = Deno.env.get("CLOUDFLARE_ACCOUNT_ID") || "";
@@ -813,7 +819,20 @@ ${styleOnlyText || "Дополнительные фрагменты недост
         : {ok:false,status:503,retryAfter:null,detail:"cloudflare_unconfigured"};
     let selectedProvider="cloudflare";
     let selectedModel="@cf/openai/gpt-oss-120b";
-    let parsed=result.ok?parseModelJson(result):null;
+    // Convert one structured completion to the existing API. No second AI
+    // call, rewriting pass, audit or source-by-source postprocessing.
+    const normalizeReview=(raw:any)=>{
+      if(!raw||typeof raw!=="object")return raw;
+      const paragraphs=Array.isArray(raw.paragraphs)?
+        raw.paragraphs.map((p:any)=>String(p||"").trim()).filter(Boolean):[];
+      const text=paragraphs.length?paragraphs.join("\n\n"):String(raw.review_text||"").trim();
+      // Remove model control markup and fake paragraph-ending headings.
+      const withoutTags=text.replace(/\s+\*\*«[^»\n]{5,95}»\*\*(?=\s*(?:\n|$))/g,"");
+      const cleaned=withoutTags.replace(/\*\*/g,"").replace(/__/g,"").trim();
+      return {...raw,review_text:cleaned,section_titles:[],
+        bold_phrases:Array.isArray(raw.bold_phrases)?raw.bold_phrases:[]};
+    };
+    let parsed=result.ok?normalizeReview(parseModelJson(result)):null;
     const usable=(r:AiResult,p:any)=>r.ok&&typeof p?.review_text==="string"&&Boolean(p.review_text.trim());
     const temporaryOrAccountError=result.ok||[401,403,408,429,500,502,503,504,520,522,523,524].includes(result.status);
     if(cfPrimaryReady&&cfBackupReady&&!usable(result,parsed)&&temporaryOrAccountError){
@@ -822,13 +841,13 @@ ${styleOnlyText || "Дополнительные фрагменты недост
         http_status:result.ok?200:result.status,trigger:result.ok?"invalid_output":"provider_failure"
       }));
       result=await callCloudflare(cfBackupId,cfBackupToken,cloudflareSynthesisPayload);
-      parsed=result.ok?parseModelJson(result):null;
+      parsed=result.ok?normalizeReview(parseModelJson(result)):null;
       cloudflareRoute="backup";
     }
     if(!usable(result,parsed)&&groqApiKey){
       const groq=await callGroq(groqApiKey,{...groqPayload,
         max_completion_tokens:Math.min(1800,Math.max(850,Math.ceil(targetChars/3.3)+200))});
-      const gp=groq.ok?parseModelJson(groq):null;
+      const gp=groq.ok?normalizeReview(parseModelJson(groq)):null;
       if(usable(groq,gp)){
         result=groq;parsed=gp;selectedProvider="groq";
         selectedModel="openai/gpt-oss-120b";cloudflareRoute=null;
@@ -852,6 +871,8 @@ ${styleOnlyText || "Дополнительные фрагменты недост
       requested_output_token_budget:selectedProvider==="cloudflare"?synthesisOutputTokenBudget:
         result.ok?result.usage.completion_tokens:0,
       length_window:{min:lengthMinimum,max:lengthMaximum},
+      paragraph_target:paragraphTarget,paragraph_min:paragraphMinChars,
+      actual_paragraphs:reviewText.split(/\n\s*\n/).length,
       prompt_tokens:result.ok?result.usage.prompt_tokens:0,
       completion_tokens:result.ok?result.usage.completion_tokens:0,
       finish_reason:result.ok?result.finish_reason||"not_reported":"error",
