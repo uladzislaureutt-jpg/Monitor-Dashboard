@@ -12,6 +12,7 @@ create table if not exists public.monitor_admin_notes (
 );
 alter table public.monitor_admin_notes enable row level security;
 revoke all on public.monitor_admin_notes from anon, authenticated;
+grant select, insert, update, delete on public.monitor_admin_notes to service_role;
 create index if not exists monitor_admin_notes_updated_idx on public.monitor_admin_notes(updated_at desc);
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('monitor-admin-notes','monitor-admin-notes',false,3000000,
