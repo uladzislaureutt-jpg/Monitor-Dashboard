@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {W_REVIEW_GEMINI_PRIMARY,W_REVIEW_GEMINI_FALLBACK,W_REVIEW_GEMINI_ROUTES,wGeminiGenerationConfig,normalizeGeminiJsonSchema} from "./gemini-routing.ts";
+import {W_REVIEW_GEMINI_PRIMARY,W_REVIEW_GEMINI_FALLBACK,W_REVIEW_GEMINI_ROUTES,wGeminiGenerationConfig,normalizeGeminiJsonSchema,wGeminiPromptJsonConfig,parseModelJsonObject,W_GEMINI_JSON_ONLY_SUFFIX} from "./gemini-routing.ts";
 import {evidenceV2Schema} from "./evidence-v2.ts";
 import {dossierSchema} from "./editorial-dossier.ts";
 test("Gemini Evidence uses 3.5 Flash-Lite first and never 3.6",()=>{
@@ -45,4 +45,20 @@ test("normalization retains enum values, descriptions and property names",()=>{
   assert.deepEqual(normalized.properties.TYPE.enum,["OBJECT","ARRAY"]);
   assert.deepEqual(normalized.properties.optional.type,["string","null"]);
   assert.equal(normalized.properties.TYPE.description,"TYPE of media");
+});
+
+test("Gemini prompt-JSON fallback omits ALL structured response schema fields",()=>{
+  const config=wGeminiPromptJsonConfig({maxOutputTokens:16384});
+  assert.deepEqual(config,{maxOutputTokens:16384});
+  for(const field of ["responseFormat","responseSchema","responseMimeType","responseJsonSchema","temperature"])
+    assert.ok(!(field in config),"must omit "+field);
+  assert.ok(W_GEMINI_JSON_ONLY_SUFFIX.includes("JSON"));
+});
+test("prompt JSON fallback tolerates fenced JSON but never treats prose as verified evidence",()=>{
+  assert.deepEqual(parseModelJsonObject('{"trends":[{"id":"T1"}]}'),{trends:[{id:"T1"}]});
+  const fence=String.fromCharCode(96).repeat(3);
+  assert.deepEqual(parseModelJsonObject(fence+"json\n"+'{"cards":[]}'+"\n"+fence),{cards:[]});
+  assert.equal(parseModelJsonObject("Ответ без JSON"),null);
+  assert.equal(parseModelJsonObject('[{"index":0}]'),null);
+  assert.equal(parseModelJsonObject('{"trends":'),null);
 });
