@@ -305,8 +305,9 @@ Deno.serve(async (req: Request) => {
     const documents = makeEvidenceDocuments(normalized);
     const materialText = renderEvidenceMaterials(documents);
     const schema = evidenceV2Schema(normalized.length);
-    const prompt = evidencePrompt+"\n\nВерни ровно "+normalized.length+
+    const evidenceUserInput="Верни ровно "+normalized.length+
       " карточек, строго в порядке MATERIAL_1, MATERIAL_2 и т. д.\n\n"+materialText;
+    const prompt=evidencePrompt+"\n\n"+evidenceUserInput;
     // A 400 INVALID_ARGUMENT is structural, not a reason to retry the same
     // payload for every two-article batch. Service-only DB circuit is shared
     // across Edge isolates and operators; failures fail open to normal routing.
@@ -450,7 +451,7 @@ Deno.serve(async (req: Request) => {
           {role:"system",content:evidencePrompt+
             "\nКаждая дословная выдержка SOURCE должна точно встречаться в указанном фрагменте. "+
             "Не обрывай покрытие после вводных абзацев. Верни полный JSON cards."},
-          {role:"user",content:prompt}
+          {role:"user",content:evidenceUserInput}
         ]
       },100000);
       if(cfResult.ok){
@@ -486,7 +487,7 @@ Deno.serve(async (req: Request) => {
         max_completion_tokens: 7000,
         messages: [
           {role: "system", content: evidencePrompt},
-          {role: "user", content: prompt}
+          {role: "user", content: evidenceUserInput}
         ]
       });
       if (groqResult.ok) {
