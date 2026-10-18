@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { DOSSIER_INSTRUCTIONS, dossierSchema, normalizeDossier, makeSynthesisDossier, compactDossierCards, dossierOutputContract, dossierShape } from "./editorial-dossier.ts";
+import { DOSSIER_INSTRUCTIONS, dossierSchema, normalizeDossier, makeSynthesisDossier, compactDossierCards, dossierOutputContract, dossierShape, evidenceIndex } from "./editorial-dossier.ts";
 import { synthesisResponseSchema, readSynthesisBlocks } from "./synthesis-blocks.ts";
 import { reconcileDossierDraft } from "./dossier-reconciliation.ts";
 import { normalizeReviewSourceLabels, poolSourceNames } from "./review-output-guard.ts";
