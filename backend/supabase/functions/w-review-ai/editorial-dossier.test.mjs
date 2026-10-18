@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { evidenceIndex, normalizeDossier, makeSynthesisDossier, dossierSchema } from "./editorial-dossier.ts";
+import { evidenceIndex, normalizeDossier, makeSynthesisDossier, dossierSchema, isRussianDossierProse } from "./editorial-dossier.ts";
 const cards=[
   "ID: P01\nИСТОЧНИК: «Reuters»\nPUBLICATION_ID: story-A\nE01 [fact/P001] Прогноз снизился на 2%. | SOURCE: «Прогноз снизился на 2%.»\nE02 [counterposition/P002] Сценарий оспаривают эксперты. | SOURCE: «Сценарий оспаривают эксперты.»",
   "ID: P02\nИСТОЧНИК: «Bloomberg»\nPUBLICATION_ID: story-B\nE01 [expert/P003] Аналитик видит риск роста цен. | SOURCE: «Аналитик видит риск роста цен.»",
@@ -74,4 +74,26 @@ test("schema has mandatory branch evidence and full ledger",()=>{
   const fields=schema.properties.trends.items.properties.branches.items;
   assert.ok(fields.required.includes("evidence_ids"));
   assert.ok(fields.required.includes("significance"));
+});
+
+test("rejects English trend captions and English branch analysis without additional translation",()=>{
+  const sample=draft();
+  sample.trends[0].title="Sanctions waiver and diesel fuel deal";
+  assert.equal(normalizeDossier(sample,cards).error,"dossier_non_russian_trend_T1");
+  const details=draft();
+  details.trends[0].branches[0].significance="Changes the framework for European security policy";
+  assert.equal(normalizeDossier(details,cards).error,"dossier_non_russian_branch_T1:B1_significance");
+  const comment=draft();
+  comment.coverage[0].reason="This story provides a source for the key claim";
+  assert.equal(normalizeDossier(comment,cards).error,"dossier_non_russian_coverage_reason_P01");
+});
+test("Russian explanatory text may include unchanged Latin brand and source names",()=>{
+  assert.equal(isRussianDossierProse("Давление США на Киев из-за Starlink"),true);
+  assert.equal(isRussianDossierProse("Reuters и Bloomberg оценивают действия Трампа"),true);
+  assert.equal(isRussianDossierProse("Trump’s rhetoric toward Zelensky and political fallout"),false);
+  assert.equal(isRussianDossierProse(""),false);
+  const d=draft();
+  d.trends[0].title="Starlink и давление США на Украину";
+  d.trends[0].summary="Reuters сообщает об ограничениях Starlink";
+  assert.equal(normalizeDossier(d,cards).error,null);
 });
