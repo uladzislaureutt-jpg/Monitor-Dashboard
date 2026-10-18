@@ -621,8 +621,9 @@ ${sections.join("; ")}.
       "P"+String(i+1).padStart(2,"0")+"\n"+card).join("\n\n");
     if(evidenceText.length>180000)return json({error:"evidence_too_large",max_chars:180000},400);
     const schema=dossierSchema(cards.length);
-    const prompt=DOSSIER_INSTRUCTIONS+"\n\nЗАДАНИЕ ОПЕРАТОРА:\n"+task+
+    const mapUserInput="ЗАДАНИЕ ОПЕРАТОРА:\n"+task+
       "\n\nДОКАЗАТЕЛЬНАЯ БАЗА (P01:E01 — E01 в статье P01):\n"+evidenceText;
+    const prompt=DOSSIER_INSTRUCTIONS+"\n\n"+mapUserInput;
 
     // A source-verified dossier is mandatory. An invalid JSON map is NEVER
     // accepted merely to keep the workflow moving.
@@ -681,7 +682,7 @@ ${sections.join("; ")}.
           {role:"system",content:DOSSIER_INSTRUCTIONS+
             "\nОбязательное условие: JSON содержит trends, coverage по всем "+cards.length+
             " материалам и inventory. Каждый evidence_id должен встречаться в переданной базе."},
-          {role:"user",content:prompt}
+          {role:"user",content:mapUserInput}
         ]
       },100000);
       if(cf.ok)accept(cf,"@cf/openai/gpt-oss-120b","cloudflare");
@@ -699,7 +700,7 @@ ${sections.join("; ")}.
       const groq=await callGroq(groqApiKey,{
         model:"openai/gpt-oss-20b",response_format:{type:"json_object"},
         reasoning_effort:"low",reasoning_format:"hidden",max_completion_tokens:7600,
-        messages:[{role:"system",content:DOSSIER_INSTRUCTIONS},{role:"user",content:prompt}]
+        messages:[{role:"system",content:DOSSIER_INSTRUCTIONS},{role:"user",content:mapUserInput}]
       });
       if(groq.ok)accept(groq,"openai/gpt-oss-20b","groq");
       else attempts.push({model:"openai/gpt-oss-20b",status:groq.status,reason:"provider_error"});
