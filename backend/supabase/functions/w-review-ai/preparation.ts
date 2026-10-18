@@ -94,17 +94,20 @@ export async function prepareEvidence(input:{
     input.log?.(attempts.at(-1)!);
     return reply;
   }
-  // At most 65s on primary including format recovery and article-level repair.
-  // GPT-OSS-120B needs a longer first window for two full-length articles.
-  // Reserve the remaining request budget for CF backup and Gemini.
-  const primaryDeadline=Math.min(input.deadline,start+(input.cloudflareFirst?70000:65000));
+  // Cloudflare-first is retained for legacy callers. W-Review Evidence now
+  // uses Gemini 3.5 first (42 s), one Cloudflare account (up to 48 s),
+  // and Groq GPT-OSS-120B (up to 31 s), within the 130 s request limit.
+  const primaryDeadline=Math.min(input.deadline,start+(input.cloudflareFirst?70000:42000));
   if(input.available.primary){
-    const first=await attempt("primary",remaining(),Math.min(primaryDeadline,start+(input.cloudflareFirst?68000:35000)));
+    const first=await attempt("primary",remaining(),Math.min(primaryDeadline,start+(input.cloudflareFirst?68000:37000)));
     // A useful first card is not rerun merely because its peer failed.
     if(first?.ok)for(const index of remaining())await attempt("primary",[index],primaryDeadline);
   }
-  if(input.available.cloudflare)await attempt("cloudflare",remaining(),Math.min(input.deadline-18000,Date.now()+60000));
+  if(input.available.cloudflare)await attempt("cloudflare",remaining(),
+    Math.min(input.deadline-(input.cloudflareFirst?18000:35000),
+      Date.now()+(input.cloudflareFirst?60000:48000)));
   if(input.available.fallback)await attempt("fallback",remaining(),Math.min(input.deadline,Date.now()+22000));
-  if(input.available.groq)await attempt("groq",remaining(),Math.min(input.deadline,Date.now()+12000));
+  if(input.available.groq)await attempt("groq",remaining(),
+    Math.min(input.deadline,Date.now()+(input.cloudflareFirst?12000:31000)));
   return {articles:[...best.values()].sort((a,b)=>a.index-b.index),usage,attempts};
 }
