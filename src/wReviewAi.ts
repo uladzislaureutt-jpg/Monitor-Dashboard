@@ -12,6 +12,7 @@ export type WEditorialBranch = {
 export type WEditorialTrend = {
   id: string; title: string; summary: string; thesis: string;
   sources: string[]; branches: WEditorialBranch[];
+  operator_optional?: boolean; optional_reason?: string;
 };
 export type WEditorialCoverage = {
   publication_id: string; status: "used"|"supporting"|"duplicate"|"excluded"|"insufficient"|"reserve";
@@ -122,6 +123,8 @@ export async function wEditorialMap(input: { task: string; evidenceCards: string
   const trends:WEditorialTrend[] = Array.isArray(raw.trends) ? raw.trends.slice(0,5).map((t:any)=>({
     id:String(t?.id||""),title:String(t?.title||""),summary:String(t?.summary||""),
     thesis:String(t?.thesis||""),
+    operator_optional:t?.operator_optional===true,
+    optional_reason:String(t?.optional_reason||""),
     sources:Array.isArray(t?.sources)?t.sources.map(String):[],
     branches:Array.isArray(t?.branches)?t.branches.map((b:any)=>({
       id:String(b?.id||""),title:String(b?.title||""),claim:String(b?.claim||""),
