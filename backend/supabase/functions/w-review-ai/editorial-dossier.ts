@@ -9,7 +9,7 @@ export type DossierCoverage = {publication_id:string;status:"used"|"supporting"|
   reason:string;evidence_ids:string[]};
 export type EditorialDossier = {version:3;trends:DossierTrend[];coverage:DossierCoverage[];
   inventory:{quotes:number;headlines:number;experts:number}};
-export type IndexedEvidence = {id:string;publication:string;source:string;kind:string};
+export type IndexedEvidence = {id:string;publication:string;source:string;kind:string;summary:string};
 const txt=(v:unknown,n=500)=>String(v??"").trim().slice(0,n);
 const uniq=<T>(list:T[])=>Array.from(new Set(list));
 const statuses=new Set(["used","supporting","duplicate","excluded","insufficient","reserve"]);
@@ -24,7 +24,7 @@ export function evidenceIndex(cards:string[]){
     for(const match of cards[i].matchAll(/^E(\d+)\s+\[([a-z_]+)\/(?:P\d+|TITLE)\]\s+[^\n]+/gm)){
       const id=pub+":E"+match[1];
       if(entries.some(r=>r.id===id))continue;
-      entries.push({id,publication:pub,source,kind:match[2]});
+      entries.push({id,publication:pub,source,kind:match[2],summary:match[0].replace(/^E\d+\s+\[[^\]]+\]\s+/, "").split(" | SOURCE:")[0]});
     }
   }
   return {entries,publications,byId:new Map(entries.map(r=>[r.id,r]))};
@@ -220,7 +220,7 @@ function distribute(total:number,weights:number[]){
 }
 const weight=(b:DossierBranch)=>(b.required?3:1)*(b.priority==="high"?2:b.priority==="medium"?1.45:1)+
   Math.min(8,b.evidence_ids.length)*0.12;
-export function makeSynthesisDossier(dossier:EditorialDossier,selected:string[],targetChars:number,cards:string[]){
+export function makeSynthesisDossier(dossier:EditorialDossier,selected:string[],targetChars:number,cards:string[],medianParagraphChars=0){
   const index=evidenceIndex(cards),chosen=dossier.trends.filter(t=>selected.includes(t.id));
   if(dossier.version!==3||!chosen.length||chosen.some(t=>!t.branches.length))
     throw Error("dossier_invalid_or_unselected");
@@ -229,14 +229,29 @@ export function makeSynthesisDossier(dossier:EditorialDossier,selected:string[],
       throw Error("dossier_unverified_reference");
   }
   const opening=Math.round(targetChars*0.065),ending=Math.round(targetChars*0.045),body=targetChars-opening-ending;
-  const lineBudgets=distribute(body,chosen.map(t=>t.branches.reduce((n,b)=>n+weight(b),0)));
+  // Count distinct statements, not repeated references, when budgeting evidence capacity.
+  const branchWeight=(b:DossierBranch)=>{
+    const distinct=new Set(b.evidence_ids.concat(b.contrary_evidence_ids).map(id=>
+      index.byId.get(id)!.summary.toLocaleLowerCase().replace(/[^\p{L}\p{N}]/gu,"")));
+    return weight({...b,evidence_ids:[]})+Math.min(8,distinct.size)*0.12;
+  };
+  const lineBudgets=distribute(body,chosen.map(t=>t.branches.reduce((n,b)=>n+branchWeight(b),0)));
+  const rhythm=medianParagraphChars>=90?Math.max(260,Math.min(950,medianParagraphChars)):650;
+  const blocks=[{id:"opening",title:"Зачин",targetChars:opening,paragraphs:1},
+    ...chosen.map((t,i)=>({id:"line_"+(i+1),title:t.title,targetChars:lineBudgets[i],
+      paragraphs:Math.max(1,Math.round(lineBudgets[i]/rhythm))})),
+    {id:"ending",title:"Завершение",targetChars:ending,paragraphs:1}];
+  const detail=(ids:string[])=>uniq(ids).map(id=>{
+    const e=index.byId.get(id)!;
+    return id+" («"+e.source+"», "+e.kind+"): "+e.summary.slice(0,450);
+  }).join("\n    ");
   const lines=chosen.map((t,i)=>{
-    const branchBudgets=distribute(lineBudgets[i],t.branches.map(weight));
-    return ["ЛИНИЯ "+(i+1)+": "+t.title+" / "+lineBudgets[i]+" знаков",
+    const branchBudgets=distribute(lineBudgets[i],t.branches.map(branchWeight));
+    return ["БЛОК line_"+(i+1)+": "+t.title+" / около "+lineBudgets[i]+" знаков / около "+blocks[i+1].paragraphs+" абзацев",
       "ТЕЗИС: "+t.thesis,"ИСТОЧНИКИ: "+t.sources.map(s=>"«"+s+"»").join(", "),
       ...t.branches.map((b,j)=>[
         "  "+b.id+" "+b.title+" / "+branchBudgets[j]+" знаков / "+(b.required?"ОБЯЗАТЕЛЬНАЯ":"дополнительная"),
-        "  ФАКТЫ: "+b.evidence_ids.join(", "),"  КОНТРДОКАЗАТЕЛЬСТВА: "+b.contrary_evidence_ids.join(", "),
+        "  ФАКТУРА ДЛЯ РАСКРЫТИЯ: \n    "+detail(b.evidence_ids),"  КОНТРДОКАЗАТЕЛЬСТВА: \n    "+(detail(b.contrary_evidence_ids)||"нет"),
         "  УТВЕРЖДЕНИЕ: "+b.claim,"  МЕХАНИЗМ: "+(b.mechanism||"не установлен"),
         "  КОНТРПОЗИЦИЯ: "+(b.counterpoint||"не установлена"),
         "  ПРЕДЕЛ ВЫВОДА: "+(b.limitation||"не установлен"),"  ЗНАЧЕНИЕ: "+b.significance
@@ -250,10 +265,15 @@ export function makeSynthesisDossier(dossier:EditorialDossier,selected:string[],
   const text="РЕДАКЦИОННОЕ ДОСЬЕ v3 (план, а не готовая статья)."+
     "\nОБЪЁМ: "+targetChars+" знаков, включая атрибуцию и переходы. Зачин ~"+opening+
     " знаков, завершение ~"+ending+" знаков. Не увеличивай объём банальностями и повторами."+
-    "\nОбязательно раскрывай все ОБЯЗАТЕЛЬНЫЕ ветки, дополнительные по значимости. ID в тексте обзора не показывай.\n\n"+
+    "\nБЛОК opening: зачин, 1 естественный абзац. БЛОК ending: завершение, 1 естественный абзац."+
+    "\nЕдиный план: объём задан для блоков, число абзацев — ориентир авторского ритма. Короткие связки допустимы; общего минимума длины абзаца нет. "+
+    "Объёмы веток входят в объём своей линии, а не добавляются к нему. Перераспределяй место внутри блока по содержательной ёмкости. "+
+    "Раскрывай тезис разными фактами, существенной деталью или подлинной цитатой, сопоставлением позиций и обоснованным значением. "+
+    "Если механизм, контрпозиция или последствия не установлены, не придумывай их. Не повторяй один факт ради объёма. "+
+    "Обязательно раскрывай все ОБЯЗАТЕЛЬНЫЕ ветки, дополнительные по значимости. Технические ID только в block_id, не в тексте обзора.\n\n"+
     lines+"\n\nПРОСМОТРЕННЫЕ, НО НЕ ВОШЕДШИЕ В ВЫБРАННЫЕ ЛИНИИ:\n"+
     (notSelected||"Нет.");
-  return {text,coveredPublications:used.size,totalPublications:index.publications.length,
+  return {text,blocks,paragraphTarget:blocks.reduce((n,b)=>n+b.paragraphs,0),coveredPublications:used.size,totalPublications:index.publications.length,
     requiredBranches:chosen.reduce((n,t)=>n+t.branches.filter(b=>b.required).length,0),
     allocatedChars:opening+ending+lineBudgets.reduce((a,b)=>a+b,0)};
 }

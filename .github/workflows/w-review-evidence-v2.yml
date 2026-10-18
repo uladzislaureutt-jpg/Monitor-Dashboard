@@ -40,6 +40,8 @@ jobs:
         run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/editorial-dossier.test.mjs
       - name: Verify source-anchored dossier reconciliation
         run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/dossier-reconciliation.test.mjs
+      - name: Verify unified synthesis plan and block diagnostics
+        run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/synthesis-blocks.test.mjs
       - name: Verify synthesis runtime and timeout guards
         run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/synthesis-guard.test.mjs
       - name: Validate source-label attribution and single-pass length
