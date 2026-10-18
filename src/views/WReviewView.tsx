@@ -686,7 +686,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
           <button className="primary-button" disabled={!canRunPool}
             onClick={()=>allEvidenceReady?recalculateTrends():analyzePool(false)}>{analysisButtonText}</button>
           {allEvidenceReady&&<button className="secondary-button small-button" disabled={!canRunPool}
-            onClick={()=>analyzePool(true)}>{be?"Перааналізаваць пул (18 артыкулаў)":"Переанализировать пул (18 публикаций)"}</button>}
+            onClick={()=>analyzePool(true)}>{be?`Перааналізаваць пул (${state.items.length} публікацый)`:`Переанализировать пул (${state.items.length} публикаций)`}</button>}
           {allEvidenceReady&&state.lastReanalysis?.total===state.items.length&&
             state.lastReanalysis.status==="failed"&&
             <small role="status" style={{color:"#9a443b",whiteSpace:"normal"}}>
