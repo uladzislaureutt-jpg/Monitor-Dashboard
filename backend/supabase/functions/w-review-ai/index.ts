@@ -341,7 +341,7 @@ Deno.serve(async (req: Request) => {
         const accountId=backup?cfEvidenceBackupId:cfEvidencePrimaryId;
         const accountToken=backup?cfEvidenceBackupToken:cfEvidencePrimaryToken;
         const reply=await callCloudflare(accountId,accountToken,payload,
-          preparationBudget(attemptDeadline,backup?50000:44000));
+          preparationBudget(attemptDeadline,backup?43000:70000));
         return {reply,model:"@cf/openai/gpt-oss-120b"};
       }});
     if(!output.articles.length)return json({error:"evidence_providers_unavailable",
