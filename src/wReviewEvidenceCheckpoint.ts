@@ -1,5 +1,5 @@
-// Durably save a fully verified Evidence batch/pool before a separate,
-// failure-prone editorial dossier request. Does not mutate source workspaces.
+// Durably save EACH accepted Evidence batch (or a deliberate full-pool reset).
+// No AI call may depend on a later all-or-nothing checkpoint. Does not mutate source workspaces.
 export type WorkspaceSnapshot<T>={activeSlot:number;slots:T[]};
 export function writeEvidenceCheckpoint<T>(
   storageKey:string,
@@ -15,7 +15,7 @@ export function writeEvidenceCheckpoint<T>(
     slots:store.slots.map((state,index)=>index===slotIndex?newState:state)
   };
   // Synchronous durable commit. If quota/storage fails, throw BEFORE
-  // making a further expensive AI map call. Previous snapshot is intact.
+  // starting another AI batch. Previous saved snapshot remains intact.
   storage.setItem(storageKey,JSON.stringify(saved));
   return saved;
 }
