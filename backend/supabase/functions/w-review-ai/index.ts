@@ -432,12 +432,13 @@ ${sections.join("; ")}.
   }
 
   if (action === "editorial_map") {
-    const backAccount=Deno.env.get("CLOUDFLARE_BACKUP_ACCOUNT_ID")||"";
-    const backToken=Deno.env.get("CLOUDFLARE_BACKUP_API_TOKEN")||"";
-    const useBackup=Boolean(backAccount&&backToken);
-    const cfId=useBackup?backAccount:(Deno.env.get("CLOUDFLARE_ACCOUNT_ID")||"");
-    const cfToken=useBackup?backToken:(Deno.env.get("CLOUDFLARE_API_TOKEN")||"");
-    if(!geminiApiKey&&!groqApiKey&&!(cfId&&cfToken))
+    const cfPrimaryId=Deno.env.get("CLOUDFLARE_ACCOUNT_ID")||"";
+    const cfPrimaryToken=Deno.env.get("CLOUDFLARE_API_TOKEN")||"";
+    const cfBackupId=Deno.env.get("CLOUDFLARE_BACKUP_ACCOUNT_ID")||"";
+    const cfBackupToken=Deno.env.get("CLOUDFLARE_BACKUP_API_TOKEN")||"";
+    const cfPrimaryReady=Boolean(cfPrimaryId&&cfPrimaryToken);
+    const cfBackupReady=Boolean(cfBackupId&&cfBackupToken)&&cfBackupId!==cfPrimaryId;
+    if(!geminiApiKey&&!cfPrimaryReady&&!cfBackupReady)
       return json({error:"w_review_map_providers_not_configured"},503);
     const task=String(body?.task||"").trim();
     if(!task||task.length>2000)return json({error:"invalid_task",max_chars:2000},400);
@@ -511,72 +512,53 @@ ${sections.join("; ")}.
       return false;
     };
     const preparationDeadline=Date.now()+130000;
-    const primaryDeadline=Math.min(preparationDeadline,Date.now()+55000);
-    const runGeminiMap=async(model:string,deadline:number,repair=false)=>{
-      const feedback=repair?"\n\nПредыдущий план не прошёл проверку: "+
-        (attempts.at(-1)?.reason||"invalid_dossier")+
-        ". Верни trends как массив 1–5 тенденций внутри корневого объекта. Все свободные строки — по-русски. Исправь план по исходной базе. Свяжи каждую публикацию с содержательной веткой. "+
-        "Пропуск в плане не означает периферийность; не перемещай пропуски автоматически в необязательные темы.":"";
-      // This deployed endpoint repeatedly rejects the dossier schema (HTTP 400).
-      // Use working JSON mode with the complete explicit text contract above.
-      const res=await structuredGeminiRequest({deadline,initialMode:"json",
-        call:(jsonMode,timeout)=>callGemini(geminiApiKey,model,prompt+feedback,schema,0.1,
-          "editorial_map",timeout,{jsonMode,maxOutputTokens:16384,thinkingLevel:"low"}),
-        log:event=>console.info("w_review_gemini_response "+JSON.stringify({stage:"editorial_map",model,...event}))});
-      if(res.ok)return accept(res,model,"gemini");
-      attempts.push({model,status:res.status,reason:res.diagnostic?.kind||res.detail});
+    const availableTime=()=>Math.max(0,preparationDeadline-Date.now()-7000);
+    const cfPayload={
+      reasoning_effort:"low",temperature:0.1,max_tokens:10500,
+      response_format:{type:"json_object"},
+      messages:[
+        {role:"system",content:DOSSIER_INSTRUCTIONS+
+          "\nОбязательное условие: JSON содержит trends, coverage по всем "+cards.length+
+          " материалам и inventory. Каждый evidence_id должен встречаться в переданной базе."},
+        {role:"user",content:mapUserInput}
+      ]
+    };
+    const callCfMap=async(route:"primary"|"backup",ceiling:number)=>{
+      const account=route==="primary"?cfPrimaryId:cfBackupId;
+      const token=route==="primary"?cfPrimaryToken:cfBackupToken;
+      const timeout=Math.min(ceiling,availableTime());
+      if(timeout<6000)return false;
+      console.info("w_review_map_route "+JSON.stringify({route,provider:"cloudflare",timeout_ms:timeout}));
+      const response=await callCloudflare(account,token,cfPayload,timeout);
+      if(response.ok)return accept(response,"@cf/openai/gpt-oss-120b","cloudflare");
+      attempts.push({model:"@cf/openai/gpt-oss-120b",status:response.status,
+        reason:response.detail==="cloudflare_local_timeout"?"local_timeout":
+          response.detail.startsWith("cloudflare_empty_reply")?"empty_reply":"provider_or_transport"});
       return false;
     };
-    if(geminiApiKey){
-      const accepted=await runGeminiMap(W_REVIEW_GEMINI_PRIMARY,Math.min(primaryDeadline,Date.now()+35000));
-      // Only a content/schema-valid draft needs an editorial correction. Network
-      // retries and format compatibility are already bounded in the adapter.
-      if(!accepted&&attempts.at(-1)?.status===422&&preparationBudget(primaryDeadline,20000)>5000)
-        await runGeminiMap(W_REVIEW_GEMINI_PRIMARY,primaryDeadline,true);
-    }
-    if(!selected&&cfId&&cfToken&&preparationBudget(preparationDeadline-18000,60000)>5000){
-      console.info("w_review_provider_fallback "+JSON.stringify({
-        stage:"editorial_dossier",from:"gemini",to:"cloudflare_gpt_oss_120b"
-      }));
-      const cf=await callCloudflare(cfId,cfToken,{
-        reasoning_effort:"low",temperature:0.1,max_tokens:10000,
-        response_format:{type:"json_object"},
-        messages:[
-          {role:"system",content:DOSSIER_INSTRUCTIONS+
-            "\nОбязательное условие: JSON содержит trends, coverage по всем "+cards.length+
-            " материалам и inventory. Каждый evidence_id должен встречаться в переданной базе."},
-          {role:"user",content:mapUserInput}
-        ]
-      },preparationBudget(preparationDeadline-18000,60000));
-      if(cf.ok)accept(cf,"@cf/openai/gpt-oss-120b","cloudflare");
-      else{
-        const reason=cf.detail==="cloudflare_local_timeout"?"local_timeout":
-          cf.detail.startsWith("cloudflare_empty_reply")?"empty_reply":"provider_or_transport";
-        attempts.push({model:"@cf/openai/gpt-oss-120b",status:cf.status,reason});
-        console.warn("w_review_editorial_cloudflare_failure "+JSON.stringify({reason,status:cf.status}));
-      }
-    }
-    if(!selected&&geminiApiKey&&preparationBudget(preparationDeadline,20000)>5000){
-      console.info("w_review_provider_fallback "+JSON.stringify({stage:"editorial_map",to:W_REVIEW_GEMINI_FALLBACK}));
-      await runGeminiMap(W_REVIEW_GEMINI_FALLBACK,Math.min(preparationDeadline,Date.now()+22000));
-    }
-    if(!selected&&groqApiKey&&preparationBudget(preparationDeadline,12000)>4000){
-      console.info("w_review_provider_fallback "+JSON.stringify({
-        stage:"editorial_dossier",from:"cloudflare_or_gemini",to:"groq"
-      }));
-      const groq=await callGroq(groqApiKey,{
-        model:"openai/gpt-oss-20b",response_format:{type:"json_object"},
-        reasoning_effort:"low",reasoning_format:"hidden",max_completion_tokens:7600,
-        messages:[{role:"system",content:DOSSIER_INSTRUCTIONS},{role:"user",content:mapUserInput}]
-      },preparationBudget(preparationDeadline,12000));
-      if(groq.ok)accept(groq,"openai/gpt-oss-20b","groq");
-      else attempts.push({model:"openai/gpt-oss-20b",status:groq.status,reason:"provider_error"});
+    if(cfPrimaryReady)await callCfMap("primary",52000);
+    if(!selected&&cfBackupReady)await callCfMap("backup",45000);
+    if(!selected&&geminiApiKey&&availableTime()>=12000){
+      console.info("w_review_map_route "+JSON.stringify({provider:"gemini",model:W_REVIEW_GEMINI_PRIMARY}));
+      // JSON-only is intentionally used: this endpoint rejects its structured
+      // schema with INVALID_ARGUMENT even when model generation works.
+      const timeout=Math.min(33000,availableTime());
+      const response=await structuredGeminiRequest({deadline:Date.now()+timeout,
+        initialMode:"json",
+        call:(jsonMode,budget)=>callGemini(geminiApiKey,W_REVIEW_GEMINI_PRIMARY,prompt,schema,
+          0.1,"editorial_map",budget,{jsonMode,maxOutputTokens:16384,thinkingLevel:"low"}),
+        log:event=>console.info("w_review_gemini_response "+JSON.stringify({
+          stage:"editorial_map",model:W_REVIEW_GEMINI_PRIMARY,...event}))
+      });
+      if(response.ok)accept(response,W_REVIEW_GEMINI_PRIMARY,"gemini");
+      else attempts.push({model:W_REVIEW_GEMINI_PRIMARY,status:response.status,
+        reason:response.diagnostic?.kind||response.detail});
     }
     if(!selected){
       console.warn("w_review_editorial_dossier_failures "+JSON.stringify({
         attempts,pool_articles:cards.length
       }));
-      return json({error:"editorial_dossier_providers_unavailable",provider:"gemini_cloudflare_groq",
+      return json({error:"editorial_dossier_providers_unavailable",provider:"cloudflare_primary_backup_gemini",
         detail:attempts.map(a=>a.model+": "+a.status+" "+a.reason).join("; ").slice(0,320),
         attempts,retryable:false},503);
     }
