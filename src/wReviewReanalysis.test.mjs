@@ -19,7 +19,8 @@ test("full 18-article Evidence is persisted BEFORE a failure-prone dossier reque
   assert.ok(reanalysis.includes('evidenceSaved=true'));
   assert.ok(reanalysis.includes('if(evidenceSaved)setMessage('));
   assert.ok(reanalysis.includes('Новые Evidence Cards сохранены. Повторите только расчёт тенденций'));
-  assert.ok(reanalysis.includes('setState(currentState=>invalidateMap({...currentState,items:[...next]}))'));
+  assert.ok(reanalysis.includes('setState(currentState=>invalidateMap({...currentState,items:[...next],'));
+  assert.ok(reanalysis.includes('lastReanalysis:checkpoint.lastReanalysis'));
 });
 test("checkpoint happens only after all article batches complete and verified Evidence is present",()=>{
   const completed=reanalysis.indexOf("if (done !== next.length)");
