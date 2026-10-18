@@ -54,7 +54,7 @@ export async function structuredGeminiRequest(input:{
 
 export type PreparedArticle={index:number;card:EvidenceCard;model:string;warnings:string[]};
 export async function prepareEvidence(input:{
-  documents:EvidenceDocument[];deadline:number;
+  documents:EvidenceDocument[];deadline:number;cloudflareFirst?:boolean;
   generate:(provider:"primary"|"cloudflare"|"fallback"|"groq",documents:EvidenceDocument[],deadline:number)=>Promise<{reply:PreparationReply;model:string}>;
   available:{primary:boolean;cloudflare:boolean;fallback:boolean;groq:boolean};
   log?:(event:Record<string,unknown>)=>void;
@@ -93,9 +93,9 @@ export async function prepareEvidence(input:{
     return reply;
   }
   // At most 65s on primary including format recovery and article-level repair.
-  const primaryDeadline=Math.min(input.deadline,start+65000);
+  const primaryDeadline=Math.min(input.deadline,start+(input.cloudflareFirst?42000:65000));
   if(input.available.primary){
-    const first=await attempt("primary",remaining(),Math.min(primaryDeadline,start+35000));
+    const first=await attempt("primary",remaining(),Math.min(primaryDeadline,start+(input.cloudflareFirst?38000:35000)));
     // A useful first card is not rerun merely because its peer failed.
     if(first?.ok)for(const index of remaining())await attempt("primary",[index],primaryDeadline);
   }
