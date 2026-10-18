@@ -623,7 +623,7 @@ ${sections.join("; ")}.
     console.info("w_review_dossier_input "+JSON.stringify({
       publications:cards.length,full_chars:cards.reduce((n,c)=>n+c.length,0),
       compact_chars:evidenceText.length,
-      verified_records:compactCards.reduce((n,c)=>n+(c.match(/^P\\d+:E\\d+ /gm)||[]).length,0)
+      verified_records:compactCards.reduce((n,c)=>n+(c.match(/^P\d+:E\d+ /gm)||[]).length,0)
     }));
     if(evidenceText.length>180000)return json({error:"evidence_too_large",max_chars:180000},400);
     const schema=dossierSchema(cards.length);
