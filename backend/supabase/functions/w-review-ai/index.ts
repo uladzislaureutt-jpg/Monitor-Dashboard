@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { DOSSIER_INSTRUCTIONS, dossierSchema, normalizeDossier, makeSynthesisDossier, compactDossierCards } from "./editorial-dossier.ts";
+import { reconcileDossierDraft } from "./dossier-reconciliation.ts";
 import { W_REVIEW_GEMINI_PRIMARY, W_REVIEW_GEMINI_FALLBACK, W_REVIEW_GEMINI_ROUTES, wGeminiGenerationConfig, wGeminiPromptJsonConfig, W_GEMINI_JSON_ONLY_SUFFIX, parseModelJsonObject } from "./gemini-routing.ts";
 import { evidenceRouteKey, routesWithoutCircuit, suspendStructuralFailure, circuitExpiry } from "./provider-circuit.ts";
 import { evidenceV2Instructions, evidenceV2Schema, makeEvidenceDocuments, renderEvidenceMaterials, verifyEvidenceCards, verifyEvidenceCardsIndividually, formatEvidenceCard, type EvidenceCard } from "./evidence-v2.ts";
@@ -637,12 +638,35 @@ ${sections.join("; ")}.
     const attempts:Array<{model:string;status:number;reason:string}>=[];
     const accept=(res:AiSuccess,model:string,provider:string)=>{
       const raw=parseModelJson(res);
-      // Strict on NEW maps only: each distinct publication must contribute
-      // verified non-headline Evidence to at least one branch. Synthesis
-      // retains compatibility with already saved editorial maps.
+      // Strict on NEW maps only; old saved maps remain compatible. Before
+      // throwing away an otherwise useful draft, attempt deterministic
+      // source-grounded structural reconciliation. No new AI request or facts.
       const checked=normalizeDossier(raw,cards,{requireEveryDistinctSource:true});
       if(checked.dossier&&!checked.error){
         selected={dossier:checked.dossier,result:res,model,provider};return true;
+      }
+      const repairable=Boolean(checked.error&&(
+        checked.error==="dossier_unknown_or_missing_evidence"||
+        checked.error==="dossier_unsubstantiated_publication"||
+        checked.error==="dossier_conflicting_disposition"||
+        checked.error==="dossier_incomplete_publication_inventory"||
+        checked.error.startsWith("dossier_unlinked_sources_")));
+      if(repairable){
+        const repair=reconcileDossierDraft(raw,cards);
+        if(repair){
+          const verified=normalizeDossier(repair.draft,cards,{requireEveryDistinctSource:true});
+          if(!verified.error&&verified.dossier){
+            selected={dossier:verified.dossier,result:res,model,provider};
+            console.info("w_review_dossier_reconciliation "+JSON.stringify({
+              model,provider,previous_error:checked.error,
+              additional_sources:repair.additionalSources,
+              discarded_unverified_refs:repair.discardedEvidenceRefs,
+              discarded_branches:repair.removedBranches,
+              trends:verified.dossier.trends.length
+            }));
+            return true;
+          }
+        }
       }
       if(checked.error?.startsWith("dossier_unlinked_sources_")){
         const missed=checked.error.slice("dossier_unlinked_sources_".length).split("_");
