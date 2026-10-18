@@ -343,7 +343,8 @@ Deno.serve(async (req: Request) => {
           {role:"user",content:input}]};
         if(provider==="groq"){
           const model="openai/gpt-oss-120b";
-          const reply=await callGroq(groqApiKey,{...payload,model,max_completion_tokens:10000},
+          const {max_tokens:_cfMaxTokens,...groqPayload}=payload;
+          const reply=await callGroq(groqApiKey,{...groqPayload,model,max_completion_tokens:10000},
             preparationBudget(attemptDeadline,31000));
           return {reply,model};
         }
@@ -589,8 +590,9 @@ ${sections.join("; ")}.
       const timeout=Math.min(34000,availableTime());
       console.info("w_review_map_route "+JSON.stringify({provider:"groq",model,timeout_ms:timeout}));
       const started=Date.now();
+      const {max_tokens:_cfMaxTokens,...groqPayload}=cfPayload;
       const response=await callGroq(groqApiKey,{
-        ...cfPayload,model,max_completion_tokens:7500
+        ...groqPayload,model,max_completion_tokens:7500
       },timeout);
       console.info("w_review_map_groq_result "+JSON.stringify({
         status:response.ok?200:response.status,elapsed_ms:Date.now()-started,
