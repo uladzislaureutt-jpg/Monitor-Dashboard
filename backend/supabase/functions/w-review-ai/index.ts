@@ -469,8 +469,19 @@ ${sections.join("; ")}.
       // throwing away an otherwise useful draft, attempt deterministic
       // source-grounded structural reconciliation. No new AI request or facts.
       const checked=normalizeDossier(raw,cards,{requireEveryDistinctSource:true});
-      if(checked.error)console.warn("w_review_dossier_shape "+JSON.stringify({model,provider,
-        error:checked.error,...dossierShape(raw)}));
+      if(checked.error){
+        const idx=evidenceIndex(cards);
+        const badBranches=Array.isArray(raw?.trends)?raw.trends.flatMap((t:any,ti:number)=>
+          Array.isArray(t?.branches)?t.branches.map((b:any,bi:number)=>{
+            const refs=[...(Array.isArray(b?.evidence_ids)?b.evidence_ids:[]),
+              ...(Array.isArray(b?.contrary_evidence_ids)?b.contrary_evidence_ids:[])];
+            const invalid=refs.filter((x:any)=>typeof x!=="string"||!idx.byId.has(String(x).trim()));
+            return invalid.length?{trend:ti+1,branch:bi+1,total:refs.length,unmatched:invalid.length,
+              formats:invalid.slice(0,4).map((x:any)=>String(x).trim().slice(0,18))}:null;
+          }).filter(Boolean):[]):[];
+        console.warn("w_review_dossier_shape "+JSON.stringify({model,provider,
+          error:checked.error,...dossierShape(raw),invalid_refs:badBranches.slice(0,24)}));
+      }
       if(checked.dossier&&!checked.error){
         selected={dossier:checked.dossier,result:res,model,provider};return true;
       }
@@ -491,6 +502,7 @@ ${sections.join("; ")}.
               additional_sources:repair.additionalSources,
               discarded_unverified_refs:repair.discardedEvidenceRefs,
               discarded_branches:repair.removedBranches,
+              unassigned_sources_for_review:repair.additionalSources,
               trends:verified.dossier.trends.length
             }));
             return true;
@@ -514,12 +526,14 @@ ${sections.join("; ")}.
     const preparationDeadline=Date.now()+130000;
     const availableTime=()=>Math.max(0,preparationDeadline-Date.now()-7000);
     const cfPayload={
-      reasoning_effort:"low",temperature:0.1,max_tokens:10500,
+      reasoning_effort:"low",temperature:0.1,max_tokens:7500,
       response_format:{type:"json_object"},
       messages:[
         {role:"system",content:DOSSIER_INSTRUCTIONS+
           "\nОбязательное условие: JSON содержит trends, coverage по всем "+cards.length+
-          " материалам и inventory. Каждый evidence_id должен встречаться в переданной базе."},
+          " материалам и inventory. Каждый evidence_id должен встречаться в переданной базе."+
+          "\nКОМПАКТНОСТЬ: краткие русские поля без повторов; 2–5 проверенных идентификаторов на ветку. Источники из разных СМИ независимы."+
+          "\nАдреса Evidence КОПИРУЙ строго из списка выше, не придумывай и не округляй номера. Форма исключительно P01:E01; для любой Pxx должен существовать хотя бы один содержательный evidence_id в ветках."},
         {role:"user",content:mapUserInput}
       ]
     };
