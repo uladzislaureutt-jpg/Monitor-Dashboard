@@ -7,21 +7,24 @@ const map=edge.slice(edge.indexOf('if (action === "editorial_map")'),edge.indexO
 const prep=readFileSync(new URL("./preparation.ts",import.meta.url),"utf8");
 const ui=readFileSync(new URL("../../../../src/views/WReviewView.tsx",import.meta.url),"utf8");
 const api=readFileSync(new URL("../../../../src/wReviewAi.ts",import.meta.url),"utf8");
-test("Evidence provider slots are Cloudflare primary, distinct Cloudflare backup, Gemini 3.5 fallback",()=>{
-  assert.ok(ev.includes('cloudflareFirst:true'));
-  assert.ok(ev.includes("primary:cfEvidencePrimaryReady,cloudflare:cfEvidenceBackupReady"));
-  assert.ok(ev.includes('fallback:Boolean(geminiApiKey),groq:false'));
+test("Evidence routes Gemini 3.5 -> one Cloudflare 120B -> Groq 120B",()=>{
+  assert.ok(ev.includes('cloudflareFirst:false'));
+  assert.ok(ev.includes('primary:Boolean(geminiApiKey),cloudflare:Boolean(cfEvidenceRoute)'));
+  assert.ok(ev.includes('fallback:false,groq:Boolean(groqApiKey)'));
   assert.ok(ev.includes('const model=W_REVIEW_GEMINI_PRIMARY'));
+  assert.ok(ev.includes('const model="openai/gpt-oss-120b"'));
   assert.ok(ev.includes('cfEvidenceBackupId!==cfEvidencePrimaryId'));
+  assert.ok(ev.includes('cfEvidencePrimaryReady?"primary":cfEvidenceBackupReady?"backup":null'));
   assert.ok(prep.indexOf('attempt("primary"')<prep.indexOf('attempt("cloudflare"'));
-  assert.ok(prep.indexOf('attempt("cloudflare"')<prep.indexOf('attempt("fallback"'));
+  assert.ok(prep.indexOf('attempt("cloudflare"')<prep.indexOf('attempt("groq"'));
+  assert.ok(!ev.includes('W_REVIEW_GEMINI_FALLBACK'));
 });
-test("Dossier prefers both Cloudflare accounts and only then Gemini 3.5",()=>{
-  assert.ok(map.indexOf('callCfMap("primary"')<map.indexOf('callCfMap("backup"'));
-  assert.ok(map.indexOf('callCfMap("backup"')<map.indexOf('if(!selected&&geminiApiKey'));
+test("Dossier prefers Gemini 3.5, one Cloudflare account, then Groq 120B",()=>{
+  assert.ok(map.indexOf('if(geminiApiKey&&availableTime()')<map.indexOf('if(!selected&&cfRoute'));
+  assert.ok(map.indexOf('if(!selected&&cfRoute')<map.indexOf('if(!selected&&groqApiKey'));
   assert.ok(map.includes('W_REVIEW_GEMINI_PRIMARY'));
+  assert.ok(map.includes('model="openai/gpt-oss-120b"'));
   assert.ok(!map.includes('W_REVIEW_GEMINI_FALLBACK'));
-  assert.ok(!map.includes('callGroq('));
   assert.ok(map.includes('requireEveryDistinctSource:true'));
   assert.ok(map.includes('w_review_dossier_shape'));
 });
