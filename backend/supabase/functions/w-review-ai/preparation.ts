@@ -66,7 +66,9 @@ export async function prepareEvidence(input:{
   async function attempt(provider:"primary"|"cloudflare"|"fallback"|"groq",indices:number[],deadline:number){
     if(!indices.length||preparationBudget(deadline,35000)<2000)return;
     const docs=indices.map((i,index)=>({...input.documents[i],index}));
+    const started=Date.now();
     const {reply,model}=await input.generate(provider,docs,deadline);
+    const elapsed_ms=Date.now()-started;
     if(reply.ok){
       for(const k of ["prompt_tokens","completion_tokens","total_tokens"] as const)usage[k]+=reply.usage[k]||0;
       const parsed=parseModelJsonObject(reply.content);
@@ -82,20 +84,22 @@ export async function prepareEvidence(input:{
         if(better)best.set(index,{index,card:entry.card,model,warnings});
       }
       attempts.push({provider,model,status:200,articles:indices.map(i=>i+1),
-        finish_reason:reply.finish_reason||"unknown",accepted:checked.accepted.length,
+        finish_reason:reply.finish_reason||"unknown",elapsed_ms,accepted:checked.accepted.length,
         response_shape:{parsed_object:Boolean(parsed),cards_array:Array.isArray(parsed?.cards),
           cards_count:Array.isArray(parsed?.cards)?parsed.cards.length:0,
           indices:Array.isArray(parsed?.cards)?parsed.cards.slice(0,2).map((c:any)=>
             typeof c?.index==="number"&&Number.isInteger(c.index)&&c.index>=0&&c.index<=18?c.index:null):[]},
         failed:checked.failed.map(v=>({article:indices[v.index]+1,reason:v.reason}))});
-    }else attempts.push({provider,model,status:reply.status,cause:reply.diagnostic?.kind||"provider_failure",articles:indices.map(i=>i+1)});
+    }else attempts.push({provider,model,status:reply.status,elapsed_ms,cause:reply.diagnostic?.kind||"provider_failure",articles:indices.map(i=>i+1)});
     input.log?.(attempts.at(-1)!);
     return reply;
   }
   // At most 65s on primary including format recovery and article-level repair.
-  const primaryDeadline=Math.min(input.deadline,start+(input.cloudflareFirst?42000:65000));
+  // GPT-OSS-120B needs a longer first window for two full-length articles.
+  // Reserve the remaining request budget for CF backup and Gemini.
+  const primaryDeadline=Math.min(input.deadline,start+(input.cloudflareFirst?70000:65000));
   if(input.available.primary){
-    const first=await attempt("primary",remaining(),Math.min(primaryDeadline,start+(input.cloudflareFirst?38000:35000)));
+    const first=await attempt("primary",remaining(),Math.min(primaryDeadline,start+(input.cloudflareFirst?68000:35000)));
     // A useful first card is not rerun merely because its peer failed.
     if(first?.ok)for(const index of remaining())await attempt("primary",[index],primaryDeadline);
   }

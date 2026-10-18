@@ -341,7 +341,7 @@ Deno.serve(async (req: Request) => {
         const accountId=backup?cfEvidenceBackupId:cfEvidencePrimaryId;
         const accountToken=backup?cfEvidenceBackupToken:cfEvidencePrimaryToken;
         const reply=await callCloudflare(accountId,accountToken,payload,
-          preparationBudget(attemptDeadline,backup?50000:44000));
+          preparationBudget(attemptDeadline,backup?43000:70000));
         return {reply,model:"@cf/openai/gpt-oss-120b"};
       }});
     if(!output.articles.length)return json({error:"evidence_providers_unavailable",
@@ -529,15 +529,26 @@ ${sections.join("; ")}.
       const timeout=Math.min(ceiling,availableTime());
       if(timeout<6000)return false;
       console.info("w_review_map_route "+JSON.stringify({route,provider:"cloudflare",timeout_ms:timeout}));
+      const started=Date.now();
       const response=await callCloudflare(account,token,cfPayload,timeout);
+      console.info("w_review_map_cloudflare_result "+JSON.stringify({
+        route,status:response.ok?200:response.status,
+        elapsed_ms:Date.now()-started,
+        finish_reason:response.ok?response.finish_reason||"unknown":"",
+        output_chars:response.ok?response.content.length:0,
+        issue:response.ok?"":response.detail==="cloudflare_local_timeout"?"local_timeout":"provider_failure"
+      }));
       if(response.ok)return accept(response,"@cf/openai/gpt-oss-120b","cloudflare");
       attempts.push({model:"@cf/openai/gpt-oss-120b",status:response.status,
         reason:response.detail==="cloudflare_local_timeout"?"local_timeout":
           response.detail.startsWith("cloudflare_empty_reply")?"empty_reply":"provider_or_transport"});
       return false;
     };
-    if(cfPrimaryReady)await callCfMap("primary",52000);
-    if(!selected&&cfBackupReady)await callCfMap("backup",45000);
+    // The 18-publication dossier may require >60 s to complete on 120B.
+    // Give the primary up to 75 s, then reserve a 32 s second-account window
+    // and the remaining ~16-20 s for Gemini, all within the 130 s request cap.
+    if(cfPrimaryReady)await callCfMap("primary",75000);
+    if(!selected&&cfBackupReady)await callCfMap("backup",32000);
     if(!selected&&geminiApiKey&&availableTime()>=12000){
       console.info("w_review_map_route "+JSON.stringify({provider:"gemini",model:W_REVIEW_GEMINI_PRIMARY}));
       // JSON-only is intentionally used: this endpoint rejects its structured
