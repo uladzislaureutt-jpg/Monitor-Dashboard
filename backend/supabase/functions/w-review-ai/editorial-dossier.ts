@@ -29,6 +29,56 @@ export function evidenceIndex(cards:string[]){
   }
   return {entries,publications,byId:new Map(entries.map(r=>[r.id,r]))};
 }
+// Map stage needs semantic summaries and stable verified IDs, not repeated
+// source excerpts/quotes already validated by Evidence v2. The final synthesis
+// still receives the FULL original Evidence Cards. This view never mutates them.
+export function compactDossierCards(cards:string[], maxPerArticle=10):string[]{
+  const safeLimit=Math.max(1,Math.min(14,Math.floor(maxPerArticle)||10));
+  return cards.map((card,index)=>{
+    const pub="P"+String(index+1).padStart(2,"0");
+    const source=card.match(/^ИСТОЧНИК:\s*(.+)$/m)?.[1]?.trim()||"Источник";
+    const title=card.match(/^ЗАГОЛОВОК:\s*(.+)$/m)?.[1]?.trim()||
+      card.match(/^TITLE_RU:\s*(.+)$/m)?.[1]?.trim()||"Без названия";
+    const url=card.match(/^URL:\s*(\S+)/m)?.[1]?.trim()||"";
+    const records=[...card.matchAll(/^E(\d+)\s+\[([a-z_]+)\/(P\d+|TITLE)\]\s+(.+)$/gm)]
+      .map(m=>({id:pub+":E"+m[1],kind:m[2],anchor:m[3],
+        claim:m[4].split(" | SOURCE:")[0].trim(),
+        ruQuote:m[4].match(/\| RU: «([^»]+)»/)?.[1]||"",
+        speaker:m[4].match(/\| SPEAKER: ([^(\n]+)/)?.[1]||""}));
+    const prioritized:string[]=[];
+    const add=(id:string)=>{if(id&&!prioritized.includes(id))prioritized.push(id);};
+    if(records.length){
+      add(records[0].id);
+      add(records[records.length-1].id);
+      const kinds=["counterposition","expert","quote","explanation",
+        "editorial_stance","media_angle","limitation","detail","fact","headline"];
+      for(const kind of kinds){
+        const matches=records.filter(r=>r.kind===kind);
+        if(matches.length)add(matches[0].id);
+      }
+      // Sample across the original article rather than always selecting its
+      // first few lines; these records already encode source passage anchors.
+      for(let offset=0;offset<records.length;offset++)
+        add(records[Math.floor((offset+0.5)*records.length/records.length)].id);
+    }
+    const selected=prioritized.slice(0,safeLimit);
+    // Keep article IDs and source identity unchanged. Statements are concise
+    // excerpts of already verified Russian Evidence, no additional model call.
+    const lines=selected.map(id=>{
+      const r=records.find(rec=>rec.id===id)!;
+      const note=r.claim.slice(0,330);
+      const extras=r.kind==="quote"?
+        (r.ruQuote?" | ЦИТАТА: "+r.ruQuote.slice(0,180):"")+
+        (r.speaker?" | АВТОР: "+r.speaker.slice(0,90):""):"";
+      return id+" ["+r.kind+"/"+r.anchor+"] "+note+extras;
+    });
+    return pub+"\nИСТОЧНИК: "+source+"\nЗАГОЛОВОК: "+title+
+      (url?"\nURL: "+url:"")+
+      "\nДОСТУПНЫЕ ДОКАЗАТЕЛЬСТВА ("+records.length+
+      ", показаны "+lines.length+"):\n"+lines.join("\n");
+  });
+}
+
 export function dossierSchema(poolSize:number){
   const s={type:"STRING"}, a={type:"ARRAY",items:s};
   return {type:"OBJECT",properties:{
