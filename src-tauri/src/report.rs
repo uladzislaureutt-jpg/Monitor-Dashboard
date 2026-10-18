@@ -135,9 +135,9 @@ fn w_review_source_ranges(text: &str, source_names: &[String]) -> Vec<(usize, us
     // citation even if the publication supplied a spelling variant not in the
     // current source_names. This is restricted to a final all-quoted list:
     // narrative quotations elsewhere must NEVER be italicized as outlets.
-    let cited=Regex::new(r"\\((?:«[^»\\n]{2,160}»(?:,\\s*)?)+\\)\\s*\\.?\\s*$")
+    let cited=Regex::new(r"\((?:«[^»\n]{2,160}»(?:,\s*)?)+\)\s*\.?\s*$")
         .expect("valid trailing quoted citations");
-    let quoted=Regex::new(r"«[^»\\n]{2,160}»").expect("valid quoted citation");
+    let quoted=Regex::new(r"«[^»\n]{2,160}»").expect("valid quoted citation");
     if let Some(list)=cited.find(text) {
         for item in quoted.find_iter(list.as_str()) {
             ranges.push((list.start()+item.start(),list.start()+item.end()));
