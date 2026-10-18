@@ -9,14 +9,30 @@ test("Pереанализировать forces fresh two-article Evidence batche
   assert.ok(reanalysis.includes("const force=Boolean(state.items.length>0 && prepared===state.items.length && mapReady)"));
   assert.ok(reanalysis.includes("buildBatches(next,force)"));
 });
-test("old workspace survives a failed full reanalysis and is committed only with completed new map",()=>{
-  assert.ok(reanalysis.includes("if(!force) setState((currentState) => invalidateMap("));
+test("full 18-article Evidence is persisted BEFORE a failure-prone dossier request",()=>{
+  assert.ok(reanalysis.includes('writeEvidenceCheckpoint(WORKSPACES_KEY,workspaces,activeSlot,checkpoint,localStorage)'));
+  const saved=reanalysis.indexOf('writeEvidenceCheckpoint(');
+  const map=reanalysis.indexOf('const mapResult = await wEditorialMap(');
+  assert.ok(saved>0&&map>saved);
+  assert.ok(reanalysis.includes('evidenceSaved=true'));
+  assert.ok(reanalysis.includes('if(evidenceSaved)setMessage('));
+  assert.ok(reanalysis.includes('Новые Evidence Cards сохранены. Повторите только расчёт тенденций'));
+  assert.ok(reanalysis.includes('setState(currentState=>invalidateMap({...currentState,items:[...next]}))'));
+});
+test("checkpoint happens only after all article batches complete and verified Evidence is present",()=>{
+  const completed=reanalysis.indexOf("if (done !== next.length)");
+  const checkpoint=reanalysis.indexOf("writeEvidenceCheckpoint(");
+  assert.ok(completed>=0&&checkpoint>completed);
+  assert.ok(reanalysis.includes('const previousBackup=previous.evidenceContract'));
+  assert.ok(reanalysis.includes('evidenceAlternative:previousBackup'));
   assert.ok(reanalysis.includes("if (done !== next.length)"));
-  const boundary=reanalysis.indexOf("const mapResult = await wEditorialMap(");
-  assert.ok(boundary>0);
-  const before=reanalysis.slice(0,boundary);
-  assert.ok(!before.includes("if(force) setState("));
-  assert.ok(reanalysis.slice(boundary).includes("editorialMap: mapResult.editorialMap"));
+});
+test("failed map can retry just map, without another AI Evidence extraction",()=>{
+  const button=view.indexOf('onClick={prepared===state.items.length && !mapReady ? recalculateTrends : analyzePool}');
+  assert.ok(button>0);
+  assert.ok(view.includes('Рассчитать тенденции'));
+  assert.ok(view.includes('Две проверенные версии Evidence'));
+  assert.ok(view.includes('evidenceAlternative:{evidence:item.evidence'));
 });
 test("compares prior and new verified coverage and records model choice per batch",()=>{
   assert.ok(reanalysis.includes("previousAccepted="));
