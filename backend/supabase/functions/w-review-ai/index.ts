@@ -310,7 +310,7 @@ Deno.serve(async (req: Request) => {
     const normalized = items.map((item: any, index: number) => {
       const text = String(item?.text || "").trim();
       totalChars += text.length;
-      return { index, publication_id:String(item?.publication_id || "batch-"+index).trim().slice(0,120),
+      return { index, pool_index:Number.isInteger(Number(item?.pool_index))&&Number(item.pool_index)>=1&&Number(item.pool_index)<=30?Number(item.pool_index):index+1, publication_id:String(item?.publication_id || "batch-"+index).trim().slice(0,120),
         source: String(item?.source || "").trim().slice(0, 300), title: String(item?.title || "").trim().slice(0, 600), region:String(item?.region || "").trim().slice(0, 100), text };
     });
     if (normalized.some((item: any) => !item.text || item.text.length > 10000) || totalChars > 20000)
@@ -320,9 +320,12 @@ Deno.serve(async (req: Request) => {
     const cfEvidenceRoute=cfEvidencePrimaryReady?"primary":cfEvidenceBackupReady?"backup":null;
     console.info("w_review_evidence_routes "+JSON.stringify({
       routes:["gemini_3.5","cloudflare_120b","groq_120b"],
-      gemini:Boolean(geminiApiKey),cloudflare_account:cfEvidenceRoute,groq:Boolean(groqApiKey)
+      gemini:Boolean(geminiApiKey),cloudflare_account:cfEvidenceRoute,groq:Boolean(groqApiKey),
+      pool_indices:normalized.map(x=>x.pool_index),source_chars:normalized.map(x=>x.text.length),
+      total_chars:totalChars,passages:documents.map(d=>d.passages.length)
     }));
     const output=await prepareEvidence({documents,deadline,cloudflareFirst:false,
+      poolIndices:normalized.map(x=>x.pool_index),
       available:{primary:Boolean(geminiApiKey),cloudflare:Boolean(cfEvidenceRoute),
         fallback:false,groq:Boolean(groqApiKey)},
       log:event=>console.info("w_review_evidence_attempt "+JSON.stringify(event)),
@@ -332,7 +335,7 @@ Deno.serve(async (req: Request) => {
         const schema=evidenceV2Schema(docs.length);
         if(provider==="primary"){
           const model=W_REVIEW_GEMINI_PRIMARY;
-          const reply=await structuredGeminiRequest({deadline:attemptDeadline,
+          const reply=await structuredGeminiRequest({deadline:attemptDeadline,initialMode:"json",
             call:(jsonMode,timeout)=>callGemini(geminiApiKey,model,evidencePrompt+"\n\n"+input,
               schema,0.1,"evidence_batch",timeout,{jsonMode,maxOutputTokens:16000,thinkingLevel:"low"}),
             log:event=>console.info("w_review_gemini_response "+JSON.stringify({stage:"evidence_batch",model,...event}))});
@@ -369,7 +372,7 @@ Deno.serve(async (req: Request) => {
     }));
     console.info("w_review_evidence_v2 "+JSON.stringify({cards:cards.length,
       pending_articles:normalized.length-cards.length,
-      per_article:cards.map(c=>({batch_index:c.index+1,model:c.evidence_data.model,
+      per_article:cards.map(c=>({batch_index:c.index+1,pool_index:normalized[c.index].pool_index,model:c.evidence_data.model,
         ...c.evidence_data.validation,warnings:c.evidence_data.quality_warnings})),
       accepted:cards.reduce((n,c)=>n+c.evidence_data.validation.accepted,0),
       covered_passages:cards.reduce((n,c)=>n+c.evidence_data.validation.covered_passages,0),
