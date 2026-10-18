@@ -44,16 +44,16 @@ const geoGroups=[
 ];
 export function inspectReviewAttribution(text:string,cards:string[]=[]):string[]{
   const warnings:string[]=[];
-  const paragraphs=text.split(/\\n\\s*\\n/);
+  const paragraphs=text.split(/\n\s*\n/);
   const origins=cards.map((card,index)=>({
     name:poolSourceNames(cards).get("P"+String(index+1).padStart(2,"0"))||"",
-    region:(card.match(/^КАТАЛОЖНЫЙ_РЕГИОН:\\s*(.*)$/m)?.[1]||"").trim()
+    region:(card.match(/^КАТАЛОЖНЫЙ_РЕГИОН:\s*(.*)$/m)?.[1]||"").trim()
   })).filter(x=>x.name&&x.region);
   for(let i=0;i<paragraphs.length;i++){
     const paragraph=paragraphs[i];
     // Check only local spans near national-media group expressions, not all
     // sources mentioned elsewhere in the paragraph.
-    for(const m of paragraph.matchAll(/([А-Яа-яЁё-]+)\\s+(?:СМИ|медиа|издания|газеты|агентства|ресурсы|пресса|печать)/giu)){
+    for(const m of paragraph.matchAll(/([А-Яа-яЁё-]+)\s+(?:СМИ|медиа|издания|газеты|агентства|ресурсы|пресса|печать)/giu)){
       const given=geoGroups.find(g=>g.group.test(m[1]));
       if(!given)continue;
       const immediate=paragraph.slice(m.index,m.index+220).toLocaleLowerCase("ru");
@@ -66,7 +66,7 @@ export function inspectReviewAttribution(text:string,cards:string[]=[]):string[]
             actual.country+"). Проверьте контекст: источник и цитируемый участник — не одно и то же.");
       }
     }
-    if(/\\bP\\d{2}(?::E\\d+)?\\b/.test(paragraph))
+    if(/\bP\d{2}(?::E\d+)?\b/.test(paragraph))
       warnings.push("Абзац "+(i+1)+": остался неразрешённый внутренний идентификатор публикации.");
   }
   return [...new Set(warnings)];
