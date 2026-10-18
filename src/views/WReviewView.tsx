@@ -369,7 +369,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
             // Keep the previous version of the SAME article as a reversible
             // alternative, rather than discarding it on a successful refresh.
             const previousBackup=previous.evidenceContract===W_EVIDENCE_CONTRACT_VERSION&&
-              previous.evidence&&previous.evidenceData?.source_sha256===card.evidenceData.source_sha256&&
+              previous.evidence&&previous.evidenceData&&previous.evidenceData.source_sha256===card.evidenceData.source_sha256&&
               previous.evidence!==card.evidence
               ?{evidence:previous.evidence,evidenceData:previous.evidenceData}:undefined;
             next[target.index]={...previous,evidence:card.evidence,evidenceData:card.evidenceData,
