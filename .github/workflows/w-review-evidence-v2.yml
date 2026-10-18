@@ -22,6 +22,8 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - name: Verify Gemini 3.5 routing and generation payload
+        run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/gemini-routing.test.mjs
       - name: Validate anchored evidence
         run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/evidence-v2.test.mjs
       - name: Validate editorial dossier and coverage
