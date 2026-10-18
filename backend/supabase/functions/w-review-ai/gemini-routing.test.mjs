@@ -62,3 +62,28 @@ test("prompt JSON fallback tolerates fenced JSON but never treats prose as verif
   assert.equal(parseModelJsonObject('[{"index":0}]'),null);
   assert.equal(parseModelJsonObject('{"trends":'),null);
 });
+
+test("Gemini complete JSON object is recovered when surrounded by short markdown preface",()=>{
+  const json='{"cards":[{"index":0,"title_ru":"Аналитический обзор","records":[]}]}';
+  const examples=[
+    json,"\uFEFF"+json,
+    "\x60\x60\x60json\n"+json+"\n\x60\x60\x60",
+    "Результат JSON:\n"+json+"\nВсё готово.",
+    "Here is the output:\n\x60\x60\x60json\n"+json+"\n\x60\x60\x60"
+  ];
+  for(const reply of examples){
+    const parsed=parseModelJsonObject(reply);
+    assert.ok(Array.isArray(parsed?.cards));
+    assert.equal(parsed.cards[0].index,0);
+  }
+});
+test("Gemini parser never pretends a truncated response is valid JSON",()=>{
+  for(const reply of ['{"cards":[{"index":0}',"There was an error", "[]", "{not json}",
+    "Output: { \"cards\": [\"bad\" ]"]){
+    assert.equal(parseModelJsonObject(reply),null);
+  }
+});
+test("Gemini parser handles braces inside quoted source material without truncation",()=>{
+  const sample='{"cards":[{"statement_ru":"Цитата со скобками { и } и кавычками \\"да\\"","records":[]}]}';
+  assert.equal(parseModelJsonObject("JSON:\n"+sample+"\n--",)?.cards[0].records.length,0);
+});
