@@ -36,9 +36,17 @@ const draft=()=>({
   })),
   inventory:{quotes:0,headlines:4,experts:0}
 });
-test("omitted publications never become fabricated optional trends",()=>{
+test("omitted sources are preserved in a transparently labelled editor-review queue, not called peripheral",()=>{
   const original=draft(),copy=JSON.stringify(original);
-  assert.equal(reconcileDossierDraft(original,cards),null);
+  const repaired=reconcileDossierDraft(original,cards);
+  assert.ok(repaired);
+  assert.deepEqual(repaired.additionalSources,["P03","P04"]);
+  assert.equal(repaired.draft.trends.length,2);
+  assert.equal(repaired.draft.trends[1].operator_optional,true);
+  assert.match(repaired.draft.trends[1].title,/редакционного распределения/);
+  assert.match(repaired.draft.trends[1].optional_reason,/не оценка их второстепенности/);
+  assert.deepEqual(repaired.draft.trends[1].branches.map(b=>b.evidence_ids[0]),["P03:E01","P04:E01"]);
+  assert.equal(normalizeDossier(repaired.draft,cards,{requireEveryDistinctSource:true}).error,null);
   assert.equal(JSON.stringify(original),copy);
 });
 test("invalid invented references are discarded, not silently remapped to a true claim",()=>{
@@ -58,8 +66,26 @@ test("cannot create a dossier without a genuine main branch",()=>{
   empty.trends[0].branches=[coreBranch(["P01:E99"])];
   assert.equal(reconcileDossierDraft(empty,cards),null);
 });
-test("different URLs cannot be treated as duplicates to hide missing analysis",()=>{
+test("different URLs are independent and a model's incorrect duplicate status is not retained",()=>{
   const raw=draft();raw.coverage[2].status="duplicate";
+  const result=reconcileDossierDraft(raw,cards);
+  assert.ok(result);
+  assert.equal(result.draft.coverage[2].status,"supporting");
+  assert.ok(result.draft.trends[1].branches.some(b=>b.evidence_ids.includes("P03:E01")));
+});
+test("format-only variants are canonicalized, never invented references",()=>{
+  const raw=draft();
+  raw.trends[0].branches[0].evidence_ids=["P1:E1","P2-E1","P03:E01","P04:E1"];
+  const repaired=reconcileDossierDraft(raw,cards);
+  assert.ok(repaired);
+  assert.deepEqual(repaired.draft.trends[0].branches[0].evidence_ids,
+    ["P01:E01","P02:E01","P03:E01","P04:E01"]);
+  assert.deepEqual(repaired.additionalSources,[]);
+  assert.equal(normalizeDossier(repaired.draft,cards,{requireEveryDistinctSource:true}).error,null);
+});
+test("a genuinely fabricated citation is NEVER silently mapped to an existing one",()=>{
+  const raw=draft();
+  raw.trends[0].branches[0].evidence_ids=["P01:E99"];
   assert.equal(reconcileDossierDraft(raw,cards),null);
 });
 test("existing complete, valid maps pass through without compulsory repair",()=>{
