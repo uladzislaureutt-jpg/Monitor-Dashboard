@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { evidenceIndex, normalizeDossier, makeSynthesisDossier, dossierSchema, isRussianDossierProse } from "./editorial-dossier.ts";
+import { evidenceIndex, normalizeDossier, makeSynthesisDossier, dossierSchema, isRussianDossierProse, compactDossierCards } from "./editorial-dossier.ts";
 const cards=[
   "ID: P01\nИСТОЧНИК: «Reuters»\nPUBLICATION_ID: story-A\nE01 [fact/P001] Прогноз снизился на 2%. | SOURCE: «Прогноз снизился на 2%.»\nE02 [counterposition/P002] Сценарий оспаривают эксперты. | SOURCE: «Сценарий оспаривают эксперты.»",
   "ID: P02\nИСТОЧНИК: «Bloomberg»\nPUBLICATION_ID: story-B\nE01 [expert/P003] Аналитик видит риск роста цен. | SOURCE: «Аналитик видит риск роста цен.»",
@@ -154,4 +154,58 @@ test("headline-only references do not falsely count an article as substantively 
     "dossier_unlinked_sources_P03");
   sample.trends[0].branches[0].evidence_ids.push("P03:E01");
   assert.equal(normalizeDossier(sample,changed,{requireEveryDistinctSource:true}).error,null);
+});
+
+test("peripheral stories form separately selectable trends without forced inclusion",()=>{
+  const data=draft();
+  data.trends[0].operator_optional=false;
+  data.trends[0].optional_reason="";
+  data.trends.push({id:"T2",title:"Европейская поддержка и потребности Украины",
+    summary:"Вне центрального сюжета о действиях США",
+    thesis:"Европейские партнёры обсуждают поддержку Украины",
+    operator_optional:true,
+    optional_reason:"Связано с кризисом, но не является центральным сюжетом политики США",
+    branches:[{...branch(["P03:E01"]),contrary_evidence_ids:[],
+      title:"Роль европейских союзников",claim:"Отдельные политические позиции",
+      significance:"Дополняет международную картину",required:false}]});
+  data.coverage[2].status="supporting";
+  data.coverage[2].reason="Отдельная линия европейской поддержки и финансирования";
+  const checked=normalizeDossier(data,cards,{requireEveryDistinctSource:true});
+  assert.equal(checked.error,null);
+  assert.equal(checked.dossier.trends[0].operator_optional,false);
+  assert.equal(checked.dossier.trends[1].operator_optional,true);
+  const mainOnly=makeSynthesisDossier(checked.dossier,["T1"],8000,cards);
+  assert.equal(mainOnly.coveredPublications,2);
+  assert.doesNotMatch(mainOnly.text,/Европейская поддержка и потребности Украины/);
+  const includingExtra=makeSynthesisDossier(checked.dossier,["T1","T2"],8000,cards);
+  assert.equal(includingExtra.coveredPublications,3);
+  assert.match(includingExtra.text,/Европейская поддержка и потребности Украины/);
+});
+test("optional trend must explain editorial discretion in Russian",()=>{
+  const data=draft();
+  data.trends[0].operator_optional=true;
+  data.trends[0].optional_reason="";
+  assert.equal(normalizeDossier(data,cards).error,"dossier_optional_reason_required_T1");
+  data.trends[0].optional_reason="This is a peripheral editorial line";
+  assert.equal(normalizeDossier(data,cards).error,"dossier_optional_reason_required_T1");
+  data.trends[0].optional_reason="Отдельная линия, оператор может её исключить";
+  assert.equal(normalizeDossier(data,cards).error,null);
+  const schema=dossierSchema(3).properties.trends.items;
+  assert.ok(schema.required.includes("operator_optional"));
+  assert.ok(schema.required.includes("optional_reason"));
+});
+test("compact dossier transport preserves every verified Evidence ID even beyond 14 records",()=>{
+  const long=["ID: P01","ИСТОЧНИК: «Издание»","ЗАГОЛОВОК: Новости",
+    "URL: https://example.test/a"];
+  for(let n=1;n<=24;n++)long.push("E"+String(n).padStart(2,"0")+
+    " [fact/P"+String(n).padStart(3,"0")+"] Релевантный факт номер "+n+
+    " подтверждён. | SOURCE: «Длинная дословная выдержка "+n+
+    " из оригинального текста без подмены.»");
+  const original=long.join("\n"),compact=compactDossierCards([original])[0];
+  assert.ok(compact.length<original.length);
+  assert.match(compact,/P01:E01 \[fact\/P001\]/);
+  assert.match(compact,/P01:E24 \[fact\/P024\]/);
+  assert.equal((compact.match(/^P01:E\d+ /gm)||[]).length,24);
+  assert.doesNotMatch(compact,/\| SOURCE: /);
+  assert.match(compact,/https:\/\/example\.test\/a/);
 });
