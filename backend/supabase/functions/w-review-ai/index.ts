@@ -773,9 +773,10 @@ ${styleProfile || "Живой сдержанный редакционный ст
       (Deno.env.get("CLOUDFLARE_API_TOKEN") && Deno.env.get("CLOUDFLARE_ACCOUNT_ID"))
       || (Deno.env.get("CLOUDFLARE_BACKUP_API_TOKEN") && Deno.env.get("CLOUDFLARE_BACKUP_ACCOUNT_ID"))
     );
-    if (!cloudflareConfigured && !groqApiKey) return json({ error: "w_review_no_synthesis_provider" }, 503);
+    if (!cloudflareConfigured && !geminiApiKey) return json({ error: "w_review_no_synthesis_provider" }, 503);
     const task = String(body?.task || "").trim();
     if (!task || task.length > 2000) return json({ error: "invalid_task", max_chars: 2000 }, 400);
+    const synthesisRoute=body?.synthesis_route==="gemini_first"?"gemini_first":"cloudflare_first";
     const targetChars = Math.max(1000, Math.min(8000, Number(body?.target_chars || 3000)));
     const submittedCards = Array.isArray(body?.evidence_cards) ? body.evidence_cards : [];
     if (submittedCards.length > 18) return json({error:"w_review_max_articles",limit:18},400);
@@ -940,75 +941,82 @@ ${styleOnlyText || "Дополнительные фрагменты недост
       const {data,error} = await admin.rpc("w_review_quota_finish",{p_id:reservationId,p_success:success});
       return !error && data===true;
     }
-    // GPT-OSS-120B ONLY for the final review, regardless of length:
-    // independent Cloudflare account 1 -> account 2 -> Groq.
-    // Gemini is deliberately excluded from synthesis because of instability.
-    // No rewriting or length-driven provider switching after a usable result.
-    // Never let sequential provider attempts outlive the Edge request idle
-    // timeout (Supabase 150s). Keep the existing single final model synthesis,
-    // not a multi-pass rewrite. Fallback is bounded by remaining budget.
+    // Operator-controlled A/B comparison on exactly the same Evidence,
+    // selected dossier and style: CF-main -> CF-backup -> Gemini 3.5, or
+    // Gemini 3.5 -> CF-main -> CF-backup. One successful provider completion
+    // per press; no rewriting or extra model request to inflate the length.
     const deadline=synthesisStart+135000;
-    const remaining=()=>Math.max(0,deadline-Date.now());
-    const providerBudget=(ceiling:number)=>Math.max(0,Math.min(ceiling,remaining()-9000));
-    const firstBudget=providerBudget(112000);
-    console.info("w_review_synthesis_start "+JSON.stringify({
-      cards:cards.length,selected_trends:selectedIds.length,required_branches:synthesisDossier.requiredBranches,
-      target_chars:targetChars,evidence_chars:evidenceText.length,style_chars:styleProfile.length,
-      dossier_chars:trendText.length,output_tokens:synthesisOutputTokenBudget,
-      quota_reserved:Boolean(reservationId),provider:"cloudflare"
-    }));
-    let cloudflareRoute:"primary"|"backup"|null=
-      cfPrimaryReady?"primary":cfBackupReady?"backup":null;
-    let result:AiResult=firstBudget>=10000
-      ? cfPrimaryReady
-        ? await callCloudflare(cfId,cfToken,cloudflareSynthesisPayload,firstBudget)
-        : cfBackupReady
-          ? await callCloudflare(cfBackupId,cfBackupToken,cloudflareSynthesisPayload,firstBudget)
-          : {ok:false,status:503,retryAfter:null,detail:"cloudflare_unconfigured"}
-      : {ok:false,status:504,retryAfter:null,detail:"synthesis_preflight_timeout"};
-    console.info("w_review_synthesis_primary_result "+JSON.stringify({
-      route:cloudflareRoute,ok:result.ok,status:result.ok?200:result.status,
-      elapsed_ms:Date.now()-synthesisStart,
-      issue:result.ok?String(result.finish_reason||"none"):providerField(result.detail).slice(0,80)
-    }));
-    let selectedProvider="cloudflare";
-    let selectedModel="@cf/openai/gpt-oss-120b";
-    // Convert one structured completion to the existing API. No second AI
-    // call, rewriting pass, audit or source-by-source postprocessing.
+    const remaining=()=>Math.max(0,deadline-Date.now()-9000);
+    const providerBudget=(max:number)=>Math.max(0,Math.min(max,remaining()));
     const normalizeReview=(raw:any)=>{
       if(!raw||typeof raw!=="object")return raw;
       const blockResult=readSynthesisBlocks(raw,synthesisDossier.blocks);
       const paragraphs=blockResult.paragraphs;
       const text=paragraphs.length?paragraphs.join("\n\n"):String(raw.review_text||"").trim();
-      // Remove model control markup and fake paragraph-ending headings.
       const withoutTags=text.replace(/\s+\*\*«[^»\n]{5,95}»\*\*(?=\s*(?:\n|$))/g,"");
       const cleaned=withoutTags.replace(/\*\*/g,"").replace(/__/g,"").trim();
-      return {...raw,paragraphs,block_warnings:blockResult.warnings,block_metrics:blockResult.metrics,review_text:cleaned,section_titles:[],
+      return {...raw,paragraphs,block_warnings:blockResult.warnings,
+        block_metrics:blockResult.metrics,review_text:cleaned,section_titles:[],
         bold_phrases:Array.isArray(raw.bold_phrases)?raw.bold_phrases:[]};
     };
-    let parsed=result.ok?normalizeReview(parseModelJson(result)):null;
     const usable=(r:AiResult,p:any)=>r.ok&&typeof p?.review_text==="string"&&Boolean(p.review_text.trim());
-    const temporaryOrAccountError=result.ok||[401,403,408,429,500,502,503,504,520,522,523,524].includes(result.status);
-    if(cfPrimaryReady&&cfBackupReady&&!usable(result,parsed)&&temporaryOrAccountError&&
-       providerBudget(85000)>=25000){
-      console.info("w_review_provider_fallback "+JSON.stringify({
-        stage:"synthesis",from:"cloudflare_primary",to:"cloudflare_backup",
-        http_status:result.ok?200:result.status,trigger:result.ok?"invalid_output":"provider_failure"
-      }));
-      result=await callCloudflare(cfBackupId,cfBackupToken,cloudflareSynthesisPayload,providerBudget(85000));
+    type SynthRoute="cloudflare_primary"|"cloudflare_backup"|"gemini_3_5";
+    const routes:SynthRoute[]=synthesisRoute==="gemini_first"
+      ?["gemini_3_5","cloudflare_primary","cloudflare_backup"]
+      :["cloudflare_primary","cloudflare_backup","gemini_3_5"];
+    let result:AiResult={ok:false,status:503,retryAfter:null,detail:"all_synthesis_routes_unavailable"};
+    let parsed:any=null;
+    let selectedProvider:"cloudflare"|"gemini"="cloudflare";
+    let selectedModel="@cf/openai/gpt-oss-120b";
+    let cloudflareRoute:"primary"|"backup"|null=null;
+    console.info("w_review_synthesis_start "+JSON.stringify({
+      requested_route:synthesisRoute,planned_routes:routes,
+      cards:cards.length,selected_trends:selectedIds.length,
+      required_branches:synthesisDossier.requiredBranches,
+      target_chars:targetChars,evidence_chars:evidenceText.length,
+      style_chars:styleProfile.length,dossier_chars:trendText.length,
+      output_tokens:synthesisOutputTokenBudget,quota_reserved:Boolean(reservationId)
+    }));
+    for(const route of routes){
+      const configured=route==="gemini_3_5"?Boolean(geminiApiKey):
+        route==="cloudflare_primary"?cfPrimaryReady:cfBackupReady;
+      const budget=providerBudget(route==="gemini_3_5"
+        ?(synthesisRoute==="gemini_first"?70000:35000)
+        :(synthesisRoute==="cloudflare_first"?
+          (route==="cloudflare_primary"?65000:45000):
+          (route==="cloudflare_primary"?46000:36000)));
+      if(!configured||budget<10000)continue;
+      console.info("w_review_synthesis_route "+JSON.stringify({requested_route:synthesisRoute,
+        route,timeout_ms:budget,elapsed_ms:Date.now()-synthesisStart}));
+      if(route==="gemini_3_5"){
+        const geminiPrompt=payload.messages.map((msg:any)=>
+          (msg.role==="system"?"ИНСТРУКЦИИ РЕДАКТОРА:\n":"ДАННЫЕ ДЛЯ ОБЗОРА:\n")+msg.content
+        ).join("\n\n")+"\n\nВерни только один полный JSON-объект со структурой blocks, section_titles, bold_phrases. Без Markdown.";
+        result=await callGemini(geminiApiKey,W_REVIEW_GEMINI_PRIMARY,geminiPrompt,
+          synthesisResponseSchema(synthesisDossier.blocks),0.2,"synthesis",budget,
+          {jsonMode:"json",maxOutputTokens:16000,thinkingLevel:"low"});
+        selectedProvider="gemini";
+        selectedModel=W_REVIEW_GEMINI_PRIMARY;
+        cloudflareRoute=null;
+      }else{
+        const isBackup=route==="cloudflare_backup";
+        result=await callCloudflare(isBackup?cfBackupId:cfId,
+          isBackup?cfBackupToken:cfToken,cloudflareSynthesisPayload,budget);
+        selectedProvider="cloudflare";
+        selectedModel="@cf/openai/gpt-oss-120b";
+        cloudflareRoute=isBackup?"backup":"primary";
+      }
       parsed=result.ok?normalizeReview(parseModelJson(result)):null;
-      cloudflareRoute="backup";
-      console.info("w_review_synthesis_backup_result "+JSON.stringify({
-        ok:result.ok,status:result.ok?200:result.status,elapsed_ms:Date.now()-synthesisStart
+      console.info("w_review_synthesis_route_result "+JSON.stringify({
+        requested_route:synthesisRoute,route,ok:usable(result,parsed),
+        http_status:result.ok?200:result.status,finish_reason:result.ok?result.finish_reason||"unknown":"",
+        elapsed_ms:Date.now()-synthesisStart,
+        response_chars:result.ok?result.content.length:0,
+        issue:result.ok?(usable(result,parsed)?"":"invalid_output"):providerField(result.detail).slice(0,80)
       }));
-    }
-    if(!usable(result,parsed)&&groqApiKey&&providerBudget(35000)>=12000){
-      const groq=await callGroq(groqApiKey,groqPayload,providerBudget(35000));
-      const gp=groq.ok?normalizeReview(parseModelJson(groq)):null;
-      if(usable(groq,gp)){
-        result=groq;parsed=gp;selectedProvider="groq";
-        selectedModel="openai/gpt-oss-120b";cloudflareRoute=null;
-      }else if(!result.ok){result=groq;selectedProvider="groq";selectedModel="openai/gpt-oss-120b";cloudflareRoute=null;}
+      if(usable(result,parsed))break;
+      // Malformed JSON is no more successful than a transport failure.
+      if(result.ok)result={ok:false,status:422,retryAfter:null,detail:"invalid_synthesis_json"};
     }
     // SINGLE-PASS: no rewriting, expansion, independent AI audit, or deletion.
     // Fallback to a different provider is used only if the chosen provider
@@ -1019,7 +1027,7 @@ ${styleOnlyText || "Дополнительные фрагменты недост
         status:result.status,provider:selectedProvider,
         elapsed_ms:Date.now()-synthesisStart,issue:providerField(result.detail).slice(0,100)
       }));
-      return aiError(selectedProvider==="groq"?"groq":"cloudflare",result);
+      return aiError(selectedProvider,result);
     }
     if (!parsed || typeof parsed.review_text!=="string" || !parsed.review_text.trim()) {
       await finishQuota(false);
@@ -1036,8 +1044,8 @@ ${styleOnlyText || "Дополнительные фрагменты недост
     console.info("w_review_single_pass "+JSON.stringify({
       provider:selectedProvider,model:selectedModel,target_chars:targetChars,
       actual_chars:actualChars,within_tolerance:lengthOk,
-      requested_output_token_budget:selectedProvider==="cloudflare"?synthesisOutputTokenBudget:
-        groqSynthesisOutputTokenBudget,
+      requested_route:synthesisRoute,cloudflare_route:cloudflareRoute,
+      requested_output_token_budget:selectedProvider==="cloudflare"?synthesisOutputTokenBudget:16000,
       length_window:{min:lengthMinimum,max:lengthMaximum},
       paragraph_target:paragraphTarget,block_metrics:parsed.block_metrics,
       actual_paragraphs:reviewText.split(/\n\s*\n/).length,
@@ -1063,7 +1071,7 @@ ${styleOnlyText || "Дополнительные фрагменты недост
       bold_phrases:Array.isArray(parsed.bold_phrases)
         ?parsed.bold_phrases.map((v:unknown)=>String(v||"").trim())
            .filter((v:string)=>v&&reviewText.includes(v)).slice(0,4):[],
-      model:selectedModel,provider:selectedProvider,cloudflare_route:cloudflareRoute,
+      model:selectedModel,provider:selectedProvider,cloudflare_route:cloudflareRoute,requested_route:synthesisRoute,
       target_chars:targetChars,actual_chars:actualChars,
       length_within_tolerance:lengthOk,usage:result.usage,preflight_warnings:preflightWarnings
 
