@@ -56,9 +56,8 @@ test("Gemini prompt-JSON fallback omits ALL structured response schema fields",(
 });
 test("prompt JSON fallback tolerates fenced JSON but never treats prose as verified evidence",()=>{
   assert.deepEqual(parseModelJsonObject('{"trends":[{"id":"T1"}]}'),{trends:[{id:"T1"}]});
-  assert.deepEqual(parseModelJsonObject('``json
-'+'{"cards":[]}'+'
-```'),{cards:[]});
+  const fence=String.fromCharCode(96).repeat(3);
+  assert.deepEqual(parseModelJsonObject(fence+"json\\n"+'{"cards":[]}'+ "\\n"+fence),{cards:[]});
   assert.equal(parseModelJsonObject("Ответ без JSON"),null);
   assert.equal(parseModelJsonObject('[{"index":0}]'),null);
   assert.equal(parseModelJsonObject('{"trends":'),null);
