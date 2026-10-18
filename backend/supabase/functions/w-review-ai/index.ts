@@ -291,17 +291,18 @@ Deno.serve(async (req: Request) => {
   const action = String(body?.action || "");
 
   if (action === "evidence_batch") {
-    // Prefer the backup account for evidence, preserving the primary account
-    // for the single final 120B synthesis. One CF attempt per failed batch.
-    const cfEvidenceBackupId=Deno.env.get("CLOUDFLARE_BACKUP_ACCOUNT_ID")||"";
-    const cfEvidenceBackupToken=Deno.env.get("CLOUDFLARE_BACKUP_API_TOKEN")||"";
+    // Dedicated ordered routes: CF GPT-OSS-120B main -> CF GPT-OSS-120B
+    // independent backup -> Gemini 3.5 Flash-Lite. No false second CF
+    // attempt against the same account if the backup is not configured.
     const cfEvidencePrimaryId=Deno.env.get("CLOUDFLARE_ACCOUNT_ID")||"";
     const cfEvidencePrimaryToken=Deno.env.get("CLOUDFLARE_API_TOKEN")||"";
-    const hasCfEvidenceBackup=Boolean(cfEvidenceBackupId&&cfEvidenceBackupToken);
-    const cfEvidenceId=hasCfEvidenceBackup?cfEvidenceBackupId:cfEvidencePrimaryId;
-    const cfEvidenceToken=hasCfEvidenceBackup?cfEvidenceBackupToken:cfEvidencePrimaryToken;
-    if (!geminiApiKey && !groqApiKey && !(cfEvidenceId&&cfEvidenceToken))
-      return json({ error: "w_review_evidence_providers_not_configured" }, 503);
+    const cfEvidenceBackupId=Deno.env.get("CLOUDFLARE_BACKUP_ACCOUNT_ID")||"";
+    const cfEvidenceBackupToken=Deno.env.get("CLOUDFLARE_BACKUP_API_TOKEN")||"";
+    const cfEvidencePrimaryReady=Boolean(cfEvidencePrimaryId&&cfEvidencePrimaryToken);
+    const cfEvidenceBackupReady=Boolean(cfEvidenceBackupId&&cfEvidenceBackupToken)&&
+      cfEvidenceBackupId!==cfEvidencePrimaryId;
+    if (!cfEvidencePrimaryReady&&!cfEvidenceBackupReady&&!geminiApiKey)
+      return json({error:"w_review_evidence_providers_not_configured"},503);
     const items = Array.isArray(body?.items) ? body.items : [];
     if (!items.length) return json({ error: "no_items" }, 400);
     if (items.length > 2) return json({ error:"evidence_batch_too_large", max_items:2 },400);
@@ -316,16 +317,17 @@ Deno.serve(async (req: Request) => {
       return json({error:"evidence_article_too_long",max_article_chars:10000,max_batch_chars:20000,max_items:2},400);
     const documents = makeEvidenceDocuments(normalized);
     const deadline=Date.now()+130000;
+    console.info("w_review_evidence_routes "+JSON.stringify({routes:["cloudflare_primary","cloudflare_backup","gemini_3.5"],primary:cfEvidencePrimaryReady,backup:cfEvidenceBackupReady,gemini:Boolean(geminiApiKey)}));
     const output=await prepareEvidence({documents,deadline,
-      available:{primary:Boolean(geminiApiKey),cloudflare:Boolean(cfEvidenceId&&cfEvidenceToken),
-        fallback:Boolean(geminiApiKey),groq:Boolean(groqApiKey)},
+      available:{primary:cfEvidencePrimaryReady,cloudflare:cfEvidenceBackupReady,
+        fallback:Boolean(geminiApiKey),groq:false},
       log:event=>console.info("w_review_evidence_attempt "+JSON.stringify(event)),
       generate:async(provider,docs,attemptDeadline)=>{
         const materialText=renderEvidenceMaterials(docs);
         const input="Верни ровно "+docs.length+" карточек, index начиная с нуля.\n\n"+materialText;
         const schema=evidenceV2Schema(docs.length);
-        if(provider==="primary"||provider==="fallback"){
-          const model=provider==="primary"?W_REVIEW_GEMINI_PRIMARY:W_REVIEW_GEMINI_FALLBACK;
+        if(provider==="fallback"){
+          const model=W_REVIEW_GEMINI_PRIMARY;
           const reply=await structuredGeminiRequest({deadline:attemptDeadline,
             call:(jsonMode,timeout)=>callGemini(geminiApiKey,model,evidencePrompt+"\n\n"+input,
               schema,0.1,"evidence_batch",timeout,{jsonMode,maxOutputTokens:16000,thinkingLevel:"low"}),
@@ -335,11 +337,12 @@ Deno.serve(async (req: Request) => {
         const payload={reasoning_effort:"low",temperature:0.1,max_tokens:10000,
           response_format:{type:"json_object"},messages:[{role:"system",content:evidencePrompt},
           {role:"user",content:input}]};
-        const reply=provider==="cloudflare"?
-          await callCloudflare(cfEvidenceId,cfEvidenceToken,payload,preparationBudget(attemptDeadline,60000)):
-          await callGroq(groqApiKey,{...payload,max_tokens:undefined,model:"openai/gpt-oss-20b",
-            max_completion_tokens:7000,reasoning_format:"hidden"},preparationBudget(attemptDeadline,12000));
-        return {reply,model:provider==="cloudflare"?"@cf/openai/gpt-oss-120b":"openai/gpt-oss-20b"};
+        const backup=provider==="cloudflare";
+        const accountId=backup?cfEvidenceBackupId:cfEvidencePrimaryId;
+        const accountToken=backup?cfEvidenceBackupToken:cfEvidencePrimaryToken;
+        const reply=await callCloudflare(accountId,accountToken,payload,
+          preparationBudget(attemptDeadline,backup?50000:44000));
+        return {reply,model:"@cf/openai/gpt-oss-120b"};
       }});
     if(!output.articles.length)return json({error:"evidence_providers_unavailable",
       detail:output.attempts.some(a=>a.status===200)
