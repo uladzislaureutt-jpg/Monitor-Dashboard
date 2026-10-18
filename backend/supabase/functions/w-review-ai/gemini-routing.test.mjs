@@ -1,23 +1,48 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {W_REVIEW_GEMINI_PRIMARY,W_REVIEW_GEMINI_FALLBACK,W_REVIEW_GEMINI_ROUTES,wGeminiGenerationConfig} from "./gemini-routing.ts";
-test("Evidence starts on 3.5 Flash-Lite and never routes to 3.6",()=>{
+import {W_REVIEW_GEMINI_PRIMARY,W_REVIEW_GEMINI_FALLBACK,W_REVIEW_GEMINI_ROUTES,wGeminiGenerationConfig,normalizeGeminiJsonSchema} from "./gemini-routing.ts";
+import {evidenceV2Schema} from "./evidence-v2.ts";
+import {dossierSchema} from "./editorial-dossier.ts";
+test("Gemini Evidence uses 3.5 Flash-Lite first and never 3.6",()=>{
+  assert.deepEqual([...W_REVIEW_GEMINI_ROUTES],["gemini-3.5-flash-lite","gemini-3.1-flash-lite"]);
   assert.equal(W_REVIEW_GEMINI_PRIMARY,"gemini-3.5-flash-lite");
   assert.equal(W_REVIEW_GEMINI_FALLBACK,"gemini-3.1-flash-lite");
-  assert.deepEqual([...W_REVIEW_GEMINI_ROUTES],["gemini-3.5-flash-lite","gemini-3.1-flash-lite"]);
-  assert.ok(!W_REVIEW_GEMINI_ROUTES.some(model=>model.includes("3.6")));
-  assert.ok(!W_REVIEW_GEMINI_ROUTES.some(model=>model==="gemini-3.5-flash")); // Alias now goes to 3.6.
 });
-test("GenerateContent removes deprecated sampling parameters without losing structured JSON",()=>{
+test("GenerateContent uses modern responseFormat, NOT deprecated responseSchema",()=>{
   const schema={type:"OBJECT",properties:{cards:{type:"ARRAY",items:{type:"STRING"}}},required:["cards"]};
-  const result=wGeminiGenerationConfig(schema,{maxOutputTokens:8192,thinkingLevel:"minimal"});
-  assert.equal(result.responseMimeType,"application/json");
-  assert.equal(result.responseSchema,schema);
-  assert.equal(result.maxOutputTokens,8192);
-  assert.equal(result.thinkingConfig.thinkingLevel,"minimal");
-  for(const key of ["temperature","topP","topK","top_p","top_k","candidateCount"])assert.ok(!(key in result));
+  const config=wGeminiGenerationConfig(schema,{maxOutputTokens:8192,thinkingLevel:"low"});
+  assert.deepEqual(config.responseFormat,{text:{mimeType:"application/json",schema:{
+    type:"object",properties:{cards:{type:"array",items:{type:"string"}}},required:["cards"]}}});
+  assert.equal(config.maxOutputTokens,8192);
+  assert.equal(config.thinkingConfig.thinkingLevel,"low");
+  for(const name of ["responseMimeType","responseSchema","responseJsonSchema","temperature","topP","topK"])
+    assert.ok(!(name in config),name);
 });
-test("default Gemini JSON payload contains no obsolete options",()=>{
-  const value=wGeminiGenerationConfig({type:"STRING"});
-  assert.deepEqual(value,{responseMimeType:"application/json",responseSchema:{type:"STRING"}});
+test("real Evidence v2 schema recursively converts all OpenAPI types",()=>{
+  const input=evidenceV2Schema(2);
+  const schema=wGeminiGenerationConfig(input).responseFormat.text.schema;
+  const fields=schema.properties.cards.items.properties;
+  assert.equal(schema.type,"object");
+  assert.equal(schema.properties.cards.type,"array");
+  assert.equal(schema.properties.cards.minItems,2);
+  assert.equal(fields.records.items.properties.anchor_id.type,"string");
+  assert.equal(fields.index.type,"integer");
+  assert.ok(fields.records.items.required.includes("source_excerpt"));
+  assert.equal(input.type,"OBJECT"); // Do not mutate provider-neutral schema.
+});
+test("dossier boolean fields and nested arrays use JSON Schema type names",()=>{
+  const schema=normalizeGeminiJsonSchema(dossierSchema(18));
+  const b=schema.properties.trends.items.properties.branches.items.properties;
+  assert.equal(b.required.type,"boolean");
+  assert.equal(b.evidence_ids.items.type,"string");
+  assert.equal(schema.properties.coverage.minItems,18);
+  assert.equal(schema.type,"object");
+});
+test("normalization retains enum values, descriptions and property names",()=>{
+  const normalized=normalizeGeminiJsonSchema({type:"OBJECT",properties:{
+    TYPE:{type:"STRING",enum:["OBJECT","ARRAY"],description:"TYPE of media"},
+    optional:{type:["STRING","NULL"]}}});
+  assert.deepEqual(normalized.properties.TYPE.enum,["OBJECT","ARRAY"]);
+  assert.deepEqual(normalized.properties.optional.type,["string","null"]);
+  assert.equal(normalized.properties.TYPE.description,"TYPE of media");
 });

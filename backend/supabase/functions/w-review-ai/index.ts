@@ -47,7 +47,7 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
 }
 type Usage = { prompt_tokens: number; completion_tokens: number; total_tokens: number };
-type ProviderDiagnostic = {kind:string;http_status:number;google_status:string;quota_metric:string;quota_id:string;retry_after:string|null;retryable:boolean};
+type ProviderDiagnostic = {kind:string;http_status:number;google_status:string;quota_metric:string;quota_id:string;retry_after:string|null;retryable:boolean;field_hint?:string};
 type AiFailure = { ok: false; status: number; retryAfter: string | null; detail: string; diagnostic?: ProviderDiagnostic };
 type AiSuccess = { ok: true; content: string; usage: Usage; finish_reason?: string; reasoning_tokens?: number };
 type AiResult = AiFailure | AiSuccess;
@@ -123,11 +123,14 @@ function geminiDiagnostic(status:number, raw:string, header:string|null):Provide
     else kind="quota_unknown";
   }else if([500,502,503].includes(status)&&/overload|high.?demand|capacity|model.?busy/i.test(msg))kind="overloaded";
   else if([500,502,503,504].includes(status))kind="unavailable";
+  // Safe field names only, not Google's free-form error details (which could
+  // reflect model inputs). This distinguishes schema errors from capacity.
+  const fieldHint=String(err.message||"").match(/(?:responseFormat|responseSchema|responseMimeType|generationConfig|schema|type|propertyOrdering)/i)?.[0]||"";
   const retryInfo=details.find((x:any)=>typeof x?.retryDelay==="string");
   const hint=String(header||retryInfo?.retryDelay||"").trim();
   const retry_after=/^\d+(?:\.\d+)?s?$/.test(hint)?hint:null;
   return {kind,http_status:status,google_status:providerField(err.status),quota_metric,quota_id,retry_after,
-    retryable:kind==="minute_tokens"||kind==="minute_requests"};
+    retryable:kind==="minute_tokens"||kind==="minute_requests",field_hint:providerField(fieldHint)};
 }
 function reportGeminiFailure(stage:string,model:string,diagnostic:ProviderDiagnostic){
   console.warn("w_review_provider_failure "+JSON.stringify({provider:"gemini",stage,model:providerField(model),...diagnostic}));
@@ -270,7 +273,17 @@ Deno.serve(async (req: Request) => {
   const action = String(body?.action || "");
 
   if (action === "evidence_batch") {
-    if (!geminiApiKey && !groqApiKey) return json({ error: "w_review_evidence_providers_not_configured" }, 503);
+    // Prefer the backup account for evidence, preserving the primary account
+    // for the single final 120B synthesis. One CF attempt per failed batch.
+    const cfEvidenceBackupId=Deno.env.get("CLOUDFLARE_BACKUP_ACCOUNT_ID")||"";
+    const cfEvidenceBackupToken=Deno.env.get("CLOUDFLARE_BACKUP_API_TOKEN")||"";
+    const cfEvidencePrimaryId=Deno.env.get("CLOUDFLARE_ACCOUNT_ID")||"";
+    const cfEvidencePrimaryToken=Deno.env.get("CLOUDFLARE_API_TOKEN")||"";
+    const hasCfEvidenceBackup=Boolean(cfEvidenceBackupId&&cfEvidenceBackupToken);
+    const cfEvidenceId=hasCfEvidenceBackup?cfEvidenceBackupId:cfEvidencePrimaryId;
+    const cfEvidenceToken=hasCfEvidenceBackup?cfEvidenceBackupToken:cfEvidencePrimaryToken;
+    if (!geminiApiKey && !groqApiKey && !(cfEvidenceId&&cfEvidenceToken))
+      return json({ error: "w_review_evidence_providers_not_configured" }, 503);
     const items = Array.isArray(body?.items) ? body.items : [];
     if (!items.length) return json({ error: "no_items" }, 400);
     if (items.length > 2) return json({ error:"evidence_batch_too_large", max_items:2 },400);
@@ -318,6 +331,37 @@ Deno.serve(async (req: Request) => {
       }
       if (result) break;
     }
+    if ((!result || !parsed) && cfEvidenceId && cfEvidenceToken) {
+      console.info("w_review_provider_fallback "+JSON.stringify({
+        stage:"evidence_batch",from:"gemini",to:"cloudflare_gpt_oss_120b",
+        trigger:lastGeminiFailure?.diagnostic?.kind||"unverified_evidence"
+      }));
+      // JSON mode is explicitly requested, even when global schema mode is
+      // disabled. Source excerpts remain subject to deterministic verification.
+      const cfResult=await callCloudflare(cfEvidenceId,cfEvidenceToken,{
+        reasoning_effort:"low",temperature:0.1,max_tokens:9000,
+        response_format:{type:"json_object"},
+        messages:[
+          {role:"system",content:evidencePrompt+
+            "\nКаждая дословная выдержка SOURCE должна точно встречаться в указанном фрагменте. "+
+            "Не обрывай покрытие после вводных абзацев. Верни полный JSON cards."},
+          {role:"user",content:prompt}
+        ]
+      },80000);
+      if(cfResult.ok){
+        const cfData=parseModelJson(cfResult);
+        const verified=verifyEvidenceCards(cfData,documents);
+        if(!verified.error){
+          result=cfResult;parsed=cfData;verifiedCards=verified.cards;usedModel="@cf/openai/gpt-oss-120b";
+        }else{
+          lastError+="; cloudflare_"+verified.error;
+          attemptedRoutes.push({model:"@cf/openai/gpt-oss-120b",status:422,cause:verified.error});
+        }
+      }else{
+        lastError+="; cloudflare_HTTP_"+cfResult.status;
+        attemptedRoutes.push({model:"@cf/openai/gpt-oss-120b",status:cfResult.status,cause:"provider_error"});
+      }
+    }
     if ((!result || !parsed) && groqApiKey) {
       console.info("w_review_provider_fallback "+JSON.stringify({stage:"evidence_batch",from:"gemini",to:"groq",
         trigger:lastGeminiFailure?.diagnostic?.kind||"other",http_status:lastGeminiFailure?.status||null}));
@@ -348,7 +392,7 @@ Deno.serve(async (req: Request) => {
       }
     }
     if (!result || !parsed) return json({error:"evidence_providers_unavailable",
-      detail:lastError.slice(0,350),attempts:attemptedRoutes,provider:"gemini_groq",issue:lastGeminiFailure?.diagnostic||null,
+      detail:lastError.slice(0,350),attempts:attemptedRoutes,provider:"gemini_cloudflare_groq",issue:lastGeminiFailure?.diagnostic||null,
       retryable:false},503);
     const sourceDigests=await Promise.all(normalized.map(async (item)=>{
       const bytes=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(item.text));
@@ -366,7 +410,7 @@ Deno.serve(async (req: Request) => {
       provider:usedModel
     }));
     return json({cards,model:usedModel,
-      provider:usedModel.startsWith("openai/")?"groq":"gemini",usage:result.usage});
+      provider:usedModel.startsWith("@cf/")?"cloudflare":usedModel.startsWith("openai/")?"groq":"gemini",usage:result.usage});
   }
 
   if (action === "style_profile") {
