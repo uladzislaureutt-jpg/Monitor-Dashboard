@@ -50,6 +50,7 @@ type WState = {
   factCheck: WFactCheck | null;
   factCheckContract?: number;
   auditDecisions?: Record<string, {action:string;reason:string}>;
+  lastReanalysis?: {status:"saved"|"failed";processed:number;total:number;verifiedRecords:number};
 };
 
 const STORAGE_KEY = "monitor-w-review-v1";
@@ -324,7 +325,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     return batches;
   }
 
-  async function analyzePool() {
+  async function analyzePool(forceRequested=false) {
     if (!state.items.length) { setError(be ? "Спачатку дадайце матэрыялы." : "Сначала добавьте материалы."); return; }
     if (!topicReady) { setError(be?"Укажыце тэму агляду.":"Укажите тему обзора."); return; }
     if (state.items.length>MAX_ITEMS) { setError(`Сократите пул до ${MAX_ITEMS} публикаций.`); return; }
@@ -336,7 +337,10 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     // Re-analysis replaces the Evidence Cards only after ALL newly extracted
     // cards pass validation; the subsequent AI dossier is independent.
     // A complete Evidence pool must survive dossier timeouts and 422 errors.
-    const force=Boolean(state.items.length>0 && prepared===state.items.length && mapReady);
+    // The operator can explicitly refresh Evidence even without an editorial
+    // dossier. Recalculating trends must never silently trigger reanalysis.
+    const force=Boolean(forceRequested && state.items.length>0 &&
+      prepared===state.items.length);
     const next = [...state.items];
     const previousAccepted=state.items.reduce((n,item)=>n+(item.evidenceData?.validation.accepted||0),0);
     const batchesProviders:string[]=[];
@@ -389,9 +393,13 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
       if (done !== next.length) { const missing = next.filter((item,index) => force ? !processed.has(index) : !(item.evidence.trim() && item.evidenceContract === W_EVIDENCE_CONTRACT_VERSION)).map((item) => item.title).slice(0, 4); throw new Error(`Проанализировано ${done} из ${next.length}. Не обработаны: ${missing.join("; ")}${next.length - done > missing.length ? "…" : ""}. ${force ? "Прежняя рабочая версия сохранена." : "Нажмите «Проанализировать пул» ещё раз — готовые материалы повторно не обрабатываются."}`); }
       // IMPORTANT: a successful 18/18 Evidence analysis is its own durable
       // milestone, never contingent on a further editorial-map model call.
-      const checkpoint=invalidateMap({...state,items:[...next]});
+      const verifiedRecords=next.reduce((n,item)=>n+(item.evidenceData?.validation.accepted||0),0);
+      const checkpoint=invalidateMap({...state,items:[...next],
+        lastReanalysis:force?{status:"saved",processed:next.length,total:next.length,
+          verifiedRecords}:state.lastReanalysis});
       writeEvidenceCheckpoint(WORKSPACES_KEY,workspaces,activeSlot,checkpoint,localStorage);
-      setState(currentState=>invalidateMap({...currentState,items:[...next]}));
+      setState(currentState=>invalidateMap({...currentState,items:[...next],
+        lastReanalysis:checkpoint.lastReanalysis}));
       evidenceSaved=true;
       setAnalysisText(be
         ? "Усе карткі Evidence захаваныя. Вызначаю тэндэнцыі медыяполя…"
@@ -422,7 +430,15 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         (warned.size?` Проверьте полноту ${warned.size} публикац.: есть резервная модель или неравномерное покрытие.`:""));
     } catch (reason) {
       setAnalysisText("");
-      setError(String(reason)+(evidenceSaved
+      if(force&&!evidenceSaved){
+        // A failed refresh must not mark the OLD Evidence as newly analysed.
+        setState(current=>({...current,lastReanalysis:{
+          status:"failed",processed:processed.size,total:next.length,verifiedRecords:previousAccepted
+        }}));
+      }
+      setError((force&&!evidenceSaved
+        ? "Переанализ пула не завершён. Прежние проверенные Evidence сохранены. " : "")+
+        String(reason)+(evidenceSaved
         ? (be ? " Карткі Evidence захаваны. Паўтарыце толькі разлік тэндэнцый."
               : " Новые Evidence Cards сохранены. Повторите только расчёт тенденций, без переанализа статей.")
         : ""));
@@ -593,13 +609,17 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     </div>;
   }
 
+  const allEvidenceReady=state.items.length>0 && prepared===state.items.length;
+  const evidenceRecords=state.items.reduce((n,item)=>
+    n+(item.evidenceContract===W_EVIDENCE_CONTRACT_VERSION
+      ?item.evidenceData?.validation.accepted||0:0),0);
+  const canRunPool=busy===""&&state.items.length>0&&state.items.length<=MAX_ITEMS&&
+    topicReady&&overLimitCount===0;
   const analysisButtonText = busy === "analyze" || busy==="map"
     ? (analysisText || (be ? "Аналізую…" : "Анализирую…"))
-    : mapReady
-      ? (be ? "Перааналізаваць пул" : "Переанализировать пул")
-      : prepared === state.items.length && prepared > 0
-        ? (be ? "Разлічыць тэндэнцыі" : "Рассчитать тенденции")
-        : (be ? "Прааналізаваць пул" : "Проанализировать пул");
+    : allEvidenceReady
+      ? (be ? "Разлічыць тэндэнцыі" : "Рассчитать тенденции")
+      : (be ? "Прааналізаваць пул" : "Проанализировать пул");
 
   return <div className="view-stack w-review">
     <section className="view-heading"><div><div className="eyebrow dark">W-REVIEW</div><h2>{be ? "Папярэдні агляд" : "Предварительный обзор"}</h2><p>{be ? "Збярыце матэрыялы, задайце тэму і атрымаеце абагульнены погляд на медыяполе." : "Соберите материалы, задайте тему и получите обобщённый взгляд на медиаполе."}</p></div><div className="w-review-metrics"><b>{state.items.length}/{MAX_ITEMS}</b><span>~{estimateTokens(totalChars).toLocaleString()} input tokens</span></div></section>
@@ -658,11 +678,23 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
       </button>
     </div>}
     <section className="w-review-grid">
-      <aside className="panel w-review-pool"><div className="panel-head"><div><h3>{be?"Пул матэрыялаў":"Пул материалов"}</h3><p>{state.items.length ? (prepared === state.items.length ? (be?"усе матэрыялы гатовыя да аналізу":"все материалы проанализированы") : (be?`прааналізавана ${prepared} з ${state.items.length}`:`проанализировано ${prepared} из ${state.items.length}`)) : (be?"пакуль пуста":"пока пусто")}</p></div><button className="ghost-button small-button" disabled={busy!==""||!state.items.length} onClick={clearPool}>{be?"Ачысціць":"Очистить"}</button></div>
+      <aside className="panel w-review-pool"><div className="panel-head"><div><h3>{be?"Пул матэрыялаў":"Пул материалов"}</h3><p>{state.items.length ? (allEvidenceReady ? (be?`Захаваны Evidence: ${prepared}/${state.items.length}, ${evidenceRecords} запісаў`:`Сохранены Evidence: ${prepared}/${state.items.length}, ${evidenceRecords} записей`) : (be?`Захаваны Evidence: ${prepared}/${state.items.length}`:`Сохранены Evidence: ${prepared}/${state.items.length}`)) : (be?"пакуль пуста":"пока пусто")}{allEvidenceReady&&!mapReady?(be?" · тэндэнцыі не разлічаны":" · тенденции не рассчитаны"):""}</p></div><button className="ghost-button small-button" disabled={busy!==""||!state.items.length} onClick={clearPool}>{be?"Ачысціць":"Очистить"}</button></div>
         {state.items.map((item,index)=><button key={item.id} className={`w-review-item ${active?.id===item.id?"active":""}`} onClick={()=>setActiveId(item.id)}><span>P{String(index+1).padStart(2,"0")}</span><div><b>{item.title}</b><small>{item.source}{item.evidence&&item.evidenceContract===W_EVIDENCE_CONTRACT_VERSION?" · ✓ "+(item.evidenceData?.records.length||0)+" записей"+(item.evidenceData?.validation ? " · "+item.evidenceData.validation.covered_passages+"/"+item.evidenceData.validation.total_passages+" фрагментов" : ""):""}
           {item.evidenceData?.quality_warnings?.length ? " · проверить полноту" : ""}{item.evidenceAlternative?" · прежний разбор сохранён":""}
           {item.editorialText.length>MAX_ITEM_CHARS?` · +${(item.editorialText.length-MAX_ITEM_CHARS).toLocaleString()} знаков`:""}</small></div></button>)}
-        <div className="w-review-pool-action"><button className="primary-button" disabled={busy!==""||!state.items.length||state.items.length>MAX_ITEMS||!topicReady||overLimitCount>0} onClick={prepared===state.items.length && !mapReady ? recalculateTrends : analyzePool}>{analysisButtonText}</button>{busy==="analyze"&&<small>{analysisText}</small>}{error&&<small style={{color:"#b42318",whiteSpace:"normal"}}>{error}</small>}{overLimitCount>0&&<small className="w-review-limit-warning" role="alert">
+        <div className="w-review-pool-action">
+          <button className="primary-button" disabled={!canRunPool}
+            onClick={()=>allEvidenceReady?recalculateTrends():analyzePool(false)}>{analysisButtonText}</button>
+          {allEvidenceReady&&<button className="secondary-button small-button" disabled={!canRunPool}
+            onClick={()=>analyzePool(true)}>{be?`Перааналізаваць пул (${state.items.length} публікацый)`:`Переанализировать пул (${state.items.length} публикаций)`}</button>}
+          {allEvidenceReady&&state.lastReanalysis?.total===state.items.length&&
+            state.lastReanalysis.status==="failed"&&
+            <small role="status" style={{color:"#9a443b",whiteSpace:"normal"}}>
+              {be?"Апошні паўторны аналіз не завершаны":"Последний переанализ не завершён"}:
+              {" "}{state.lastReanalysis.processed}/{state.items.length}.
+              {" "}{be?"Папярэднія Evidence захаваныя":"Прежние Evidence сохранены"}.
+            </small>}
+          {busy==="analyze"&&<small>{analysisText}</small>}{error&&<small style={{color:"#b42318",whiteSpace:"normal"}}>{error}</small>}{overLimitCount>0&&<small className="w-review-limit-warning" role="alert">
             {be ? `Скараціце ${overLimitCount} публікац. да ${MAX_ITEM_CHARS.toLocaleString()} знакаў: пакуль аналіз адключаны.`
               : `Сократите ${overLimitCount} публикац. до ${MAX_ITEM_CHARS.toLocaleString()} знаков: анализ пока недоступен.`}
           </small>}
