@@ -3,8 +3,8 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { DOSSIER_INSTRUCTIONS, dossierSchema, normalizeDossier, makeSynthesisDossier, compactDossierCards } from "./editorial-dossier.ts";
 import { reconcileDossierDraft } from "./dossier-reconciliation.ts";
 import { normalizeReviewSourceLabels, poolSourceNames, minimumParagraphChars } from "./review-output-guard.ts";
-import { W_REVIEW_GEMINI_PRIMARY, W_REVIEW_GEMINI_FALLBACK, W_REVIEW_GEMINI_ROUTES, wGeminiGenerationConfig, wGeminiPromptJsonConfig, W_GEMINI_JSON_ONLY_SUFFIX, parseModelJsonObject } from "./gemini-routing.ts";
-import { evidenceRouteKey, routesWithoutCircuit, suspendStructuralFailure, circuitExpiry } from "./provider-circuit.ts";
+import { W_REVIEW_GEMINI_PRIMARY, W_REVIEW_GEMINI_FALLBACK, W_REVIEW_GEMINI_ROUTES, wGeminiGenerationConfig, wGeminiPromptJsonConfig, W_GEMINI_JSON_ONLY_SUFFIX, parseModelJsonObject, wGeminiStructuredConfig, type GeminiJsonMode } from "./gemini-routing.ts";
+import { prepareEvidence, structuredGeminiRequest, preparationBudget } from "./preparation.ts";
 import { evidenceV2Instructions, evidenceV2Schema, makeEvidenceDocuments, renderEvidenceMaterials, verifyEvidenceCards, verifyEvidenceCardsIndividually, formatEvidenceCard, type EvidenceCard } from "./evidence-v2.ts";
 
 const cors = {
@@ -148,7 +148,7 @@ function reportGeminiFailure(stage:string,model:string,diagnostic:ProviderDiagno
   console.warn("w_review_provider_failure "+JSON.stringify({provider:"gemini",stage,model:providerField(model),...diagnostic}));
 }
 
-async function callGemini(apiKey: string, model: string, prompt: string, schema: unknown, _temperature = 0.1, stage = "unknown", timeoutMs=0, options?:{maxOutputTokens?:number;thinkingLevel?:"minimal"|"low"|"medium"|"high";promptJsonOnly?:boolean}): Promise<AiResult> {
+async function callGemini(apiKey: string, model: string, prompt: string, schema: unknown, _temperature = 0.1, stage = "unknown", timeoutMs=0, options?:{maxOutputTokens?:number;thinkingLevel?:"minimal"|"low"|"medium"|"high";promptJsonOnly?:boolean;jsonMode?:GeminiJsonMode}): Promise<AiResult> {
   try {
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: "POST",
@@ -156,7 +156,7 @@ async function callGemini(apiKey: string, model: string, prompt: string, schema:
       signal: timeoutMs>0?AbortSignal.timeout(timeoutMs):undefined,
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: options?.promptJsonOnly?prompt+W_GEMINI_JSON_ONLY_SUFFIX:prompt }] }],
-        generationConfig: options?.promptJsonOnly?wGeminiPromptJsonConfig(options):wGeminiGenerationConfig(schema,options),
+        generationConfig: options?.jsonMode?wGeminiStructuredConfig(schema,options.jsonMode,options):options?.promptJsonOnly?wGeminiPromptJsonConfig(options):wGeminiGenerationConfig(schema,options),
       }),
     });
     const raw = await response.text();
@@ -192,7 +192,7 @@ async function callGemini(apiKey: string, model: string, prompt: string, schema:
     },finish_reason:String(decoded?.candidates?.[0]?.finishReason||"").slice(0,30),
     reasoning_tokens:Number(usage.thoughtsTokenCount||0) };
   } catch (_error) {
-    const diagnostic:ProviderDiagnostic={kind:"network_error",http_status:502,google_status:"",
+    const diagnostic:ProviderDiagnostic={kind:_error instanceof Error&&["TimeoutError","AbortError"].includes(_error.name)?"local_timeout":"network_error",http_status:502,google_status:"",
       quota_metric:"",quota_id:"",retry_after:null,retryable:false};
     reportGeminiFailure(stage,model,diagnostic);
     return {ok:false,status:502,retryAfter:null,detail:"gemini_network_error",diagnostic};
@@ -286,7 +286,7 @@ Deno.serve(async (req: Request) => {
   let body: any;
   try { body = await req.json(); } catch { return json({ error: "invalid_json" }, 400); }
   const versionCheck = await enforceVersion(admin, String(body?.app_version || "0.8.11"));
-  if (!versionCheck.ok) return versionCheck.response;
+  if (!versionCheck.ok) return versionCheck.response || json({error:"VERSION_CHECK_FAILED"},503);
   const action = String(body?.action || "");
 
   if (action === "evidence_batch") {
@@ -314,258 +314,51 @@ Deno.serve(async (req: Request) => {
     if (normalized.some((item: any) => !item.text || item.text.length > 10000) || totalChars > 20000)
       return json({error:"evidence_article_too_long",max_article_chars:10000,max_batch_chars:20000,max_items:2},400);
     const documents = makeEvidenceDocuments(normalized);
-    const materialText = renderEvidenceMaterials(documents);
-    const schema = evidenceV2Schema(normalized.length);
-    const evidenceUserInput="Верни ровно "+normalized.length+
-      " карточек, строго в порядке MATERIAL_1, MATERIAL_2 и т. д.\n\n"+materialText;
-    const prompt=evidencePrompt+"\n\n"+evidenceUserInput;
-    // A 400 INVALID_ARGUMENT is structural, not a reason to retry the same
-    // payload for every two-article batch. Service-only DB circuit is shared
-    // across Edge isolates and operators; failures fail open to normal routing.
-    let disabledRoutes:string[]=[];
-    if (geminiApiKey) {
-      const {data:circuit,error:circuitError}=await admin.from("w_review_provider_circuit")
-        .select("route").gt("suspended_until",new Date().toISOString())
-        .like("route","evidence_batch:%");
-      if (!circuitError && Array.isArray(circuit))
-        disabledRoutes=circuit.map((row:any)=>String(row.route));
-      else if (circuitError)
-        console.warn("w_review_provider_circuit_read_failed");
-    }
-    const models=geminiApiKey?routesWithoutCircuit(W_REVIEW_GEMINI_ROUTES,disabledRoutes):[];
-    if (disabledRoutes.length) console.info("w_review_provider_circuit_skip "+
-      JSON.stringify({stage:"evidence_batch",models_skipped:W_REVIEW_GEMINI_ROUTES.length-models.length}));
-    // Minimal probe contains NO operator material and has no structured output
-    // requirements. It tests whether the model itself can answer generateContent.
-    async function diagnosticGeminiProbe(model:string) {
-      // Synthetic prompts only. Provider error messages are safe to record here:
-      // no source articles, author samples, credentials or personal information.
-      const endpoint="https://generativelanguage.googleapis.com/v1beta/models/"+
-        encodeURIComponent(model)+":generateContent";
-      const run=async(name:string,config:unknown):Promise<boolean>=>{
-        try{
-          const resp=await fetch(endpoint,{
-            method:"POST",
-            headers:{"x-goog-api-key":geminiApiKey,"Content-Type":"application/json"},
-            signal:AbortSignal.timeout(9000),
-            body:JSON.stringify({
-              contents:[{role:"user",parts:[{text:name==="minimal"?
-                "Reply with OK only.":"Return a minimal JSON object with test values only."}]}],
-              generationConfig:config
-            })
-          });
-          let providerMessage="";
-          if(!resp.ok){
-            try{
-              const error=await resp.json();
-              providerMessage=String(error?.error?.message||"")
-                .replace(/AIza[0-9A-Za-z_-]{25,}/g,"[redacted]")
-                .replace(/\s+/g," ").slice(0,700);
-            }catch{providerMessage="non_json_provider_error";}
-          }
-          console.info("w_review_gemini_schema_probe "+JSON.stringify({
-            model,test:name,http_status:resp.status,
-            status:resp.ok?"accepted":"rejected",provider_message:providerMessage
-          }));
-          return resp.ok;
-        }catch(error){
-          console.warn("w_review_gemini_schema_probe "+JSON.stringify({
-            model,test:name,http_status:null,
-            status:error instanceof Error&&error.name==="TimeoutError"?
-              "probe_timeout":"probe_network_failure"
-          }));
-          return false;
+    const deadline=Date.now()+130000;
+    const output=await prepareEvidence({documents,deadline,
+      available:{primary:Boolean(geminiApiKey),cloudflare:Boolean(cfEvidenceId&&cfEvidenceToken),
+        fallback:Boolean(geminiApiKey),groq:Boolean(groqApiKey)},
+      log:event=>console.info("w_review_evidence_attempt "+JSON.stringify(event)),
+      generate:async(provider,docs,attemptDeadline)=>{
+        const materialText=renderEvidenceMaterials(docs);
+        const input="Верни ровно "+docs.length+" карточек, index начиная с нуля.\n\n"+materialText;
+        const schema=evidenceV2Schema(docs.length);
+        if(provider==="primary"||provider==="fallback"){
+          const model=provider==="primary"?W_REVIEW_GEMINI_PRIMARY:W_REVIEW_GEMINI_FALLBACK;
+          const reply=await structuredGeminiRequest({deadline:attemptDeadline,
+            call:(jsonMode,timeout)=>callGemini(geminiApiKey,model,evidencePrompt+"\n\n"+input,
+              schema,0.1,"evidence_batch",timeout,{jsonMode,maxOutputTokens:16000,thinkingLevel:"low"}),
+            log:event=>console.info("w_review_gemini_response "+JSON.stringify({stage:"evidence_batch",model,...event}))});
+          return {reply,model};
         }
-      };
-      const isAvailable=await run("minimal",{maxOutputTokens:64});
-      if(!isAvailable)return;
-      const sampleSchema={type:"object",properties:{ok:{type:"boolean"}},required:["ok"]};
-      const probeConfigs=[
-        {test:"simple_json_schema",
-          config:{responseFormat:{text:{mimeType:"APPLICATION_JSON",schema:sampleSchema}},maxOutputTokens:128}},
-        {test:"evidence_v2_schema",
-          config:wGeminiGenerationConfig(evidenceV2Schema(2),{maxOutputTokens:128})}
-      ];
-      await Promise.all(probeConfigs.map(probe=>run(probe.test,probe.config)));
-    }
-    async function suspendGeminiModel(model:string,status:number,googleStatus:string) {
-      if(!suspendStructuralFailure(status,googleStatus))return;
-      const {error}=await admin.from("w_review_provider_circuit").upsert({
-        route:evidenceRouteKey(model),suspended_until:circuitExpiry(new Date()),
-        reason_code:"INVALID_ARGUMENT",http_status:400,updated_at:new Date().toISOString()
-      },{onConflict:"route"});
-      if(error)console.warn("w_review_provider_circuit_write_failed");
-      else {
-        console.info("w_review_provider_circuit_open "+JSON.stringify({
-          stage:"evidence_batch",model,minutes:15
-        }));
-        await diagnosticGeminiProbe(model);
-      }
-    }
-    let result: AiResult | null = null;
-    let parsed: any = null;
-    let verifiedCards: EvidenceCard[] = [];
-    let usedModel = "";
-    let lastError = "";
-    let lastGeminiFailure:AiFailure|null=null;
-    const attemptedRoutes:Array<{model:string;status:number;cause:string}> = [];
-    type PartialResponse={accepted:Array<{index:number;card:EvidenceCard}>;result:AiSuccess;model:string};
-    let bestPartial:PartialResponse|null=null;
-    function considerPartial(candidate:AiSuccess,data:any,model:string){
-      const attempt=verifyEvidenceCardsIndividually(data,documents);
-      if(attempt.accepted.length && (!bestPartial ||
-          attempt.accepted.length>bestPartial.accepted.length ||
-          (attempt.accepted.length===bestPartial.accepted.length &&
-           attempt.accepted.reduce((n,v)=>n+v.card.validation.accepted,0)>
-           bestPartial.accepted.reduce((n,v)=>n+v.card.validation.accepted,0))))
-        bestPartial={accepted:attempt.accepted,result:candidate,model};
-      if(attempt.failed.length)console.info("w_review_evidence_partial_diagnostic "+JSON.stringify({
-        model,accepted_articles:attempt.accepted.map(v=>v.index+1),
-        failed:attempt.failed.map(v=>({article:v.index+1,reason:v.reason}))
-      }));
-    }
-    gemini_models: for (const model of models) {
-      for (let attempt = 0; attempt < 2; attempt++) {
-        const candidate = await callGemini(geminiApiKey, model, prompt, schema, 0.1, "evidence_batch", 0, {promptJsonOnly:true,maxOutputTokens:12000,thinkingLevel:"minimal"});
-        if (candidate.ok) {
-          const data = parseModelJson(candidate);
-          if(!data||!Array.isArray(data.cards)){
-            // A 200 response is not a usable Evidence result. Repeating the
-            // IDENTICAL request wastes time and tokens: try the next model
-            // immediately, without altering any pre-existing validated cards.
-            const reason=!data?"unparseable_json":"missing_cards_array";
-            console.warn("w_review_gemini_evidence_shape "+JSON.stringify({
-              model,attempt:attempt+1,reason,finish_reason:candidate.finish_reason||"unknown",
-              response_chars:candidate.content.length,
-              completion_tokens:candidate.usage.completion_tokens,
-              reasoning_tokens:candidate.reasoning_tokens||0,
-              requested_max_tokens:12000
-            }));
-            lastError=model+": "+reason;
-            attemptedRoutes.push({model,status:422,cause:reason});
-            break;
-          }
-          const verified=verifyEvidenceCards(data,documents);
-          if(!verified.error){
-            result=candidate;parsed=data;verifiedCards=verified.cards;usedModel=model;break;
-          }
-          lastError=model+": "+verified.error;
-          considerPartial(candidate,data,model);
-          attemptedRoutes.push({model,status:422,cause:verified.error});
-        } else {
-          lastGeminiFailure=candidate;
-          lastError = model + ": HTTP " + candidate.status + " " + candidate.detail;
-          attemptedRoutes.push({model,status:candidate.status,cause:candidate.diagnostic?.kind||candidate.detail.slice(0,90)});
-          await suspendGeminiModel(model,candidate.status,candidate.diagnostic?.google_status||"");
-          if (candidate.status === 429) break gemini_models; // Immediately use Groq instead of repeating Gemini.
-          if (![500, 502, 503, 504].includes(candidate.status)) break;
-        }
-        if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 1200));
-      }
-      if (result) break;
-    }
-    if ((!result || !parsed) && cfEvidenceId && cfEvidenceToken) {
-      console.info("w_review_provider_fallback "+JSON.stringify({
-        stage:"evidence_batch",from:"gemini",to:"cloudflare_gpt_oss_120b",
-        trigger:lastGeminiFailure?.diagnostic?.kind||"unverified_evidence"
-      }));
-      // JSON mode is explicitly requested, even when global schema mode is
-      // disabled. Source excerpts remain subject to deterministic verification.
-      const cfResult=await callCloudflare(cfEvidenceId,cfEvidenceToken,{
-        reasoning_effort:"low",temperature:0.1,max_tokens:9000,
-        response_format:{type:"json_object"},
-        messages:[
-          {role:"system",content:evidencePrompt+
-            "\nКаждая дословная выдержка SOURCE должна точно встречаться в указанном фрагменте. "+
-            "Не обрывай покрытие после вводных абзацев. Верни полный JSON cards."},
-          {role:"user",content:evidenceUserInput}
-        ]
-      },100000);
-      if(cfResult.ok){
-        const cfData=parseModelJson(cfResult);
-        const verified=verifyEvidenceCards(cfData,documents);
-        if(!verified.error){
-          result=cfResult;parsed=cfData;verifiedCards=verified.cards;usedModel="@cf/openai/gpt-oss-120b";
-        }else{
-          lastError+="; cloudflare_"+verified.error;
-          considerPartial(cfResult,cfData,"@cf/openai/gpt-oss-120b");
-          attemptedRoutes.push({model:"@cf/openai/gpt-oss-120b",status:422,cause:verified.error});
-        }
-      }else{
-        lastError+="; cloudflare_"+(cfResult.detail==="cloudflare_local_timeout"?"local_timeout":"HTTP_"+cfResult.status);
-        const reason=cfResult.detail==="cloudflare_local_timeout"?"local_timeout":
-          cfResult.detail.startsWith("cloudflare_empty_reply")?"empty_reply":"provider_or_transport";
-        console.warn("w_review_cloudflare_evidence_failure "+JSON.stringify({
-          reason,http_status:cfResult.status,timeout_ms:100000,
-          account_route:hasCfEvidenceBackup?"backup":"primary"
-        }));
-        attemptedRoutes.push({model:"@cf/openai/gpt-oss-120b",status:cfResult.status,cause:reason});
-      }
-    }
-    if ((!result || !parsed) && groqApiKey) {
-      console.info("w_review_provider_fallback "+JSON.stringify({stage:"evidence_batch",from:"gemini",to:"groq",
-        trigger:lastGeminiFailure?.diagnostic?.kind||"other",http_status:lastGeminiFailure?.status||null}));
-      const groqResult = await callGroq(groqApiKey, {
-        model: "openai/gpt-oss-20b",
-        reasoning_effort: "low",
-        reasoning_format: "hidden",
-        temperature: 0.1,
-        response_format: { type: "json_object" },
-        max_completion_tokens: 7000,
-        messages: [
-          {role: "system", content: evidencePrompt},
-          {role: "user", content: evidenceUserInput}
-        ]
-      });
-      if (groqResult.ok) {
-        const data = parseModelJson(groqResult);
-        const verified=verifyEvidenceCards(data,documents);
-        if(!verified.error){
-          result=groqResult;parsed=data;verifiedCards=verified.cards;usedModel="openai/gpt-oss-20b";
-        } else {
-          lastError += "; groq_"+verified.error;
-          considerPartial(groqResult,data,"openai/gpt-oss-20b");
-          attemptedRoutes.push({model:"openai/gpt-oss-20b",status:422,cause:verified.error});
-        }
-      } else {
-        lastError += "; groq_HTTP_" + groqResult.status + ": " + groqResult.detail.slice(0, 200);
-        attemptedRoutes.push({model:"openai/gpt-oss-20b",status:groqResult.status,cause:"provider_error"});
-      }
-    }
-    let cardIndices=normalized.map((_,i)=>i);
-    if ((!result || !parsed) && bestPartial) {
-      const selected=bestPartial as PartialResponse;
-      result=selected.result;
-      parsed={cards:[]};
-      verifiedCards=selected.accepted.map(v=>v.card);
-      cardIndices=selected.accepted.map(v=>v.index);
-      usedModel=selected.model;
-      console.warn("w_review_evidence_partial_return "+JSON.stringify({
-        accepted_article_indices:cardIndices.map(i=>i+1),
-        pending_articles:normalized.length-cardIndices.length,provider:usedModel
-      }));
-    }
-    if (!result || !parsed) return json({error:"evidence_providers_unavailable",
-      detail:lastError.slice(0,350),attempts:attemptedRoutes,provider:"gemini_cloudflare_groq",issue:lastGeminiFailure?.diagnostic||null,
-      retryable:false},503);
-    const sourceDigests=await Promise.all(normalized.map(async (item)=>{
-      const bytes=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(item.text));
-      return Array.from(new Uint8Array(bytes),value=>value.toString(16).padStart(2,"0")).join("");
+        const payload={reasoning_effort:"low",temperature:0.1,max_tokens:10000,
+          response_format:{type:"json_object"},messages:[{role:"system",content:evidencePrompt},
+          {role:"user",content:input}]};
+        const reply=provider==="cloudflare"?
+          await callCloudflare(cfEvidenceId,cfEvidenceToken,payload,preparationBudget(attemptDeadline,60000)):
+          await callGroq(groqApiKey,{...payload,max_tokens:undefined,model:"openai/gpt-oss-20b",
+            max_completion_tokens:7000,reasoning_format:"hidden"},preparationBudget(attemptDeadline,12000));
+        return {reply,model:provider==="cloudflare"?"@cf/openai/gpt-oss-120b":"openai/gpt-oss-20b"};
+      }});
+    if(!output.articles.length)return json({error:"evidence_providers_unavailable",
+      detail:"Не удалось получить пригодные карточки; готовые материалы сохранены.",
+      attempts:output.attempts,retryable:false},503);
+    const cards=await Promise.all(output.articles.map(async entry=>{
+      const bytes=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(normalized[entry.index].text));
+      const source_sha256=Array.from(new Uint8Array(bytes),v=>v.toString(16).padStart(2,"0")).join("");
+      const warnings=[...entry.warnings,...(entry.model===W_REVIEW_GEMINI_FALLBACK||entry.model==="openai/gpt-oss-20b"?["fallback_model"]:[])];
+      return {index:entry.index,evidence:formatEvidenceCard(entry.card),
+        evidence_data:{...entry.card,source_sha256,model:entry.model,quality_warnings:warnings}};
     }));
-    const cards=verifiedCards.map((card,index)=>({
-      index:cardIndices[index],evidence:formatEvidenceCard(card),
-      evidence_data:{...card,source_sha256:sourceDigests[cardIndices[index]]}
-    }));
-    console.info("w_review_evidence_v2 "+JSON.stringify({
-      cards:cards.length,pending_articles:normalized.length-cards.length,
-      per_article:verifiedCards.map((card,i)=>({batch_index:cardIndices[i]+1,accepted:card.validation.accepted,rejected:card.validation.rejected,covered_passages:card.validation.covered_passages,total_passages:card.validation.total_passages})),accepted:verifiedCards.reduce((n,c)=>n+c.validation.accepted,0),
-      rejected:verifiedCards.reduce((n,c)=>n+c.validation.rejected,0),
-      covered_passages:verifiedCards.reduce((n,c)=>n+c.validation.covered_passages,0),
-      total_passages:verifiedCards.reduce((n,c)=>n+c.validation.total_passages,0),
-      provider:usedModel
-    }));
-    return json({cards,partial:cards.length<normalized.length,model:usedModel,
-      provider:usedModel.startsWith("@cf/")?"cloudflare":usedModel.startsWith("openai/")?"groq":"gemini",usage:result.usage});
+    console.info("w_review_evidence_v2 "+JSON.stringify({cards:cards.length,
+      pending_articles:normalized.length-cards.length,
+      per_article:cards.map(c=>({batch_index:c.index+1,model:c.evidence_data.model,
+        ...c.evidence_data.validation,warnings:c.evidence_data.quality_warnings})),
+      accepted:cards.reduce((n,c)=>n+c.evidence_data.validation.accepted,0),
+      covered_passages:cards.reduce((n,c)=>n+c.evidence_data.validation.covered_passages,0),
+      total_passages:cards.reduce((n,c)=>n+c.evidence_data.validation.total_passages,0)}));
+    return json({cards,partial:cards.length<normalized.length,
+      model:[...new Set(cards.map(c=>c.evidence_data.model))].join(", "),usage:output.usage});
   }
 
   if (action === "style_profile") {
@@ -644,7 +437,7 @@ ${sections.join("; ")}.
     if(!task||task.length>2000)return json({error:"invalid_task",max_chars:2000},400);
     const submitted=Array.isArray(body?.evidence_cards)?body.evidence_cards:[];
     if(submitted.length>18)return json({error:"w_review_max_articles",limit:18},400);
-    const cards=submitted.map((x:unknown)=>String(x||"").trim()).filter(Boolean);
+    const cards:string[]=submitted.map((x:unknown)=>String(x||"").trim()).filter(Boolean);
     if(!cards.length)return json({error:"no_evidence_cards"},400);
     const compactCards=compactDossierCards(cards);
     const evidenceText=compactCards.join("\n\n");
@@ -709,41 +502,29 @@ ${sections.join("; ")}.
       attempts.push({model,status:422,reason:checked.error||"invalid_dossier"});
       return false;
     };
-    let geminiProblem:ProviderDiagnostic|null=null;
-    let blocked:string[]=[];
+    const preparationDeadline=Date.now()+130000;
+    const primaryDeadline=Math.min(preparationDeadline,Date.now()+55000);
+    const runGeminiMap=async(model:string,deadline:number,repair=false)=>{
+      const feedback=repair?"\n\nПредыдущий план не прошёл проверку: "+
+        (attempts.at(-1)?.reason||"invalid_dossier")+
+        ". Исправь план по исходной базе. Свяжи каждую публикацию с содержательной веткой. "+
+        "Пропуск в плане не означает периферийность; не перемещай пропуски автоматически в необязательные темы.":"";
+      const res=await structuredGeminiRequest({deadline,
+        call:(jsonMode,timeout)=>callGemini(geminiApiKey,model,prompt+feedback,schema,0.1,
+          "editorial_map",timeout,{jsonMode,maxOutputTokens:16384,thinkingLevel:"low"}),
+        log:event=>console.info("w_review_gemini_response "+JSON.stringify({stage:"editorial_map",model,...event}))});
+      if(res.ok)return accept(res,model,"gemini");
+      attempts.push({model,status:res.status,reason:res.diagnostic?.kind||res.detail});
+      return false;
+    };
     if(geminiApiKey){
-      const {data,error}=await admin.from("w_review_provider_circuit")
-        .select("route").gt("suspended_until",new Date().toISOString())
-        .in("route",[
-          ...W_REVIEW_GEMINI_ROUTES.map(model=>evidenceRouteKey(model)),
-          ...W_REVIEW_GEMINI_ROUTES.map(model=>"editorial_map:"+model)
-        ]);
-      if(!error&&Array.isArray(data))blocked=data.map((v:any)=>String(v.route));
-      else if(error)console.warn("w_review_editorial_circuit_read_failed");
+      const accepted=await runGeminiMap(W_REVIEW_GEMINI_PRIMARY,Math.min(primaryDeadline,Date.now()+35000));
+      // Only a content/schema-valid draft needs an editorial correction. Network
+      // retries and format compatibility are already bounded in the adapter.
+      if(!accepted&&attempts.at(-1)?.status===422&&preparationBudget(primaryDeadline,20000)>5000)
+        await runGeminiMap(W_REVIEW_GEMINI_PRIMARY,primaryDeadline,true);
     }
-    for(const model of W_REVIEW_GEMINI_ROUTES){
-      if(!geminiApiKey)break;
-      if(blocked.includes(evidenceRouteKey(model))||blocked.includes("editorial_map:"+model)){
-        console.info("w_review_editorial_circuit_skip "+JSON.stringify({model}));
-        continue;
-      }
-      const res=await callGemini(geminiApiKey,model,prompt,schema,0.1,"editorial_map",0,{maxOutputTokens:16384,promptJsonOnly:true});
-      if(res.ok){
-        if(accept(res,model,"gemini"))break;
-      }else{
-        geminiProblem=res.diagnostic||null;
-        attempts.push({model,status:res.status,reason:res.diagnostic?.kind||"provider_error"});
-        if(res.status===400&&res.diagnostic?.google_status==="INVALID_ARGUMENT"){
-          const {error}=await admin.from("w_review_provider_circuit").upsert({
-            route:"editorial_map:"+model,suspended_until:circuitExpiry(new Date()),
-            reason_code:"INVALID_ARGUMENT",http_status:400,updated_at:new Date().toISOString()
-          },{onConflict:"route"});
-          if(error)console.warn("w_review_editorial_circuit_write_failed");
-        }
-        if(res.status===429)break;
-      }
-    }
-    if(!selected&&cfId&&cfToken){
+    if(!selected&&cfId&&cfToken&&preparationBudget(preparationDeadline-18000,60000)>5000){
       console.info("w_review_provider_fallback "+JSON.stringify({
         stage:"editorial_dossier",from:"gemini",to:"cloudflare_gpt_oss_120b"
       }));
@@ -756,7 +537,7 @@ ${sections.join("; ")}.
             " материалам и inventory. Каждый evidence_id должен встречаться в переданной базе."},
           {role:"user",content:mapUserInput}
         ]
-      },100000);
+      },preparationBudget(preparationDeadline-18000,60000));
       if(cf.ok)accept(cf,"@cf/openai/gpt-oss-120b","cloudflare");
       else{
         const reason=cf.detail==="cloudflare_local_timeout"?"local_timeout":
@@ -765,7 +546,11 @@ ${sections.join("; ")}.
         console.warn("w_review_editorial_cloudflare_failure "+JSON.stringify({reason,status:cf.status}));
       }
     }
-    if(!selected&&groqApiKey){
+    if(!selected&&geminiApiKey&&preparationBudget(preparationDeadline,20000)>5000){
+      console.info("w_review_provider_fallback "+JSON.stringify({stage:"editorial_map",to:W_REVIEW_GEMINI_FALLBACK}));
+      await runGeminiMap(W_REVIEW_GEMINI_FALLBACK,Math.min(preparationDeadline,Date.now()+22000));
+    }
+    if(!selected&&groqApiKey&&preparationBudget(preparationDeadline,12000)>4000){
       console.info("w_review_provider_fallback "+JSON.stringify({
         stage:"editorial_dossier",from:"cloudflare_or_gemini",to:"groq"
       }));
@@ -773,7 +558,7 @@ ${sections.join("; ")}.
         model:"openai/gpt-oss-20b",response_format:{type:"json_object"},
         reasoning_effort:"low",reasoning_format:"hidden",max_completion_tokens:7600,
         messages:[{role:"system",content:DOSSIER_INSTRUCTIONS},{role:"user",content:mapUserInput}]
-      });
+      },preparationBudget(preparationDeadline,12000));
       if(groq.ok)accept(groq,"openai/gpt-oss-20b","groq");
       else attempts.push({model:"openai/gpt-oss-20b",status:groq.status,reason:"provider_error"});
     }
@@ -783,7 +568,7 @@ ${sections.join("; ")}.
       }));
       return json({error:"editorial_dossier_providers_unavailable",provider:"gemini_cloudflare_groq",
         detail:attempts.map(a=>a.model+": "+a.status+" "+a.reason).join("; ").slice(0,320),
-        attempts,issue:geminiProblem,retryable:false},503);
+        attempts,retryable:false},503);
     }
     const output=selected as {dossier:NonNullable<ReturnType<typeof normalizeDossier>["dossier"]>;
       result:AiSuccess;model:string;provider:string};
@@ -1050,7 +835,7 @@ ${styleProfile || "Живой сдержанный редакционный ст
     if(checkedDossier.error||!checkedDossier.dossier)
       return json({error:"w_review_dossier_v3_required",
         detail:checkedDossier.error||"reanalyse_pool"},426);
-    const selectedIds=trends.map((t:any)=>String(t?.id||""));
+    const selectedIds:string[]=trends.map((t:any)=>String(t?.id||""));
     if(!selectedIds.length||new Set(selectedIds).size!==selectedIds.length||
        selectedIds.some(id=>!checkedDossier.dossier!.trends.some(t=>t.id===id)))
       return json({error:"w_review_invalid_selected_dossier_lines"},400);

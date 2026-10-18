@@ -41,6 +41,7 @@ export type WEvidenceRecord = {
   speaker: string; role: string;
 };
 export type WEvidenceData = {
+  model?: string; quality_warnings?: string[];
   version: 2; publication_id: string; title_original: string; title_ru: string; source_sha256: string;
   records: WEvidenceRecord[];
   validation: { proposed: number; accepted: number; rejected: number;
@@ -108,7 +109,7 @@ export async function wEvidenceBatch(items: EvidenceInput[], onRetry?: RetryNoti
     evidence: String(card?.evidence || "").trim(),
     evidenceData: card?.evidence_data as WEvidenceData | undefined,
   })) : [];
-  return { cards, model: String(payload.model || "openai/gpt-oss-20b"), usage: usage(payload.usage) };
+  return { cards, partial: payload.partial === true, model: String(payload.model || "openai/gpt-oss-20b"), usage: usage(payload.usage) };
 }
 
 export async function wStyleProfile(samples: string[], onRetry?: RetryNotice) {

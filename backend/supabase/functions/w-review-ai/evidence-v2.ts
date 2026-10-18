@@ -165,3 +165,20 @@ export function formatEvidenceCard(card:EvidenceCard):string {
   });
   return [head,...lines].join("\n");
 }
+
+// Signals for a targeted retry, not semantic fact checking or a quota of facts.
+export function evidenceQualityWarnings(card:EvidenceCard,doc:EvidenceDocument):string[]{
+  const warnings:string[]=[];
+  const chars=doc.passages.reduce((n,p)=>n+p.text.length,0);
+  if(chars>=4500&&card.records.length<8)warnings.push("sparse_records");
+  if(chars>=4500&&doc.passages.length>=6){
+    const covered=new Set(card.records.map(r=>r.anchor_id));
+    let offset=0;const zones=new Set<number>();
+    for(const p of doc.passages){
+      if(covered.has(p.id))zones.add(Math.min(2,Math.floor((offset+p.text.length/2)/chars*3)));
+      offset+=p.text.length;
+    }
+    if(zones.size<3)warnings.push("uneven_article_coverage");
+  }
+  return warnings;
+}

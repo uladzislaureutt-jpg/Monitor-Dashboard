@@ -36,29 +36,14 @@ const draft=()=>({
   })),
   inventory:{quotes:0,headlines:4,experts:0}
 });
-test("P03 and P04 become a separate optional trend, not a forced paragraph",()=>{
-  const original=draft();
-  assert.equal(normalizeDossier(original,cards,{requireEveryDistinctSource:true}).error,
-    "dossier_unlinked_sources_P03_P04");
-  const reconciled=reconcileDossierDraft(original,cards);
-  assert.ok(reconciled);
-  assert.deepEqual(reconciled.additionalSources,["P03","P04"]);
-  assert.equal(reconciled.draft.trends.length,2);
-  assert.equal(reconciled.draft.trends[0].operator_optional,false);
-  assert.equal(reconciled.draft.trends[1].operator_optional,true);
-  assert.equal(reconciled.draft.trends[1].branches.length,2);
-  assert.equal(reconciled.draft.coverage.filter(v=>v.status==="excluded").length,0);
-  const valid=normalizeDossier(reconciled.draft,cards,{requireEveryDistinctSource:true});
-  assert.equal(valid.error,null);
-  const standard=makeSynthesisDossier(valid.dossier,["T1"],8000,cards);
-  const withExtras=makeSynthesisDossier(valid.dossier,["T1","T2"],8000,cards);
-  assert.equal(standard.coveredPublications,2);
-  assert.equal(withExtras.coveredPublications,4);
-  assert.doesNotMatch(standard.text,/Дополнительная линия:/);
-  assert.match(withExtras.text,/Дополнительная линия:/);
+test("omitted publications never become fabricated optional trends",()=>{
+  const original=draft(),copy=JSON.stringify(original);
+  assert.equal(reconcileDossierDraft(original,cards),null);
+  assert.equal(JSON.stringify(original),copy);
 });
 test("invalid invented references are discarded, not silently remapped to a true claim",()=>{
   const corrupted=draft();
+  corrupted.trends[0].branches[0].evidence_ids.push("P03:E01","P04:E01");
   corrupted.trends[0].branches.push({...coreBranch(["P03:E99"]),
     id:"B2",title:"Несуществующая ветка"});
   const res=reconcileDossierDraft(corrupted,cards);
@@ -73,12 +58,9 @@ test("cannot create a dossier without a genuine main branch",()=>{
   empty.trends[0].branches=[coreBranch(["P01:E99"])];
   assert.equal(reconcileDossierDraft(empty,cards),null);
 });
-test("separate URLs about the same event remain independent",()=>{
-  const raw=draft();
-  const result=reconcileDossierDraft(raw,cards);
-  assert.deepEqual(result.additionalSources,["P03","P04"]);
-  assert.equal(result.draft.coverage[2].status,"supporting");
-  assert.equal(result.draft.coverage[3].status,"supporting");
+test("different URLs cannot be treated as duplicates to hide missing analysis",()=>{
+  const raw=draft();raw.coverage[2].status="duplicate";
+  assert.equal(reconcileDossierDraft(raw,cards),null);
 });
 test("existing complete, valid maps pass through without compulsory repair",()=>{
   const raw=draft();
@@ -91,4 +73,14 @@ test("existing complete, valid maps pass through without compulsory repair",()=>
   assert.ok(result);
   assert.deepEqual(result.additionalSources,[]);
   assert.equal(result.repaired,false);
+});
+
+test("genuine model-authored peripheral trend stays optional",()=>{
+  const raw=draft();
+  raw.trends.push({...raw.trends[0],id:"T2",operator_optional:true,
+    optional_reason:"Эта линия относится к дополнительному вопросу оператора.",
+    branches:[coreBranch(["P03:E01","P04:E01"])]});
+  raw.coverage[2].status="supporting";raw.coverage[3].status="supporting";
+  const res=reconcileDossierDraft(raw,cards);
+  assert.ok(res);assert.equal(res.draft.trends[1].operator_optional,true);
 });

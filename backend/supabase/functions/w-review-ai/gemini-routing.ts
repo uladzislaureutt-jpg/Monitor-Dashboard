@@ -25,6 +25,17 @@ export function normalizeGeminiJsonSchema(value:unknown):unknown{
   }
   return out;
 }
+export type GeminiJsonMode = "schema" | "legacy_schema" | "json";
+export function wGeminiStructuredConfig(schema:unknown,mode:GeminiJsonMode,options?:{
+  maxOutputTokens?:number;thinkingLevel?:"minimal"|"low"|"medium"|"high"
+}){
+  const format=mode==="schema"?
+    {responseFormat:{text:{mimeType:"application/json",schema:normalizeGeminiJsonSchema(schema)}}}:
+    mode==="legacy_schema"?{responseMimeType:"application/json",responseSchema:schema}:
+    {responseMimeType:"application/json"};
+  return {...format,...(options?.maxOutputTokens?{maxOutputTokens:options.maxOutputTokens}:{}),
+    ...(options?.thinkingLevel?{thinkingConfig:{thinkingLevel:options.thinkingLevel}}:{})};
+}
 export function wGeminiGenerationConfig(schema:unknown,options?:{
   maxOutputTokens?:number;thinkingLevel?:"minimal"|"low"|"medium"|"high"
 }){
