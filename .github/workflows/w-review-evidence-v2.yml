@@ -30,6 +30,8 @@ jobs:
         run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/evidence-v2.test.mjs
       - name: Validate editorial dossier and coverage
         run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/editorial-dossier.test.mjs
+      - name: Verify source-anchored dossier reconciliation
+        run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/dossier-reconciliation.test.mjs
       - name: Verify whole-paragraph author-style sampling
         run: node --experimental-strip-types --test src/wReviewStyle.test.mjs
       - name: Install frontend dependencies
