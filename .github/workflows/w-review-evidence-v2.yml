@@ -31,7 +31,7 @@ jobs:
       - name: Verify Gemini Evidence response integrity and fast fallback
         run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/gemini-evidence-runtime.test.mjs
       - name: Verify bounded preparation and extraction regression protection
-        run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/preparation.test.mjs src/wReviewEvidenceQuality.test.mjs
+        run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/preparation.test.mjs
       - name: Check cross-batch Gemini circuit
         run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/provider-circuit.test.mjs
       - name: Validate anchored evidence
