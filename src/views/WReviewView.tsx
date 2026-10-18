@@ -321,7 +321,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     // The "Переанализировать пул" action must really re-extract Evidence.
     // Old cards and dossier remain untouched unless all 18 new cards AND
     // the rebuilt dossier are verified successfully.
-    const force=Boolean(mapReady && prepared===state.items.length);
+    const force=Boolean(state.items.length>0 && prepared===state.items.length);
     const next = [...state.items];
     const previousAccepted=state.items.reduce((n,item)=>n+(item.evidenceData?.validation.accepted||0),0);
     const batchesProviders:string[]=[];
