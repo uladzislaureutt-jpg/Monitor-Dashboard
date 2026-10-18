@@ -20,8 +20,9 @@ export async function structuredGeminiRequest(input:{
   for(let attempt=0;attempt<4;attempt++){
     const budget=preparationBudget(input.deadline,35000);
     if(budget<1500)return unavailable();
+    const started=Date.now();
     const result=await input.call(mode,budget);
-    input.log?.({format:mode,status:result.ok?200:result.status,
+    input.log?.({format:mode,timeout_ms:budget,elapsed_ms:Date.now()-started,status:result.ok?200:result.status,
       finish_reason:result.ok?result.finish_reason||"unknown":"",
       response_chars:result.ok?result.content.length:0,
       completion_tokens:result.ok?result.usage.completion_tokens:0,
@@ -54,7 +55,7 @@ export async function structuredGeminiRequest(input:{
 
 export type PreparedArticle={index:number;card:EvidenceCard;model:string;warnings:string[]};
 export async function prepareEvidence(input:{
-  documents:EvidenceDocument[];deadline:number;cloudflareFirst?:boolean;
+  documents:EvidenceDocument[];deadline:number;cloudflareFirst?:boolean;poolIndices?:number[];
   generate:(provider:"primary"|"cloudflare"|"fallback"|"groq",documents:EvidenceDocument[],deadline:number)=>Promise<{reply:PreparationReply;model:string}>;
   available:{primary:boolean;cloudflare:boolean;fallback:boolean;groq:boolean};
   log?:(event:Record<string,unknown>)=>void;
@@ -62,6 +63,7 @@ export async function prepareEvidence(input:{
   const start=Date.now(),best=new Map<number,PreparedArticle>();
   const usage={prompt_tokens:0,completion_tokens:0,total_tokens:0};
   const attempts:Array<Record<string,unknown>>=[];
+  // Only unresolved or low-quality results of THIS request may be retried; no saved previous-run versions.
   const remaining=()=>input.documents.map((_,i)=>i).filter(i=>!best.has(i)||best.get(i)!.warnings.length>0);
   async function attempt(provider:"primary"|"cloudflare"|"fallback"|"groq",indices:number[],deadline:number){
     if(!indices.length||preparationBudget(deadline,35000)<2000)return;
@@ -69,6 +71,7 @@ export async function prepareEvidence(input:{
     const started=Date.now();
     const {reply,model}=await input.generate(provider,docs,deadline);
     const elapsed_ms=Date.now()-started;
+    const pool_indices=indices.map(i=>input.poolIndices?.[i]??i+1);
     if(reply.ok){
       for(const k of ["prompt_tokens","completion_tokens","total_tokens"] as const)usage[k]+=reply.usage[k]||0;
       const parsed=parseModelJsonObject(reply.content);
@@ -83,14 +86,18 @@ export async function prepareEvidence(input:{
            (entry.card.records.length>previous.card.records.length||entry.card.validation.covered_passages>previous.card.validation.covered_passages));
         if(better)best.set(index,{index,card:entry.card,model,warnings});
       }
-      attempts.push({provider,model,status:200,articles:indices.map(i=>i+1),
+      attempts.push({provider,model,status:200,articles:indices.map(i=>i+1),pool_indices,
         finish_reason:reply.finish_reason||"unknown",elapsed_ms,accepted:checked.accepted.length,
+        response_chars:reply.content.length,completion_tokens:reply.usage.completion_tokens,
+        per_article:checked.accepted.map(e=>({pool_index:pool_indices[e.index],accepted:e.card.validation.accepted,
+          covered_passages:e.card.validation.covered_passages,total_passages:e.card.validation.total_passages,
+          warnings:evidenceQualityWarnings(e.card,docs[e.index])})),
         response_shape:{parsed_object:Boolean(parsed),cards_array:Array.isArray(parsed?.cards),
           cards_count:Array.isArray(parsed?.cards)?parsed.cards.length:0,
           indices:Array.isArray(parsed?.cards)?parsed.cards.slice(0,2).map((c:any)=>
             typeof c?.index==="number"&&Number.isInteger(c.index)&&c.index>=0&&c.index<=18?c.index:null):[]},
         failed:checked.failed.map(v=>({article:indices[v.index]+1,reason:v.reason}))});
-    }else attempts.push({provider,model,status:reply.status,elapsed_ms,cause:reply.diagnostic?.kind||"provider_failure",articles:indices.map(i=>i+1)});
+    }else attempts.push({provider,model,status:reply.status,elapsed_ms,cause:reply.diagnostic?.kind||"provider_failure",articles:indices.map(i=>i+1),pool_indices});
     input.log?.(attempts.at(-1)!);
     return reply;
   }
