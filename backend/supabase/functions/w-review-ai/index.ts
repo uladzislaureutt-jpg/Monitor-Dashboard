@@ -342,7 +342,9 @@ Deno.serve(async (req: Request) => {
         return {reply,model:provider==="cloudflare"?"@cf/openai/gpt-oss-120b":"openai/gpt-oss-20b"};
       }});
     if(!output.articles.length)return json({error:"evidence_providers_unavailable",
-      detail:"Не удалось получить пригодные карточки; готовые материалы сохранены.",
+      detail:output.attempts.some(a=>a.status===200)
+        ?"Модели ответили, но карточки не прошли проверку формата или подтверждения фактов. Готовые материалы сохранены."
+        :"Не удалось получить ответ моделей. Готовые материалы сохранены.",
       attempts:output.attempts,retryable:false},503);
     const cards=await Promise.all(output.articles.map(async entry=>{
       const bytes=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(normalized[entry.index].text));

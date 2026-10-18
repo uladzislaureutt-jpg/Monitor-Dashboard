@@ -64,7 +64,9 @@ export function evidenceV2Schema(count:number) {
   };
 }
 export const evidenceV2Instructions = [
-  "Составь JSON cards: строго одна карточка на каждый MATERIAL в данном порядке, index начиная с нуля.",
+  "Верни один JSON-объект с единственным верхним ключом cards (массив), НЕ массив верхнего уровня и НЕ одну карточку без оболочки cards.",
+  'Форма: {"cards":[{"index":0,"title_ru":"...","records":[{"kind":"fact","statement_ru":"...","anchor_id":"P001","source_excerpt":"...","original_quote":"","quote_ru":"","speaker":"","role":""}]}]}. Многоточия — только обозначение формы, не фактура.',
+  "Строго одна карточка на каждый MATERIAL в данном порядке. Копируй CARD_INDEX из материала в index: первое значение 0, второе 1. Не используй номер MATERIAL как index.",
   "Каждая карточка: index, title_ru, records. Все records — отдельные проверяемые наблюдения.",
   "В records сохрани не только центральные, но и необычные цифры, механизмы, противоположные оценки, содержательные цитаты, детали и существенные ограничения. У богатой статьи обычно 10–30 записей; не заполняй количество повторами.",
   "Поля каждой записи ОБЯЗАТЕЛЬНЫ: kind, statement_ru, anchor_id, source_excerpt, original_quote, quote_ru, speaker, role.",
@@ -83,7 +85,7 @@ export const evidenceV2Instructions = [
 ].join("\n");
 export function renderEvidenceMaterials(documents:EvidenceDocument[]) {
   return documents.map(d=>
-    "MATERIAL_"+(d.index+1)+"\nИЗДАНИЕ: "+d.source+
+    "MATERIAL_"+(d.index+1)+"\nCARD_INDEX: "+d.index+"\nИЗДАНИЕ: "+d.source+
     "\nКАТАЛОЖНЫЙ_РЕГИОН: "+(d.region||"не указан")+"\nTITLE: "+d.title+"\n"+
     d.passages.map(p=>"["+p.id+"] "+p.text).join("\n\n")
   ).join("\n\n--- СЛЕДУЮЩИЙ МАТЕРИАЛ ---\n\n");
