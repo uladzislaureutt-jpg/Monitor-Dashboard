@@ -250,6 +250,7 @@ function aiError(provider: "groq" | "gemini" | "cloudflare", result: AiFailure) 
 const evidencePrompt = evidenceV2Instructions;
 
 Deno.serve(async (req: Request) => {
+  try {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
@@ -1281,4 +1282,10 @@ ${styleOnlyText || "Дополнительные фрагменты недост
   }
 
   return json({ error: "unknown_action" }, 400);
+  } catch(error) {
+    const kind=error instanceof Error?error.name:"unknown";
+    // Never emit input texts, keys or identifiers into runtime logs.
+    console.error("w_review_unhandled_exception "+JSON.stringify({kind}));
+    return json({error:"w_review_internal_error",detail:"Ошибка обработки на сервере. См. журнал w_review_unhandled_exception."},500);
+  }
 });
