@@ -277,3 +277,29 @@ export function makeSynthesisDossier(dossier:EditorialDossier,selected:string[],
     requiredBranches:chosen.reduce((n,t)=>n+t.branches.filter(b=>b.required).length,0),
     allocatedChars:opening+ending+lineBudgets.reduce((a,b)=>a+b,0)};
 }
+
+// Text contract is needed even when a provider's JSON Schema mode is unavailable.
+export function dossierOutputContract(poolSize:number){
+  const example={trends:[{id:"T1",title:"Название тенденции",summary:"Краткое русское описание",
+    thesis:"Основной тезис по источникам",operator_optional:false,optional_reason:"",
+    branches:[{id:"B1",title:"Название ветки",claim:"Подтверждённое утверждение",
+      mechanism:"",counterpoint:"",limitation:"",significance:"Значение для темы обзора",
+      priority:"high",required:true,evidence_ids:["P01:E01"],contrary_evidence_ids:[]}]}],
+    coverage:[{publication_id:"P01",status:"used",reason:"Русское объяснение роли публикации"}],
+    inventory:{quotes:0,headlines:0,experts:0}};
+  return "ФОРМАТ ОТВЕТА (пример формы, НЕ готовые факты):\n"+JSON.stringify(example)+
+    "\nВерни объект ровно с ключами trends, coverage, inventory; без обёртки dossier/result/data. "+
+    "trends — массив от 1 до 5 крупных тенденций, branches — от 1 до 9 веток в каждой. "+
+    "Не создавай отдельную тенденцию на каждую статью: размещай самостоятельные ракурсы в branches. "+
+    "coverage — ровно "+poolSize+" записей, по одной на каждую публикацию из базы. "+
+    "Пример показывает только одну запись: его нужно заполнить реальными данными всего пула. "+
+    "Все аналитические строки, включая significance, summary, thesis и reason, только по-русски. "+
+    "Пустые mechanism/counterpoint/limitation допустимы, если сведений нет. "+
+    "Не копируй примерные формулировки и ID без проверки по базе.";
+}
+export function dossierShape(raw:any){
+  return {parsed_object:Boolean(raw&&typeof raw==="object"&&!Array.isArray(raw)),
+    trends_array:Array.isArray(raw?.trends),trends_count:Array.isArray(raw?.trends)?raw.trends.length:0,
+    branch_counts:Array.isArray(raw?.trends)?raw.trends.slice(0,18).map((t:any)=>Array.isArray(t?.branches)?t.branches.length:0):[],
+    coverage_count:Array.isArray(raw?.coverage)?raw.coverage.length:0};
+}

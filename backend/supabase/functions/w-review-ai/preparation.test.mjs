@@ -94,3 +94,11 @@ test('production structured adapter uses GenerateContent enum and normalized com
  assert.equal(compatibility.responseSchema,undefined);
  assert.equal(wGeminiStructuredConfig(schema,'json').responseMimeType,'application/json');
 });
+
+test('map JSON entrypoint avoids known rejected schema calls',async()=>{
+ const modes=[];
+ await structuredGeminiRequest({deadline:Date.now()+10000,initialMode:'json',call:async(mode)=>{
+  modes.push(mode);return {ok:true,content:'{"trends":[]}',usage:{prompt_tokens:0,completion_tokens:0,total_tokens:0}};
+ }});
+ assert.deepEqual(modes,['json']);
+});

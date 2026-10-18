@@ -10,12 +10,13 @@ const unavailable = ():PreparationReply => ({ok:false,status:504,retryAfter:null
 // A schema compatibility failure is local to this request/format, not proof
 // that the model is unavailable for all operators or for the editorial map.
 export async function structuredGeminiRequest(input:{
+  initialMode?:GeminiJsonMode;
   deadline:number; call:(mode:GeminiJsonMode,timeout:number)=>Promise<PreparationReply>;
   log?:(event:Record<string,unknown>)=>void;
   sleep?:(ms:number)=>Promise<void>;
 }):Promise<PreparationReply>{
   const sleep=input.sleep||((ms:number)=>new Promise(r=>setTimeout(r,ms)));
-  let mode:GeminiJsonMode="schema",transientRetried=false,shapeRetried=false;
+  let mode:GeminiJsonMode=input.initialMode||"schema",transientRetried=false,shapeRetried=false;
   for(let attempt=0;attempt<4;attempt++){
     const budget=preparationBudget(input.deadline,35000);
     if(budget<1500)return unavailable();

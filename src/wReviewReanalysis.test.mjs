@@ -6,7 +6,7 @@ const reanalysis=view.slice(view.indexOf("  async function analyzePool()"),view.
 test("Pереанализировать forces fresh two-article Evidence batches",()=>{
   assert.ok(view.includes("function buildBatches(items: WItem[], force=false)"));
   assert.ok(view.includes(".filter(({ item }) => force || !("));
-  assert.ok(reanalysis.includes("const force=Boolean(state.items.length>0 && prepared===state.items.length)"));
+  assert.ok(reanalysis.includes("const force=Boolean(state.items.length>0 && prepared===state.items.length && mapReady)"));
   assert.ok(reanalysis.includes("buildBatches(next,force)"));
 });
 test("old workspace survives a failed full reanalysis and is committed only with completed new map",()=>{

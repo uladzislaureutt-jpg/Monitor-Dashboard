@@ -221,3 +221,13 @@ test("compact dossier preserves existing catalog region but never infers outlet 
   assert.match(result[0],/P01:E01/);
   assert.match(result[1],/P02:E01/);
 });
+
+test('JSON-only dossier contract includes all nested fields and full pool cardinality',async()=>{
+ const {dossierOutputContract,dossierShape}=await import('./editorial-dossier.ts');
+ const contract=dossierOutputContract(18);
+ const example=JSON.parse(contract.split('\n')[1]);
+ assert.deepEqual(Object.keys(example),['trends','coverage','inventory']);
+ assert.ok(example.trends[0].branches[0].evidence_ids.length);
+ assert.match(contract,/ровно 18 записей/);
+ assert.deepEqual(dossierShape({trends:[{branches:[{},{}]}],coverage:[{}]}),{parsed_object:true,trends_array:true,trends_count:1,branch_counts:[2],coverage_count:1});
+});
