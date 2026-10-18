@@ -5,6 +5,17 @@
 import {evidenceIndex, isRussianDossierProse, normalizeDossier} from "./editorial-dossier.ts";
 
 const trim=(v:unknown,n=450)=>String(v??"").trim().slice(0,n);
+// Formatting-only canonicalization. A reconstructed ID is accepted strictly
+// when that exact evidence record exists in the current pool. E99 is NEVER
+// changed to E01 or attributed to another source.
+export function canonicalEvidenceId(raw:unknown, valid:Map<string,unknown>):string{
+  const value=trim(raw,65);
+  if(valid.has(value))return value;
+  const m=value.match(/^P\s*0*(\d{1,2})\s*[:.\/-]\s*E\s*0*(\d{1,3})$/i);
+  if(!m)return "";
+  const id="P"+String(Number(m[1])).padStart(2,"0")+":E"+String(Number(m[2])).padStart(2,"0");
+  return valid.has(id)?id:"";
+}
 function canonicalUrl(card:string):string{
   return trim(card.match(/^URL:\s*(https?:\/\/\S+)/m)?.[1],1300)
     .replace(/#.*$/,"").replace(/\/$/,"").toLowerCase();
@@ -29,10 +40,12 @@ export function reconcileDossierDraft(raw:any,cards:string[]):DossierRepairResul
     const branches:any[]=[];
     for(const b of t.branches.slice(0,9)){
       if(!b||!Array.isArray(b.evidence_ids))return null;
-      const refs=b.evidence_ids.map((v:unknown)=>trim(v,40));
-      const contrary=Array.isArray(b.contrary_evidence_ids)?
-        b.contrary_evidence_ids.map((v:unknown)=>trim(v,40)):[];
-      const invalid=refs.concat(contrary).filter((id:string)=>!ix.byId.has(id));
+      const rawRefs=b.evidence_ids.map((v:unknown)=>trim(v,65));
+      const rawContrary=Array.isArray(b.contrary_evidence_ids)?
+        b.contrary_evidence_ids.map((v:unknown)=>trim(v,65)):[];
+      const invalid=rawRefs.concat(rawContrary).filter((id:string)=>!canonicalEvidenceId(id,ix.byId));
+      const refs=rawRefs.map((id:string)=>canonicalEvidenceId(id,ix.byId)).filter(Boolean);
+      const contrary=rawContrary.map((id:string)=>canonicalEvidenceId(id,ix.byId)).filter(Boolean);
       // Do NOT reattach a different record to a branch whose cited support
       // is fabricated. Discard the entire branch instead.
       if(!refs.length||invalid.length||refs.length>18||contrary.length>12){
@@ -73,11 +86,37 @@ export function reconcileDossierDraft(raw:any,cards:string[]):DossierRepairResul
   }
   const missing=ix.publications.filter(pub=>!duplicated.has(pub)&&
     ![...linked].some(id=>id.startsWith(pub+":")));
-  // Missing analysis is not evidence of peripheral relevance. Do not invent a
-  // low-priority, disabled trend from the first fact of an omitted article.
-  // The caller can repair the plan on the same model within its deadline.
-  if(missing.length)return null;
+  // A missing source is NOT proof of editorial irrelevance. When the model
+  // returns a substantive, partly grounded map, keep its authentic branches;
+  // for genuinely unassigned publications add ONE EXPLICIT REVIEW QUEUE with
+  // exact Evidence v2 facts. Never call it a peripheral editorial trend or
+  // infer publication priority; it remains OFF until the operator chooses.
   const allAdded:string[]=[];
+  if(missing.length){
+    if(trends.length>=5||missing.length>9)return null;
+    const waiting:any[]=[];
+    for(const pub of missing){
+      const proven=ix.entries.filter(e=>e.publication===pub&&e.kind!=="headline"&&
+        isRussianDossierProse(e.summary));
+      const row=proven[0];
+      if(!row)return null;
+      waiting.push({id:"B"+(waiting.length+1),
+        title:"Материал "+pub+" — "+row.source,
+        claim:trim(row.summary,550),mechanism:"",counterpoint:"",limitation:"",
+        significance:"Материал подтверждён, но модель не распределила его по аналитическим сюжетам.",
+        priority:"medium",required:false,evidence_ids:[row.id],contrary_evidence_ids:[]});
+      linked.add(row.id);allAdded.push(pub);
+    }
+    trends.push({
+      id:"T"+(trends.length+1),
+      title:"Публикации для редакционного распределения",
+      summary:"Материалы присутствуют в доказательной базе, но не получили достоверных ссылок в построенных сюжетах.",
+      thesis:"Их значимость и принадлежность к тенденциям устанавливает оператор, а не автоматическая классификация.",
+      operator_optional:true,
+      optional_reason:"Техническая подборка нераспределённых публикаций. Это не оценка их второстепенности: проверьте и включите значимые материалы.",
+      branches:waiting
+    });
+  }
   // Publication disposition derives only from actual validated branch refs,
   // not the model's unsupported classifications.
   const previous=Array.isArray(raw.coverage)?raw.coverage:[];
@@ -86,10 +125,12 @@ export function reconcileDossierDraft(raw:any,cards:string[]):DossierRepairResul
     const refs=[...linked].filter(ref=>ref.startsWith(pub+":"));
     const isDuplicate=duplicated.has(pub)&&!refs.length;
     let reason=trim(original?.reason,300);
-    if(!isRussianDossierProse(reason))
+    if(allAdded.includes(pub))
+      reason="Публикация выделена для редакционного распределения, поскольку модель не подтвердила её сюжетную привязку.";
+    else if(!isRussianDossierProse(reason))
       reason="Материал подтверждает соответствующую сюжетную ветку проверенными доказательствами.";
     return {publication_id:pub,status:isDuplicate?"duplicate":
-      original?.status==="supporting"?"supporting":"used",reason};
+      original?.status==="supporting"||allAdded.includes(pub)?"supporting":"used",reason};
   });
   const draft={trends,coverage,inventory:raw.inventory||{quotes:0,headlines:0,experts:0}};
   const verified=normalizeDossier(draft,cards,{requireEveryDistinctSource:true});
