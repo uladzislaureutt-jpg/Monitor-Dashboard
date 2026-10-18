@@ -18,15 +18,55 @@ export function poolSourceNames(cards:string[]):Map<string,string>{
   }
   return sources;
 }
-export function inspectReviewAttribution(text:string):string[]{
+// Existing source metadata travels with each card. Unknown regions are never
+// inferred from domain/language or subject; the check is advisory only.
+const geoGroups=[
+  {country:"Россия",group:/российск/iu,origin:/^россия$|^рф$/iu},
+  {country:"Беларусь",group:/белорусск|беларуск/iu,origin:/^беларусь$/iu},
+  {country:"США",group:/американск/iu,origin:/^сша$|^соединённые штаты$|^соединенные штаты$/iu},
+  {country:"Великобритания",group:/британск/iu,origin:/^великобритания$|^соединённое королевство$/iu},
+  {country:"Украина",group:/украинск/iu,origin:/^украина$/iu},
+  {country:"Польша",group:/польск/iu,origin:/^польша$/iu},
+  {country:"Германия",group:/немецк|германск/iu,origin:/^германия$/iu},
+  {country:"Франция",group:/французск/iu,origin:/^франция$/iu},
+  {country:"Китай",group:/китайск/iu,origin:/^китай$/iu},
+  {country:"Япония",group:/японск/iu,origin:/^япония$/iu},
+  {country:"Индия",group:/индийск/iu,origin:/^индия$/iu},
+  {country:"Турция",group:/турецк/iu,origin:/^турция$/iu},
+  {country:"Израиль",group:/израильск/iu,origin:/^израиль$/iu},
+  {country:"Казахстан",group:/казахстанск/iu,origin:/^казахстан$/iu},
+  {country:"Италия",group:/итальянск/iu,origin:/^италия$/iu},
+  {country:"Австрия",group:/австрийск/iu,origin:/^австрия$/iu},
+  {country:"Швейцария",group:/швейцарск/iu,origin:/^швейцария$/iu},
+  {country:"Чехия",group:/чешск/iu,origin:/^чехия$/iu},
+  {country:"Канада",group:/канадск/iu,origin:/^канада$/iu},
+  {country:"Австралия",group:/австралийск/iu,origin:/^австралия$/iu}
+];
+export function inspectReviewAttribution(text:string,cards:string[]=[]):string[]{
   const warnings:string[]=[];
-  const paragraphs=text.split(/\n\s*\n/);
+  const paragraphs=text.split(/\\n\\s*\\n/);
+  const origins=cards.map((card,index)=>({
+    name:poolSourceNames(cards).get("P"+String(index+1).padStart(2,"0"))||"",
+    region:(card.match(/^КАТАЛОЖНЫЙ_РЕГИОН:\\s*(.*)$/m)?.[1]||"").trim()
+  })).filter(x=>x.name&&x.region);
   for(let i=0;i<paragraphs.length;i++){
-    const p=paragraphs[i];
-    const russianMedia=/российск(?:ие|их|ими|ой|ую|ое)\s+(?:СМИ|медиа|издания|ресурсы|пресс[а-я]*)/iu;
-    if(russianMedia.test(p)&&/(?:The Guardian|cfr\.org|(?<![A-Za-z])CFR(?![A-Za-z]))/i.test(p))
-      warnings.push("Абзац "+(i+1)+": «The Guardian» (Великобритания) или CFR (США) названы в контексте российских медиа. Проверьте национальную атрибуцию и смысл источников.");
-    if(/\bP\d{2}(?::E\d+)?\b/.test(p))
+    const paragraph=paragraphs[i];
+    // Check only local spans near national-media group expressions, not all
+    // sources mentioned elsewhere in the paragraph.
+    for(const m of paragraph.matchAll(/([А-Яа-яЁё-]+)\\s+(?:СМИ|медиа|издания|газеты|агентства|ресурсы|пресса|печать)/giu)){
+      const given=geoGroups.find(g=>g.group.test(m[1]));
+      if(!given)continue;
+      const immediate=paragraph.slice(m.index,m.index+220).toLocaleLowerCase("ru");
+      for(const source of origins){
+        const actual=geoGroups.find(g=>g.origin.test(source.region));
+        if(!actual||given===actual)continue;
+        if(immediate.includes(source.name.toLocaleLowerCase("ru")))
+          warnings.push("Абзац "+(i+1)+": национальная атрибуция «"+
+            m[0]+"» не соответствует источнику «"+source.name+"» ("+
+            actual.country+"). Проверьте контекст: источник и цитируемый участник — не одно и то же.");
+      }
+    }
+    if(/\\bP\\d{2}(?::E\\d+)?\\b/.test(paragraph))
       warnings.push("Абзац "+(i+1)+": остался неразрешённый внутренний идентификатор публикации.");
   }
   return [...new Set(warnings)];
@@ -45,7 +85,7 @@ export function normalizeReviewSourceLabels(text:string,cards:string[]):WReviewO
     return "«"+source+"»";
   });
   for(const m of fixed.matchAll(/\bP\d{2}(?::E\d+)?\b/g))unresolved.add(m[0]);
-  const attributionWarnings=inspectReviewAttribution(fixed);
+  const attributionWarnings=inspectReviewAttribution(fixed,cards);
   if(unresolved.size)attributionWarnings.push("Не удалось разрешить обозначения: "+[...unresolved].join(", ")+". Проверьте источники перед экспортом.");
   return {text:fixed,substitutions,unresolved:[...unresolved],attributionWarnings};
 }
