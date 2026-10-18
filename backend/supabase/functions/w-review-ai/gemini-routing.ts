@@ -34,3 +34,31 @@ export function wGeminiGenerationConfig(schema:unknown,options?:{
     ...(options?.thinkingLevel?{thinkingConfig:{thinkingLevel:options.thinkingLevel}}:{})
   };
 }
+
+
+// Compatibility path when structured-output settings return HTTP 400.
+// Validation remains mandatory after generation (Evidence v2 / Dossier v3).
+// Never send generationConfig.responseFormat in this mode.
+export function wGeminiPromptJsonConfig(options?:{
+  maxOutputTokens?:number;thinkingLevel?:"minimal"|"low"|"medium"|"high"
+}){
+  return {
+    ...(options?.maxOutputTokens?{maxOutputTokens:options.maxOutputTokens}:{}),
+    ...(options?.thinkingLevel?{thinkingConfig:{thinkingLevel:options.thinkingLevel}}:{})
+  };
+}
+export const W_GEMINI_JSON_ONLY_SUFFIX =
+  "\n\nВерни РОВНО один JSON-объект согласно описанному контракту. "+
+  "Без Markdown, без блоков кода, без объяснений до и после JSON. "+
+  "Не придумывай ссылки на доказательства и не добавляй неподтверждённые элементы.";
+export function parseModelJsonObject(content:string):any|null{
+  let clean=String(content||"").trim();
+  if(clean.length>2_000_000)return null;
+  if(clean.startsWith("\x60\x60\x60")){
+    clean=clean.replace(/^\x60+(?:json)?\s*/i,"").replace(/\s*\x60+$/,"").trim();
+  }
+  try{
+    const value=JSON.parse(clean);
+    return value&&typeof value==="object"&&!Array.isArray(value)?value:null;
+  }catch{return null}
+}
