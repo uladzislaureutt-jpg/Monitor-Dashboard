@@ -115,3 +115,17 @@ test("fabricated evidence in both articles cannot be salvaged",()=>{
   assert.equal(partial.accepted.length,0);
   assert.equal(partial.failed.length,2);
 });
+
+test("catalog region travels only as context, without changing source passages or evidence schema",()=>{
+  const docs=makeEvidenceDocuments([
+    {publication_id:"known-1",index:0,source:"Reuters",region:"Великобритания",title:"Заявление политика",text:"Редакция цитирует слова зарубежного эксперта."},
+    {publication_id:"unknown-1",index:1,source:"Неизвестный журнал",title:"Реплика",text:"Исследователь пояснил проблему."}
+  ]);
+  assert.equal(docs[0].region,"Великобритания");
+  assert.equal(docs[1].region,"");
+  const input=renderEvidenceMaterials(docs);
+  assert.match(input,/ИЗДАНИЕ: Reuters\nКАТАЛОЖНЫЙ_РЕГИОН: Великобритания/);
+  assert.match(input,/КАТАЛОЖНЫЙ_РЕГИОН: не указан/);
+  assert.equal(docs[0].passages[0].text,"Редакция цитирует слова зарубежного эксперта.");
+  assert.ok(!("region" in evidenceV2Schema(2).properties.cards.items.properties));
+});
