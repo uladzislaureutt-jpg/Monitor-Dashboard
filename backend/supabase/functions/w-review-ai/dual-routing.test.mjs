@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 const edge=readFileSync(new URL("./index.ts",import.meta.url),"utf8");
 const ev=edge.slice(edge.indexOf('if (action === "evidence_batch")'),edge.indexOf('if (action === "style_profile")'));
-const map=edge.slice(edge.indexOf('if (action === "editorial_map")'),edge.indexOf('if (action === "synthesize")'));
+const map=edge.slice(edge.indexOf('if (action === "editorial_map")'),edge.indexOf('if (action === "expand_review")'));
 const prep=readFileSync(new URL("./preparation.ts",import.meta.url),"utf8");
 const ui=readFileSync(new URL("../../../../src/views/WReviewView.tsx",import.meta.url),"utf8");
 const api=readFileSync(new URL("../../../../src/wReviewAi.ts",import.meta.url),"utf8");
