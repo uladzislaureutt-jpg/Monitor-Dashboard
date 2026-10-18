@@ -4,7 +4,9 @@ export const W_REVIEW_GEMINI_FALLBACK = "gemini-3.1-flash-lite";
 export const W_REVIEW_GEMINI_ROUTES = [W_REVIEW_GEMINI_PRIMARY, W_REVIEW_GEMINI_FALLBACK] as const;
 
 // The old Gemini responseSchema accepts legacy OpenAPI upper-case type values.
-// The current generationConfig.responseFormat.text.schema requires JSON Schema:
+// The current generationConfig.responseFormat.text.schema requires JSON Schema.
+// IMPORTANT: unlike legacy responseMimeType, text.mimeType is a protobuf enum
+// that requires the uppercase literal APPLICATION_JSON on generateContent:
 // types must be lower-case, even inside nested arrays/objects.
 const types:Record<string,string>={OBJECT:"object",ARRAY:"array",STRING:"string",
   INTEGER:"integer",NUMBER:"number",BOOLEAN:"boolean",NULL:"null"};
@@ -27,7 +29,7 @@ export function wGeminiGenerationConfig(schema:unknown,options?:{
   maxOutputTokens?:number;thinkingLevel?:"minimal"|"low"|"medium"|"high"
 }){
   return {
-    responseFormat:{text:{mimeType:"application/json",schema:normalizeGeminiJsonSchema(schema)}},
+    responseFormat:{text:{mimeType:"APPLICATION_JSON",schema:normalizeGeminiJsonSchema(schema)}},
     ...(options?.maxOutputTokens?{maxOutputTokens:options.maxOutputTokens}:{}),
     ...(options?.thinkingLevel?{thinkingConfig:{thinkingLevel:options.thinkingLevel}}:{})
   };

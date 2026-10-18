@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { DOSSIER_INSTRUCTIONS, dossierSchema, normalizeDossier, makeSynthesisDossier } from "./editorial-dossier.ts";
 import { W_REVIEW_GEMINI_PRIMARY, W_REVIEW_GEMINI_FALLBACK, W_REVIEW_GEMINI_ROUTES, wGeminiGenerationConfig } from "./gemini-routing.ts";
+import { evidenceRouteKey, routesWithoutCircuit, suspendStructuralFailure, circuitExpiry } from "./provider-circuit.ts";
 import { evidenceV2Instructions, evidenceV2Schema, makeEvidenceDocuments, renderEvidenceMaterials, verifyEvidenceCards, formatEvidenceCard, type EvidenceCard } from "./evidence-v2.ts";
 
 const cors = {
@@ -301,7 +302,31 @@ Deno.serve(async (req: Request) => {
     const schema = evidenceV2Schema(normalized.length);
     const prompt = evidencePrompt+"\n\nВерни ровно "+normalized.length+
       " карточек, строго в порядке MATERIAL_1, MATERIAL_2 и т. д.\n\n"+materialText;
-    const models = geminiApiKey ? [...W_REVIEW_GEMINI_ROUTES] : [];
+    // A 400 INVALID_ARGUMENT is structural, not a reason to retry the same
+    // payload for every two-article batch. Service-only DB circuit is shared
+    // across Edge isolates and operators; failures fail open to normal routing.
+    let disabledRoutes:string[]=[];
+    if (geminiApiKey) {
+      const {data:circuit,error:circuitError}=await admin.from("w_review_provider_circuit")
+        .select("route").gt("suspended_until",new Date().toISOString())
+        .like("route","evidence_batch:%");
+      if (!circuitError && Array.isArray(circuit))
+        disabledRoutes=circuit.map((row:any)=>String(row.route));
+      else if (circuitError)
+        console.warn("w_review_provider_circuit_read_failed");
+    }
+    const models=geminiApiKey?routesWithoutCircuit(W_REVIEW_GEMINI_ROUTES,disabledRoutes):[];
+    if (disabledRoutes.length) console.info("w_review_provider_circuit_skip "+
+      JSON.stringify({stage:"evidence_batch",models_skipped:W_REVIEW_GEMINI_ROUTES.length-models.length}));
+    async function suspendGeminiModel(model:string,status:number,googleStatus:string) {
+      if(!suspendStructuralFailure(status,googleStatus))return;
+      const {error}=await admin.from("w_review_provider_circuit").upsert({
+        route:evidenceRouteKey(model),suspended_until:circuitExpiry(new Date()),
+        reason_code:"INVALID_ARGUMENT",http_status:400,updated_at:new Date().toISOString()
+      },{onConflict:"route"});
+      if(error)console.warn("w_review_provider_circuit_write_failed");
+      else console.info("w_review_provider_circuit_open "+JSON.stringify({stage:"evidence_batch",model,minutes:15}));
+    }
     let result: AiResult | null = null;
     let parsed: any = null;
     let verifiedCards: EvidenceCard[] = [];
@@ -324,6 +349,7 @@ Deno.serve(async (req: Request) => {
           lastGeminiFailure=candidate;
           lastError = model + ": HTTP " + candidate.status + " " + candidate.detail;
           attemptedRoutes.push({model,status:candidate.status,cause:candidate.diagnostic?.kind||candidate.detail.slice(0,90)});
+          await suspendGeminiModel(model,candidate.status,candidate.diagnostic?.google_status||"");
           if (candidate.status === 429) break gemini_models; // Immediately use Groq instead of repeating Gemini.
           if (![500, 502, 503, 504].includes(candidate.status)) break;
         }
