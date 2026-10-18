@@ -1,63 +1,61 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
+
 const view=readFileSync(new URL("./views/WReviewView.tsx",import.meta.url),"utf8");
-const reanalysis=view.slice(view.indexOf("  async function analyzePool(forceRequested=false)"),view.indexOf("  async function recalculateTrends()"));
-test("Pереанализировать forces fresh two-article Evidence batches",()=>{
-  assert.ok(view.includes("function buildBatches(items: WItem[], force=false)"));
+const analysis=view.slice(view.indexOf("  async function analyzePool(forceRequested=false)"),view.indexOf("  async function recalculateTrends()"));
+const dossier=view.slice(view.indexOf("  async function recalculateTrends()"),view.indexOf("  function clearPool()"));
+
+test("analysis handles all articles in arrival order, batches of at most two",()=>{
+  assert.ok(view.includes("BATCH_MAX_ITEMS = 2"));
+  assert.ok(view.includes("const pending = items.map((item, index) => ({ item, index }))"));
   assert.ok(view.includes(".filter(({ item }) => force || !("));
-  assert.ok(reanalysis.includes('const force=Boolean(forceRequested && state.items.length>0 &&'));
-  assert.ok(reanalysis.includes('prepared===state.items.length);'));
-  assert.ok(!reanalysis.includes('mapReady);'));
-  assert.ok(reanalysis.includes("buildBatches(next,force)"));
+  assert.ok(analysis.includes("const batches = buildBatches(next,force)"));
+  assert.ok(analysis.includes("pool_index:index+1"));
+  assert.ok(!analysis.includes(".sort(() =>"));
+  assert.ok(!analysis.includes(".reverse()"));
 });
-test("full 18-article Evidence is persisted BEFORE a failure-prone dossier request",()=>{
-  assert.ok(reanalysis.includes('writeEvidenceCheckpoint(WORKSPACES_KEY,workspaces,activeSlot,checkpoint,localStorage)'));
-  const saved=reanalysis.indexOf('writeEvidenceCheckpoint(');
-  const map=reanalysis.indexOf('const mapResult = await wEditorialMap(');
-  assert.ok(saved>0&&map>saved);
-  assert.ok(reanalysis.includes('evidenceSaved=true'));
-  assert.ok(reanalysis.includes('if(evidenceSaved)setMessage('));
-  assert.ok(reanalysis.includes('Новые Evidence Cards сохранены. Повторите только расчёт тенденций'));
-  assert.ok(reanalysis.includes('setState(currentState=>invalidateMap({...currentState,items:[...next],'));
-  assert.ok(reanalysis.includes('lastReanalysis:checkpoint.lastReanalysis'));
-});
-test("checkpoint happens only after all article batches complete and verified Evidence is present",()=>{
-  const completed=reanalysis.indexOf("if (done !== next.length)");
-  const checkpoint=reanalysis.indexOf("writeEvidenceCheckpoint(");
-  assert.ok(completed>=0&&checkpoint>completed);
-  assert.ok(reanalysis.includes('const previousBackup=previous.evidenceContract'));
-  assert.ok(reanalysis.includes('evidenceAlternative:previousBackup'));
-  assert.ok(reanalysis.includes("if (done !== next.length)"));
-});
-test("map calculation and full reanalysis remain separate without a dossier",()=>{
+
+test("Evidence analysis stops after a complete durable checkpoint, without running editorial map",()=>{
+  const done=analysis.indexOf("if (done !== next.length)");
+  const saved=analysis.indexOf("writeEvidenceCheckpoint(");
+  assert.ok(done>=0&&saved>done);
+  assert.ok(analysis.includes("evidenceSaved=true"));
+  assert.ok(!analysis.includes("wEditorialMap("));
+  assert.ok(dossier.includes("wEditorialMap("));
   assert.ok(view.includes('onClick={()=>allEvidenceReady?recalculateTrends():analyzePool(false)}'));
   assert.ok(view.includes('onClick={()=>analyzePool(true)}'));
-  assert.ok(view.includes('allEvidenceReady&&<button className="secondary-button small-button"'));
-  assert.ok(view.includes('Рассчитать тенденции'));
-  assert.ok(view.includes('Переанализировать пул'));
-  assert.ok(view.includes('Две проверенные версии Evidence'));
-  assert.ok(view.includes('evidenceAlternative:{evidence:item.evidence'));
-  assert.ok(view.includes('Сохранены Evidence:'));
-  assert.ok(view.includes('тенденции не рассчитаны'));
+  assert.ok(analysis.includes("Теперь отдельно нажмите «Рассчитать тенденции»"));
 });
-test("failed explicit reanalysis preserves prior cards and reports failed run separately",()=>{
-  assert.ok(reanalysis.includes('if(force&&!evidenceSaved)'));
-  assert.ok(reanalysis.includes('status:"failed",processed:processed.size,total:next.length,verifiedRecords:previousAccepted'));
-  assert.ok(reanalysis.includes('Прежние проверенные Evidence сохранены'));
-  assert.ok(reanalysis.includes('lastReanalysis:checkpoint.lastReanalysis'));
-  assert.ok(view.includes('Последний переанализ не завершён'));
-  assert.ok(reanalysis.includes('const checkpoint=invalidateMap('));
+
+test("fresh verified Evidence always replaces old cards; no previous-vs-new comparison",()=>{
+  assert.ok(analysis.includes("next[target.index]={...previous,evidence:card.evidence,"));
+  assert.ok(analysis.includes("evidenceData:card.evidenceData,evidenceContract:W_EVIDENCE_CONTRACT_VERSION"));
+  assert.ok(!view.includes("evidenceRegression"));
+  assert.ok(!analysis.includes("previousBackup"));
+  assert.ok(!analysis.includes("preserved"));
+  assert.ok(!view.includes('evidenceAlternative?"'));
+  assert.ok(view.includes("const {evidenceAlternative: _legacyAlternative,...current}=item"));
 });
-test("compares prior and new verified coverage and records model choice per batch",()=>{
-  assert.ok(reanalysis.includes("previousAccepted="));
-  assert.ok(reanalysis.includes("batchesProviders.push(result.model)"));
-  assert.ok(reanalysis.includes("processed.add(target.index)"));
-  assert.ok(reanalysis.includes("previousAccepted+\" → \"+evidenceAccepted"));
+
+test("failed reanalysis never commits partial replacements or rolls back valid stored pool",()=>{
+  assert.ok(analysis.includes("if(force&&!evidenceSaved)"));
+  assert.ok(analysis.includes('status:"failed",processed:processed.size,total:next.length,verifiedRecords:previousAccepted'));
+  assert.ok(analysis.includes("Прежние проверенные Evidence сохранены"));
+  assert.ok(analysis.includes("if(!force) setState("));
+  assert.ok(analysis.includes("lastReanalysis:checkpoint.lastReanalysis"));
 });
-test("reanalysis does not download articles or alter source originals",()=>{
-  assert.ok(reanalysis.includes("text: item.editorialText"));
-  assert.ok(reanalysis.includes("region:item.region"));
-  assert.ok(!reanalysis.includes("fetchKnownSourceArticle"));
-  assert.ok(!reanalysis.includes("sourceText:"));
+
+test("pool reanalysis does not redownload original articles or alter their source text",()=>{
+  assert.ok(analysis.includes("text: item.editorialText"));
+  assert.ok(analysis.includes("region:item.region"));
+  assert.ok(!analysis.includes("fetchKnownSourceArticle"));
+  assert.ok(!analysis.includes("sourceText:"));
+});
+
+test("the UI surfaces true pool-sized reanalysis and independent trends action",()=>{
+  assert.ok(view.includes("`Переанализировать пул (${state.items.length} публикаций)`"));
+  assert.ok(view.includes("Рассчитать тенденции"));
+  assert.ok(view.includes("Сохранены Evidence:"));
+  assert.ok(view.includes("Последний переанализ не завершён"));
 });
