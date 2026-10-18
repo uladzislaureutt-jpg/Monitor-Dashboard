@@ -4,7 +4,7 @@ export type DossierBranch = {id:string;title:string;claim:string;mechanism:strin
   counterpoint:string;limitation:string;significance:string;priority:"high"|"medium"|"low";
   required:boolean;evidence_ids:string[];contrary_evidence_ids:string[]};
 export type DossierTrend = {id:string;title:string;summary:string;thesis:string;
-  sources:string[];branches:DossierBranch[]};
+  sources:string[];branches:DossierBranch[];operator_optional:boolean;optional_reason:string};
 export type DossierCoverage = {publication_id:string;status:"used"|"supporting"|"duplicate"|"excluded"|"insufficient"|"reserve";
   reason:string;evidence_ids:string[]};
 export type EditorialDossier = {version:3;trends:DossierTrend[];coverage:DossierCoverage[];
@@ -32,50 +32,28 @@ export function evidenceIndex(cards:string[]){
 // Map stage needs semantic summaries and stable verified IDs, not repeated
 // source excerpts/quotes already validated by Evidence v2. The final synthesis
 // still receives the FULL original Evidence Cards. This view never mutates them.
-export function compactDossierCards(cards:string[], maxPerArticle=10):string[]{
-  const safeLimit=Math.max(1,Math.min(14,Math.floor(maxPerArticle)||10));
+export function compactDossierCards(cards:string[]):string[]{
   return cards.map((card,index)=>{
     const pub="P"+String(index+1).padStart(2,"0");
     const source=card.match(/^ИСТОЧНИК:\s*(.+)$/m)?.[1]?.trim()||"Источник";
-    const title=card.match(/^ЗАГОЛОВОК:\s*(.+)$/m)?.[1]?.trim()||
-      card.match(/^TITLE_RU:\s*(.+)$/m)?.[1]?.trim()||"Без названия";
+    const title=card.match(/^TITLE_RU:\s*(.+)$/m)?.[1]?.trim()||
+      card.match(/^ЗАГОЛОВОК:\s*(.+)$/m)?.[1]?.trim()||"Без названия";
     const url=card.match(/^URL:\s*(\S+)/m)?.[1]?.trim()||"";
-    const records=[...card.matchAll(/^E(\d+)\s+\[([a-z_]+)\/(P\d+|TITLE)\]\s+(.+)$/gm)]
-      .map(m=>({id:pub+":E"+m[1],kind:m[2],anchor:m[3],
-        claim:m[4].split(" | SOURCE:")[0].trim(),
-        ruQuote:m[4].match(/\| RU: «([^»]+)»/)?.[1]||"",
-        speaker:m[4].match(/\| SPEAKER: ([^(\n]+)/)?.[1]||""}));
-    const prioritized:string[]=[];
-    const add=(id:string)=>{if(id&&!prioritized.includes(id))prioritized.push(id);};
-    if(records.length){
-      add(records[0].id);
-      add(records[records.length-1].id);
-      const kinds=["counterposition","expert","quote","explanation",
-        "editorial_stance","media_angle","limitation","detail","fact","headline"];
-      for(const kind of kinds){
-        const matches=records.filter(r=>r.kind===kind);
-        if(matches.length)add(matches[0].id);
-      }
-      // Sample across the original article rather than always selecting its
-      // first few lines; these records already encode source passage anchors.
-      for(let offset=0;offset<records.length;offset++)
-        add(records[Math.floor((offset+0.5)*records.length/records.length)].id);
-    }
-    const selected=prioritized.slice(0,safeLimit);
-    // Keep article IDs and source identity unchanged. Statements are concise
-    // excerpts of already verified Russian Evidence, no additional model call.
-    const lines=selected.map(id=>{
-      const r=records.find(rec=>rec.id===id)!;
-      const note=r.claim.slice(0,330);
-      const extras=r.kind==="quote"?
-        (r.ruQuote?" | ЦИТАТА: "+r.ruQuote.slice(0,180):"")+
-        (r.speaker?" | АВТОР: "+r.speaker.slice(0,90):""):"";
-      return id+" ["+r.kind+"/"+r.anchor+"] "+note+extras;
+    const entries=[...card.matchAll(/^E(\d+)\s+\[([a-z_]+)\/(P\d+|TITLE)\]\s+(.+)$/gm)];
+    // ALL verified Evidence IDs remain addressable. Only redundant verbatim
+    // SOURCE/ORIGINAL excerpts are omitted; final synthesis receives full cards.
+    const lines=entries.map(match=>{
+      const id=pub+":E"+match[1],kind=match[2],anchor=match[3],
+        raw=match[4],claim=raw.split(" | SOURCE:")[0].trim();
+      const quote=raw.match(/\| RU: «([^»]+)»/)?.[1]||"";
+      const speaker=raw.match(/\| SPEAKER: ([^(\n]+)/)?.[1]||"";
+      return id+" ["+kind+"/"+anchor+"] "+claim.slice(0,400)+
+        (quote?" | ЦИТАТА: "+quote.slice(0,170):"")+
+        (speaker?" | ГОВОРЯЩИЙ: "+speaker.slice(0,80):"");
     });
     return pub+"\nИСТОЧНИК: "+source+"\nЗАГОЛОВОК: "+title+
       (url?"\nURL: "+url:"")+
-      "\nДОСТУПНЫЕ ДОКАЗАТЕЛЬСТВА ("+records.length+
-      ", показаны "+lines.length+"):\n"+lines.join("\n");
+      "\nВСЕ ПОДТВЕРЖДЁННЫЕ ЗАПИСИ ("+entries.length+"):\n"+lines.join("\n");
   });
 }
 
@@ -83,13 +61,13 @@ export function dossierSchema(poolSize:number){
   const s={type:"STRING"}, a={type:"ARRAY",items:s};
   return {type:"OBJECT",properties:{
     trends:{type:"ARRAY",minItems:1,maxItems:5,items:{type:"OBJECT",properties:{
-      id:s,title:s,summary:s,thesis:s,
+      id:s,title:s,summary:s,thesis:s,operator_optional:{type:"BOOLEAN"},optional_reason:s,
       branches:{type:"ARRAY",minItems:1,maxItems:9,items:{type:"OBJECT",properties:{
         id:s,title:s,claim:s,mechanism:s,counterpoint:s,limitation:s,significance:s,
         priority:s,required:{type:"BOOLEAN"},evidence_ids:a,contrary_evidence_ids:a},
         required:["id","title","claim","mechanism","counterpoint","limitation","significance",
           "priority","required","evidence_ids","contrary_evidence_ids"]}}
-      },required:["id","title","summary","thesis","branches"]}},
+      },required:["id","title","summary","thesis","operator_optional","optional_reason","branches"]}},
     coverage:{type:"ARRAY",minItems:poolSize,maxItems:poolSize,items:{type:"OBJECT",properties:{
       publication_id:s,status:s,reason:s},required:["publication_id","status","reason"]}},
     inventory:{type:"OBJECT",properties:{quotes:{type:"INTEGER"},headlines:{type:"INTEGER"},
@@ -101,6 +79,10 @@ export const DOSSIER_INSTRUCTIONS = [
 "Названия СМИ, брендов и технических систем (например Reuters, Bloomberg, Starlink) и неизменяемые evidence_ids P01:E01 оставляй как в исходных материалах. НЕ переводить доказательства на английский, НЕ выполнять отдельный перевод и НЕ добавлять новых фактов ради русскоязычной формы.",
 "В ответе не допускаются английские аналитические заголовки вроде 'Sanctions waiver and diesel fuel deal' или 'Starlink restrictions'. Используй русские формулировки: «Снятие ограничений и дизельная сделка», «Ограничения Starlink и давление США». Кодовые ключи и статусы JSON остаются на английском, как задано схемой.",
 "Ты старший редактор аналитических обзоров. Создай РЕДАКЦИОННОЕ ДОСЬЕ по заданию, не пиши сам обзор.",
+"РАЗДЕЛЯЙ ОСНОВНЫЕ И ДОПОЛНИТЕЛЬНЫЕ ТЕНДЕНЦИИ: для каждой trends укажи operator_optional (true/false) и optional_reason. Тенденции с непосредственным отношением к основному вопросу — operator_optional=false, optional_reason=''.",
+"Если статьи P14/P15 или иные источники касаются важных, но периферийных аспектов задания (например, потребности Украины в финансировании и заявления Макрона при обзоре политики США), не исключай их, не притягивай к центральной теме и не объявляй второстепенными факты внутри других веток. Сформируй ОТДЕЛЬНУЮ дополнительную тенденцию (operator_optional=true) с подходящими доказательствами и кратко объясни в optional_reason, почему её стоит оставить на решение оператора.",
+"Дополнительные тенденции не включаются в итоговый обзор автоматически: их включение решает оператор галочкой. Помечай периферийными только реально второстепенные линии, не центральные. Если таких нет, не создавай искусственную тенденцию.",
+"Умести и основные, и дополнительные тенденции в общие 1–5 линий. Не добавляй отдельный ИИ-проход и не переписывай исходные Evidence.",
 "ПОЛНОТА ИСПОЛЬЗОВАНИЯ: КАЖДОЙ из P01...Pn, включая статьи, подготовленные последними, назначь как минимум одну СОДЕРЖАТЕЛЬНУЮ (не только headline) запись evidence_id в соответствующей сюжетной ветке. Все уникальные источники, добавленные оператором, считаются релевантными для задания, пока оператор их не удалит.",
 "Нельзя отправлять статью в reserve, insufficient или excluded из-за нехватки места в плане, сходства события с другим СМИ или того, что она анализировалась отдельно другой моделью. Найди её особый факт, угол подачи, цитату или подтверждение и привяжи evidence_id к ближайшей ветке. Не придумывай факт ради охвата.",
 "Статус duplicate используй ТОЛЬКО при буквальном повторном включении ОДНОГО И ТОГО ЖЕ URL. Разные СМИ об одном событии — независимые публикации и должны учитываться как used/supporting, но не как два независимых подтверждения одинаковой цифры.",
@@ -143,6 +125,10 @@ export function normalizeDossier(raw:any,cards:string[],options:DossierValidatio
       return {dossier:null,error:"dossier_non_russian_trend_"+id};
     if(!Array.isArray(t?.branches)||t.branches.length<1||t.branches.length>9)
       return {dossier:null,error:"dossier_invalid_branches"};
+    const optional=typeof t?.operator_optional==="boolean"?t.operator_optional:false;
+    const optionalReason=txt(t?.optional_reason,320);
+    if(optional&&!isRussianDossierProse(optionalReason))
+      return {dossier:null,error:"dossier_optional_reason_required_"+id};
     const branches:DossierBranch[]=[];
     for(let bi=0;bi<t.branches.length;bi++){
       const b=t.branches[bi],bid=id+":B"+(bi+1);
@@ -169,7 +155,7 @@ export function normalizeDossier(raw:any,cards:string[],options:DossierValidatio
     const sources=uniq(branches.flatMap(b=>b.evidence_ids.concat(b.contrary_evidence_ids))
       .map(ref=>index.byId.get(ref)!.source));
     trends.push({id,title:txt(t?.title,160),summary:txt(t?.summary,450),
-      thesis:txt(t?.thesis,500),sources,branches});
+      thesis:txt(t?.thesis,500),sources,branches,operator_optional:optional,optional_reason:optionalReason});
   }
   if(!Array.isArray(raw?.coverage)||raw.coverage.length!==all.size)
     return {dossier:null,error:"dossier_incomplete_publication_inventory"};
