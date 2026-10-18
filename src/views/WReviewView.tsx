@@ -7,6 +7,7 @@ import { wEditorialMap, wEvidenceBatch, wStyleProfile, wSynthesize, type WDensit
 import { useI18n } from "../i18n";
 import { buildStylePattern } from "../wReviewStyle";
 import { writeEvidenceCheckpoint } from "../wReviewEvidenceCheckpoint";
+import { isEvidencePrepared, pendingEvidenceEntries } from "../wReviewEvidenceProgress";
 import { resolvePoolMarkersForExport } from "../wReviewSourceLabels";
 
 const W_EVIDENCE_CONTRACT_VERSION = 6; // Preserve verified evidence and do not reanalyse articles.
@@ -201,7 +202,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     return workspaces.slots.reduce((sum, slot) =>
       sum + slot.items.reduce((inside, item) => inside + item.sourceText.length + item.editorialText.length, 0), 0);
   }
-  const prepared = state.items.filter((item) => item.evidence.trim() && item.evidenceContract === W_EVIDENCE_CONTRACT_VERSION).length;
+  const prepared = state.items.filter((item) => isEvidencePrepared(item,W_EVIDENCE_CONTRACT_VERSION)).length;
   const mapReady = Boolean(state.editorialMap?.version === 3 && state.editorialMap?.trends?.length && state.mapContract === W_MAP_CONTRACT_VERSION);
   const selectedTrends = mapReady ? state.editorialMap!.trends.filter((trend) => state.selectedTrendIds.includes(trend.id)) : [];
   const styleReady = Boolean(state.styleProfile.trim() && state.styleContract === W_STYLE_CONTRACT_VERSION);
@@ -317,8 +318,9 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   }
 
   function buildBatches(items: WItem[], force=false) {
-    const pending = items.map((item, index) => ({ item, index }))
-      .filter(({ item }) => force || !(item.evidence.trim() && item.evidenceContract === W_EVIDENCE_CONTRACT_VERSION));
+    const pending=force
+      ? items.map((item,index)=>({item,index}))
+      : pendingEvidenceEntries(items,W_EVIDENCE_CONTRACT_VERSION);
     const batches: Array<Array<{ item: WItem; index: number }>> = [];
     let current: Array<{ item: WItem; index: number }> = [];
     let chars = 0;
@@ -346,7 +348,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     const force=Boolean(forceRequested && state.items.length>0 && prepared===state.items.length);
     let next=[...state.items];
     // Always derive progress from verified cards, not from a stale 'done' counter.
-    const isReady=(item:WItem)=>Boolean(item.evidence.trim() && item.evidenceContract===W_EVIDENCE_CONTRACT_VERSION);
+    const isReady=(item:WItem)=>isEvidencePrepared(item,W_EVIDENCE_CONTRACT_VERSION);
     const countReady=()=>next.filter(isReady).length;
     const initialReady=force?0:countReady();
     let checkpointStore=workspaces;
@@ -429,8 +431,8 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         (warned.size?" Проверьте полноту "+warned.size+" публикаций.":""));
     } catch(reason){
       setAnalysisText("");
-      const ready=countReady();
-      // No rollback: every previously confirmed batch is already stored.
+      const ready=checkpointStore.slots[activeSlot].items.filter(isReady).length;
+      // Only report durable committed cards, never an in-flight uncommitted batch.
       setError(String(reason)+". Сохранено "+ready+" из "+next.length+
         " публикаций; осталось "+(next.length-ready)+
         ". Нажмите «Продолжить анализ» — сохранённые карточки повторно не отправляются.");
