@@ -318,7 +318,7 @@ Deno.serve(async (req: Request) => {
     const documents = makeEvidenceDocuments(normalized);
     const deadline=Date.now()+130000;
     console.info("w_review_evidence_routes "+JSON.stringify({routes:["cloudflare_primary","cloudflare_backup","gemini_3.5"],primary:cfEvidencePrimaryReady,backup:cfEvidenceBackupReady,gemini:Boolean(geminiApiKey)}));
-    const output=await prepareEvidence({documents,deadline,
+    const output=await prepareEvidence({documents,deadline,cloudflareFirst:true,
       available:{primary:cfEvidencePrimaryReady,cloudflare:cfEvidenceBackupReady,
         fallback:Boolean(geminiApiKey),groq:false},
       log:event=>console.info("w_review_evidence_attempt "+JSON.stringify(event)),
