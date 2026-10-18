@@ -173,7 +173,11 @@ async function callGemini(apiKey: string, model: string, prompt: string, schema:
       return {ok:false,status:502,retryAfter:null,detail:"gemini_invalid_response",diagnostic};
     }
     const parts = decoded?.candidates?.[0]?.content?.parts;
-    const content = Array.isArray(parts) ? parts.map((part: any) => String(part?.text || "")).join("").trim() : "";
+    // Google may return thought summaries in parts[].thought=true. Never
+    // merge internal reasoning into the final JSON content.
+    const content = Array.isArray(parts) ? parts
+      .filter((part:any)=>part?.thought!==true)
+      .map((part:any)=>String(part?.text||"")).join("").trim() : "";
     if (!content) {
       const diagnostic:ProviderDiagnostic={kind:"empty_response",http_status:200,google_status:"",
         quota_metric:"",quota_id:"",retry_after:null,retryable:false};
@@ -422,9 +426,25 @@ Deno.serve(async (req: Request) => {
     }
     gemini_models: for (const model of models) {
       for (let attempt = 0; attempt < 2; attempt++) {
-        const candidate = await callGemini(geminiApiKey, model, prompt, schema, 0.1, "evidence_batch", 0, {promptJsonOnly:true,maxOutputTokens:12000});
+        const candidate = await callGemini(geminiApiKey, model, prompt, schema, 0.1, "evidence_batch", 0, {promptJsonOnly:true,maxOutputTokens:12000,thinkingLevel:"minimal"});
         if (candidate.ok) {
           const data = parseModelJson(candidate);
+          if(!data||!Array.isArray(data.cards)){
+            // A 200 response is not a usable Evidence result. Repeating the
+            // IDENTICAL request wastes time and tokens: try the next model
+            // immediately, without altering any pre-existing validated cards.
+            const reason=!data?"unparseable_json":"missing_cards_array";
+            console.warn("w_review_gemini_evidence_shape "+JSON.stringify({
+              model,attempt:attempt+1,reason,finish_reason:candidate.finish_reason||"unknown",
+              response_chars:candidate.content.length,
+              completion_tokens:candidate.usage.completion_tokens,
+              reasoning_tokens:candidate.reasoning_tokens||0,
+              requested_max_tokens:12000
+            }));
+            lastError=model+": "+reason;
+            attemptedRoutes.push({model,status:422,cause:reason});
+            break;
+          }
           const verified=verifyEvidenceCards(data,documents);
           if(!verified.error){
             result=candidate;parsed=data;verifiedCards=verified.cards;usedModel=model;break;
