@@ -631,9 +631,24 @@ ${sections.join("; ")}.
     let selected:{dossier:ReturnType<typeof normalizeDossier>["dossier"];result:AiSuccess;model:string;provider:string}|null=null;
     const attempts:Array<{model:string;status:number;reason:string}>=[];
     const accept=(res:AiSuccess,model:string,provider:string)=>{
-      const checked=normalizeDossier(parseModelJson(res),cards);
+      const raw=parseModelJson(res);
+      // Strict on NEW maps only: each distinct publication must contribute
+      // verified non-headline Evidence to at least one branch. Synthesis
+      // retains compatibility with already saved editorial maps.
+      const checked=normalizeDossier(raw,cards,{requireEveryDistinctSource:true});
       if(checked.dossier&&!checked.error){
         selected={dossier:checked.dossier,result:res,model,provider};return true;
+      }
+      if(checked.error?.startsWith("dossier_unlinked_sources_")){
+        const missed=checked.error.slice("dossier_unlinked_sources_".length).split("_");
+        const rows=Array.isArray(raw?.coverage)?raw.coverage:[];
+        const omissions=missed.map(pub=>({
+          publication_id:pub,
+          proposed_status:String(rows.find((c:any)=>String(c?.publication_id)===pub)?.status||"unknown").slice(0,35)
+        }));
+        console.warn("w_review_dossier_coverage_omissions "+JSON.stringify({
+          provider,model,required_publications:cards.length,omissions
+        }));
       }
       attempts.push({model,status:422,reason:checked.error||"invalid_dossier"});
       return false;
@@ -722,7 +737,8 @@ ${sections.join("; ")}.
       mandatory:output.dossier.trends.reduce((n,t)=>n+t.branches.filter(b=>b.required).length,0),
       publications:output.dossier.coverage.length,
       used:output.dossier.coverage.filter(c=>["used","supporting"].includes(c.status)).length,
-      provider:output.provider
+      provider:output.provider,
+      coverage_complete:output.dossier.coverage.every(c=>c.evidence_ids.length>0 || c.status==="duplicate")
     }));
     return json({editorial_map:output.dossier,model:output.model,
       provider:output.provider,usage:output.result.usage});

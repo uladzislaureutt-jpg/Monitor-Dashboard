@@ -51,6 +51,10 @@ export const DOSSIER_INSTRUCTIONS = [
 "Названия СМИ, брендов и технических систем (например Reuters, Bloomberg, Starlink) и неизменяемые evidence_ids P01:E01 оставляй как в исходных материалах. НЕ переводить доказательства на английский, НЕ выполнять отдельный перевод и НЕ добавлять новых фактов ради русскоязычной формы.",
 "В ответе не допускаются английские аналитические заголовки вроде 'Sanctions waiver and diesel fuel deal' или 'Starlink restrictions'. Используй русские формулировки: «Снятие ограничений и дизельная сделка», «Ограничения Starlink и давление США». Кодовые ключи и статусы JSON остаются на английском, как задано схемой.",
 "Ты старший редактор аналитических обзоров. Создай РЕДАКЦИОННОЕ ДОСЬЕ по заданию, не пиши сам обзор.",
+"ПОЛНОТА ИСПОЛЬЗОВАНИЯ: КАЖДОЙ из P01...Pn, включая статьи, подготовленные последними, назначь как минимум одну СОДЕРЖАТЕЛЬНУЮ (не только headline) запись evidence_id в соответствующей сюжетной ветке. Все уникальные источники, добавленные оператором, считаются релевантными для задания, пока оператор их не удалит.",
+"Нельзя отправлять статью в reserve, insufficient или excluded из-за нехватки места в плане, сходства события с другим СМИ или того, что она анализировалась отдельно другой моделью. Найди её особый факт, угол подачи, цитату или подтверждение и привяжи evidence_id к ближайшей ветке. Не придумывай факт ради охвата.",
+"Статус duplicate используй ТОЛЬКО при буквальном повторном включении ОДНОГО И ТОГО ЖЕ URL. Разные СМИ об одном событии — независимые публикации и должны учитываться как used/supporting, но не как два независимых подтверждения одинаковой цифры.",
+"Если источник противоречит центральному тезису, привяжи его к contrary_evidence_ids, а не выбрасывай. Если нужна новая ветка, добавь её в одну из существующих 1–5 тенденций (до 9 веток на тенденцию).",
 "Используй ВСЕ публикации P01... и записи P01:E01 и т.д. Не пропускай редкие аргументы, поздние абзацы, самостоятельные ракурсы. Не считай перепечатки независимым подтверждением.",
 "Создай 1–5 крупных тенденций trends; у каждой до 9 самостоятельных веток branches. Не ограничивай число смысловых подветок количеством тенденций.",
 "У каждой тенденции id T1...T5, title, summary, thesis, branches. У каждой ветки обязательны id B1..., title, claim, mechanism (как связаны факты), counterpoint, limitation, significance, priority (high/medium/low), required (true/false), evidence_ids, contrary_evidence_ids.",
@@ -73,7 +77,10 @@ export function isRussianDossierProse(value:unknown):boolean {
   // Brands such as Starlink or Reuters remain legal inside Russian syntax.
   return cyr>=2 && cyr/Math.max(1,cyr+latin)>=0.30;
 }
-export function normalizeDossier(raw:any,cards:string[]):{dossier:EditorialDossier|null;error:string|null}{
+// Strict validation is for NEW dossiers only. Previously saved dossiers may
+// still be synthesized; never invalidate an operator's existing work.
+export type DossierValidationOptions={requireEveryDistinctSource?:boolean};
+export function normalizeDossier(raw:any,cards:string[],options:DossierValidationOptions={}):{dossier:EditorialDossier|null;error:string|null}{
   const index=evidenceIndex(cards),all=new Set(index.publications);
   if(!index.entries.length)return {dossier:null,error:"dossier_requires_evidence_v2"};
   if(!Array.isArray(raw?.trends)||raw.trends.length<1||raw.trends.length>5)
@@ -131,6 +138,29 @@ export function normalizeDossier(raw:any,cards:string[]):{dossier:EditorialDossi
     if(!isRussianDossierProse(reason))
       return {dossier:null,error:"dossier_non_russian_coverage_reason_"+pub};
     coverage.push({publication_id:pub,status:status as DossierCoverage["status"],reason,evidence_ids:ids});
+  }
+  if(options.requireEveryDistinctSource){
+    // A source with verified non-headline Evidence cannot be silently relegated
+    // to reserve/excluded or mislabelled a duplicate of a different publication.
+    // The sole automatic exception is the SAME canonical URL included twice.
+    const firstByUrl=new Map<string,string>();
+    const uncited:string[]=[];
+    const orderedCoverage=[...coverage].sort((a,b)=>a.publication_id.localeCompare(b.publication_id));
+    for(const entry of orderedCoverage){
+      const cardIndex=Number(entry.publication_id.slice(1))-1;
+      const rawUrl=txt(cards[cardIndex]?.match(/^URL:\s*(https?:\/\/\S+)/m)?.[1],1200);
+      const url=rawUrl.replace(/#.*$/,"").replace(/\/$/,"").toLowerCase();
+      const original= url ? firstByUrl.get(url) : null;
+      if(url&&!original)firstByUrl.set(url,entry.publication_id);
+      if(original && entry.status==="duplicate" && coverage.some(c=>
+        c.publication_id===original&&c.evidence_ids.length>0))continue;
+      const available=index.entries.filter(record=>record.publication===entry.publication_id);
+      const substantive=available.filter(record=>record.kind!=="headline");
+      const required=substantive.length?substantive:available;
+      if(!required.length || !entry.evidence_ids.some(id=>required.some(record=>record.id===id)))
+        uncited.push(entry.publication_id);
+    }
+    if(uncited.length)return {dossier:null,error:"dossier_unlinked_sources_"+uncited.join("_")};
   }
   const inv=raw.inventory||{};
   return {dossier:{version:3,trends,coverage,inventory:{
