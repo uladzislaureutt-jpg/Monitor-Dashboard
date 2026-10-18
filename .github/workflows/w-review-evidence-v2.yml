@@ -42,6 +42,8 @@ jobs:
         run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/dossier-reconciliation.test.mjs
       - name: Verify unified synthesis plan and block diagnostics
         run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/synthesis-blocks.test.mjs
+      - name: Check extended Cloudflare primary timeouts and reserved provider windows
+        run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/cloudflare-budget.test.mjs
       - name: Verify dual CF120 + Gemini routing for Evidence, dossier and two reviews
         run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/dual-routing.test.mjs
       - name: Verify synthesis runtime and timeout guards
