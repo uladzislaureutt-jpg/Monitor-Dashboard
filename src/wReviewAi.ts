@@ -47,7 +47,7 @@ export type WEvidenceData = {
   validation: { proposed: number; accepted: number; rejected: number;
     covered_passages: number; total_passages: number };
 };
-type EvidenceInput = { publication_id: string; title: string; source: string; region?: string; text: string };
+type EvidenceInput = { pool_index?:number; publication_id: string; title: string; source: string; region?: string; text: string };
 
 function retrySeconds(value: unknown): number | null {
   // Never guess a wait time for quota exhaustion; only honor short provider hints.
