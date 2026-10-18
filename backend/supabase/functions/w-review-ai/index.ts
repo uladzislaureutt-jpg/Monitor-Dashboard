@@ -323,6 +323,29 @@ Deno.serve(async (req: Request) => {
     const models=geminiApiKey?routesWithoutCircuit(W_REVIEW_GEMINI_ROUTES,disabledRoutes):[];
     if (disabledRoutes.length) console.info("w_review_provider_circuit_skip "+
       JSON.stringify({stage:"evidence_batch",models_skipped:W_REVIEW_GEMINI_ROUTES.length-models.length}));
+    // Minimal probe contains NO operator material and has no structured output
+    // requirements. It tests whether the model itself can answer generateContent.
+    async function diagnosticGeminiProbe(model:string) {
+      try {
+        const response=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+
+          encodeURIComponent(model)+":generateContent",{
+            method:"POST",
+            headers:{"x-goog-api-key":geminiApiKey,"Content-Type":"application/json"},
+            signal:AbortSignal.timeout(7500),
+            body:JSON.stringify({contents:[{role:"user",parts:[{text:"Reply with OK only."}]}],
+              generationConfig:{maxOutputTokens:64}})
+          });
+        console.info("w_review_gemini_minimal_probe "+JSON.stringify({
+          model,http_status:response.status,classification:response.ok?"model_available":
+            response.status===400?"minimal_request_invalid":response.status===429?"quota":"unresolved"
+        }));
+      }catch(error){
+        console.warn("w_review_gemini_minimal_probe "+JSON.stringify({
+          model,http_status:null,classification:error instanceof Error&&
+            error.name==="TimeoutError"?"probe_timeout":"probe_network_unavailable"
+        }));
+      }
+    }
     async function suspendGeminiModel(model:string,status:number,googleStatus:string) {
       if(!suspendStructuralFailure(status,googleStatus))return;
       const {error}=await admin.from("w_review_provider_circuit").upsert({
@@ -330,7 +353,12 @@ Deno.serve(async (req: Request) => {
         reason_code:"INVALID_ARGUMENT",http_status:400,updated_at:new Date().toISOString()
       },{onConflict:"route"});
       if(error)console.warn("w_review_provider_circuit_write_failed");
-      else console.info("w_review_provider_circuit_open "+JSON.stringify({stage:"evidence_batch",model,minutes:15}));
+      else {
+        console.info("w_review_provider_circuit_open "+JSON.stringify({
+          stage:"evidence_batch",model,minutes:15
+        }));
+        await diagnosticGeminiProbe(model);
+      }
     }
     let result: AiResult | null = null;
     let parsed: any = null;
@@ -394,7 +422,7 @@ Deno.serve(async (req: Request) => {
             "Не обрывай покрытие после вводных абзацев. Верни полный JSON cards."},
           {role:"user",content:prompt}
         ]
-      },80000);
+      },100000);
       if(cfResult.ok){
         const cfData=parseModelJson(cfResult);
         const verified=verifyEvidenceCards(cfData,documents);
@@ -410,7 +438,7 @@ Deno.serve(async (req: Request) => {
         const reason=cfResult.detail==="cloudflare_local_timeout"?"local_timeout":
           cfResult.detail.startsWith("cloudflare_empty_reply")?"empty_reply":"provider_or_transport";
         console.warn("w_review_cloudflare_evidence_failure "+JSON.stringify({
-          reason,http_status:cfResult.status,timeout_ms:80000,
+          reason,http_status:cfResult.status,timeout_ms:100000,
           account_route:hasCfEvidenceBackup?"backup":"primary"
         }));
         attemptedRoutes.push({model:"@cf/openai/gpt-oss-120b",status:cfResult.status,cause:reason});
