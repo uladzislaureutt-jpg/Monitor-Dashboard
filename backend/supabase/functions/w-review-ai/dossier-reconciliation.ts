@@ -93,29 +93,39 @@ export function reconcileDossierDraft(raw:any,cards:string[]):DossierRepairResul
   // infer publication priority; it remains OFF until the operator chooses.
   const allAdded:string[]=[];
   if(missing.length){
-    if(trends.length>=5||missing.length>9)return null;
-    const waiting:any[]=[];
-    for(const pub of missing){
-      const proven=ix.entries.filter(e=>e.publication===pub&&e.kind!=="headline"&&
-        isRussianDossierProse(e.summary));
-      const row=proven[0];
-      if(!row)return null;
-      waiting.push({id:"B"+(waiting.length+1),
-        title:"Материал "+pub+" — "+row.source,
-        claim:trim(row.summary,550),mechanism:"",counterpoint:"",limitation:"",
-        significance:"Материал подтверждён, но модель не распределила его по аналитическим сюжетам.",
-        priority:"medium",required:false,evidence_ids:[row.id],contrary_evidence_ids:[]});
-      linked.add(row.id);allAdded.push(pub);
+    // The schema allows up to 5 trends and 9 branches per trend.
+    // A single 9-source review queue silently invalidated otherwise useful
+    // maps when 10+ sources were left unlinked by just two invalid citations.
+    // Use ONLY available slots; never create >5 trends or discard a source.
+    const queueCount=Math.ceil(missing.length/9);
+    if(queueCount>5-trends.length)return null;
+    for(let start=0;start<missing.length;start+=9){
+      const queuePubs=missing.slice(start,start+9);
+      const waiting:any[]=[];
+      for(const pub of queuePubs){
+        const proven=ix.entries.filter(e=>e.publication===pub&&e.kind!=="headline"&&
+          isRussianDossierProse(e.summary));
+        const row=proven[0];
+        if(!row)return null;
+        waiting.push({id:"B"+(waiting.length+1),
+          title:"Материал "+pub+" — "+row.source,
+          claim:trim(row.summary,550),mechanism:"",counterpoint:"",limitation:"",
+          significance:"Материал подтверждён, но модель не распределила его по аналитическим сюжетам.",
+          priority:"medium",required:false,evidence_ids:[row.id],contrary_evidence_ids:[]});
+        linked.add(row.id);allAdded.push(pub);
+      }
+      const queueIndex=Math.floor(start/9)+1;
+      trends.push({
+        id:"T"+(trends.length+1),
+        title:"Публикации для редакционного распределения"+
+          (queueCount>1?" — часть "+queueIndex:""),
+        summary:"Материалы присутствуют в доказательной базе, но не получили достоверных ссылок в построенных сюжетах.",
+        thesis:"Их значимость и принадлежность к тенденциям устанавливает оператор, а не автоматическая классификация.",
+        operator_optional:true,
+        optional_reason:"Техническая подборка нераспределённых публикаций. Это не оценка их второстепенности: проверьте и включите значимые материалы.",
+        branches:waiting
+      });
     }
-    trends.push({
-      id:"T"+(trends.length+1),
-      title:"Публикации для редакционного распределения",
-      summary:"Материалы присутствуют в доказательной базе, но не получили достоверных ссылок в построенных сюжетах.",
-      thesis:"Их значимость и принадлежность к тенденциям устанавливает оператор, а не автоматическая классификация.",
-      operator_optional:true,
-      optional_reason:"Техническая подборка нераспределённых публикаций. Это не оценка их второстепенности: проверьте и включите значимые материалы.",
-      branches:waiting
-    });
   }
   // Publication disposition derives only from actual validated branch refs,
   // not the model's unsupported classifications.
