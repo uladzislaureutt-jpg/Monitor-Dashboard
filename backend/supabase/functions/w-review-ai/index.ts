@@ -604,10 +604,11 @@ ${sections.join("; ")}.
   }
 
   if (action === "editorial_map") {
-    const cfId=Deno.env.get("CLOUDFLARE_BACKUP_ACCOUNT_ID")||
-      Deno.env.get("CLOUDFLARE_ACCOUNT_ID")||"";
-    const cfToken=Deno.env.get("CLOUDFLARE_BACKUP_API_TOKEN")||
-      Deno.env.get("CLOUDFLARE_API_TOKEN")||"";
+    const backAccount=Deno.env.get("CLOUDFLARE_BACKUP_ACCOUNT_ID")||"";
+    const backToken=Deno.env.get("CLOUDFLARE_BACKUP_API_TOKEN")||"";
+    const useBackup=Boolean(backAccount&&backToken);
+    const cfId=useBackup?backAccount:(Deno.env.get("CLOUDFLARE_ACCOUNT_ID")||"");
+    const cfToken=useBackup?backToken:(Deno.env.get("CLOUDFLARE_API_TOKEN")||"");
     if(!geminiApiKey&&!groqApiKey&&!(cfId&&cfToken))
       return json({error:"w_review_map_providers_not_configured"},503);
     const task=String(body?.task||"").trim();
@@ -708,6 +709,7 @@ ${sections.join("; ")}.
         attempts,pool_articles:cards.length
       }));
       return json({error:"editorial_dossier_providers_unavailable",provider:"gemini_cloudflare_groq",
+        detail:attempts.map(a=>a.model+": "+a.status+" "+a.reason).join("; ").slice(0,320),
         attempts,issue:geminiProblem,retryable:false},503);
     }
     const output=selected as {dossier:NonNullable<ReturnType<typeof normalizeDossier>["dossier"]>;
