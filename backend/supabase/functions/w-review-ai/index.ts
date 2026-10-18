@@ -1,8 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { DOSSIER_INSTRUCTIONS, dossierSchema, normalizeDossier, makeSynthesisDossier, compactDossierCards } from "./editorial-dossier.ts";
+import { synthesisResponseSchema, readSynthesisBlocks } from "./synthesis-blocks.ts";
 import { reconcileDossierDraft } from "./dossier-reconciliation.ts";
-import { normalizeReviewSourceLabels, poolSourceNames, minimumParagraphChars } from "./review-output-guard.ts";
+import { normalizeReviewSourceLabels, poolSourceNames } from "./review-output-guard.ts";
 import { W_REVIEW_GEMINI_PRIMARY, W_REVIEW_GEMINI_FALLBACK, W_REVIEW_GEMINI_ROUTES, wGeminiGenerationConfig, wGeminiPromptJsonConfig, W_GEMINI_JSON_ONLY_SUFFIX, parseModelJsonObject, wGeminiStructuredConfig, type GeminiJsonMode } from "./gemini-routing.ts";
 import { prepareEvidence, structuredGeminiRequest, preparationBudget } from "./preparation.ts";
 import { evidenceV2Instructions, evidenceV2Schema, makeEvidenceDocuments, renderEvidenceMaterials, verifyEvidenceCards, verifyEvidenceCardsIndividually, formatEvidenceCard, type EvidenceCard } from "./evidence-v2.ts";
@@ -839,7 +840,7 @@ ${styleProfile || "Живой сдержанный редакционный ст
     if(!selectedIds.length||new Set(selectedIds).size!==selectedIds.length||
        selectedIds.some(id=>!checkedDossier.dossier!.trends.some(t=>t.id===id)))
       return json({error:"w_review_invalid_selected_dossier_lines"},400);
-    const synthesisDossier=makeSynthesisDossier(checkedDossier.dossier,selectedIds,targetChars,cards);
+    const synthesisDossier=makeSynthesisDossier(checkedDossier.dossier,selectedIds,targetChars,cards,measuredMedian);
     const sourceNames = Array.isArray(body?.source_names) ? body.source_names.map((v: unknown) => String(v || "").trim()).filter(Boolean).slice(0, 30) : [];
     if (!cards.length || !trends.length) return json({ error: "missing_synthesis_input" }, 400);
     const d = body?.density || {};
@@ -853,23 +854,7 @@ ${styleProfile || "Живой сдержанный редакционный ст
 
     const lengthMinimum=Math.round(targetChars*0.95);
     const lengthMaximum=Math.round(targetChars*1.05);
-    // One generation, structured into natural adjacent paragraphs. The user
-    // still receives ONE continuous editor text; not an item-by-item digest.
-    const fallbackParagraphs=targetChars>=7000?12:
-      targetChars>=5500?9:targetChars>=3500?7:
-      targetChars>=2500?6:targetChars>=1800?4:2;
-    const paragraphTarget=measuredMedian>=90
-      ?Math.max(2,Math.min(22,Math.round(targetChars/Math.max(260,Math.min(950,measuredMedian)))))
-      :fallbackParagraphs;
-    // Natural author rhythm: allow short bridges and longer analytical blocks.
-    // For long reviews, enforce enough substantial paragraphs in the same
-    // single model response to meet the requested length without post-hoc AI
-    // expansion. No equal-length rule: longer paragraphs remain unrestricted.
-    const paragraphFloor=targetChars>=5000?paragraphTarget:
-      Math.max(2,Math.floor(paragraphTarget*0.7));
-    const paragraphCeiling=paragraphTarget+Math.max(3,Math.ceil(paragraphTarget*0.4));
-    const strictParagraphMin=targetChars>=5000?
-      minimumParagraphChars(targetChars,paragraphFloor):80;
+    const paragraphTarget=synthesisDossier.paragraphTarget;
     const sourceRegistry=[...poolSourceNames(cards).entries()]
       .map(([id,name])=>{
         const position=Number(id.slice(1))-1;
@@ -911,18 +896,10 @@ ${compositionNote}
 STYLE_ONLY (образцы авторской манеры, НЕ ИСТОЧНИК ФАКТОВ):
 ${styleOnlyText || "Дополнительные фрагменты недоступны. Следуй STYLE_PROFILE."}
 
-РЕЗУЛЬТАТ. Верни ОДИН JSON со строковым массивом paragraphs, массивами section_titles и bold_phrases. paragraphs — единое непрерывное аналитическое повествование, разбитое на естественные абзацы, НЕ набор отдельных СМИ или подзаголовков. Ориентир — около ${paragraphTarget} абзацев, допустимо ${paragraphFloor}–${paragraphCeiling} естественных абзацев разного объёма. Каждый содержательный абзац должен быть не короче ${strictParagraphMin} знаков; это нижняя граница, а не шаблон одинаковой длины. Наполняй абзацы доказанными фактами, сопоставлениями и механизмами, не риторикой. Количество не является самоцелью; обязательны раскрытие веток и заданная ОБЩАЯ длина, а не равные куски. В пределах ОДНОГО ответа полностью раскрой все выбранные тенденции, подробные факты и противоречащие ракурсы; не заверши после краткого обзора первых источников. section_titles:[] и bold_phrases:[] допустимы. Никогда не выдумывай подзаголовки и не вставляй Markdown ** или __. Не выдавай планы и промежуточные замечания.` },
-        { role: "user", content: `ЗАДАНИЕ ОПЕРАТОРА:\n${task}\n\nРЕДАКЦИОННОЕ ДОСЬЕ И РАСПРЕДЕЛЕНИЕ ОБЪЁМА:\n${trendText}\n\nИНСТРУКЦИЯ ДЛЯ ЭТАПА:\n${String(body?.stage_note || "").slice(0,500)}\n\nEVIDENCE CARDS:\n${evidenceText}\n\nФИНАЛЬНОЕ ЗАДАНИЕ: создай ОДИН непрерывный авторский аналитический обзор в массиве paragraphs, с общим объёмом после соединения абзацев ${targetChars} знаков с пробелами, допустимый коридор ${lengthMinimum}–${lengthMaximum}. Ориентир ${paragraphTarget} абзацев (допустимо ${paragraphFloor}–${paragraphCeiling}), каждый не менее ${strictParagraphMin} знаков, в авторском ритме, без принудительно одинаковой длины. Если фактологического материала достаточно, используй его для развития аргументации, а не сворачивай анализ раньше достижения ${lengthMinimum} знаков. Каждый следующий развивает общую мысль, а не описывает следующее СМИ. После обработки всех тенденций заверши подтверждённым содержательным акцентом, не формальной сводкой. Не допускай ни одной непереведённой англоязычной цитаты (кроме официальных названий), расставляй источники только по образцу «... («CNN», «BBC News»).», не создавай собственных псевдоцитат и шаблонной итоговой концовки. Не используй Markdown, ненужные подзаголовки и списки источников.` }],
-      response_format: { type:"json_schema",json_schema:{name:"w_review_v7_paragraphs",strict:true,schema:{
-        type:"object",
-        properties:{
-          paragraphs:{type:"array",minItems:paragraphFloor,maxItems:paragraphCeiling,items:{type:"string",minLength:strictParagraphMin}},
-          section_titles:{type:"array",items:{type:"string"},maxItems:2},
-          bold_phrases:{type:"array",items:{type:"string"},maxItems:4}
-        },
-        required:["paragraphs","section_titles","bold_phrases"],
-        additionalProperties:false
-      }}},
+РЕЗУЛЬТАТ. Верни ОДИН JSON с массивом blocks и массивами section_titles, bold_phrases. Каждый blocks содержит block_id из единого плана и paragraphs — массив естественных абзацев готового обзора. Верни каждый блок ровно один раз в порядке плана: opening, выбранные line_*, ending. Это одно непрерывное авторское повествование, не отдельные статьи; границы блоков и их ID читателю не показываются. Объём и ориентиры абзацев бери только из единого плана. Короткие связки допустимы; общего минимума длины абзаца нет. Обязательны раскрытие всех выбранных сюжетов и общая длина. Не выдавай план вместо текста. section_titles:[] и bold_phrases:[] допустимы. Не вставляй Markdown ** или __. Без промежуточных замечаний.` },
+        { role: "user", content: `ЗАДАНИЕ ОПЕРАТОРА:\n${task}\n\nРЕДАКЦИОННОЕ ДОСЬЕ И РАСПРЕДЕЛЕНИЕ ОБЪЁМА:\n${trendText}\n\nИНСТРУКЦИЯ ДЛЯ ЭТАПА:\n${String(body?.stage_note || "").slice(0,500)}\n\nEVIDENCE CARDS:\n${evidenceText}\n\nФИНАЛЬНОЕ ЗАДАНИЕ: создай ОДИН непрерывный авторский аналитический обзор в массиве blocks, с общим объёмом после соединения абзацев ${targetChars} знаков с пробелами, допустимый коридор ${lengthMinimum}–${lengthMaximum}. Следуй единому плану блоков, ориентир суммарно ${paragraphTarget} естественных абзацев разной длины. Бюджет каждого блока включает атрибуцию и переходы; не заменяй развёрнутое раскрытие кратким упоминанием. Если фактологического материала достаточно, используй его для развития аргументации, а не сворачивай анализ раньше достижения ${lengthMinimum} знаков. Каждый следующий развивает общую мысль, а не описывает следующее СМИ. После обработки всех тенденций заверши подтверждённым содержательным акцентом, не формальной сводкой. Не допускай ни одной непереведённой англоязычной цитаты (кроме официальных названий), расставляй источники только по образцу «... («CNN», «BBC News»).», не создавай собственных псевдоцитат и шаблонной итоговой концовки. Не используй Markdown, ненужные подзаголовки и списки источников.` }],
+      response_format: {type:"json_schema",json_schema:{name:"w_review_blocks_v1",strict:true,
+        schema:synthesisResponseSchema(synthesisDossier.blocks)}},
     };
     const cfToken = Deno.env.get("CLOUDFLARE_API_TOKEN") || "";
     const cfId = Deno.env.get("CLOUDFLARE_ACCOUNT_ID") || "";
@@ -1009,13 +986,13 @@ ${styleOnlyText || "Дополнительные фрагменты недост
     // call, rewriting pass, audit or source-by-source postprocessing.
     const normalizeReview=(raw:any)=>{
       if(!raw||typeof raw!=="object")return raw;
-      const paragraphs=Array.isArray(raw.paragraphs)?
-        raw.paragraphs.map((p:any)=>String(p||"").trim()).filter(Boolean):[];
+      const blockResult=readSynthesisBlocks(raw,synthesisDossier.blocks);
+      const paragraphs=blockResult.paragraphs;
       const text=paragraphs.length?paragraphs.join("\n\n"):String(raw.review_text||"").trim();
       // Remove model control markup and fake paragraph-ending headings.
       const withoutTags=text.replace(/\s+\*\*«[^»\n]{5,95}»\*\*(?=\s*(?:\n|$))/g,"");
       const cleaned=withoutTags.replace(/\*\*/g,"").replace(/__/g,"").trim();
-      return {...raw,review_text:cleaned,section_titles:[],
+      return {...raw,paragraphs,block_warnings:blockResult.warnings,block_metrics:blockResult.metrics,review_text:cleaned,section_titles:[],
         bold_phrases:Array.isArray(raw.bold_phrases)?raw.bold_phrases:[]};
     };
     let parsed=result.ok?normalizeReview(parseModelJson(result)):null;
@@ -1063,18 +1040,15 @@ ${styleOnlyText || "Дополнительные фрагменты недост
     const lengthOk=actualChars>=lengthMinimum
       && actualChars<=lengthMaximum;
     // Only deterministic warnings. Keep the draft even when outside tolerance.
-    const preflightWarnings:string[]=[...normalizedSources.attributionWarnings];
+    const preflightWarnings:string[]=[...normalizedSources.attributionWarnings,...(parsed.block_warnings||[])];
     if(!lengthOk) preflightWarnings.push(`Объём ${actualChars} знаков вне допуска ${lengthMinimum}–${lengthMaximum}; текст сохранён для редактирования.`);
-    const rawParagraphs=Array.isArray(parsed.paragraphs)?parsed.paragraphs:[];
-    if(rawParagraphs.length>0 && rawParagraphs.length<paragraphTarget)
-      preflightWarnings.push(`Абзацев ${rawParagraphs.length}, ориентир ${paragraphTarget}; не добавляйте пустые абзацы ради числа.`);
     console.info("w_review_single_pass "+JSON.stringify({
       provider:selectedProvider,model:selectedModel,target_chars:targetChars,
       actual_chars:actualChars,within_tolerance:lengthOk,
       requested_output_token_budget:selectedProvider==="cloudflare"?synthesisOutputTokenBudget:
         groqSynthesisOutputTokenBudget,
       length_window:{min:lengthMinimum,max:lengthMaximum},
-      paragraph_target:paragraphTarget,paragraph_floor:paragraphFloor,paragraph_ceiling:paragraphCeiling,minimum_paragraph_chars:strictParagraphMin,
+      paragraph_target:paragraphTarget,block_metrics:parsed.block_metrics,
       actual_paragraphs:reviewText.split(/\n\s*\n/).length,
       prompt_tokens:result.ok?result.usage.prompt_tokens:0,
       completion_tokens:result.ok?result.usage.completion_tokens:0,

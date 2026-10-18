@@ -3,12 +3,6 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 const code=readFileSync(new URL("./index.ts",import.meta.url),"utf8");
 const synth=code.slice(code.indexOf('if (action === "synthesize")'));
-test("final synthesis never references removed paragraphMinChars",()=>{
-  assert.ok(synth.includes("paragraphFloor"));
-  assert.ok(synth.includes("paragraphCeiling"));
-  assert.ok(!synth.includes("paragraphMinChars"));
-  assert.match(synth,/paragraph_floor:paragraphFloor,paragraph_ceiling:paragraphCeiling/);
-});
 test("final route logs start and primary result before response and counts quota only on success",()=>{
   assert.ok(synth.includes('w_review_synthesis_start'));
   assert.ok(synth.includes('w_review_synthesis_primary_result'));
