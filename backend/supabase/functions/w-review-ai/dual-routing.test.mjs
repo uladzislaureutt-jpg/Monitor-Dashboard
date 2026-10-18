@@ -17,7 +17,8 @@ test("Evidence routes Gemini 3.5 -> one Cloudflare 120B -> Groq 120B",()=>{
   assert.ok(ev.includes('cfEvidencePrimaryReady?"primary":cfEvidenceBackupReady?"backup":null'));
   assert.ok(prep.indexOf('attempt("primary"')<prep.indexOf('attempt("cloudflare"'));
   assert.ok(prep.indexOf('attempt("cloudflare"')<prep.indexOf('attempt("groq"'));
-  assert.ok(!ev.includes('W_REVIEW_GEMINI_FALLBACK'));
+  assert.ok(!ev.includes('callGemini(geminiApiKey,W_REVIEW_GEMINI_FALLBACK'));
+  // Legacy 3.1 cards are still flagged when reading previously saved Evidence.
 });
 test("Dossier prefers Gemini 3.5, one Cloudflare account, then Groq 120B",()=>{
   assert.ok(map.indexOf('if(geminiApiKey&&availableTime()')<map.indexOf('if(!selected&&cfRoute'));
