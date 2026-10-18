@@ -54,12 +54,13 @@ type AiFailure = { ok: false; status: number; retryAfter: string | null; detail:
 type AiSuccess = { ok: true; content: string; usage: Usage; finish_reason?: string; reasoning_tokens?: number };
 type AiResult = AiFailure | AiSuccess;
 
-async function callGroq(apiKey: string, payload: unknown): Promise<AiResult> {
+async function callGroq(apiKey: string, payload: unknown, timeoutMs=0): Promise<AiResult> {
   try {
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+      signal:timeoutMs>0?AbortSignal.timeout(timeoutMs):undefined,
     });
     const raw = await response.text();
     if (!response.ok) return { ok: false, status: response.status, retryAfter: response.headers.get("retry-after"), detail: raw.slice(0, 1400) };
@@ -75,7 +76,10 @@ async function callGroq(apiKey: string, payload: unknown): Promise<AiResult> {
     }, finish_reason: String(decoded?.choices?.[0]?.finish_reason || "").slice(0,30),
       reasoning_tokens: Number(usage?.completion_tokens_details?.reasoning_tokens ?? 0) };
   } catch (error) {
-    return { ok: false, status: 502, retryAfter: null, detail: `groq_network_error: ${String(error).slice(0, 240)}` };
+    const kind=error instanceof Error?error.name:"unknown";
+    if(kind==="TimeoutError"||kind==="AbortError")
+      return {ok:false,status:504,retryAfter:null,detail:"groq_local_timeout"};
+    return {ok:false,status:502,retryAfter:null,detail:"groq_network_"+providerField(kind)};
   }
 }
 // Cloudflare's raw Workers AI endpoint expects a plain schema; Groq accepts
@@ -246,6 +250,7 @@ function aiError(provider: "groq" | "gemini" | "cloudflare", result: AiFailure) 
 const evidencePrompt = evidenceV2Instructions;
 
 Deno.serve(async (req: Request) => {
+  try {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
@@ -964,6 +969,7 @@ ${styleProfile || "Живой сдержанный редакционный ст
   }
 
   if (action === "synthesize") {
+    const synthesisStart=Date.now();
     const cloudflareConfigured = Boolean(
       (Deno.env.get("CLOUDFLARE_API_TOKEN") && Deno.env.get("CLOUDFLARE_ACCOUNT_ID"))
       || (Deno.env.get("CLOUDFLARE_BACKUP_API_TOKEN") && Deno.env.get("CLOUDFLARE_BACKUP_ACCOUNT_ID"))
@@ -1150,13 +1156,33 @@ ${styleOnlyText || "Дополнительные фрагменты недост
     // independent Cloudflare account 1 -> account 2 -> Groq.
     // Gemini is deliberately excluded from synthesis because of instability.
     // No rewriting or length-driven provider switching after a usable result.
+    // Never let sequential provider attempts outlive the Edge request idle
+    // timeout (Supabase 150s). Keep the existing single final model synthesis,
+    // not a multi-pass rewrite. Fallback is bounded by remaining budget.
+    const deadline=synthesisStart+135000;
+    const remaining=()=>Math.max(0,deadline-Date.now());
+    const providerBudget=(ceiling:number)=>Math.max(0,Math.min(ceiling,remaining()-9000));
+    const firstBudget=providerBudget(112000);
+    console.info("w_review_synthesis_start "+JSON.stringify({
+      cards:cards.length,selected_trends:selectedIds.length,required_branches:synthesisDossier.requiredBranches,
+      target_chars:targetChars,evidence_chars:evidenceText.length,style_chars:styleProfile.length,
+      dossier_chars:trendText.length,output_tokens:synthesisOutputTokenBudget,
+      quota_reserved:Boolean(reservationId),provider:"cloudflare"
+    }));
     let cloudflareRoute:"primary"|"backup"|null=
       cfPrimaryReady?"primary":cfBackupReady?"backup":null;
-    let result:AiResult=cfPrimaryReady
-      ? await callCloudflare(cfId,cfToken,cloudflareSynthesisPayload)
-      : cfBackupReady
-        ? await callCloudflare(cfBackupId,cfBackupToken,cloudflareSynthesisPayload)
-        : {ok:false,status:503,retryAfter:null,detail:"cloudflare_unconfigured"};
+    let result:AiResult=firstBudget>=10000
+      ? cfPrimaryReady
+        ? await callCloudflare(cfId,cfToken,cloudflareSynthesisPayload,firstBudget)
+        : cfBackupReady
+          ? await callCloudflare(cfBackupId,cfBackupToken,cloudflareSynthesisPayload,firstBudget)
+          : {ok:false,status:503,retryAfter:null,detail:"cloudflare_unconfigured"}
+      : {ok:false,status:504,retryAfter:null,detail:"synthesis_preflight_timeout"};
+    console.info("w_review_synthesis_primary_result "+JSON.stringify({
+      route:cloudflareRoute,ok:result.ok,status:result.ok?200:result.status,
+      elapsed_ms:Date.now()-synthesisStart,
+      issue:result.ok?String(result.finish_reason||"none"):providerField(result.detail).slice(0,80)
+    }));
     let selectedProvider="cloudflare";
     let selectedModel="@cf/openai/gpt-oss-120b";
     // Convert one structured completion to the existing API. No second AI
@@ -1175,17 +1201,21 @@ ${styleOnlyText || "Дополнительные фрагменты недост
     let parsed=result.ok?normalizeReview(parseModelJson(result)):null;
     const usable=(r:AiResult,p:any)=>r.ok&&typeof p?.review_text==="string"&&Boolean(p.review_text.trim());
     const temporaryOrAccountError=result.ok||[401,403,408,429,500,502,503,504,520,522,523,524].includes(result.status);
-    if(cfPrimaryReady&&cfBackupReady&&!usable(result,parsed)&&temporaryOrAccountError){
+    if(cfPrimaryReady&&cfBackupReady&&!usable(result,parsed)&&temporaryOrAccountError&&
+       providerBudget(85000)>=25000){
       console.info("w_review_provider_fallback "+JSON.stringify({
         stage:"synthesis",from:"cloudflare_primary",to:"cloudflare_backup",
         http_status:result.ok?200:result.status,trigger:result.ok?"invalid_output":"provider_failure"
       }));
-      result=await callCloudflare(cfBackupId,cfBackupToken,cloudflareSynthesisPayload);
+      result=await callCloudflare(cfBackupId,cfBackupToken,cloudflareSynthesisPayload,providerBudget(85000));
       parsed=result.ok?normalizeReview(parseModelJson(result)):null;
       cloudflareRoute="backup";
+      console.info("w_review_synthesis_backup_result "+JSON.stringify({
+        ok:result.ok,status:result.ok?200:result.status,elapsed_ms:Date.now()-synthesisStart
+      }));
     }
-    if(!usable(result,parsed)&&groqApiKey){
-      const groq=await callGroq(groqApiKey,groqPayload);
+    if(!usable(result,parsed)&&groqApiKey&&providerBudget(35000)>=12000){
+      const groq=await callGroq(groqApiKey,groqPayload,providerBudget(35000));
       const gp=groq.ok?normalizeReview(parseModelJson(groq)):null;
       if(usable(groq,gp)){
         result=groq;parsed=gp;selectedProvider="groq";
@@ -1195,7 +1225,14 @@ ${styleOnlyText || "Дополнительные фрагменты недост
     // SINGLE-PASS: no rewriting, expansion, independent AI audit, or deletion.
     // Fallback to a different provider is used only if the chosen provider
     // is technically unavailable or did not return usable JSON.
-    if (!result.ok) {await finishQuota(false); return aiError(selectedProvider==="groq"?"groq":"cloudflare",result);}
+    if (!result.ok) {
+      await finishQuota(false);
+      console.warn("w_review_synthesis_failed "+JSON.stringify({
+        status:result.status,provider:selectedProvider,
+        elapsed_ms:Date.now()-synthesisStart,issue:providerField(result.detail).slice(0,100)
+      }));
+      return aiError(selectedProvider==="groq"?"groq":"cloudflare",result);
+    }
     if (!parsed || typeof parsed.review_text!=="string" || !parsed.review_text.trim()) {
       await finishQuota(false);
       return json({error:"invalid_synthesis_output"},502);
@@ -1216,7 +1253,7 @@ ${styleOnlyText || "Дополнительные фрагменты недост
       requested_output_token_budget:selectedProvider==="cloudflare"?synthesisOutputTokenBudget:
         groqSynthesisOutputTokenBudget,
       length_window:{min:lengthMinimum,max:lengthMaximum},
-      paragraph_target:paragraphTarget,paragraph_min:paragraphMinChars,
+      paragraph_target:paragraphTarget,paragraph_floor:paragraphFloor,paragraph_ceiling:paragraphCeiling,
       actual_paragraphs:reviewText.split(/\n\s*\n/).length,
       prompt_tokens:result.ok?result.usage.prompt_tokens:0,
       completion_tokens:result.ok?result.usage.completion_tokens:0,
@@ -1245,4 +1282,10 @@ ${styleOnlyText || "Дополнительные фрагменты недост
   }
 
   return json({ error: "unknown_action" }, 400);
+  } catch(error) {
+    const kind=error instanceof Error?error.name:"unknown";
+    // Never emit input texts, keys or identifiers into runtime logs.
+    console.error("w_review_unhandled_exception "+JSON.stringify({kind}));
+    return json({error:"w_review_internal_error",detail:"Ошибка обработки на сервере. См. журнал w_review_unhandled_exception."},500);
+  }
 });
