@@ -110,3 +110,66 @@ test("genuine model-authored peripheral trend stays optional",()=>{
   const res=reconcileDossierDraft(raw,cards);
   assert.ok(res);assert.equal(res.draft.trends[1].operator_optional,true);
 });
+
+test("18 publications and two invalid Gemini citations preserve sound branches in two review queues",()=>{
+  const manyCards=Array.from({length:18},(_,i)=>[
+    "ID: P"+String(i+1).padStart(2,"0"),
+    "TITLE_RU: Материал об экономических и политических последствиях",
+    "ИСТОЧНИК: «Издание "+(i+1)+"»",
+    "URL: https://stories.example/item-"+(i+1),
+    "E01 [fact/P001] Публикация содержит проверенный факт для самостоятельной редакционной оценки. | SOURCE: «проверяемая выдержка»"
+  ].join("\n"));
+  const makeTrend=(n,refs)=>({id:"T"+n,title:"Аналитическая линия "+n,
+    summary:"Издания освещают различные аспекты международной ситуации.",
+    thesis:"Эксперты сравнивают факты и приводят проверяемые оценки.",
+    operator_optional:false,optional_reason:"",
+    branches:[coreBranch(refs)]});
+  const raw={
+    trends:[makeTrend(1,["P01:E01","P02:E01"]),
+      makeTrend(2,["P03:E01","P04:E01"]),
+      makeTrend(3,["P05:E01","P06:E01"])],
+    coverage:manyCards.map((_,i)=>({
+      publication_id:"P"+String(i+1).padStart(2,"0"),
+      status:i<6?"used":"excluded",
+      reason:"Публикация самостоятельно рассматривает текущие события."
+    })),
+    inventory:{quotes:8,headlines:18,experts:4}
+  };
+  raw.trends[0].branches.push({...coreBranch(["P07:E10"]),
+    id:"B2",title:"Некорректная ссылка на седьмой источник"});
+  raw.trends[1].branches.push({...coreBranch(["P16:E20"]),
+    id:"B2",title:"Некорректная ссылка на шестнадцатый источник"});
+  assert.equal(normalizeDossier(raw,manyCards,{requireEveryDistinctSource:true}).error,
+    "dossier_unknown_or_missing_evidence");
+  const repaired=reconcileDossierDraft(raw,manyCards);
+  assert.ok(repaired,"do not reject 12 uncited sources when two queue slots are available");
+  assert.equal(repaired.discardedEvidenceRefs,2);
+  assert.equal(repaired.removedBranches,2);
+  assert.equal(repaired.draft.trends.length,5);
+  assert.equal(repaired.draft.trends[3].operator_optional,true);
+  assert.equal(repaired.draft.trends[4].operator_optional,true);
+  assert.equal(repaired.draft.trends[3].branches.length,9);
+  assert.equal(repaired.draft.trends[4].branches.length,3);
+  assert.deepEqual(repaired.additionalSources,
+    Array.from({length:12},(_,i)=>"P"+String(i+7).padStart(2,"0")));
+  assert.ok(!JSON.stringify(repaired.draft).includes("P07:E10"));
+  assert.ok(!JSON.stringify(repaired.draft).includes("P16:E20"));
+  assert.equal(normalizeDossier(repaired.draft,manyCards,{requireEveryDistinctSource:true}).error,null);
+  const synthesis=makeSynthesisDossier(
+    normalizeDossier(repaired.draft,manyCards,{requireEveryDistinctSource:true}).dossier,
+    ["T1","T2","T3"],8000,manyCards);
+  assert.equal(synthesis.coveredPublications,6);
+  assert.equal(synthesis.totalPublications,18);
+});
+test("never exceed five dossier trends merely to force a technical review queue",()=>{
+  const manyCards=Array.from({length:18},(_,i)=>[
+    "ID: P"+String(i+1).padStart(2,"0"),
+    "ИСТОЧНИК: «Газета "+i+"»",
+    "E01 [fact/P001] Издание сообщает проверенную информацию. | SOURCE: «фрагмент»"
+  ].join("\n"));
+  const raw=draft();
+  raw.trends=Array.from({length:5},(_,i)=>({
+    ...raw.trends[0],id:"T"+(i+1),branches:[coreBranch(["P"+String(i+1).padStart(2,"0")+":E01"])]
+  }));
+  assert.equal(reconcileDossierDraft(raw,manyCards),null);
+});
