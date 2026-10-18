@@ -52,13 +52,40 @@ export const W_GEMINI_JSON_ONLY_SUFFIX =
   "Без Markdown, без блоков кода, без объяснений до и после JSON. "+
   "Не придумывай ссылки на доказательства и не добавляй неподтверждённые элементы.";
 export function parseModelJsonObject(content:string):any|null{
-  let clean=String(content||"").trim();
+  let clean=String(content||"").trim().replace(/^\uFEFF/,"");
   if(clean.length>2_000_000)return null;
   if(clean.startsWith("\x60\x60\x60")){
     clean=clean.replace(/^\x60+(?:json)?\s*/i,"").replace(/\s*\x60+$/,"").trim();
   }
-  try{
-    const value=JSON.parse(clean);
-    return value&&typeof value==="object"&&!Array.isArray(value)?value:null;
-  }catch{return null}
+  const parsed=(text:string)=>{
+    try{
+      const value=JSON.parse(text);
+      return value&&typeof value==="object"&&!Array.isArray(value)?value:null;
+    }catch{return null;}
+  };
+  const whole=parsed(clean);
+  if(whole)return whole;
+  // Some models prepend a short explanation or leave a trailing code fence.
+  // Extract only one syntactically COMPLETE JSON object. Evidence/dossier
+  // validators still reject every unverifiable fact or source reference.
+  const start=clean.indexOf("{");
+  if(start<0)return null;
+  let depth=0,inString=false,escape=false;
+  for(let i=start;i<clean.length;i++){
+    const c=clean[i];
+    if(inString){
+      if(escape){escape=false;continue;}
+      if(c==="\\"){escape=true;continue;}
+      if(c==='"'){inString=false;}
+      continue;
+    }
+    if(c==='"'){inString=true;continue;}
+    if(c==="{"){depth++;continue;}
+    if(c==="}"){
+      depth--;
+      if(depth===0)return parsed(clean.slice(start,i+1));
+      if(depth<0)return null;
+    }
+  }
+  return null;
 }
