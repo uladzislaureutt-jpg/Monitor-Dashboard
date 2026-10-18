@@ -6,6 +6,8 @@ on:
     paths:
       - 'backend/supabase/functions/w-review-ai/**'
       - 'src/wReviewAi.ts'
+      - 'src/wReviewSourceLabels.ts'
+      - 'src-tauri/src/report.rs'
       - 'src/views/WReviewView.tsx'
       - '.github/workflows/w-review-evidence-v2.yml'
   workflow_dispatch:
@@ -34,6 +36,10 @@ jobs:
         run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/dossier-reconciliation.test.mjs
       - name: Verify synthesis runtime and timeout guards
         run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/synthesis-guard.test.mjs
+      - name: Validate source-label attribution and single-pass length
+        run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/review-output-guard.test.mjs
+      - name: Test export of saved W-Review source labels
+        run: node --experimental-strip-types --test src/wReviewSourceLabels.test.mjs
       - name: Verify whole-paragraph author-style sampling
         run: node --experimental-strip-types --test src/wReviewStyle.test.mjs
       - name: Install frontend dependencies
