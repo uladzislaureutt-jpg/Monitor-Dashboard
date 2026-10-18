@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { DOSSIER_INSTRUCTIONS, dossierSchema, normalizeDossier, makeSynthesisDossier } from "./editorial-dossier.ts";
+import { W_REVIEW_GEMINI_PRIMARY, W_REVIEW_GEMINI_FALLBACK, W_REVIEW_GEMINI_ROUTES, wGeminiGenerationConfig } from "./gemini-routing.ts";
 import { evidenceV2Instructions, evidenceV2Schema, makeEvidenceDocuments, renderEvidenceMaterials, verifyEvidenceCards, formatEvidenceCard, type EvidenceCard } from "./evidence-v2.ts";
 
 const cors = {
@@ -132,7 +133,7 @@ function reportGeminiFailure(stage:string,model:string,diagnostic:ProviderDiagno
   console.warn("w_review_provider_failure "+JSON.stringify({provider:"gemini",stage,model:providerField(model),...diagnostic}));
 }
 
-async function callGemini(apiKey: string, model: string, prompt: string, schema: unknown, temperature = 0.1, stage = "unknown", timeoutMs=0, options?:{maxOutputTokens?:number;thinkingLevel?:"minimal"|"low"|"medium"|"high"}): Promise<AiResult> {
+async function callGemini(apiKey: string, model: string, prompt: string, schema: unknown, _temperature = 0.1, stage = "unknown", timeoutMs=0, options?:{maxOutputTokens?:number;thinkingLevel?:"minimal"|"low"|"medium"|"high"}): Promise<AiResult> {
   try {
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: "POST",
@@ -140,13 +141,7 @@ async function callGemini(apiKey: string, model: string, prompt: string, schema:
       signal: timeoutMs>0?AbortSignal.timeout(timeoutMs):undefined,
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature,
-          responseMimeType: "application/json",
-          responseSchema: schema,
-          ...(options?.maxOutputTokens?{maxOutputTokens:options.maxOutputTokens}:{}),
-          ...(options?.thinkingLevel?{thinkingConfig:{thinkingLevel:options.thinkingLevel}}:{}),
-        },
+        generationConfig: wGeminiGenerationConfig(schema,options),
       }),
     });
     const raw = await response.text();
@@ -265,7 +260,8 @@ Deno.serve(async (req: Request) => {
 
   const groqApiKey = Deno.env.get("GROQ_W_REVIEW_API_KEY") || "";
   const geminiApiKey = Deno.env.get("GEMINI_API_KEY") || Deno.env.get("GOOGLE_GEMINI_API_KEY") || Deno.env.get("GOOGLE_API_KEY") || "";
-  const geminiModel = Deno.env.get("GEMINI_W_REVIEW_MODEL") || "gemini-3.6-flash";
+  // Ignore a stale GEMINI_W_REVIEW_MODEL pointing to a 3.6 endpoint.
+  const geminiModel = W_REVIEW_GEMINI_PRIMARY;
 
   let body: any;
   try { body = await req.json(); } catch { return json({ error: "invalid_json" }, 400); }
@@ -292,13 +288,14 @@ Deno.serve(async (req: Request) => {
     const schema = evidenceV2Schema(normalized.length);
     const prompt = evidencePrompt+"\n\nВерни ровно "+normalized.length+
       " карточек, строго в порядке MATERIAL_1, MATERIAL_2 и т. д.\n\n"+materialText;
-    const models = geminiApiKey ? [...new Set(["gemini-3.5-flash-lite", geminiModel])] : [];
+    const models = geminiApiKey ? [...W_REVIEW_GEMINI_ROUTES] : [];
     let result: AiResult | null = null;
     let parsed: any = null;
     let verifiedCards: EvidenceCard[] = [];
     let usedModel = "";
     let lastError = "";
     let lastGeminiFailure:AiFailure|null=null;
+    const attemptedRoutes:Array<{model:string;status:number;cause:string}> = [];
     gemini_models: for (const model of models) {
       for (let attempt = 0; attempt < 2; attempt++) {
         const candidate = await callGemini(geminiApiKey, model, prompt, schema, 0.1, "evidence_batch");
@@ -309,9 +306,11 @@ Deno.serve(async (req: Request) => {
             result=candidate;parsed=data;verifiedCards=verified.cards;usedModel=model;break;
           }
           lastError=model+": "+verified.error;
+          attemptedRoutes.push({model,status:422,cause:verified.error});
         } else {
           lastGeminiFailure=candidate;
           lastError = model + ": HTTP " + candidate.status + " " + candidate.detail;
+          attemptedRoutes.push({model,status:candidate.status,cause:candidate.diagnostic?.kind||candidate.detail.slice(0,90)});
           if (candidate.status === 429) break gemini_models; // Immediately use Groq instead of repeating Gemini.
           if (![500, 502, 503, 504].includes(candidate.status)) break;
         }
@@ -339,11 +338,17 @@ Deno.serve(async (req: Request) => {
         const verified=verifyEvidenceCards(data,documents);
         if(!verified.error){
           result=groqResult;parsed=data;verifiedCards=verified.cards;usedModel="openai/gpt-oss-20b";
-        } else lastError += "; groq_"+verified.error;
-      } else lastError += "; groq_HTTP_" + groqResult.status + ": " + groqResult.detail.slice(0, 200);
+        } else {
+          lastError += "; groq_"+verified.error;
+          attemptedRoutes.push({model:"openai/gpt-oss-20b",status:422,cause:verified.error});
+        }
+      } else {
+        lastError += "; groq_HTTP_" + groqResult.status + ": " + groqResult.detail.slice(0, 200);
+        attemptedRoutes.push({model:"openai/gpt-oss-20b",status:groqResult.status,cause:"provider_error"});
+      }
     }
     if (!result || !parsed) return json({error:"evidence_providers_unavailable",
-      detail:lastError.slice(0,350),provider:"gemini_groq",issue:lastGeminiFailure?.diagnostic||null,
+      detail:lastError.slice(0,350),attempts:attemptedRoutes,provider:"gemini_groq",issue:lastGeminiFailure?.diagnostic||null,
       retryable:false},503);
     const sourceDigests=await Promise.all(normalized.map(async (item)=>{
       const bytes=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(item.text));
@@ -444,8 +449,10 @@ ${sections.join("; ")}.
     let result:AiResult=geminiApiKey
       ? await callGemini(geminiApiKey, geminiModel, prompt, schema, 0.1, "editorial_map", 0, {maxOutputTokens:8192})
       : {ok:false,status:503,retryAfter:null,detail:"gemini_not_configured"};
-    if (!result.ok && result.status !== 429 && geminiApiKey && geminiModel !== "gemini-3.5-flash-lite") {
-      result = await callGemini(geminiApiKey, "gemini-3.5-flash-lite", prompt, schema, 0.1, "editorial_map_fallback", 0, {maxOutputTokens:8192});
+    let usedGeminiMapModel=geminiModel;
+    if (!result.ok && result.status !== 429 && geminiApiKey) {
+      result = await callGemini(geminiApiKey, W_REVIEW_GEMINI_FALLBACK, prompt, schema, 0.1, "editorial_map_fallback", 0, {maxOutputTokens:8192});
+      usedGeminiMapModel=W_REVIEW_GEMINI_FALLBACK;
     }
     let provider="gemini";
     const geminiProblem=!result.ok?result.diagnostic||null:null;
@@ -477,7 +484,7 @@ ${sections.join("; ")}.
       publications:docket.coverage.length,
       used:docket.coverage.filter(c=>["used","supporting"].includes(c.status)).length
     }));
-    return json({editorial_map:docket,model:provider==="groq"?"openai/gpt-oss-20b":geminiModel,
+    return json({editorial_map:docket,model:provider==="groq"?"openai/gpt-oss-20b":usedGeminiMapModel,
       provider,usage:result.usage});
   }
 
@@ -645,14 +652,14 @@ ${styleProfile || "Живой сдержанный редакционный ст
         additionalProperties: false
       } } }
     };
-    const synthesisModel = "gemini-3.5-flash";
+    const synthesisModel = W_REVIEW_GEMINI_PRIMARY;
     const synthesisSchema = {type:"OBJECT",properties:{review_text:{type:"STRING"},section_titles:{type:"ARRAY",items:{type:"STRING"}},bold_phrases:{type:"ARRAY",items:{type:"STRING"}}},required:["review_text","section_titles","bold_phrases"]};
     const synthesisPrompt = payload.messages.map((m: any) => m.content).join("\n\n");
     let result = await callGemini(geminiApiKey, synthesisModel, synthesisPrompt, synthesisSchema, 0.2, "expand_review");
     let selectedModel = synthesisModel;
     let parsed = result.ok ? parseModelJson(result) : null;
     if ((!result.ok && result.status !== 429) || (result.ok && !String(parsed?.review_text || "").trim())) {
-      const fallbackModel = "gemini-3.6-flash";
+      const fallbackModel = W_REVIEW_GEMINI_FALLBACK;
       const fallback = await callGemini(geminiApiKey, fallbackModel, synthesisPrompt, synthesisSchema, 0.2, "expand_review_fallback");
       if (fallback.ok && String(parseModelJson(fallback)?.review_text || "").trim()) {
         result = fallback; parsed = parseModelJson(fallback); selectedModel = fallbackModel;
