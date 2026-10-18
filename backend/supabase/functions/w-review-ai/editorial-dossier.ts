@@ -48,9 +48,12 @@ export function compactDossierCards(cards:string[]):string[]{
         raw=match[4],claim=raw.split(" | SOURCE:")[0].trim();
       const quote=raw.match(/\| RU: «([^»]+)»/)?.[1]||"";
       const speaker=raw.match(/\| SPEAKER: ([^(\n]+)/)?.[1]||"";
-      return id+" ["+kind+"/"+anchor+"] "+claim.slice(0,400)+
-        (quote?" | ЦИТАТА: "+quote.slice(0,170):"")+
-        (speaker?" | ГОВОРЯЩИЙ: "+speaker.slice(0,80):"");
+      // Dossier clustering needs the full ID and enough semantics to group,
+      // not near-duplicate 400-char recaps and long quotes. FULL Evidence
+      // is preserved unchanged for final synthesis and editorial verification.
+      return id+" ["+kind+"/"+anchor+"] "+claim.slice(0,190)+
+        (quote?" | ЦИТАТА: "+quote.slice(0,85):"")+
+        (speaker?" | ГОВОРЯЩИЙ: "+speaker.slice(0,55):"");
     });
     return pub+"\nИСТОЧНИК: "+source+"\nЗАГОЛОВОК: "+title+
       (region?"\nКАТАЛОЖНЫЙ_РЕГИОН: "+region:"")+
