@@ -423,7 +423,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   }
 
   async function recalculateTrends() {
-    if (!topicReady || state.items.length>MAX_ITEMS || prepared !== state.items.length) return;
+    if (!topicReady || state.items.length>MAX_ITEMS || prepared !== state.items.length || latestReanalysisFailed) return;
     setBusy("map"); setError(""); setMessage("");
     try {
       const result = await wEditorialMap(
@@ -584,6 +584,8 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   }
 
   const allEvidenceReady=state.items.length>0 && prepared===state.items.length;
+  const latestReanalysisFailed=state.lastReanalysis?.status==="failed"&&
+    state.lastReanalysis.total===state.items.length;
   const evidenceRecords=state.items.reduce((n,item)=>
     n+(item.evidenceContract===W_EVIDENCE_CONTRACT_VERSION
       ?item.evidenceData?.validation.accepted||0:0),0);
@@ -646,7 +648,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
           {item.evidenceData?.quality_warnings?.length ? " · проверить полноту" : ""}
           {item.editorialText.length>MAX_ITEM_CHARS?` · +${(item.editorialText.length-MAX_ITEM_CHARS).toLocaleString()} знаков`:""}</small></div></button>)}
         <div className="w-review-pool-action">
-          <button className="primary-button" disabled={!canRunPool}
+          <button className="primary-button" disabled={!canRunPool||(allEvidenceReady&&latestReanalysisFailed)}
             onClick={()=>allEvidenceReady?recalculateTrends():analyzePool(false)}>{analysisButtonText}</button>
           {allEvidenceReady&&<button className="secondary-button small-button" disabled={!canRunPool}
             onClick={()=>analyzePool(true)}>{be?`Перааналізаваць пул (${state.items.length} публікацый)`:`Переанализировать пул (${state.items.length} публикаций)`}</button>}
@@ -655,7 +657,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
             <small role="status" style={{color:"#9a443b",whiteSpace:"normal"}}>
               {be?"Апошні паўторны аналіз не завершаны":"Последний переанализ не завершён"}:
               {" "}{state.lastReanalysis.processed}/{state.items.length}.
-              {" "}{be?"Папярэднія Evidence захаваныя":"Прежние Evidence сохранены"}.
+              {" "}{be?"Папярэднія Evidence захаваныя; разлік тэндэнцый недаступны да паспяховага перааналізу":"Прежние Evidence сохранены; расчёт тенденций доступен только после успешного переанализа"}.
             </small>}
           {busy==="analyze"&&<small>{analysisText}</small>}{error&&<small style={{color:"#b42318",whiteSpace:"normal"}}>{error}</small>}{overLimitCount>0&&<small className="w-review-limit-warning" role="alert">
             {be ? `Скараціце ${overLimitCount} публікац. да ${MAX_ITEM_CHARS.toLocaleString()} знакаў: пакуль аналіз адключаны.`
