@@ -131,6 +131,18 @@ fn w_review_source_ranges(text: &str, source_names: &[String]) -> Vec<(usize, us
     for matched in domain.find_iter(text) {
         ranges.push((matched.start(), matched.end()));
     }
+    // In bibliography-style trailing parentheses, each «quoted» outlet is a
+    // citation even if the publication supplied a spelling variant not in the
+    // current source_names. This is restricted to a final all-quoted list:
+    // narrative quotations elsewhere must NEVER be italicized as outlets.
+    let cited=Regex::new(r"\\((?:«[^»\\n]{2,160}»(?:,\\s*)?)+\\)\\s*\\.?\\s*$")
+        .expect("valid trailing quoted citations");
+    let quoted=Regex::new(r"«[^»\\n]{2,160}»").expect("valid quoted citation");
+    if let Some(list)=cited.find(text) {
+        for item in quoted.find_iter(list.as_str()) {
+            ranges.push((list.start()+item.start(),list.start()+item.end()));
+        }
+    }
     ranges.sort_unstable();
     ranges.dedup();
     ranges
@@ -739,6 +751,18 @@ mod w_review_format_contract_tests {
         let runs=w_review_runs(&actual,false,&names(),&[],&[]);
         assert!(runs.contains("<w:t xml:space=\"preserve\">«cfr.org»</w:t>"));
         assert_eq!(runs.matches("<w:i/><w:iCs/>").count(),2);
+    }
+    #[test]
+    fn quoted_citations_with_unlisted_outlet_variants_are_italic_but_quotes_in_prose_are_not(){
+        let names=vec!["CNN".to_string()];
+        let line="Обозреватель назвал соглашение «подарком» для Кремля («Reuters», «CFR»).";
+        let ranges=w_review_source_ranges(line,&names);
+        assert_eq!(ranges.len(),2);
+        let substrings=ranges.iter().map(|(a,b)| &line[*a..*b]).collect::<Vec<_>>();
+        assert!(substrings.contains(&"«Reuters»"));
+        assert!(substrings.contains(&"«CFR»"));
+        assert!(!substrings.contains(&"«подарком»"));
+        assert_eq!(w_review_runs(line,false,&names,&[],&[]).matches("<w:i/><w:iCs/>").count(),2);
     }
     #[test]
     fn only_domains_and_known_outlets_are_citation_sources(){
