@@ -438,9 +438,6 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
 
   async function recalculateTrends() {
     if (!topicReady || state.items.length>MAX_ITEMS || prepared !== state.items.length) return;
-    setBusy("map");
-         async function recalculateTrends() {
-    if (!topicReady || state.items.length>MAX_ITEMS || prepared !== state.items.length) return;
     setBusy("map"); setError(""); setMessage("");
     try {
       const result = await wEditorialMap(
