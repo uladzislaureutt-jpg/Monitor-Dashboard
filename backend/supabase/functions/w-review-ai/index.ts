@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { DOSSIER_INSTRUCTIONS, dossierSchema, normalizeDossier, makeSynthesisDossier } from "./editorial-dossier.ts";
+import { DOSSIER_INSTRUCTIONS, dossierSchema, normalizeDossier, makeSynthesisDossier, compactDossierCards } from "./editorial-dossier.ts";
 import { W_REVIEW_GEMINI_PRIMARY, W_REVIEW_GEMINI_FALLBACK, W_REVIEW_GEMINI_ROUTES, wGeminiGenerationConfig, wGeminiPromptJsonConfig, W_GEMINI_JSON_ONLY_SUFFIX, parseModelJsonObject } from "./gemini-routing.ts";
 import { evidenceRouteKey, routesWithoutCircuit, suspendStructuralFailure, circuitExpiry } from "./provider-circuit.ts";
 import { evidenceV2Instructions, evidenceV2Schema, makeEvidenceDocuments, renderEvidenceMaterials, verifyEvidenceCards, verifyEvidenceCardsIndividually, formatEvidenceCard, type EvidenceCard } from "./evidence-v2.ts";
@@ -618,8 +618,13 @@ ${sections.join("; ")}.
     if(submitted.length>18)return json({error:"w_review_max_articles",limit:18},400);
     const cards=submitted.map((x:unknown)=>String(x||"").trim()).filter(Boolean);
     if(!cards.length)return json({error:"no_evidence_cards"},400);
-    const evidenceText=cards.map((card:string,i:number)=>
-      "P"+String(i+1).padStart(2,"0")+"\n"+card).join("\n\n");
+    const compactCards=compactDossierCards(cards);
+    const evidenceText=compactCards.join("\n\n");
+    console.info("w_review_dossier_input "+JSON.stringify({
+      publications:cards.length,full_chars:cards.reduce((n,c)=>n+c.length,0),
+      compact_chars:evidenceText.length,
+      verified_records:compactCards.reduce((n,c)=>n+(c.match(/^P\\d+:E\\d+ /gm)||[]).length,0)
+    }));
     if(evidenceText.length>180000)return json({error:"evidence_too_large",max_chars:180000},400);
     const schema=dossierSchema(cards.length);
     const mapUserInput="ЗАДАНИЕ ОПЕРАТОРА:\n"+task+
