@@ -354,7 +354,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         items: [...next],
         editorialMap: mapResult.editorialMap,
         mapContract: W_MAP_CONTRACT_VERSION,
-        selectedTrendIds: mapResult.editorialMap.trends.map((trend: WEditorialTrend) => trend.id),
+        selectedTrendIds: mapResult.editorialMap.trends.filter((trend: WEditorialTrend) => !trend.operator_optional).map((trend: WEditorialTrend) => trend.id),
         reviewText: "",
       }));
       setAnalysisText("");
@@ -380,7 +380,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
       addUsage(result.usage);
       setState((current) => ({
         ...current, editorialMap: result.editorialMap, mapContract: W_MAP_CONTRACT_VERSION,
-        selectedTrendIds: result.editorialMap.trends.map((trend: WEditorialTrend) => trend.id), reviewText: "", factCheck: null, factCheckContract: 0,
+        selectedTrendIds: result.editorialMap.trends.filter((trend: WEditorialTrend) => !trend.operator_optional).map((trend: WEditorialTrend) => trend.id), reviewText: "", factCheck: null, factCheckContract: 0,
       }));
       setMessage(be ? "Тэндэнцыі пералічаны." : "Тенденции пересчитаны.");
     } catch (reason) { setError(String(reason)); } finally { setAnalysisText(""); setBusy(""); }
@@ -602,14 +602,15 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
 </div></>:<div className="report-empty">{be?"Выберыце матэрыял.":"Выберите материал."}</div>}</div>
     </section>
 
-    {mapReady&&state.editorialMap&&<section className="panel w-review-map"><div className="panel-head"><div><h3>{be?"3. Тэндэнцыі медыяполя":"3. Тенденции медиаполя"}</h3><p>{be?"Зніміце галачку толькі з тых акцэнтаў, якія не павінны ўваходзіць у агляд." : "Снимите галочку только с тех акцентов, которые не должны входить в обзор."}</p></div><button className="ghost-button small-button" disabled={busy!==""} onClick={recalculateTrends}>{be?"Пералічыць":"Пересчитать"}</button></div>
-      <div className="w-review-trends">{state.editorialMap.trends.map((trend,index)=><label key={trend.id} className={`w-review-trend ${state.selectedTrendIds.includes(trend.id)?"selected":""}`}><input type="checkbox" checked={state.selectedTrendIds.includes(trend.id)} onChange={()=>setState((current)=>({...current,selectedTrendIds:current.selectedTrendIds.includes(trend.id)?current.selectedTrendIds.filter((value)=>value!==trend.id):[...current.selectedTrendIds,trend.id],reviewText:"",factCheck:null,factCheckContract:0}))}/><span><b>{index+1}. {trend.title}</b><small>{trend.summary}</small>
+    {mapReady&&state.editorialMap&&<section className="panel w-review-map"><div className="panel-head"><div><h3>{be?"3. Тэндэнцыі медыяполя":"3. Тенденции медиаполя"}</h3><p>{be?"Зніміце галачку толькі з тых акцэнтаў, якія не павінны ўваходзіць у агляд." : "Основные тенденции включены по умолчанию. Дополнительные (периферийные) — на выбор оператора."}</p></div><button className="ghost-button small-button" disabled={busy!==""} onClick={recalculateTrends}>{be?"Пералічыць":"Пересчитать"}</button></div>
+      <div className="w-review-trends">{state.editorialMap.trends.map((trend,index)=><label key={trend.id} className={`w-review-trend ${state.selectedTrendIds.includes(trend.id)?"selected":""}`}><input type="checkbox" checked={state.selectedTrendIds.includes(trend.id)} onChange={()=>setState((current)=>({...current,selectedTrendIds:current.selectedTrendIds.includes(trend.id)?current.selectedTrendIds.filter((value)=>value!==trend.id):[...current.selectedTrendIds,trend.id],reviewText:"",factCheck:null,factCheckContract:0}))}/><span><b>{index+1}. {trend.title}{trend.operator_optional ? (be?" — дадатковая, на выбар":" — дополнительная, на выбор") : ""}</b><small>{trend.summary}</small>
+        {trend.operator_optional&&trend.optional_reason&&<small>{be?"Чаму асобна":"Почему отдельно"}: {trend.optional_reason}</small>}
         <small>{be?"Сюжэтныя лініі":"Сюжетные ветки"}: {trend.branches.length} · {be?"абавязковыя":"обязательные"}: {trend.branches.filter(b=>b.required).length}</small>
         <small>{trend.branches.filter(b=>b.required).map(b=>b.title).join(" · ")}</small>
         </span></label>)}</div>
       <details style={{margin:"10px 0",fontSize:12}}>
         <summary>{be?"Улік усіх публікацый":"Учёт всех публикаций"} — {state.editorialMap.coverage.length};
-          {" "}{be?"выкарыстана":"использовано"}: {state.editorialMap.coverage.filter(c=>c.status==="used"||c.status==="supporting").length}
+          {" "}{be?"звязана з сюжэтамі":"связано с сюжетами"}: {state.editorialMap.coverage.filter(c=>c.status==="used"||c.status==="supporting").length}; {" "}{be?"у выбраных тэндэнцыях":"в выбранных тенденциях"}: {new Set(selectedTrends.flatMap(t=>t.branches.flatMap(b=>[...b.evidence_ids,...b.contrary_evidence_ids].map(ref=>ref.split(":")[0])))).size}
         </summary>
         <div style={{maxHeight:220,overflowY:"auto",padding:"8px 4px"}}>
           {state.editorialMap.coverage.map(c=><p key={c.publication_id} style={{margin:"4px 0"}}>
