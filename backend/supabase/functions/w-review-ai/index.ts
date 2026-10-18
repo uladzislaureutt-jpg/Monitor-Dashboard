@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { DOSSIER_INSTRUCTIONS, dossierSchema, normalizeDossier, makeSynthesisDossier } from "./editorial-dossier.ts";
-import { W_REVIEW_GEMINI_PRIMARY, W_REVIEW_GEMINI_FALLBACK, W_REVIEW_GEMINI_ROUTES, wGeminiGenerationConfig } from "./gemini-routing.ts";
+import { W_REVIEW_GEMINI_PRIMARY, W_REVIEW_GEMINI_FALLBACK, W_REVIEW_GEMINI_ROUTES, wGeminiGenerationConfig, wGeminiPromptJsonConfig, W_GEMINI_JSON_ONLY_SUFFIX, parseModelJsonObject } from "./gemini-routing.ts";
 import { evidenceRouteKey, routesWithoutCircuit, suspendStructuralFailure, circuitExpiry } from "./provider-circuit.ts";
 import { evidenceV2Instructions, evidenceV2Schema, makeEvidenceDocuments, renderEvidenceMaterials, verifyEvidenceCards, verifyEvidenceCardsIndividually, formatEvidenceCard, type EvidenceCard } from "./evidence-v2.ts";
 
@@ -142,15 +142,15 @@ function reportGeminiFailure(stage:string,model:string,diagnostic:ProviderDiagno
   console.warn("w_review_provider_failure "+JSON.stringify({provider:"gemini",stage,model:providerField(model),...diagnostic}));
 }
 
-async function callGemini(apiKey: string, model: string, prompt: string, schema: unknown, _temperature = 0.1, stage = "unknown", timeoutMs=0, options?:{maxOutputTokens?:number;thinkingLevel?:"minimal"|"low"|"medium"|"high"}): Promise<AiResult> {
+async function callGemini(apiKey: string, model: string, prompt: string, schema: unknown, _temperature = 0.1, stage = "unknown", timeoutMs=0, options?:{maxOutputTokens?:number;thinkingLevel?:"minimal"|"low"|"medium"|"high";promptJsonOnly?:boolean}): Promise<AiResult> {
   try {
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: "POST",
       headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
       signal: timeoutMs>0?AbortSignal.timeout(timeoutMs):undefined,
       body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: wGeminiGenerationConfig(schema,options),
+        contents: [{ role: "user", parts: [{ text: options?.promptJsonOnly?prompt+W_GEMINI_JSON_ONLY_SUFFIX:prompt }] }],
+        generationConfig: options?.promptJsonOnly?wGeminiPromptJsonConfig(options):wGeminiGenerationConfig(schema,options),
       }),
     });
     const raw = await response.text();
@@ -231,7 +231,7 @@ function lightPreflightWarnings(review: string, evidence: string): string[] {
   return warnings.slice(0, 6);
 }
 
-function parseModelJson(result: { content: string }) { try { return JSON.parse(result.content); } catch { return null; } }
+function parseModelJson(result: { content: string }) { return parseModelJsonObject(result.content); }
 function aiError(provider: "groq" | "gemini" | "cloudflare", result: AiFailure) {
   const rate = result.status === 429;
   return json({
@@ -414,7 +414,7 @@ Deno.serve(async (req: Request) => {
     }
     gemini_models: for (const model of models) {
       for (let attempt = 0; attempt < 2; attempt++) {
-        const candidate = await callGemini(geminiApiKey, model, prompt, schema, 0.1, "evidence_batch");
+        const candidate = await callGemini(geminiApiKey, model, prompt, schema, 0.1, "evidence_batch", 0, {promptJsonOnly:true,maxOutputTokens:12000});
         if (candidate.ok) {
           const data = parseModelJson(candidate);
           const verified=verifyEvidenceCards(data,documents);
@@ -654,7 +654,7 @@ ${sections.join("; ")}.
         console.info("w_review_editorial_circuit_skip "+JSON.stringify({model}));
         continue;
       }
-      const res=await callGemini(geminiApiKey,model,prompt,schema,0.1,"editorial_map",0,{maxOutputTokens:8192});
+      const res=await callGemini(geminiApiKey,model,prompt,schema,0.1,"editorial_map",0,{maxOutputTokens:16384,promptJsonOnly:true});
       if(res.ok){
         if(accept(res,model,"gemini"))break;
       }else{
