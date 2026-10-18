@@ -11,7 +11,7 @@ test("Gemini Evidence uses 3.5 Flash-Lite first and never 3.6",()=>{
 test("GenerateContent uses modern responseFormat, NOT deprecated responseSchema",()=>{
   const schema={type:"OBJECT",properties:{cards:{type:"ARRAY",items:{type:"STRING"}}},required:["cards"]};
   const config=wGeminiGenerationConfig(schema,{maxOutputTokens:8192,thinkingLevel:"low"});
-  assert.deepEqual(config.responseFormat,{text:{mimeType:"application/json",schema:{
+  assert.deepEqual(config.responseFormat,{text:{mimeType:"APPLICATION_JSON",schema:{
     type:"object",properties:{cards:{type:"array",items:{type:"string"}}},required:["cards"]}}});
   assert.equal(config.maxOutputTokens,8192);
   assert.equal(config.thinkingConfig.thinkingLevel,"low");
