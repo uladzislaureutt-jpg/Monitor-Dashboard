@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 const view=readFileSync(new URL("./views/WReviewView.tsx",import.meta.url),"utf8");
-const reanalysis=view.slice(view.indexOf("  async function analyzePool()"),view.indexOf("  async function recalculateTrends()"));
+const reanalysis=view.slice(view.indexOf("  async function analyzePool(forceRequested=false)"),view.indexOf("  async function recalculateTrends()"));
 test("Pереанализировать forces fresh two-article Evidence batches",()=>{
   assert.ok(view.includes("function buildBatches(items: WItem[], force=false)"));
   assert.ok(view.includes(".filter(({ item }) => force || !("));
