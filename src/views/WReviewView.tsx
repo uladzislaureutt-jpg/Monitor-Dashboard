@@ -49,7 +49,7 @@ type WState = {
   factCheck: WFactCheck | null;
   factCheckContract?: number;
   auditDecisions?: Record<string, {action:string;reason:string}>;
-  lastReanalysis?: {status:"saved"|"failed";processed:number;total:number;verifiedRecords:number};
+  lastReanalysis?: {status:"partial"|"saved"|"failed";processed:number;total:number;verifiedRecords:number};
 };
 
 const STORAGE_KEY = "monitor-w-review-v1";
@@ -421,7 +421,8 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
       setAnalysisText("");
       setMessage((be?"Аналіз Evidence завершаны. ":"Анализ Evidence завершён. ")+
         "Сохранено "+ready+" из "+next.length+" публикаций, "+verifiedRecords+
-        " проверенных записей. Теперь отдельно рассчитайте тенденции."+
+        " проверенных записей. В этом запуске добавлено "+savedThisRun+" карточек."+
+        " Теперь отдельно рассчитайте тенденции."+
         (batchesProviders.length?" Модели: "+batchesProviders.join("; ")+".":"")+
         (rejected?" Отклонено кандидатных записей: "+rejected+".":"")+
         (warned.size?" Проверьте полноту "+warned.size+" публикаций.":""));
@@ -436,6 +437,9 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   }
 
   async function recalculateTrends() {
+    if (!topicReady || state.items.length>MAX_ITEMS || prepared !== state.items.length) return;
+    setBusy("map");
+         async function recalculateTrends() {
     if (!topicReady || state.items.length>MAX_ITEMS || prepared !== state.items.length) return;
     setBusy("map"); setError(""); setMessage("");
     try {
@@ -639,14 +643,14 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
           <span style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
             <strong>{be?"Задача":"Задача"} {index+1}{index===0?(be?" (неабавязкова)":" (необязательно)"):""}</strong>
             {index>0&&<button type="button" className="ghost-button small-button" disabled={busy!==""} aria-label={be?"Выдаліць задачу":"Удалить задачу"}
-              disabled={busy!==""} onClick={()=>setState(current=>invalidateMap({...current,tasks:current.tasks.filter((_,i)=>i!==index)}))}>×</button>}
+              onClick={()=>setState(current=>invalidateMap({...current,tasks:current.tasks.filter((_,i)=>i!==index)}))}>×</button>}
           </span>
           <textarea rows={2} maxLength={160} disabled={busy==="analyze"} value={value} onChange={e=>setState(current=>invalidateMap({...current,tasks:current.tasks.map((task,i)=>i===index?e.target.value:task)}))}
             placeholder={index===0?"Что проанализировать, на чём сделать акцент? Например: основные тенденции и оценки СМИ."
               :"Дополнительный акцент: аргументы экспертов, риски, прогнозы, различия в позициях…"}/>
         </label>)}
         {state.tasks.length<5&&<button type="button" className="secondary-button small-button" disabled={busy!==""} style={{justifySelf:"start"}}
-          disabled={busy!==""} onClick={()=>setState(current=>invalidateMap({...current,tasks:[...current.tasks,""]}))}>
+          onClick={()=>setState(current=>invalidateMap({...current,tasks:[...current.tasks,""]}))}>
           + {be?"Дадаць задачу":"Добавить задачу"}
         </button>}
       </div>
