@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { DOSSIER_INSTRUCTIONS, dossierSchema, normalizeDossier, makeSynthesisDossier, compactDossierCards } from "./editorial-dossier.ts";
 import { reconcileDossierDraft } from "./dossier-reconciliation.ts";
+import { normalizeReviewSourceLabels, poolSourceNames, minimumParagraphChars } from "./review-output-guard.ts";
 import { W_REVIEW_GEMINI_PRIMARY, W_REVIEW_GEMINI_FALLBACK, W_REVIEW_GEMINI_ROUTES, wGeminiGenerationConfig, wGeminiPromptJsonConfig, W_GEMINI_JSON_ONLY_SUFFIX, parseModelJsonObject } from "./gemini-routing.ts";
 import { evidenceRouteKey, routesWithoutCircuit, suspendStructuralFailure, circuitExpiry } from "./provider-circuit.ts";
 import { evidenceV2Instructions, evidenceV2Schema, makeEvidenceDocuments, renderEvidenceMaterials, verifyEvidenceCards, verifyEvidenceCardsIndividually, formatEvidenceCard, type EvidenceCard } from "./evidence-v2.ts";
@@ -1055,8 +1056,16 @@ ${styleProfile || "Живой сдержанный редакционный ст
       ?Math.max(2,Math.min(22,Math.round(targetChars/Math.max(260,Math.min(950,measuredMedian)))))
       :fallbackParagraphs;
     // Natural author rhythm: allow short bridges and longer analytical blocks.
-    const paragraphFloor=Math.max(2,Math.floor(paragraphTarget*0.7));
+    // For long reviews, enforce enough substantial paragraphs in the same
+    // single model response to meet the requested length without post-hoc AI
+    // expansion. No equal-length rule: longer paragraphs remain unrestricted.
+    const paragraphFloor=targetChars>=5000?paragraphTarget:
+      Math.max(2,Math.floor(paragraphTarget*0.7));
     const paragraphCeiling=paragraphTarget+Math.max(3,Math.ceil(paragraphTarget*0.4));
+    const strictParagraphMin=targetChars>=5000?
+      minimumParagraphChars(targetChars,paragraphFloor):80;
+    const sourceRegistry=[...poolSourceNames(cards).entries()]
+      .map(([id,name])=>id+" = «"+name+"»").join("; ");
     const payload = {
       model: "openai/gpt-oss-120b", reasoning_effort: "low", reasoning_format: "hidden", temperature: 0.2,
       max_completion_tokens: Math.min(2500, Math.max(1300, Math.ceil(targetChars / 3.0) + 450)),
@@ -1067,17 +1076,17 @@ ${styleProfile || "Живой сдержанный редакционный ст
 
 ИСТОЧНИКИ. Прочитай ВСЕ Evidence Cards. Сохраняй уникальные сведения каждого содержательного материала: факты, цифры, цитаты, заголовки, аргументы, позиции реальных экспертов, дополнительные обстоятельства. Не требуется механически упоминать каждую повторную публикацию агентства; не пропускай самостоятельный ракурс менее известного СМИ.
 
-АТРИБУЦИЯ. Различай собственную редакционную позицию, нейтральное сообщение, цитату другого СМИ, высказывание конкретного политика/эксперта и газетный заголовок. Используй подтверждённые записи с адресами E01, E02 и типами [editorial_stance/P...], [media_angle/P...], [quote/P...], [counterposition/P...] и [expert/P...]. У каждой записи после SOURCE приведена дословная выдержка, проверенная на наличие в исходной публикации; это не автоматическая проверка смысла пересказа. Газета, приведшая чужую критику, не обязательно разделяет эту критику. Не меняй знак оценки и не приписывай одному СМИ чужие слова.
+АТРИБУЦИЯ. Различай собственную редакционную позицию, нейтральное сообщение, цитату другого СМИ, высказывание конкретного политика/эксперта и газетный заголовок. Используй подтверждённые записи с адресами E01, E02 и типами [editorial_stance/P...], [media_angle/P...], [quote/P...], [counterposition/P...] и [expert/P...]. У каждой записи после SOURCE приведена дословная выдержка, проверенная на наличие в исходной публикации; это не автоматическая проверка смысла пересказа. Газета, приведшая чужую критику, не обязательно разделяет эту критику. Не меняй знак оценки и не приписывай одному СМИ чужие слова. Категорически запрещено классифицировать источник по стране на основании языка текста или темы публикации. «The Guardian» — британское СМИ, CFR (cfr.org) — американская организация: их НЕЛЬЗЯ называть российскими СМИ. Если точная страна происхождения СМИ неизвестна, не обобщай до «российские/британские/американские СМИ». Национальная группировка возможна только по подтверждённым данным о самих источниках.
 
 ОБОБЩЕНИЯ. Содержательные аналитические выводы обязательны. Общая позиция группы изданий требует подтверждения несколькими самостоятельными источниками соответствующей группы. Один источник может подтверждать конкретный факт, но не консенсус национального медиаполя. Когда оценки противоположны, прямо раскрывай это различие без искусственного единодушия.
 
-ТОЛЬКО ДОКАЗАТЕЛЬНАЯ ФАКТУРА. Даты, лица, цитаты, переводы, числа, экспертные оценки и причинные связи — исключительно из текущих Evidence Cards. Используй ID записей внутри публикаций как адреса доказательств, не превращай ID в видимый текст обзора. Никаких внешних сведений, догадок или фактов из STYLE_ONLY. Исключения оператора обязательны. Недостающую фактуру не восполняй выдумками или повторами.
+ТОЛЬКО ДОКАЗАТЕЛЬНАЯ ФАКТУРА. Даты, лица, цитаты, переводы, числа, экспертные оценки и причинные связи — исключительно из текущих Evidence Cards. Используй ID записей внутри публикаций как адреса доказательств, не превращай ID в видимый текст обзора. ОБЯЗАТЕЛЬНО: внутри и в конце каждого абзаца называй СМИ по подлинному названию из SOURCE_REGISTRY, а не P01, P02, P18 или по номерам карточек. Запрещены кавычки «Pxx». Никаких внешних сведений, догадок или фактов из STYLE_ONLY. Исключения оператора обязательны. Недостающую фактуру не восполняй выдумками или повторами.
 
 ЯЗЫК. Весь видимый текст ОБЗОРА, включая прямую речь, заголовки и цитаты, пиши НА РУССКОМ ЯЗЫКЕ. Исключение: цитаты на белорусском языке можно оставить по-белорусски. Иностранный оригинал из поля ORIGINAL не вставляй — используй точный перевод из TITLE_RU или QUOTES_WITH_SPEAKERS.RU. Названия зарубежных СМИ, организаций и собственные имена сохраняй в принятом написании, например «CNN», «The Guardian»; это НЕ разрешение оставлять английские цитаты. Никаких непереведённых английских предложений, английских цитатных вставок, Markdown или искусственных заголовков. Кавычки « », тире –.
 
 МАНЕРА. STYLE_PROFILE и настоящие связные абзацы STYLE_ONLY задают индивидуальный зачин, интонацию, ритм, способ сопоставления СМИ, развитие сюжета и способ смыслового завершения, а не только отдельные обороты. Метки ЗАЧИН / РАЗВИТИЕ / СОПОСТАВЛЕНИЕ / ЗАВЕРШЕНИЕ обозначают место фрагмента в авторском оригинале, а не обязательные рубрики итогового текста. Не копируй содержание образцов. Построй общую аналитику по тенденциям: раскрывай подтверждённые детали, аргументы и контрпозиции, а не последовательность публикаций. Не навязывай абзацам одинаковую длину. Следуй измеренному авторскому ритму, чередуй короткие связки и развернутые аналитические абзацы в той мере, в какой это характерно автору. Не превращай финал в механическое повторение зачина. Не начинай заключительный абзац формулами «Таким образом», «Итоговый вывод», «Суммарно», «В совокупности» или «В заключение». Не сочиняй собственную итоговую цитату, выдавая её за подлинный заголовок. Законченный обзор заверши доказательной содержательной мыслью, а не школьным повтором написанного.
 
-АТРИБУЦИЯ В ТЕКСТЕ. Все названия СМИ — в русских кавычках «ёлочках», как в основном тексте, так и в библиографических скобках. Названия СМИ будут автоматически выделены курсивом при экспорте DOCX. Ссылки на публикации указывай перед ЗАКЛЮЧИТЕЛЬНОЙ точкой предложения, без точки непосредственно перед скобками: «... оценка («CNN», «Bloomberg»).», а НЕ «... оценка. (CNN, Bloomberg)». Приводи только те конкретные СМИ, чьи Evidence Cards подтверждают данное утверждение; не прикрывай спорные выводы перечнем всех изданий. Канонические источники: ${canonicalSources}.
+АТРИБУЦИЯ В ТЕКСТЕ. Все названия СМИ — в русских кавычках «ёлочках», как в основном тексте, так и в библиографических скобках. Названия СМИ будут автоматически выделены курсивом при экспорте DOCX. Ссылки на публикации указывай перед ЗАКЛЮЧИТЕЛЬНОЙ точкой предложения, без точки непосредственно перед скобками: «... оценка («CNN», «Bloomberg»).», а НЕ «... оценка. (CNN, Bloomberg)». Приводи только те конкретные СМИ, чьи Evidence Cards подтверждают данное утверждение; не прикрывай спорные выводы перечнем всех изданий. Канонические источники: ${canonicalSources}.\nSOURCE_REGISTRY (внутренний индекс → реальное СМИ): ${sourceRegistry}.
 Цитаты: ${densityRule("Цитаты",quoteDensity)}
 Заголовки: ${densityRule("Выразительные заголовки",headlineDensity)}
 Эксперты: ${densityRule("Эксперты",expertDensity)}
@@ -1091,12 +1100,12 @@ ${compositionNote}
 STYLE_ONLY (образцы авторской манеры, НЕ ИСТОЧНИК ФАКТОВ):
 ${styleOnlyText || "Дополнительные фрагменты недоступны. Следуй STYLE_PROFILE."}
 
-РЕЗУЛЬТАТ. Верни ОДИН JSON со строковым массивом paragraphs, массивами section_titles и bold_phrases. paragraphs — единое непрерывное аналитическое повествование, разбитое на естественные абзацы, НЕ набор отдельных СМИ или подзаголовков. Ориентир — около ${paragraphTarget} абзацев, допустимо ${paragraphFloor}–${paragraphCeiling} естественных абзацев разного объёма. Количество не является самоцелью; обязательны раскрытие веток и заданная ОБЩАЯ длина, а не равные куски. В пределах ОДНОГО ответа полностью раскрой все выбранные тенденции, подробные факты и противоречащие ракурсы; не заверши после краткого обзора первых источников. section_titles:[] и bold_phrases:[] допустимы. Никогда не выдумывай подзаголовки и не вставляй Markdown ** или __. Не выдавай планы и промежуточные замечания.` },
-        { role: "user", content: `ЗАДАНИЕ ОПЕРАТОРА:\n${task}\n\nРЕДАКЦИОННОЕ ДОСЬЕ И РАСПРЕДЕЛЕНИЕ ОБЪЁМА:\n${trendText}\n\nИНСТРУКЦИЯ ДЛЯ ЭТАПА:\n${String(body?.stage_note || "").slice(0,500)}\n\nEVIDENCE CARDS:\n${evidenceText}\n\nФИНАЛЬНОЕ ЗАДАНИЕ: создай ОДИН непрерывный авторский аналитический обзор в массиве paragraphs, с общим объёмом после соединения абзацев ${targetChars} знаков с пробелами, допустимый коридор ${lengthMinimum}–${lengthMaximum}. Ориентир ${paragraphTarget} абзацев (допустимо ${paragraphFloor}–${paragraphCeiling}), в авторском ритме, без принудительно одинаковой длины. Каждый следующий развивает общую мысль, а не описывает следующее СМИ. После обработки всех тенденций заверши подтверждённым содержательным акцентом, не формальной сводкой. Не допускай ни одной непереведённой англоязычной цитаты (кроме официальных названий), расставляй источники только по образцу «... («CNN», «BBC News»).», не создавай собственных псевдоцитат и шаблонной итоговой концовки. Не используй Markdown, ненужные подзаголовки и списки источников.` }],
+РЕЗУЛЬТАТ. Верни ОДИН JSON со строковым массивом paragraphs, массивами section_titles и bold_phrases. paragraphs — единое непрерывное аналитическое повествование, разбитое на естественные абзацы, НЕ набор отдельных СМИ или подзаголовков. Ориентир — около ${paragraphTarget} абзацев, допустимо ${paragraphFloor}–${paragraphCeiling} естественных абзацев разного объёма. Каждый содержательный абзац должен быть не короче ${strictParagraphMin} знаков; это нижняя граница, а не шаблон одинаковой длины. Наполняй абзацы доказанными фактами, сопоставлениями и механизмами, не риторикой. Количество не является самоцелью; обязательны раскрытие веток и заданная ОБЩАЯ длина, а не равные куски. В пределах ОДНОГО ответа полностью раскрой все выбранные тенденции, подробные факты и противоречащие ракурсы; не заверши после краткого обзора первых источников. section_titles:[] и bold_phrases:[] допустимы. Никогда не выдумывай подзаголовки и не вставляй Markdown ** или __. Не выдавай планы и промежуточные замечания.` },
+        { role: "user", content: `ЗАДАНИЕ ОПЕРАТОРА:\n${task}\n\nРЕДАКЦИОННОЕ ДОСЬЕ И РАСПРЕДЕЛЕНИЕ ОБЪЁМА:\n${trendText}\n\nИНСТРУКЦИЯ ДЛЯ ЭТАПА:\n${String(body?.stage_note || "").slice(0,500)}\n\nEVIDENCE CARDS:\n${evidenceText}\n\nФИНАЛЬНОЕ ЗАДАНИЕ: создай ОДИН непрерывный авторский аналитический обзор в массиве paragraphs, с общим объёмом после соединения абзацев ${targetChars} знаков с пробелами, допустимый коридор ${lengthMinimum}–${lengthMaximum}. Ориентир ${paragraphTarget} абзацев (допустимо ${paragraphFloor}–${paragraphCeiling}), каждый не менее ${strictParagraphMin} знаков, в авторском ритме, без принудительно одинаковой длины. Если фактологического материала достаточно, используй его для развития аргументации, а не сворачивай анализ раньше достижения ${lengthMinimum} знаков. Каждый следующий развивает общую мысль, а не описывает следующее СМИ. После обработки всех тенденций заверши подтверждённым содержательным акцентом, не формальной сводкой. Не допускай ни одной непереведённой англоязычной цитаты (кроме официальных названий), расставляй источники только по образцу «... («CNN», «BBC News»).», не создавай собственных псевдоцитат и шаблонной итоговой концовки. Не используй Markdown, ненужные подзаголовки и списки источников.` }],
       response_format: { type:"json_schema",json_schema:{name:"w_review_v7_paragraphs",strict:true,schema:{
         type:"object",
         properties:{
-          paragraphs:{type:"array",minItems:paragraphFloor,maxItems:paragraphCeiling,items:{type:"string",minLength:80}},
+          paragraphs:{type:"array",minItems:paragraphFloor,maxItems:paragraphCeiling,items:{type:"string",minLength:strictParagraphMin}},
           section_titles:{type:"array",items:{type:"string"},maxItems:2},
           bold_phrases:{type:"array",items:{type:"string"},maxItems:4}
         },
@@ -1237,12 +1246,13 @@ ${styleOnlyText || "Дополнительные фрагменты недост
       await finishQuota(false);
       return json({error:"invalid_synthesis_output"},502);
     }
-    const reviewText=parsed.review_text.trim();
+    const normalizedSources=normalizeReviewSourceLabels(parsed.review_text.trim(),cards);
+    const reviewText=normalizedSources.text;
     const actualChars=reviewText.length;
     const lengthOk=actualChars>=lengthMinimum
       && actualChars<=lengthMaximum;
     // Only deterministic warnings. Keep the draft even when outside tolerance.
-    const preflightWarnings:string[]=[];
+    const preflightWarnings:string[]=[...normalizedSources.attributionWarnings];
     if(!lengthOk) preflightWarnings.push(`Объём ${actualChars} знаков вне допуска ${lengthMinimum}–${lengthMaximum}; текст сохранён для редактирования.`);
     const rawParagraphs=Array.isArray(parsed.paragraphs)?parsed.paragraphs:[];
     if(rawParagraphs.length>0 && rawParagraphs.length<paragraphTarget)
@@ -1253,13 +1263,16 @@ ${styleOnlyText || "Дополнительные фрагменты недост
       requested_output_token_budget:selectedProvider==="cloudflare"?synthesisOutputTokenBudget:
         groqSynthesisOutputTokenBudget,
       length_window:{min:lengthMinimum,max:lengthMaximum},
-      paragraph_target:paragraphTarget,paragraph_floor:paragraphFloor,paragraph_ceiling:paragraphCeiling,
+      paragraph_target:paragraphTarget,paragraph_floor:paragraphFloor,paragraph_ceiling:paragraphCeiling,minimum_paragraph_chars:strictParagraphMin,
       actual_paragraphs:reviewText.split(/\n\s*\n/).length,
       prompt_tokens:result.ok?result.usage.prompt_tokens:0,
       completion_tokens:result.ok?result.usage.completion_tokens:0,
       finish_reason:result.ok?result.finish_reason||"not_reported":"error",
       reasoning_tokens:result.ok?result.reasoning_tokens||0:0,
       style_chars:styleProfile.length,style_excerpt_chars:styleOnlyText.length,evidence_chars:evidenceText.length,
+      resolved_pool_source_labels:normalizedSources.substitutions,
+      unresolved_source_labels:normalizedSources.unresolved.length,
+      semantic_attribution_warnings:normalizedSources.attributionWarnings.length,
       source_mentions:sourceNames.filter((name:string)=>reviewText.includes("«"+name+"»")).length,
       source_names:sourceNames.length,
       cards:cards.length,trends:trends.length,required_branches:synthesisDossier.requiredBranches,
