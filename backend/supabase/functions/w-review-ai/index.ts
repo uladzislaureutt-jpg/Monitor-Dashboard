@@ -326,25 +326,55 @@ Deno.serve(async (req: Request) => {
     // Minimal probe contains NO operator material and has no structured output
     // requirements. It tests whether the model itself can answer generateContent.
     async function diagnosticGeminiProbe(model:string) {
-      try {
-        const response=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+
-          encodeURIComponent(model)+":generateContent",{
+      // Synthetic prompts only. Provider error messages are safe to record here:
+      // no source articles, author samples, credentials or personal information.
+      const endpoint="https://generativelanguage.googleapis.com/v1beta/models/"+
+        encodeURIComponent(model)+":generateContent";
+      const run=async(name:string,config:unknown):Promise<boolean>=>{
+        try{
+          const resp=await fetch(endpoint,{
             method:"POST",
             headers:{"x-goog-api-key":geminiApiKey,"Content-Type":"application/json"},
-            signal:AbortSignal.timeout(7500),
-            body:JSON.stringify({contents:[{role:"user",parts:[{text:"Reply with OK only."}]}],
-              generationConfig:{maxOutputTokens:64}})
+            signal:AbortSignal.timeout(9000),
+            body:JSON.stringify({
+              contents:[{role:"user",parts:[{text:name==="minimal"?
+                "Reply with OK only.":"Return a minimal JSON object with test values only."}]}],
+              generationConfig:config
+            })
           });
-        console.info("w_review_gemini_minimal_probe "+JSON.stringify({
-          model,http_status:response.status,classification:response.ok?"model_available":
-            response.status===400?"minimal_request_invalid":response.status===429?"quota":"unresolved"
-        }));
-      }catch(error){
-        console.warn("w_review_gemini_minimal_probe "+JSON.stringify({
-          model,http_status:null,classification:error instanceof Error&&
-            error.name==="TimeoutError"?"probe_timeout":"probe_network_unavailable"
-        }));
-      }
+          let providerMessage="";
+          if(!resp.ok){
+            try{
+              const error=await resp.json();
+              providerMessage=String(error?.error?.message||"")
+                .replace(/AIza[0-9A-Za-z_-]{25,}/g,"[redacted]")
+                .replace(/\s+/g," ").slice(0,700);
+            }catch{providerMessage="non_json_provider_error";}
+          }
+          console.info("w_review_gemini_schema_probe "+JSON.stringify({
+            model,test:name,http_status:resp.status,
+            status:resp.ok?"accepted":"rejected",provider_message:providerMessage
+          }));
+          return resp.ok;
+        }catch(error){
+          console.warn("w_review_gemini_schema_probe "+JSON.stringify({
+            model,test:name,http_status:null,
+            status:error instanceof Error&&error.name==="TimeoutError"?
+              "probe_timeout":"probe_network_failure"
+          }));
+          return false;
+        }
+      };
+      const isAvailable=await run("minimal",{maxOutputTokens:64});
+      if(!isAvailable)return;
+      const sampleSchema={type:"object",properties:{ok:{type:"boolean"}},required:["ok"]};
+      const probeConfigs=[
+        {test:"simple_json_schema",
+          config:{responseFormat:{text:{mimeType:"APPLICATION_JSON",schema:sampleSchema}},maxOutputTokens:128}},
+        {test:"evidence_v2_schema",
+          config:wGeminiGenerationConfig(evidenceV2Schema(2),{maxOutputTokens:128})}
+      ];
+      await Promise.all(probeConfigs.map(probe=>run(probe.test,probe.config)));
     }
     async function suspendGeminiModel(model:string,status:number,googleStatus:string) {
       if(!suspendStructuralFailure(status,googleStatus))return;
