@@ -82,3 +82,15 @@ test('logs never contain generated text or input articles',async()=>{
   await structuredGeminiRequest({deadline:Date.now()+60000,log:e=>logs.push(e),call:async()=>ok({secret:'PRIVATE_ARTICLE'})});
   assert.ok(!JSON.stringify(logs).includes('PRIVATE_ARTICLE'));
 });
+
+test('production structured adapter uses GenerateContent enum and normalized compatibility schema',()=>{
+ const schema={type:'OBJECT',properties:{cards:{type:'ARRAY',items:{type:'OBJECT',properties:{index:{type:'INTEGER'}},required:['index']}}},required:['cards']};
+ const primary=wGeminiStructuredConfig(schema,'schema');
+ assert.equal(primary.responseFormat.text.mimeType,'APPLICATION_JSON');
+ assert.equal(primary.responseFormat.text.schema.properties.cards.items.properties.index.type,'integer');
+ const compatibility=wGeminiStructuredConfig(schema,'legacy_schema');
+ assert.equal(compatibility.responseMimeType,'application/json');
+ assert.equal(compatibility.responseJsonSchema.type,'object');
+ assert.equal(compatibility.responseSchema,undefined);
+ assert.equal(wGeminiStructuredConfig(schema,'json').responseMimeType,'application/json');
+});

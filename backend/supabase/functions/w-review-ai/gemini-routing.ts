@@ -30,8 +30,8 @@ export function wGeminiStructuredConfig(schema:unknown,mode:GeminiJsonMode,optio
   maxOutputTokens?:number;thinkingLevel?:"minimal"|"low"|"medium"|"high"
 }){
   const format=mode==="schema"?
-    {responseFormat:{text:{mimeType:"application/json",schema:normalizeGeminiJsonSchema(schema)}}}:
-    mode==="legacy_schema"?{responseMimeType:"application/json",responseSchema:schema}:
+    {responseFormat:{text:{mimeType:"APPLICATION_JSON",schema:normalizeGeminiJsonSchema(schema)}}}:
+    mode==="legacy_schema"?{responseMimeType:"application/json",responseJsonSchema:normalizeGeminiJsonSchema(schema)}:
     {responseMimeType:"application/json"};
   return {...format,...(options?.maxOutputTokens?{maxOutputTokens:options.maxOutputTokens}:{}),
     ...(options?.thinkingLevel?{thinkingConfig:{thinkingLevel:options.thinkingLevel}}:{})};

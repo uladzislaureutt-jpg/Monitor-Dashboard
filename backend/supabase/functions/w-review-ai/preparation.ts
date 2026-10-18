@@ -82,6 +82,10 @@ export async function prepareEvidence(input:{
       }
       attempts.push({provider,model,status:200,articles:indices.map(i=>i+1),
         finish_reason:reply.finish_reason||"unknown",accepted:checked.accepted.length,
+        response_shape:{parsed_object:Boolean(parsed),cards_array:Array.isArray(parsed?.cards),
+          cards_count:Array.isArray(parsed?.cards)?parsed.cards.length:0,
+          indices:Array.isArray(parsed?.cards)?parsed.cards.slice(0,2).map((c:any)=>
+            typeof c?.index==="number"&&Number.isInteger(c.index)&&c.index>=0&&c.index<=18?c.index:null):[]},
         failed:checked.failed.map(v=>({article:indices[v.index]+1,reason:v.reason}))});
     }else attempts.push({provider,model,status:reply.status,cause:reply.diagnostic?.kind||"provider_failure",articles:indices.map(i=>i+1)});
     input.log?.(attempts.at(-1)!);
