@@ -9,6 +9,10 @@ on:
       - 'src/wReviewSourceLabels.ts'
       - 'src-tauri/src/report.rs'
       - 'src/views/WReviewView.tsx'
+      - 'src/wReviewEvidenceProgress.ts'
+      - 'src/wReviewEvidenceCheckpoint.ts'
+      - 'src/wReviewReanalysis.test.mjs'
+      - 'src/wReviewEvidenceCheckpoint.test.mjs'
       - '.github/workflows/w-review-evidence-v2.yml'
   push:
     branches: [main]
@@ -54,7 +58,7 @@ jobs:
         run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/review-output-guard.test.mjs
       - name: Test export of saved W-Review source labels
         run: node --experimental-strip-types --test src/wReviewSourceLabels.test.mjs
-      - name: Verify explicit full-pool reanalysis and durable Evidence checkpoint
+      - name: Verify partial Evidence checkpoints, missing-only resume and full rerun
         run: node --experimental-strip-types --test src/wReviewReanalysis.test.mjs src/wReviewEvidenceCheckpoint.test.mjs
       - name: Verify whole-paragraph author-style sampling
         run: node --experimental-strip-types --test src/wReviewStyle.test.mjs

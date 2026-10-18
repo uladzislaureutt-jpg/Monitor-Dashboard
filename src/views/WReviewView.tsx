@@ -7,6 +7,7 @@ import { wEditorialMap, wEvidenceBatch, wStyleProfile, wSynthesize, type WDensit
 import { useI18n } from "../i18n";
 import { buildStylePattern } from "../wReviewStyle";
 import { writeEvidenceCheckpoint } from "../wReviewEvidenceCheckpoint";
+import { isEvidencePrepared, pendingEvidenceEntries } from "../wReviewEvidenceProgress";
 import { resolvePoolMarkersForExport } from "../wReviewSourceLabels";
 
 const W_EVIDENCE_CONTRACT_VERSION = 6; // Preserve verified evidence and do not reanalyse articles.
@@ -48,7 +49,7 @@ type WState = {
   factCheck: WFactCheck | null;
   factCheckContract?: number;
   auditDecisions?: Record<string, {action:string;reason:string}>;
-  lastReanalysis?: {status:"saved"|"failed";processed:number;total:number;verifiedRecords:number};
+  lastReanalysis?: {status:"partial"|"saved"|"failed";processed:number;total:number;verifiedRecords:number};
 };
 
 const STORAGE_KEY = "monitor-w-review-v1";
@@ -201,7 +202,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     return workspaces.slots.reduce((sum, slot) =>
       sum + slot.items.reduce((inside, item) => inside + item.sourceText.length + item.editorialText.length, 0), 0);
   }
-  const prepared = state.items.filter((item) => item.evidence.trim() && item.evidenceContract === W_EVIDENCE_CONTRACT_VERSION).length;
+  const prepared = state.items.filter((item) => isEvidencePrepared(item,W_EVIDENCE_CONTRACT_VERSION)).length;
   const mapReady = Boolean(state.editorialMap?.version === 3 && state.editorialMap?.trends?.length && state.mapContract === W_MAP_CONTRACT_VERSION);
   const selectedTrends = mapReady ? state.editorialMap!.trends.filter((trend) => state.selectedTrendIds.includes(trend.id)) : [];
   const styleReady = Boolean(state.styleProfile.trim() && state.styleContract === W_STYLE_CONTRACT_VERSION);
@@ -232,6 +233,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   }
 
   function addItem(input: { title: string; source: string; region?: string; url?: string; text: string }) {
+    if(busy==="analyze")throw new Error("W_REVIEW_ANALYSIS_IN_PROGRESS");
     if (state.items.length >= MAX_ITEMS) throw new Error("W_REVIEW_MAX_ITEMS");
     const text = input.text.trim();
     if (!input.title.trim() || !text) throw new Error("W_REVIEW_ITEM_REQUIRED");
@@ -284,6 +286,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   }
 
   function updateItem(itemId: string, patch: Partial<WItem>) {
+    if(busy==="analyze")return; // Freeze source edits until the in-flight batch is checkpointed.
     if (patch.editorialText !== undefined) {
       const before = state.items.find(item => item.id === itemId)?.editorialText.length || 0;
       const after = patch.editorialText.length;
@@ -308,15 +311,14 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   }
 
   function exact() {
-    if (!active) return;
+    if (!active || busy==="analyze") return;
     const result = exactCompressForProfile(active.editorialText, compressionMode, "l");
     updateItem(active.id, { editorialText: result.text });
     setMessage(`${be ? "Exact-скарачэнне" : "Exact-сокращение"}: ${result.reductionPct}%.`);
   }
 
-  function buildBatches(items: WItem[], force=false) {
-    const pending = items.map((item, index) => ({ item, index }))
-      .filter(({ item }) => force || !(item.evidence.trim() && item.evidenceContract === W_EVIDENCE_CONTRACT_VERSION));
+  function buildBatches(items: WItem[]) {
+    const pending=pendingEvidenceEntries(items,W_EVIDENCE_CONTRACT_VERSION);
     const batches: Array<Array<{ item: WItem; index: number }>> = [];
     let current: Array<{ item: WItem; index: number }> = [];
     let chars = 0;
@@ -334,96 +336,108 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
 
   async function analyzePool(forceRequested=false) {
     if (!state.items.length) { setError(be ? "Спачатку дадайце матэрыялы." : "Сначала добавьте материалы."); return; }
-    if (!topicReady) { setError(be?"Укажыце тэму агляду.":"Укажите тему обзора."); return; }
-    if (state.items.length>MAX_ITEMS) { setError(`Сократите пул до ${MAX_ITEMS} публикаций.`); return; }
+    if (!topicReady) { setError(be ? "Укажыце тэму агляду." : "Укажите тему обзора."); return; }
+    if (state.items.length>MAX_ITEMS) { setError("Сократите пул до "+MAX_ITEMS+" публикаций."); return; }
     if (overLimitCount) {
-      setError(`Сначала сократите ${overLimitCount} публикац. до ${MAX_ITEM_CHARS.toLocaleString()} знаков; приглушённый хвост пока не обрабатывается.`);
+      setError("Сначала сократите "+overLimitCount+" публикац. до "+MAX_ITEM_CHARS.toLocaleString()+" знаков.");
       return;
     }
     setBusy("analyze"); setError(""); setMessage("");
-    // Evidence is a complete, independent checkpoint. Never start a dossier
-    // request here. Failed extraction keeps the previous pool unchanged.
-    // The operator can explicitly refresh Evidence even without an editorial
-    // dossier. Recalculating trends must never silently trigger reanalysis.
-    const force=Boolean(forceRequested && state.items.length>0 &&
-      prepared===state.items.length);
-    const next = [...state.items];
-    const previousAccepted=state.items.reduce((n,item)=>n+(item.evidenceData?.validation.accepted||0),0);
+    const force=Boolean(forceRequested && state.items.length>0 && prepared===state.items.length);
+    let next=[...state.items];
+    // Always derive progress from verified cards, not from a stale 'done' counter.
+    const isReady=(item:WItem)=>isEvidencePrepared(item,W_EVIDENCE_CONTRACT_VERSION);
+    const countReady=()=>next.filter(isReady).length;
+      let checkpointStore=workspaces;
+    let savedThisRun=0;
     const batchesProviders:string[]=[];
-    const processed=new Set<number>();
-    let evidenceSaved=false;
     const warned=new Set<number>();
+    let rejected=0;
+
+    // Commit EACH verified batch synchronously, before asking another AI.
+    // The persisted snapshot is the input to the next commit: no stale
+    // React closure may overwrite previously confirmed cards.
+    const checkpoint=(status:"partial"|"saved")=>{
+      const ready=countReady();
+      const verifiedRecords=next.reduce((n,item)=>
+        n+(isReady(item)?item.evidenceData?.validation.accepted||0:0),0);
+      const updated=invalidateMap({...checkpointStore.slots[activeSlot],
+        items:[...next],lastReanalysis:{status,processed:ready,
+          total:next.length,verifiedRecords}});
+      checkpointStore=writeEvidenceCheckpoint(WORKSPACES_KEY,checkpointStore,
+        activeSlot,updated,localStorage);
+      setWorkspaces(checkpointStore);
+      return ready;
+    };
+
     try {
-      const batches = buildBatches(next,force);
-      let evidenceRejected = 0;
-      let done = force ? 0 : next.filter((item) => item.evidence.trim() && item.evidenceContract === W_EVIDENCE_CONTRACT_VERSION).length;
-      setAnalysisText(be ? `Аналіз матэрыялаў: ${done} з ${next.length}` : `Анализ материалов: ${done} из ${next.length}`);
-      for (const batch of batches) {
-        const result = await wEvidenceBatch(
-          batch.map(({ item,index }) => ({ pool_index:index+1,publication_id: item.id, title: item.title, source: item.source, region:item.region, text: item.editorialText })),
-          (seconds) => setAnalysisText(be ? `Ліміт AI. Працяг аўтаматычна праз ~${seconds} с…` : `Лимит AI. Продолжение автоматически через ~${seconds} с…`)
+      if(force){
+        // A rare deliberate FULL restart begins a new, unambiguous run:
+        // remove all old Evidence first, never mix two generations.
+        next=next.map(item=>({...item,evidence:"",evidenceData:undefined,evidenceContract:0}));
+        checkpoint("partial");
+      }
+      const batches=buildBatches(next);
+      setAnalysisText((be?"Аналіз матэрыялаў: ":"Анализ материалов: ")+countReady()+" из "+next.length);
+      for(const batch of batches){
+        const result=await wEvidenceBatch(
+          batch.map(({item,index})=>({pool_index:index+1,publication_id:item.id,
+            title:item.title,source:item.source,region:item.region,text:item.editorialText})),
+          seconds=>setAnalysisText((be?"Ліміт AI. Працяг праз ~":"Лимит AI. Продолжение через ~")+seconds+" с…")
         );
         batchesProviders.push(result.model);
-        for (const card of result.cards) {
-          const target = batch[card.index];
-          if (!target || !card.evidence || card.evidenceData?.version !== 2) continue;
-          processed.add(target.index);
-          // Only the verified card from THIS run becomes current. Do not
-          // merge, prefer, retain or offer old cards for the same source.
-          const previous=next[target.index];
-          next[target.index]={...previous,evidence:card.evidence,
-            evidenceData:card.evidenceData,evidenceContract:W_EVIDENCE_CONTRACT_VERSION};
-          const acceptedData=next[target.index].evidenceData!;
-          evidenceRejected+=acceptedData.validation.rejected;
-          if(acceptedData.quality_warnings?.length)warned.add(target.index);
-
+        let acceptedInBatch=0;
+        for(const card of result.cards){
+          const target=batch[card.index];
+          if(!target||!card.evidence||card.evidenceData?.version!==2||
+             card.evidenceData.publication_id!==target.item.id||
+             isReady(next[target.index]))continue;
+          next[target.index]={...next[target.index],
+            evidence:card.evidence,evidenceData:card.evidenceData,
+            evidenceContract:W_EVIDENCE_CONTRACT_VERSION};
+          acceptedInBatch++;
+          rejected+=card.evidenceData.validation.rejected;
+          if(card.evidenceData.quality_warnings?.length)warned.add(target.index);
         }
-        done = force ? processed.size : next.filter((item) => item.evidence.trim() && item.evidenceContract === W_EVIDENCE_CONTRACT_VERSION).length;
-        if(!force) setState((currentState) => invalidateMap({ ...currentState, items: [...next] }));
+        // Even a partial 1-of-2 answer survives a later batch failure,
+        // app close or network interruption.
+        if(acceptedInBatch){
+          checkpoint(countReady()===next.length?"saved":"partial");
+          savedThisRun+=acceptedInBatch;
+        }
         addUsage(result.usage);
-        setAnalysisText(be ? `Аналіз матэрыялаў: ${done} з ${next.length}` : `Анализ материалов: ${done} из ${next.length}`);
+        setAnalysisText((be?"Аналіз матэрыялаў: ":"Анализ материалов: ")+
+          countReady()+" из "+next.length+" · сохранено, осталось "+(next.length-countReady()));
       }
-      if (done !== next.length) { const missing = next.filter((item,index) => force ? !processed.has(index) : !(item.evidence.trim() && item.evidenceContract === W_EVIDENCE_CONTRACT_VERSION)).map((item) => item.title).slice(0, 4); throw new Error(`Проанализировано ${done} из ${next.length}. Не обработаны: ${missing.join("; ")}${next.length - done > missing.length ? "…" : ""}. ${force ? "Прежняя рабочая версия сохранена." : "Нажмите «Проанализировать пул» ещё раз — готовые материалы повторно не обрабатываются."}`); }
-      // IMPORTANT: a successful 18/18 Evidence analysis is its own durable
-      // milestone, never contingent on a further editorial-map model call.
+
+      const ready=countReady();
+      if(ready!==next.length){
+        const missing=next.map((item,index)=>!isReady(item)?"P"+String(index+1).padStart(2,"0"):null)
+          .filter(Boolean).join(", ");
+        throw new Error("Обработано "+ready+" из "+next.length+
+          ". Не завершены: "+missing+". Нажмите «Продолжить анализ» — готовые карточки будут пропущены.");
+      }
       const verifiedRecords=next.reduce((n,item)=>n+(item.evidenceData?.validation.accepted||0),0);
-      const checkpoint=invalidateMap({...state,items:[...next],
-        lastReanalysis:force?{status:"saved",processed:next.length,total:next.length,
-          verifiedRecords}:state.lastReanalysis});
-      writeEvidenceCheckpoint(WORKSPACES_KEY,workspaces,activeSlot,checkpoint,localStorage);
-      setState(currentState=>invalidateMap({...currentState,items:[...next],
-        lastReanalysis:checkpoint.lastReanalysis}));
-      evidenceSaved=true;
       setAnalysisText("");
-      const providerSummary=" Модели по пакетам: "+batchesProviders.join("; ")+".";
-      const quality=" Подтверждено записей: "+verifiedRecords+
-        (evidenceRejected ? "; отклонено кандидатных записей: "+evidenceRejected : "")+".";
-      setMessage((be ? "Аналіз Evidence завершаны. Цяпер асобна разлічыце тэндэнцыі." :
-        "Анализ Evidence завершён и сохранён. Теперь отдельно нажмите «Рассчитать тенденции».")+
-        quality+providerSummary+
-        (warned.size? ` Проверьте полноту ${warned.size} публикаций: отдельные фрагменты покрыты неравномерно.`:""));
-    } catch (reason) {
+      setMessage((be?"Аналіз Evidence завершаны. ":"Анализ Evidence завершён. ")+
+        "Сохранено "+ready+" из "+next.length+" публикаций, "+verifiedRecords+
+        " проверенных записей. В этом запуске добавлено "+savedThisRun+" карточек."+
+        " Теперь отдельно рассчитайте тенденции."+
+        (batchesProviders.length?" Модели: "+batchesProviders.join("; ")+".":"")+
+        (rejected?" Отклонено кандидатных записей: "+rejected+".":"")+
+        (warned.size?" Проверьте полноту "+warned.size+" публикаций.":""));
+    } catch(reason){
       setAnalysisText("");
-      if(force&&!evidenceSaved){
-        // A failed refresh must not mark the OLD Evidence as newly analysed.
-        setState(current=>({...current,lastReanalysis:{
-          status:"failed",processed:processed.size,total:next.length,verifiedRecords:previousAccepted
-        }}));
-      }
-      setError((force&&!evidenceSaved
-        ? "Переанализ пула не завершён. Прежние проверенные Evidence сохранены. " : "")+
-        String(reason)+(evidenceSaved
-        ? (be ? " Карткі Evidence захаваны. Паўтарыце толькі разлік тэндэнцый."
-              : " Новые Evidence Cards сохранены. Повторите только расчёт тенденций, без переанализа статей.")
-        : ""));
-      if(evidenceSaved)setMessage(be
-        ? "Карткі Evidence захаваныя. Цяпер асобна разлічыце тэндэнцыі."
-        : "Evidence сохранены. Теперь отдельно нажмите «Рассчитать тенденции».");
+      const ready=checkpointStore.slots[activeSlot].items.filter(isReady).length;
+      // Only report durable committed cards, never an in-flight uncommitted batch.
+      setError(String(reason)+". Сохранено "+ready+" из "+next.length+
+        " публикаций; осталось "+(next.length-ready)+
+        ". Нажмите «Продолжить анализ» — сохранённые карточки повторно не отправляются.");
     } finally { setBusy(""); }
   }
 
   async function recalculateTrends() {
-    if (!topicReady || state.items.length>MAX_ITEMS || prepared !== state.items.length || latestReanalysisFailed) return;
+    if (!topicReady || state.items.length>MAX_ITEMS || prepared !== state.items.length) return;
     setBusy("map"); setError(""); setMessage("");
     try {
       const result = await wEditorialMap(
@@ -440,7 +454,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   }
 
   function clearPool() {
-    if (!state.items.length) return;
+    if (!state.items.length || busy==="analyze") return;
     setState((current) => ({
       ...current,
       items: [],
@@ -584,18 +598,19 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   }
 
   const allEvidenceReady=state.items.length>0 && prepared===state.items.length;
-  const latestReanalysisFailed=state.lastReanalysis?.status==="failed"&&
-    state.lastReanalysis.total===state.items.length;
   const evidenceRecords=state.items.reduce((n,item)=>
     n+(item.evidenceContract===W_EVIDENCE_CONTRACT_VERSION
       ?item.evidenceData?.validation.accepted||0:0),0);
   const canRunPool=busy===""&&state.items.length>0&&state.items.length<=MAX_ITEMS&&
     topicReady&&overLimitCount===0;
-  const analysisButtonText = busy === "analyze" || busy==="map"
-    ? (analysisText || (be ? "Аналізую…" : "Анализирую…"))
+  const remainingArticles=state.items.length-prepared;
+  const analysisButtonText=busy==="analyze" || busy==="map"
+    ? (analysisText || (be?"Аналізую…":"Анализирую…"))
     : allEvidenceReady
-      ? (be ? "Разлічыць тэндэнцыі" : "Рассчитать тенденции")
-      : (be ? "Прааналізаваць пул" : "Проанализировать пул");
+      ? (be?"Разлічыць тэндэнцыі":"Рассчитать тенденции")
+      : prepared>0
+        ? (be?"Працягнуць аналіз (засталося ":"Продолжить анализ (осталось ")+remainingArticles+")"
+        : (be?"Прааналізаваць пул":"Проанализировать пул");
 
   return <div className="view-stack w-review">
     <section className="view-heading"><div><div className="eyebrow dark">W-REVIEW</div><h2>{be ? "Папярэдні агляд" : "Предварительный обзор"}</h2><p>{be ? "Збярыце матэрыялы, задайце тэму і атрымаеце абагульнены погляд на медыяполе." : "Соберите материалы, задайте тему и получите обобщённый взгляд на медиаполе."}</p></div><div className="w-review-metrics"><b>{state.items.length}/{MAX_ITEMS}</b><span>~{estimateTokens(totalChars).toLocaleString()} input tokens</span></div></section>
@@ -610,14 +625,14 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
 
     <section className="panel w-review-import"><div className="panel-head"><div><h3>{be ? "1. Матэрыялы" : "1. Материалы"}</h3><p>{be ? "Прамая загрузка, закладка → Monitor або ручны ўвод." : "Прямая загрузка, закладка → Monitor или ручной ввод."}</p></div></div>
       <div className="w-review-import-row"><input value={url} onChange={(e)=>setUrl(e.target.value)} placeholder="https://…" /><button className="secondary-button" onClick={importUrl} disabled={busy!==""||!url.trim()||state.items.length>=MAX_ITEMS}>{busy==="url"?"…":be?"Спампаваць":"Скачать"}</button><button className="primary-button" onClick={pasteBrowser} disabled={busy!==""||state.items.length>=MAX_ITEMS}>{busy==="clipboard"?"…":be?"Уставіць з браўзера":"Вставить из браузера"}</button><button className="ghost-button" onClick={()=>setManualOpen((v)=>!v)}>{be?"Дадаць уручную":"Добавить вручную"}</button><button className="ghost-button" onClick={copyBookmarklet}>→ Monitor</button></div>
-      {manualOpen&&<div className="w-review-manual"><input placeholder={be?"Загаловак":"Заголовок"} value={manual.title} onChange={(e)=>setManual({...manual,title:e.target.value})}/><input placeholder={be?"Крыніца":"Источник"} value={manual.source} onChange={(e)=>setManual({...manual,source:e.target.value})}/><input placeholder={be?"Краіна / рэгіён":"Страна / регион"} value={manual.region} onChange={(e)=>setManual({...manual,region:e.target.value})}/><input placeholder="URL" value={manual.url} onChange={(e)=>setManual({...manual,url:e.target.value})}/><textarea placeholder={be?"Тэкст публікацыі":"Текст публикации"} value={manual.text} onChange={(e)=>setManual({...manual,text:e.target.value})}/><button className="primary-button" onClick={()=>{try{addItem(manual);setManual({title:"",source:"",region:"",url:"",text:""});setManualOpen(false)}catch(reason){setError(String(reason))}}}>{be?"Дадаць":"Добавить"}</button></div>}
+      {manualOpen&&<div className="w-review-manual"><input placeholder={be?"Загаловак":"Заголовок"} value={manual.title} onChange={(e)=>setManual({...manual,title:e.target.value})}/><input placeholder={be?"Крыніца":"Источник"} value={manual.source} onChange={(e)=>setManual({...manual,source:e.target.value})}/><input placeholder={be?"Краіна / рэгіён":"Страна / регион"} value={manual.region} onChange={(e)=>setManual({...manual,region:e.target.value})}/><input placeholder="URL" value={manual.url} onChange={(e)=>setManual({...manual,url:e.target.value})}/><textarea placeholder={be?"Тэкст публікацыі":"Текст публикации"} value={manual.text} onChange={(e)=>setManual({...manual,text:e.target.value})}/><button className="primary-button" disabled={busy!==""} onClick={()=>{try{addItem(manual);setManual({title:"",source:"",region:"",url:"",text:""});setManualOpen(false)}catch(reason){setError(String(reason))}}}>{be?"Дадаць":"Добавить"}</button></div>}
     </section>
 
     <section className="panel w-review-task">
       <div className="panel-head"><div><h3>{be?"2. Заданне для агляду":"2. Задание для обзора"}</h3>
         <p>{be?"Тэма абавязковая. Задачы і выключэнні — пры неабходнасці.":"Тема обязательна. Задачи и исключения — по необходимости."}</p></div></div>
       <label style={{display:"block",marginBottom:12}}><strong>{be?"Тэма агляду *":"Тема обзора *"}</strong>
-        <input maxLength={140} value={state.topic} onChange={e=>setState(current=>invalidateMap({...current,topic:e.target.value}))}
+        <input maxLength={140} disabled={busy==="analyze"} value={state.topic} onChange={e=>setState(current=>invalidateMap({...current,topic:e.target.value}))}
           placeholder={be?"Напрыклад: Міжнародная рэакцыя на санкцыі":"Например: Международная реакция на санкции"}/>
       </label>
       <div style={{display:"grid",gap:10}}>
@@ -627,7 +642,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
             {index>0&&<button type="button" className="ghost-button small-button" disabled={busy!==""} aria-label={be?"Выдаліць задачу":"Удалить задачу"}
               onClick={()=>setState(current=>invalidateMap({...current,tasks:current.tasks.filter((_,i)=>i!==index)}))}>×</button>}
           </span>
-          <textarea rows={2} maxLength={160} value={value} onChange={e=>setState(current=>invalidateMap({...current,tasks:current.tasks.map((task,i)=>i===index?e.target.value:task)}))}
+          <textarea rows={2} maxLength={160} disabled={busy==="analyze"} value={value} onChange={e=>setState(current=>invalidateMap({...current,tasks:current.tasks.map((task,i)=>i===index?e.target.value:task)}))}
             placeholder={index===0?"Что проанализировать, на чём сделать акцент? Например: основные тенденции и оценки СМИ."
               :"Дополнительный акцент: аргументы экспертов, риски, прогнозы, различия в позициях…"}/>
         </label>)}
@@ -637,7 +652,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         </button>}
       </div>
       <label style={{display:"block",marginTop:14}}><strong>{be?"Што выключыць з агляду":"Что исключить из обзора"}</strong>
-        <textarea rows={2} maxLength={300} value={state.exclusions} onChange={e=>setState(current=>invalidateMap({...current,exclusions:e.target.value}))}
+        <textarea rows={2} maxLength={300} disabled={busy==="analyze"} value={state.exclusions} onChange={e=>setState(current=>invalidateMap({...current,exclusions:e.target.value}))}
           placeholder={be?"Якія сюжэты, звесткі ці аспекты не закранаць…":"Что не затрагивать? Например: историю вопроса, неподтверждённые слухи, второстепенные реакции."}/>
       </label>
     </section>
@@ -648,17 +663,10 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
           {item.evidenceData?.quality_warnings?.length ? " · проверить полноту" : ""}
           {item.editorialText.length>MAX_ITEM_CHARS?` · +${(item.editorialText.length-MAX_ITEM_CHARS).toLocaleString()} знаков`:""}</small></div></button>)}
         <div className="w-review-pool-action">
-          <button className="primary-button" disabled={!canRunPool||(allEvidenceReady&&latestReanalysisFailed)}
+          <button className="primary-button" disabled={!canRunPool}
             onClick={()=>allEvidenceReady?recalculateTrends():analyzePool(false)}>{analysisButtonText}</button>
           {allEvidenceReady&&<button className="secondary-button small-button" disabled={!canRunPool}
-            onClick={()=>analyzePool(true)}>{be?`Перааналізаваць пул (${state.items.length} публікацый)`:`Переанализировать пул (${state.items.length} публикаций)`}</button>}
-          {allEvidenceReady&&state.lastReanalysis?.total===state.items.length&&
-            state.lastReanalysis.status==="failed"&&
-            <small role="status" style={{color:"#9a443b",whiteSpace:"normal"}}>
-              {be?"Апошні паўторны аналіз не завершаны":"Последний переанализ не завершён"}:
-              {" "}{state.lastReanalysis.processed}/{state.items.length}.
-              {" "}{be?"Папярэднія Evidence захаваныя; разлік тэндэнцый недаступны да паспяховага перааналізу":"Прежние Evidence сохранены; расчёт тенденций доступен только после успешного переанализа"}.
-            </small>}
+            onClick={()=>{if(window.confirm(be?"Пачаць аналіз усяго пула нанова? Старыя Evidence будуць заменены новымі.":"Переанализировать все публикации заново? Сохранённые Evidence будут заменены новыми по мере обработки."))analyzePool(true);}}>{be?`Перааналізаваць пул (${state.items.length} публікацый)`:`Переанализировать пул (${state.items.length} публикаций)`}</button>}
           {busy==="analyze"&&<small>{analysisText}</small>}{error&&<small style={{color:"#b42318",whiteSpace:"normal"}}>{error}</small>}{overLimitCount>0&&<small className="w-review-limit-warning" role="alert">
             {be ? `Скараціце ${overLimitCount} публікац. да ${MAX_ITEM_CHARS.toLocaleString()} знакаў: пакуль аналіз адключаны.`
               : `Сократите ${overLimitCount} публикац. до ${MAX_ITEM_CHARS.toLocaleString()} знаков: анализ пока недоступен.`}
@@ -666,7 +674,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
           {!topicReady&&state.items.length>0&&<small>{be?"Для аналізу ўкажыце тэму вышэй.":"Для анализа укажите тему выше."}</small>}
           {state.items.length>MAX_ITEMS&&<small style={{color:"#b42318"}}>Сократите пул до {MAX_ITEMS} публикаций. Сохранённые материалы не удаляются автоматически.</small>}</div>
       </aside>
-      <div className="panel w-review-editor">{active?<><div className="panel-head"><div><h3>{active.title}</h3><p>{active.source}{active.region?` · ${active.region}`:""}</p></div><button className="ghost-button small-button" onClick={()=>setState((current)=>invalidateMap({...current,items:current.items.filter((item)=>item.id!==active.id)}))}>{be?"Выдаліць":"Удалить"}</button></div><div className="w-review-exact"><select value={compressionMode} onChange={(e)=>setCompressionMode(e.target.value as CompressionMode)}><option value="light">20–30%</option><option value="standard">30–50%</option><option value="maximum">50–70%</option><option value="extract">70–90%</option></select><button className="secondary-button small-button" onClick={exact}>Exact</button><button className="ghost-button small-button" onClick={()=>updateItem(active.id,{editorialText:active.sourceText})}>{be?"Вярнуць зыходны":"Вернуть исходный"}</button></div><div className="w-review-length-state">
+      <div className="panel w-review-editor">{active?<><div className="panel-head"><div><h3>{active.title}</h3><p>{active.source}{active.region?` · ${active.region}`:""}</p></div><button className="ghost-button small-button" disabled={busy!==""} onClick={()=>setState((current)=>invalidateMap({...current,items:current.items.filter((item)=>item.id!==active.id)}))}>{be?"Выдаліць":"Удалить"}</button></div><div className="w-review-exact"><select value={compressionMode} onChange={(e)=>setCompressionMode(e.target.value as CompressionMode)}><option value="light">20–30%</option><option value="standard">30–50%</option><option value="maximum">50–70%</option><option value="extract">70–90%</option></select><button className="secondary-button small-button" disabled={busy!==""} onClick={exact}>Exact</button><button className="ghost-button small-button" disabled={busy!==""} onClick={()=>updateItem(active.id,{editorialText:active.sourceText})}>{be?"Вярнуць зыходны":"Вернуть исходный"}</button></div><div className="w-review-length-state">
   <span className={active.editorialText.length>MAX_ITEM_CHARS?"exceeded":"within"}>
     {active.editorialText.length.toLocaleString()} / {MAX_ITEM_CHARS.toLocaleString()} {be?"знакаў для ІІ":"знаков для ИИ"}
   </span>
@@ -679,7 +687,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   <div className="w-review-text-backdrop" aria-hidden="true">
     <span>{active.editorialText.slice(0,MAX_ITEM_CHARS)}</span><span className="w-review-text-tail">{active.editorialText.slice(MAX_ITEM_CHARS)}</span>{"\n"}
   </div>
-  <textarea className="report-editor-textarea w-review-edit-input" lang={be?"be":"ru"} spellCheck={true}
+  <textarea className="report-editor-textarea w-review-edit-input" lang={be?"be":"ru"} spellCheck={true} disabled={busy==="analyze"}
     aria-label={be?"Рэдагуемы тэкст публікацыі":"Редактируемый текст публикации"}
     value={active.editorialText} onChange={(e)=>updateItem(active.id,{editorialText:e.target.value})}
     onScroll={(event)=>{
