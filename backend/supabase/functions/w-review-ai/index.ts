@@ -305,7 +305,7 @@ Deno.serve(async (req: Request) => {
       const text = String(item?.text || "").trim();
       totalChars += text.length;
       return { index, publication_id:String(item?.publication_id || "batch-"+index).trim().slice(0,120),
-        source: String(item?.source || "").trim().slice(0, 300), title: String(item?.title || "").trim().slice(0, 600), text };
+        source: String(item?.source || "").trim().slice(0, 300), title: String(item?.title || "").trim().slice(0, 600), region:String(item?.region || "").trim().slice(0, 100), text };
     });
     if (normalized.some((item: any) => !item.text || item.text.length > 10000) || totalChars > 20000)
       return json({error:"evidence_article_too_long",max_article_chars:10000,max_batch_chars:20000,max_items:2},400);
@@ -537,7 +537,8 @@ Deno.serve(async (req: Request) => {
       evidence_data:{...card,source_sha256:sourceDigests[cardIndices[index]]}
     }));
     console.info("w_review_evidence_v2 "+JSON.stringify({
-      cards:cards.length,pending_articles:normalized.length-cards.length,accepted:verifiedCards.reduce((n,c)=>n+c.validation.accepted,0),
+      cards:cards.length,pending_articles:normalized.length-cards.length,
+      per_article:verifiedCards.map((card,i)=>({batch_index:cardIndices[i]+1,accepted:card.validation.accepted,rejected:card.validation.rejected,covered_passages:card.validation.covered_passages,total_passages:card.validation.total_passages})),accepted:verifiedCards.reduce((n,c)=>n+c.validation.accepted,0),
       rejected:verifiedCards.reduce((n,c)=>n+c.validation.rejected,0),
       covered_passages:verifiedCards.reduce((n,c)=>n+c.validation.covered_passages,0),
       total_passages:verifiedCards.reduce((n,c)=>n+c.validation.total_passages,0),
@@ -1065,7 +1066,11 @@ ${styleProfile || "Живой сдержанный редакционный ст
     const strictParagraphMin=targetChars>=5000?
       minimumParagraphChars(targetChars,paragraphFloor):80;
     const sourceRegistry=[...poolSourceNames(cards).entries()]
-      .map(([id,name])=>id+" = «"+name+"»").join("; ");
+      .map(([id,name])=>{
+        const position=Number(id.slice(1))-1;
+        const region=String(cards[position]?.match(/^КАТАЛОЖНЫЙ_РЕГИОН:\s*(.+)$/m)?.[1]||"не указан").trim();
+        return id+" = «"+name+"»"+(region&&region!=="не указан"?" (каталожный регион: "+region+")":"");
+      }).join("; ");
     const payload = {
       model: "openai/gpt-oss-120b", reasoning_effort: "low", reasoning_format: "hidden", temperature: 0.2,
       max_completion_tokens: Math.min(2500, Math.max(1300, Math.ceil(targetChars / 3.0) + 450)),
@@ -1076,7 +1081,8 @@ ${styleProfile || "Живой сдержанный редакционный ст
 
 ИСТОЧНИКИ. Прочитай ВСЕ Evidence Cards. Сохраняй уникальные сведения каждого содержательного материала: факты, цифры, цитаты, заголовки, аргументы, позиции реальных экспертов, дополнительные обстоятельства. Не требуется механически упоминать каждую повторную публикацию агентства; не пропускай самостоятельный ракурс менее известного СМИ.
 
-АТРИБУЦИЯ. Различай собственную редакционную позицию, нейтральное сообщение, цитату другого СМИ, высказывание конкретного политика/эксперта и газетный заголовок. Используй подтверждённые записи с адресами E01, E02 и типами [editorial_stance/P...], [media_angle/P...], [quote/P...], [counterposition/P...] и [expert/P...]. У каждой записи после SOURCE приведена дословная выдержка, проверенная на наличие в исходной публикации; это не автоматическая проверка смысла пересказа. Газета, приведшая чужую критику, не обязательно разделяет эту критику. Не меняй знак оценки и не приписывай одному СМИ чужие слова. Категорически запрещено классифицировать источник по стране на основании языка текста или темы публикации. «The Guardian» — британское СМИ, CFR (cfr.org) — американская организация: их НЕЛЬЗЯ называть российскими СМИ. Если точная страна происхождения СМИ неизвестна, не обобщай до «российские/британские/американские СМИ». Национальная группировка возможна только по подтверждённым данным о самих источниках.
+АТРИБУЦИЯ. Различай собственную редакционную позицию, нейтральное сообщение, цитату другого СМИ, высказывание конкретного политика/эксперта и газетный заголовок. Используй подтверждённые записи с адресами E01, E02 и типами [editorial_stance/P...], [media_angle/P...], [quote/P...], [counterposition/P...] и [expert/P...]. У каждой записи после SOURCE приведена дословная выдержка, проверенная на наличие в исходной публикации; это не автоматическая проверка смысла пересказа. Газета, приведшая чужую критику, не обязательно разделяет эту критику. Не меняй знак оценки и не приписывай одному СМИ чужие слова. НАЦИОНАЛЬНАЯ АТРИБУЦИЯ (для ВСЕХ стран): нельзя выводить страну происхождения СМИ из языка публикации, темы, страны события, цитируемого политика или эксперта. Сверяй группировку изданий со списком SOURCE_REGISTRY и его каталожными регионами. Если регион не указан и страна издания тебе недостаточно надёжно известна, не делай национальной группировки. Не смешивай страну СМИ со страной описываемого события; особенно тщательно проверяй групповые обобщения «российские СМИ», «польская пресса», «британские издания», «американская аналитика» и аналоги для ЛЮБОЙ страны.
+АТРИБУЦИЯ ОЦЕНКИ: статья может цитировать иностранного эксперта, политика или другое СМИ, не соглашаясь с ним. Утверждение «пресса страны N считает...» допустимо, только если соответствующие Evidence Cards содержат именно собственную оценку независимых изданий этой страны; не приписывай редакции цитату собеседника или иную позицию издания.
 
 ОБОБЩЕНИЯ. Содержательные аналитические выводы обязательны. Общая позиция группы изданий требует подтверждения несколькими самостоятельными источниками соответствующей группы. Один источник может подтверждать конкретный факт, но не консенсус национального медиаполя. Когда оценки противоположны, прямо раскрывай это различие без искусственного единодушия.
 

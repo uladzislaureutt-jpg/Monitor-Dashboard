@@ -205,7 +205,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     }));
   }
   function evidenceCards(items: WItem[]) {
-    return items.map((item,index) => `ID: P${String(index+1).padStart(2,"0")}\nИСТОЧНИК: «${item.source}»\nЗАГОЛОВОК: ${item.title}\nURL: ${item.url||"не указан"}\n${item.evidence}`);
+    return items.map((item,index) => `ID: P${String(index+1).padStart(2,"0")}\nИСТОЧНИК: «${item.source}»\nКАТАЛОЖНЫЙ_РЕГИОН: ${item.region||"не указан"}\nЗАГОЛОВОК: ${item.title}\nURL: ${item.url||"не указан"}\n${item.evidence}`);
   }
 
   function addItem(input: { title: string; source: string; region?: string; url?: string; text: string }) {
@@ -291,9 +291,9 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     setMessage(`${be ? "Exact-скарачэнне" : "Exact-сокращение"}: ${result.reductionPct}%.`);
   }
 
-  function buildBatches(items: WItem[]) {
+  function buildBatches(items: WItem[], force=false) {
     const pending = items.map((item, index) => ({ item, index }))
-      .filter(({ item }) => !(item.evidence.trim() && item.evidenceContract === W_EVIDENCE_CONTRACT_VERSION));
+      .filter(({ item }) => force || !(item.evidence.trim() && item.evidenceContract === W_EVIDENCE_CONTRACT_VERSION));
     const batches: Array<Array<{ item: WItem; index: number }>> = [];
     let current: Array<{ item: WItem; index: number }> = [];
     let chars = 0;
@@ -318,28 +318,37 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
       return;
     }
     setBusy("analyze"); setError(""); setMessage("");
+    // The "Переанализировать пул" action must really re-extract Evidence.
+    // Old cards and dossier remain untouched unless all 18 new cards AND
+    // the rebuilt dossier are verified successfully.
+    const force=Boolean(state.items.length>0 && prepared===state.items.length);
     const next = [...state.items];
+    const previousAccepted=state.items.reduce((n,item)=>n+(item.evidenceData?.validation.accepted||0),0);
+    const batchesProviders:string[]=[];
+    const processed=new Set<number>();
     try {
-      const batches = buildBatches(next);
+      const batches = buildBatches(next,force);
       let evidenceRejected = 0;
       let evidenceAccepted = 0;
-      let done = next.filter((item) => item.evidence.trim() && item.evidenceContract === W_EVIDENCE_CONTRACT_VERSION).length;
+      let done = force ? 0 : next.filter((item) => item.evidence.trim() && item.evidenceContract === W_EVIDENCE_CONTRACT_VERSION).length;
       setAnalysisText(be ? `Аналіз матэрыялаў: ${done} з ${next.length}` : `Анализ материалов: ${done} из ${next.length}`);
       for (const batch of batches) {
         const result = await wEvidenceBatch(
-          batch.map(({ item }) => ({ publication_id: item.id, title: item.title, source: item.source, text: item.editorialText })),
+          batch.map(({ item }) => ({ publication_id: item.id, title: item.title, source: item.source, region:item.region, text: item.editorialText })),
           (seconds) => setAnalysisText(be ? `Ліміт AI. Працяг аўтаматычна праз ~${seconds} с…` : `Лимит AI. Продолжение автоматически через ~${seconds} с…`)
         );
+        batchesProviders.push(result.model);
         for (const card of result.cards) {
           const target = batch[card.index];
           if (!target || !card.evidence || card.evidenceData?.version !== 2) continue;
           evidenceRejected += card.evidenceData.validation.rejected;
           evidenceAccepted += card.evidenceData.validation.accepted;
+          processed.add(target.index);
           next[target.index] = { ...next[target.index], evidence: card.evidence,
             evidenceData: card.evidenceData, evidenceContract: W_EVIDENCE_CONTRACT_VERSION };
         }
-        done = next.filter((item) => item.evidence.trim() && item.evidenceContract === W_EVIDENCE_CONTRACT_VERSION).length;
-        setState((currentState) => invalidateMap({ ...currentState, items: [...next] }));
+        done = force ? processed.size : next.filter((item) => item.evidence.trim() && item.evidenceContract === W_EVIDENCE_CONTRACT_VERSION).length;
+        if(!force) setState((currentState) => invalidateMap({ ...currentState, items: [...next] }));
         addUsage(result.usage);
         setAnalysisText(be ? `Аналіз матэрыялаў: ${done} з ${next.length}` : `Анализ материалов: ${done} из ${next.length}`);
       }
@@ -359,11 +368,14 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         reviewText: "",
       }));
       setAnalysisText("");
+      const providerSummary=force?
+        " Повторная проверка: "+previousAccepted+" → "+evidenceAccepted+
+        " подтверждённых записей. Модели по пакетам: "+batchesProviders.join(", ")+".":"";
       const quality= evidenceAccepted > 0 || evidenceRejected > 0
         ? (be ? " Пацверджана запісаў: " : " Проверено записей: ")+
           evidenceAccepted+(evidenceRejected ? (be ? "; адхілена прывязак: " : "; отклонено привязок: ")+evidenceRejected : "")+"."
         : "";
-      setMessage((be ? "Пул прааналізаваны. Праверце выяўленыя тэндэнцыі." : "Пул проанализирован. Проверьте выявленные тенденции.")+quality);
+      setMessage((be ? "Пул прааналізаваны. Праверце выяўленыя тэндэнцыі." : "Пул проанализирован. Проверьте выявленные тенденции.")+quality+providerSummary);
     } catch (reason) {
       setAnalysisText("");
       setError(String(reason));

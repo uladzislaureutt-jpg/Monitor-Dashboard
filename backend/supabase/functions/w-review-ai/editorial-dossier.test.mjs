@@ -209,3 +209,15 @@ test("compact dossier transport preserves every verified Evidence ID even beyond
   assert.doesNotMatch(compact,/\| SOURCE: /);
   assert.match(compact,/https:\/\/example\.test\/a/);
 });
+
+test("compact dossier preserves existing catalog region but never infers outlet nationality",()=>{
+  const named=["ID: P01","ИСТОЧНИК: «BBC News»","КАТАЛОЖНЫЙ_РЕГИОН: Великобритания",
+    "ЗАГОЛОВОК: Обзор","E01 [fact/P001] Эксперт приводит уточнение. | SOURCE: «Цитата.»"].join("\n");
+  const unknown=["ID: P02","ИСТОЧНИК: «Media X»","КАТАЛОЖНЫЙ_РЕГИОН: не указан",
+    "ЗАГОЛОВОК: Обзор","E01 [fact/P001] Эксперт приводит оговорку. | SOURCE: «Цитата.»"].join("\n");
+  const result=compactDossierCards([named,unknown]);
+  assert.match(result[0],/КАТАЛОЖНЫЙ_РЕГИОН: Великобритания/);
+  assert.match(result[1],/КАТАЛОЖНЫЙ_РЕГИОН: не указан/);
+  assert.match(result[0],/P01:E01/);
+  assert.match(result[1],/P02:E01/);
+});
