@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { DOSSIER_INSTRUCTIONS, dossierSchema, normalizeDossier, makeSynthesisDossier, compactDossierCards } from "./editorial-dossier.ts";
+import { DOSSIER_INSTRUCTIONS, dossierSchema, normalizeDossier, makeSynthesisDossier, compactDossierCards, dossierOutputContract, dossierShape } from "./editorial-dossier.ts";
 import { synthesisResponseSchema, readSynthesisBlocks } from "./synthesis-blocks.ts";
 import { reconcileDossierDraft } from "./dossier-reconciliation.ts";
 import { normalizeReviewSourceLabels, poolSourceNames } from "./review-output-guard.ts";
@@ -452,7 +452,7 @@ ${sections.join("; ")}.
     if(evidenceText.length>180000)return json({error:"evidence_too_large",max_chars:180000},400);
     const schema=dossierSchema(cards.length);
     const mapUserInput="ЗАДАНИЕ ОПЕРАТОРА:\n"+task+
-      "\n\nДОКАЗАТЕЛЬНАЯ БАЗА (P01:E01 — E01 в статье P01):\n"+evidenceText;
+      "\n\nДОКАЗАТЕЛЬНАЯ БАЗА (P01:E01 — E01 в статье P01):\n"+evidenceText+"\n\n"+dossierOutputContract(cards.length);
     const prompt=DOSSIER_INSTRUCTIONS+"\n\n"+mapUserInput;
 
     // A source-verified dossier is mandatory. An invalid JSON map is NEVER
@@ -465,6 +465,8 @@ ${sections.join("; ")}.
       // throwing away an otherwise useful draft, attempt deterministic
       // source-grounded structural reconciliation. No new AI request or facts.
       const checked=normalizeDossier(raw,cards,{requireEveryDistinctSource:true});
+      if(checked.error)console.warn("w_review_dossier_shape "+JSON.stringify({model,provider,
+        error:checked.error,...dossierShape(raw)}));
       if(checked.dossier&&!checked.error){
         selected={dossier:checked.dossier,result:res,model,provider};return true;
       }
@@ -510,9 +512,11 @@ ${sections.join("; ")}.
     const runGeminiMap=async(model:string,deadline:number,repair=false)=>{
       const feedback=repair?"\n\nПредыдущий план не прошёл проверку: "+
         (attempts.at(-1)?.reason||"invalid_dossier")+
-        ". Исправь план по исходной базе. Свяжи каждую публикацию с содержательной веткой. "+
+        ". Верни trends как массив 1–5 тенденций внутри корневого объекта. Все свободные строки — по-русски. Исправь план по исходной базе. Свяжи каждую публикацию с содержательной веткой. "+
         "Пропуск в плане не означает периферийность; не перемещай пропуски автоматически в необязательные темы.":"";
-      const res=await structuredGeminiRequest({deadline,
+      // This deployed endpoint repeatedly rejects the dossier schema (HTTP 400).
+      // Use working JSON mode with the complete explicit text contract above.
+      const res=await structuredGeminiRequest({deadline,initialMode:"json",
         call:(jsonMode,timeout)=>callGemini(geminiApiKey,model,prompt+feedback,schema,0.1,
           "editorial_map",timeout,{jsonMode,maxOutputTokens:16384,thinkingLevel:"low"}),
         log:event=>console.info("w_review_gemini_response "+JSON.stringify({stage:"editorial_map",model,...event}))});
