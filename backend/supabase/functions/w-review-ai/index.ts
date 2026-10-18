@@ -291,17 +291,18 @@ Deno.serve(async (req: Request) => {
   const action = String(body?.action || "");
 
   if (action === "evidence_batch") {
-    // Prefer the backup account for evidence, preserving the primary account
-    // for the single final 120B synthesis. One CF attempt per failed batch.
-    const cfEvidenceBackupId=Deno.env.get("CLOUDFLARE_BACKUP_ACCOUNT_ID")||"";
-    const cfEvidenceBackupToken=Deno.env.get("CLOUDFLARE_BACKUP_API_TOKEN")||"";
+    // Dedicated ordered routes: CF GPT-OSS-120B main -> CF GPT-OSS-120B
+    // independent backup -> Gemini 3.5 Flash-Lite. No false second CF
+    // attempt against the same account if the backup is not configured.
     const cfEvidencePrimaryId=Deno.env.get("CLOUDFLARE_ACCOUNT_ID")||"";
     const cfEvidencePrimaryToken=Deno.env.get("CLOUDFLARE_API_TOKEN")||"";
-    const hasCfEvidenceBackup=Boolean(cfEvidenceBackupId&&cfEvidenceBackupToken);
-    const cfEvidenceId=hasCfEvidenceBackup?cfEvidenceBackupId:cfEvidencePrimaryId;
-    const cfEvidenceToken=hasCfEvidenceBackup?cfEvidenceBackupToken:cfEvidencePrimaryToken;
-    if (!geminiApiKey && !groqApiKey && !(cfEvidenceId&&cfEvidenceToken))
-      return json({ error: "w_review_evidence_providers_not_configured" }, 503);
+    const cfEvidenceBackupId=Deno.env.get("CLOUDFLARE_BACKUP_ACCOUNT_ID")||"";
+    const cfEvidenceBackupToken=Deno.env.get("CLOUDFLARE_BACKUP_API_TOKEN")||"";
+    const cfEvidencePrimaryReady=Boolean(cfEvidencePrimaryId&&cfEvidencePrimaryToken);
+    const cfEvidenceBackupReady=Boolean(cfEvidenceBackupId&&cfEvidenceBackupToken)&&
+      cfEvidenceBackupId!==cfEvidencePrimaryId;
+    if (!cfEvidencePrimaryReady&&!cfEvidenceBackupReady&&!geminiApiKey)
+      return json({error:"w_review_evidence_providers_not_configured"},503);
     const items = Array.isArray(body?.items) ? body.items : [];
     if (!items.length) return json({ error: "no_items" }, 400);
     if (items.length > 2) return json({ error:"evidence_batch_too_large", max_items:2 },400);
@@ -316,16 +317,17 @@ Deno.serve(async (req: Request) => {
       return json({error:"evidence_article_too_long",max_article_chars:10000,max_batch_chars:20000,max_items:2},400);
     const documents = makeEvidenceDocuments(normalized);
     const deadline=Date.now()+130000;
-    const output=await prepareEvidence({documents,deadline,
-      available:{primary:Boolean(geminiApiKey),cloudflare:Boolean(cfEvidenceId&&cfEvidenceToken),
-        fallback:Boolean(geminiApiKey),groq:Boolean(groqApiKey)},
+    console.info("w_review_evidence_routes "+JSON.stringify({routes:["cloudflare_primary","cloudflare_backup","gemini_3.5"],primary:cfEvidencePrimaryReady,backup:cfEvidenceBackupReady,gemini:Boolean(geminiApiKey)}));
+    const output=await prepareEvidence({documents,deadline,cloudflareFirst:true,
+      available:{primary:cfEvidencePrimaryReady,cloudflare:cfEvidenceBackupReady,
+        fallback:Boolean(geminiApiKey),groq:false},
       log:event=>console.info("w_review_evidence_attempt "+JSON.stringify(event)),
       generate:async(provider,docs,attemptDeadline)=>{
         const materialText=renderEvidenceMaterials(docs);
         const input="Верни ровно "+docs.length+" карточек, index начиная с нуля.\n\n"+materialText;
         const schema=evidenceV2Schema(docs.length);
-        if(provider==="primary"||provider==="fallback"){
-          const model=provider==="primary"?W_REVIEW_GEMINI_PRIMARY:W_REVIEW_GEMINI_FALLBACK;
+        if(provider==="fallback"){
+          const model=W_REVIEW_GEMINI_PRIMARY;
           const reply=await structuredGeminiRequest({deadline:attemptDeadline,
             call:(jsonMode,timeout)=>callGemini(geminiApiKey,model,evidencePrompt+"\n\n"+input,
               schema,0.1,"evidence_batch",timeout,{jsonMode,maxOutputTokens:16000,thinkingLevel:"low"}),
@@ -335,11 +337,12 @@ Deno.serve(async (req: Request) => {
         const payload={reasoning_effort:"low",temperature:0.1,max_tokens:10000,
           response_format:{type:"json_object"},messages:[{role:"system",content:evidencePrompt},
           {role:"user",content:input}]};
-        const reply=provider==="cloudflare"?
-          await callCloudflare(cfEvidenceId,cfEvidenceToken,payload,preparationBudget(attemptDeadline,60000)):
-          await callGroq(groqApiKey,{...payload,max_tokens:undefined,model:"openai/gpt-oss-20b",
-            max_completion_tokens:7000,reasoning_format:"hidden"},preparationBudget(attemptDeadline,12000));
-        return {reply,model:provider==="cloudflare"?"@cf/openai/gpt-oss-120b":"openai/gpt-oss-20b"};
+        const backup=provider==="cloudflare";
+        const accountId=backup?cfEvidenceBackupId:cfEvidencePrimaryId;
+        const accountToken=backup?cfEvidenceBackupToken:cfEvidencePrimaryToken;
+        const reply=await callCloudflare(accountId,accountToken,payload,
+          preparationBudget(attemptDeadline,backup?50000:44000));
+        return {reply,model:"@cf/openai/gpt-oss-120b"};
       }});
     if(!output.articles.length)return json({error:"evidence_providers_unavailable",
       detail:output.attempts.some(a=>a.status===200)
@@ -429,12 +432,13 @@ ${sections.join("; ")}.
   }
 
   if (action === "editorial_map") {
-    const backAccount=Deno.env.get("CLOUDFLARE_BACKUP_ACCOUNT_ID")||"";
-    const backToken=Deno.env.get("CLOUDFLARE_BACKUP_API_TOKEN")||"";
-    const useBackup=Boolean(backAccount&&backToken);
-    const cfId=useBackup?backAccount:(Deno.env.get("CLOUDFLARE_ACCOUNT_ID")||"");
-    const cfToken=useBackup?backToken:(Deno.env.get("CLOUDFLARE_API_TOKEN")||"");
-    if(!geminiApiKey&&!groqApiKey&&!(cfId&&cfToken))
+    const cfPrimaryId=Deno.env.get("CLOUDFLARE_ACCOUNT_ID")||"";
+    const cfPrimaryToken=Deno.env.get("CLOUDFLARE_API_TOKEN")||"";
+    const cfBackupId=Deno.env.get("CLOUDFLARE_BACKUP_ACCOUNT_ID")||"";
+    const cfBackupToken=Deno.env.get("CLOUDFLARE_BACKUP_API_TOKEN")||"";
+    const cfPrimaryReady=Boolean(cfPrimaryId&&cfPrimaryToken);
+    const cfBackupReady=Boolean(cfBackupId&&cfBackupToken)&&cfBackupId!==cfPrimaryId;
+    if(!geminiApiKey&&!cfPrimaryReady&&!cfBackupReady)
       return json({error:"w_review_map_providers_not_configured"},503);
     const task=String(body?.task||"").trim();
     if(!task||task.length>2000)return json({error:"invalid_task",max_chars:2000},400);
@@ -508,72 +512,53 @@ ${sections.join("; ")}.
       return false;
     };
     const preparationDeadline=Date.now()+130000;
-    const primaryDeadline=Math.min(preparationDeadline,Date.now()+55000);
-    const runGeminiMap=async(model:string,deadline:number,repair=false)=>{
-      const feedback=repair?"\n\nПредыдущий план не прошёл проверку: "+
-        (attempts.at(-1)?.reason||"invalid_dossier")+
-        ". Верни trends как массив 1–5 тенденций внутри корневого объекта. Все свободные строки — по-русски. Исправь план по исходной базе. Свяжи каждую публикацию с содержательной веткой. "+
-        "Пропуск в плане не означает периферийность; не перемещай пропуски автоматически в необязательные темы.":"";
-      // This deployed endpoint repeatedly rejects the dossier schema (HTTP 400).
-      // Use working JSON mode with the complete explicit text contract above.
-      const res=await structuredGeminiRequest({deadline,initialMode:"json",
-        call:(jsonMode,timeout)=>callGemini(geminiApiKey,model,prompt+feedback,schema,0.1,
-          "editorial_map",timeout,{jsonMode,maxOutputTokens:16384,thinkingLevel:"low"}),
-        log:event=>console.info("w_review_gemini_response "+JSON.stringify({stage:"editorial_map",model,...event}))});
-      if(res.ok)return accept(res,model,"gemini");
-      attempts.push({model,status:res.status,reason:res.diagnostic?.kind||res.detail});
+    const availableTime=()=>Math.max(0,preparationDeadline-Date.now()-7000);
+    const cfPayload={
+      reasoning_effort:"low",temperature:0.1,max_tokens:10500,
+      response_format:{type:"json_object"},
+      messages:[
+        {role:"system",content:DOSSIER_INSTRUCTIONS+
+          "\nОбязательное условие: JSON содержит trends, coverage по всем "+cards.length+
+          " материалам и inventory. Каждый evidence_id должен встречаться в переданной базе."},
+        {role:"user",content:mapUserInput}
+      ]
+    };
+    const callCfMap=async(route:"primary"|"backup",ceiling:number)=>{
+      const account=route==="primary"?cfPrimaryId:cfBackupId;
+      const token=route==="primary"?cfPrimaryToken:cfBackupToken;
+      const timeout=Math.min(ceiling,availableTime());
+      if(timeout<6000)return false;
+      console.info("w_review_map_route "+JSON.stringify({route,provider:"cloudflare",timeout_ms:timeout}));
+      const response=await callCloudflare(account,token,cfPayload,timeout);
+      if(response.ok)return accept(response,"@cf/openai/gpt-oss-120b","cloudflare");
+      attempts.push({model:"@cf/openai/gpt-oss-120b",status:response.status,
+        reason:response.detail==="cloudflare_local_timeout"?"local_timeout":
+          response.detail.startsWith("cloudflare_empty_reply")?"empty_reply":"provider_or_transport"});
       return false;
     };
-    if(geminiApiKey){
-      const accepted=await runGeminiMap(W_REVIEW_GEMINI_PRIMARY,Math.min(primaryDeadline,Date.now()+35000));
-      // Only a content/schema-valid draft needs an editorial correction. Network
-      // retries and format compatibility are already bounded in the adapter.
-      if(!accepted&&attempts.at(-1)?.status===422&&preparationBudget(primaryDeadline,20000)>5000)
-        await runGeminiMap(W_REVIEW_GEMINI_PRIMARY,primaryDeadline,true);
-    }
-    if(!selected&&cfId&&cfToken&&preparationBudget(preparationDeadline-18000,60000)>5000){
-      console.info("w_review_provider_fallback "+JSON.stringify({
-        stage:"editorial_dossier",from:"gemini",to:"cloudflare_gpt_oss_120b"
-      }));
-      const cf=await callCloudflare(cfId,cfToken,{
-        reasoning_effort:"low",temperature:0.1,max_tokens:10000,
-        response_format:{type:"json_object"},
-        messages:[
-          {role:"system",content:DOSSIER_INSTRUCTIONS+
-            "\nОбязательное условие: JSON содержит trends, coverage по всем "+cards.length+
-            " материалам и inventory. Каждый evidence_id должен встречаться в переданной базе."},
-          {role:"user",content:mapUserInput}
-        ]
-      },preparationBudget(preparationDeadline-18000,60000));
-      if(cf.ok)accept(cf,"@cf/openai/gpt-oss-120b","cloudflare");
-      else{
-        const reason=cf.detail==="cloudflare_local_timeout"?"local_timeout":
-          cf.detail.startsWith("cloudflare_empty_reply")?"empty_reply":"provider_or_transport";
-        attempts.push({model:"@cf/openai/gpt-oss-120b",status:cf.status,reason});
-        console.warn("w_review_editorial_cloudflare_failure "+JSON.stringify({reason,status:cf.status}));
-      }
-    }
-    if(!selected&&geminiApiKey&&preparationBudget(preparationDeadline,20000)>5000){
-      console.info("w_review_provider_fallback "+JSON.stringify({stage:"editorial_map",to:W_REVIEW_GEMINI_FALLBACK}));
-      await runGeminiMap(W_REVIEW_GEMINI_FALLBACK,Math.min(preparationDeadline,Date.now()+22000));
-    }
-    if(!selected&&groqApiKey&&preparationBudget(preparationDeadline,12000)>4000){
-      console.info("w_review_provider_fallback "+JSON.stringify({
-        stage:"editorial_dossier",from:"cloudflare_or_gemini",to:"groq"
-      }));
-      const groq=await callGroq(groqApiKey,{
-        model:"openai/gpt-oss-20b",response_format:{type:"json_object"},
-        reasoning_effort:"low",reasoning_format:"hidden",max_completion_tokens:7600,
-        messages:[{role:"system",content:DOSSIER_INSTRUCTIONS},{role:"user",content:mapUserInput}]
-      },preparationBudget(preparationDeadline,12000));
-      if(groq.ok)accept(groq,"openai/gpt-oss-20b","groq");
-      else attempts.push({model:"openai/gpt-oss-20b",status:groq.status,reason:"provider_error"});
+    if(cfPrimaryReady)await callCfMap("primary",52000);
+    if(!selected&&cfBackupReady)await callCfMap("backup",45000);
+    if(!selected&&geminiApiKey&&availableTime()>=12000){
+      console.info("w_review_map_route "+JSON.stringify({provider:"gemini",model:W_REVIEW_GEMINI_PRIMARY}));
+      // JSON-only is intentionally used: this endpoint rejects its structured
+      // schema with INVALID_ARGUMENT even when model generation works.
+      const timeout=Math.min(33000,availableTime());
+      const response=await structuredGeminiRequest({deadline:Date.now()+timeout,
+        initialMode:"json",
+        call:(jsonMode,budget)=>callGemini(geminiApiKey,W_REVIEW_GEMINI_PRIMARY,prompt,schema,
+          0.1,"editorial_map",budget,{jsonMode,maxOutputTokens:16384,thinkingLevel:"low"}),
+        log:event=>console.info("w_review_gemini_response "+JSON.stringify({
+          stage:"editorial_map",model:W_REVIEW_GEMINI_PRIMARY,...event}))
+      });
+      if(response.ok)accept(response,W_REVIEW_GEMINI_PRIMARY,"gemini");
+      else attempts.push({model:W_REVIEW_GEMINI_PRIMARY,status:response.status,
+        reason:response.diagnostic?.kind||response.detail});
     }
     if(!selected){
       console.warn("w_review_editorial_dossier_failures "+JSON.stringify({
         attempts,pool_articles:cards.length
       }));
-      return json({error:"editorial_dossier_providers_unavailable",provider:"gemini_cloudflare_groq",
+      return json({error:"editorial_dossier_providers_unavailable",provider:"cloudflare_primary_backup_gemini",
         detail:attempts.map(a=>a.model+": "+a.status+" "+a.reason).join("; ").slice(0,320),
         attempts,retryable:false},503);
     }
@@ -788,9 +773,10 @@ ${styleProfile || "Живой сдержанный редакционный ст
       (Deno.env.get("CLOUDFLARE_API_TOKEN") && Deno.env.get("CLOUDFLARE_ACCOUNT_ID"))
       || (Deno.env.get("CLOUDFLARE_BACKUP_API_TOKEN") && Deno.env.get("CLOUDFLARE_BACKUP_ACCOUNT_ID"))
     );
-    if (!cloudflareConfigured && !groqApiKey) return json({ error: "w_review_no_synthesis_provider" }, 503);
+    if (!cloudflareConfigured && !geminiApiKey) return json({ error: "w_review_no_synthesis_provider" }, 503);
     const task = String(body?.task || "").trim();
     if (!task || task.length > 2000) return json({ error: "invalid_task", max_chars: 2000 }, 400);
+    const synthesisRoute=body?.synthesis_route==="gemini_first"?"gemini_first":"cloudflare_first";
     const targetChars = Math.max(1000, Math.min(8000, Number(body?.target_chars || 3000)));
     const submittedCards = Array.isArray(body?.evidence_cards) ? body.evidence_cards : [];
     if (submittedCards.length > 18) return json({error:"w_review_max_articles",limit:18},400);
@@ -955,75 +941,82 @@ ${styleOnlyText || "Дополнительные фрагменты недост
       const {data,error} = await admin.rpc("w_review_quota_finish",{p_id:reservationId,p_success:success});
       return !error && data===true;
     }
-    // GPT-OSS-120B ONLY for the final review, regardless of length:
-    // independent Cloudflare account 1 -> account 2 -> Groq.
-    // Gemini is deliberately excluded from synthesis because of instability.
-    // No rewriting or length-driven provider switching after a usable result.
-    // Never let sequential provider attempts outlive the Edge request idle
-    // timeout (Supabase 150s). Keep the existing single final model synthesis,
-    // not a multi-pass rewrite. Fallback is bounded by remaining budget.
+    // Operator-controlled A/B comparison on exactly the same Evidence,
+    // selected dossier and style: CF-main -> CF-backup -> Gemini 3.5, or
+    // Gemini 3.5 -> CF-main -> CF-backup. One successful provider completion
+    // per press; no rewriting or extra model request to inflate the length.
     const deadline=synthesisStart+135000;
-    const remaining=()=>Math.max(0,deadline-Date.now());
-    const providerBudget=(ceiling:number)=>Math.max(0,Math.min(ceiling,remaining()-9000));
-    const firstBudget=providerBudget(112000);
-    console.info("w_review_synthesis_start "+JSON.stringify({
-      cards:cards.length,selected_trends:selectedIds.length,required_branches:synthesisDossier.requiredBranches,
-      target_chars:targetChars,evidence_chars:evidenceText.length,style_chars:styleProfile.length,
-      dossier_chars:trendText.length,output_tokens:synthesisOutputTokenBudget,
-      quota_reserved:Boolean(reservationId),provider:"cloudflare"
-    }));
-    let cloudflareRoute:"primary"|"backup"|null=
-      cfPrimaryReady?"primary":cfBackupReady?"backup":null;
-    let result:AiResult=firstBudget>=10000
-      ? cfPrimaryReady
-        ? await callCloudflare(cfId,cfToken,cloudflareSynthesisPayload,firstBudget)
-        : cfBackupReady
-          ? await callCloudflare(cfBackupId,cfBackupToken,cloudflareSynthesisPayload,firstBudget)
-          : {ok:false,status:503,retryAfter:null,detail:"cloudflare_unconfigured"}
-      : {ok:false,status:504,retryAfter:null,detail:"synthesis_preflight_timeout"};
-    console.info("w_review_synthesis_primary_result "+JSON.stringify({
-      route:cloudflareRoute,ok:result.ok,status:result.ok?200:result.status,
-      elapsed_ms:Date.now()-synthesisStart,
-      issue:result.ok?String(result.finish_reason||"none"):providerField(result.detail).slice(0,80)
-    }));
-    let selectedProvider="cloudflare";
-    let selectedModel="@cf/openai/gpt-oss-120b";
-    // Convert one structured completion to the existing API. No second AI
-    // call, rewriting pass, audit or source-by-source postprocessing.
+    const remaining=()=>Math.max(0,deadline-Date.now()-9000);
+    const providerBudget=(max:number)=>Math.max(0,Math.min(max,remaining()));
     const normalizeReview=(raw:any)=>{
       if(!raw||typeof raw!=="object")return raw;
       const blockResult=readSynthesisBlocks(raw,synthesisDossier.blocks);
       const paragraphs=blockResult.paragraphs;
       const text=paragraphs.length?paragraphs.join("\n\n"):String(raw.review_text||"").trim();
-      // Remove model control markup and fake paragraph-ending headings.
       const withoutTags=text.replace(/\s+\*\*«[^»\n]{5,95}»\*\*(?=\s*(?:\n|$))/g,"");
       const cleaned=withoutTags.replace(/\*\*/g,"").replace(/__/g,"").trim();
-      return {...raw,paragraphs,block_warnings:blockResult.warnings,block_metrics:blockResult.metrics,review_text:cleaned,section_titles:[],
+      return {...raw,paragraphs,block_warnings:blockResult.warnings,
+        block_metrics:blockResult.metrics,review_text:cleaned,section_titles:[],
         bold_phrases:Array.isArray(raw.bold_phrases)?raw.bold_phrases:[]};
     };
-    let parsed=result.ok?normalizeReview(parseModelJson(result)):null;
     const usable=(r:AiResult,p:any)=>r.ok&&typeof p?.review_text==="string"&&Boolean(p.review_text.trim());
-    const temporaryOrAccountError=result.ok||[401,403,408,429,500,502,503,504,520,522,523,524].includes(result.status);
-    if(cfPrimaryReady&&cfBackupReady&&!usable(result,parsed)&&temporaryOrAccountError&&
-       providerBudget(85000)>=25000){
-      console.info("w_review_provider_fallback "+JSON.stringify({
-        stage:"synthesis",from:"cloudflare_primary",to:"cloudflare_backup",
-        http_status:result.ok?200:result.status,trigger:result.ok?"invalid_output":"provider_failure"
-      }));
-      result=await callCloudflare(cfBackupId,cfBackupToken,cloudflareSynthesisPayload,providerBudget(85000));
+    type SynthRoute="cloudflare_primary"|"cloudflare_backup"|"gemini_3_5";
+    const routes:SynthRoute[]=synthesisRoute==="gemini_first"
+      ?["gemini_3_5","cloudflare_primary","cloudflare_backup"]
+      :["cloudflare_primary","cloudflare_backup","gemini_3_5"];
+    let result:AiResult={ok:false,status:503,retryAfter:null,detail:"all_synthesis_routes_unavailable"};
+    let parsed:any=null;
+    let selectedProvider:"cloudflare"|"gemini"="cloudflare";
+    let selectedModel="@cf/openai/gpt-oss-120b";
+    let cloudflareRoute:"primary"|"backup"|null=null;
+    console.info("w_review_synthesis_start "+JSON.stringify({
+      requested_route:synthesisRoute,planned_routes:routes,
+      cards:cards.length,selected_trends:selectedIds.length,
+      required_branches:synthesisDossier.requiredBranches,
+      target_chars:targetChars,evidence_chars:evidenceText.length,
+      style_chars:styleProfile.length,dossier_chars:trendText.length,
+      output_tokens:synthesisOutputTokenBudget,quota_reserved:Boolean(reservationId)
+    }));
+    for(const route of routes){
+      const configured=route==="gemini_3_5"?Boolean(geminiApiKey):
+        route==="cloudflare_primary"?cfPrimaryReady:cfBackupReady;
+      const budget=providerBudget(route==="gemini_3_5"
+        ?(synthesisRoute==="gemini_first"?70000:35000)
+        :(synthesisRoute==="cloudflare_first"?
+          (route==="cloudflare_primary"?65000:45000):
+          (route==="cloudflare_primary"?46000:36000)));
+      if(!configured||budget<10000)continue;
+      console.info("w_review_synthesis_route "+JSON.stringify({requested_route:synthesisRoute,
+        route,timeout_ms:budget,elapsed_ms:Date.now()-synthesisStart}));
+      if(route==="gemini_3_5"){
+        const geminiPrompt=payload.messages.map((msg:any)=>
+          (msg.role==="system"?"ИНСТРУКЦИИ РЕДАКТОРА:\n":"ДАННЫЕ ДЛЯ ОБЗОРА:\n")+msg.content
+        ).join("\n\n")+"\n\nВерни только один полный JSON-объект со структурой blocks, section_titles, bold_phrases. Без Markdown.";
+        result=await callGemini(geminiApiKey,W_REVIEW_GEMINI_PRIMARY,geminiPrompt,
+          synthesisResponseSchema(synthesisDossier.blocks),0.2,"synthesis",budget,
+          {jsonMode:"json",maxOutputTokens:16000,thinkingLevel:"low"});
+        selectedProvider="gemini";
+        selectedModel=W_REVIEW_GEMINI_PRIMARY;
+        cloudflareRoute=null;
+      }else{
+        const isBackup=route==="cloudflare_backup";
+        result=await callCloudflare(isBackup?cfBackupId:cfId,
+          isBackup?cfBackupToken:cfToken,cloudflareSynthesisPayload,budget);
+        selectedProvider="cloudflare";
+        selectedModel="@cf/openai/gpt-oss-120b";
+        cloudflareRoute=isBackup?"backup":"primary";
+      }
       parsed=result.ok?normalizeReview(parseModelJson(result)):null;
-      cloudflareRoute="backup";
-      console.info("w_review_synthesis_backup_result "+JSON.stringify({
-        ok:result.ok,status:result.ok?200:result.status,elapsed_ms:Date.now()-synthesisStart
+      console.info("w_review_synthesis_route_result "+JSON.stringify({
+        requested_route:synthesisRoute,route,ok:usable(result,parsed),
+        http_status:result.ok?200:result.status,finish_reason:result.ok?result.finish_reason||"unknown":"",
+        elapsed_ms:Date.now()-synthesisStart,
+        response_chars:result.ok?result.content.length:0,
+        issue:result.ok?(usable(result,parsed)?"":"invalid_output"):providerField(result.detail).slice(0,80)
       }));
-    }
-    if(!usable(result,parsed)&&groqApiKey&&providerBudget(35000)>=12000){
-      const groq=await callGroq(groqApiKey,groqPayload,providerBudget(35000));
-      const gp=groq.ok?normalizeReview(parseModelJson(groq)):null;
-      if(usable(groq,gp)){
-        result=groq;parsed=gp;selectedProvider="groq";
-        selectedModel="openai/gpt-oss-120b";cloudflareRoute=null;
-      }else if(!result.ok){result=groq;selectedProvider="groq";selectedModel="openai/gpt-oss-120b";cloudflareRoute=null;}
+      if(usable(result,parsed))break;
+      // Malformed JSON is no more successful than a transport failure.
+      if(result.ok)result={ok:false,status:422,retryAfter:null,detail:"invalid_synthesis_json"};
     }
     // SINGLE-PASS: no rewriting, expansion, independent AI audit, or deletion.
     // Fallback to a different provider is used only if the chosen provider
@@ -1034,7 +1027,7 @@ ${styleOnlyText || "Дополнительные фрагменты недост
         status:result.status,provider:selectedProvider,
         elapsed_ms:Date.now()-synthesisStart,issue:providerField(result.detail).slice(0,100)
       }));
-      return aiError(selectedProvider==="groq"?"groq":"cloudflare",result);
+      return aiError(selectedProvider,result);
     }
     if (!parsed || typeof parsed.review_text!=="string" || !parsed.review_text.trim()) {
       await finishQuota(false);
@@ -1051,8 +1044,8 @@ ${styleOnlyText || "Дополнительные фрагменты недост
     console.info("w_review_single_pass "+JSON.stringify({
       provider:selectedProvider,model:selectedModel,target_chars:targetChars,
       actual_chars:actualChars,within_tolerance:lengthOk,
-      requested_output_token_budget:selectedProvider==="cloudflare"?synthesisOutputTokenBudget:
-        groqSynthesisOutputTokenBudget,
+      requested_route:synthesisRoute,cloudflare_route:cloudflareRoute,
+      requested_output_token_budget:selectedProvider==="cloudflare"?synthesisOutputTokenBudget:16000,
       length_window:{min:lengthMinimum,max:lengthMaximum},
       paragraph_target:paragraphTarget,block_metrics:parsed.block_metrics,
       actual_paragraphs:reviewText.split(/\n\s*\n/).length,
@@ -1078,7 +1071,7 @@ ${styleOnlyText || "Дополнительные фрагменты недост
       bold_phrases:Array.isArray(parsed.bold_phrases)
         ?parsed.bold_phrases.map((v:unknown)=>String(v||"").trim())
            .filter((v:string)=>v&&reviewText.includes(v)).slice(0,4):[],
-      model:selectedModel,provider:selectedProvider,cloudflare_route:cloudflareRoute,
+      model:selectedModel,provider:selectedProvider,cloudflare_route:cloudflareRoute,requested_route:synthesisRoute,
       target_chars:targetChars,actual_chars:actualChars,
       length_within_tolerance:lengthOk,usage:result.usage,preflight_warnings:preflightWarnings
 

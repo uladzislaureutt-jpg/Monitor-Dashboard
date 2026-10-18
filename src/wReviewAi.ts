@@ -161,6 +161,7 @@ export async function wEditorialMap(input: { task: string; evidenceCards: string
 export async function wSynthesize(input: {
   task: string;
   topicKey: string;
+  synthesisRoute: "cloudflare_first"|"gemini_first";
   targetChars: number;
   evidenceCards: string[];
   styleProfile: string;
@@ -174,6 +175,7 @@ export async function wSynthesize(input: {
   const baseBody = {
     task: input.task,
     topic_key: input.topicKey,
+    synthesis_route: input.synthesisRoute,
     target_chars: input.targetChars,
     evidence_cards: input.evidenceCards,
     style_profile: input.styleProfile,

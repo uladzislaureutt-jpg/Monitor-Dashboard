@@ -42,6 +42,8 @@ type WState = {
   selectedTrendIds: string[];
   density: { quotes: WDensity; headlines: WDensity; experts: WDensity };
   reviewText: string;
+  activeReviewRoute?: "cloudflare_first"|"gemini_first";
+  reviewVariants?: Partial<Record<"cloudflare_first"|"gemini_first",{text:string;sectionTitles:string[];boldPhrases:string[];model:string}>>;
   sectionTitles: string[];
   boldPhrases: string[];
   factCheck: WFactCheck | null;
@@ -54,7 +56,7 @@ const EMPTY: WState = {
   items: [], topic: "", tasks: [""], exclusions: "", targetChars: 3000, samples: [], styleProfile: "", styleContract: 0,
   editorialMap: null, mapContract: 0, selectedTrendIds: [],
   density: { quotes: "moderate", headlines: "moderate", experts: "moderate" }, reviewText: "", sectionTitles: [], boldPhrases: [],
-  factCheck: null, factCheckContract: 0, auditDecisions: {}
+  factCheck: null, factCheckContract: 0, auditDecisions: {},reviewVariants:{},activeReviewRoute:undefined
 };
 
 function id(prefix = "w") { return `${prefix}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`; }
@@ -91,6 +93,15 @@ function loadState(): WState {
         experts: densityValue(raw.density?.experts),
       },
       reviewText: String(raw.reviewText || ""),
+      activeReviewRoute:raw.activeReviewRoute==="gemini_first"?"gemini_first":raw.activeReviewRoute==="cloudflare_first"?"cloudflare_first":undefined,
+      reviewVariants:raw.reviewVariants&&typeof raw.reviewVariants==="object"
+        ? Object.fromEntries(["cloudflare_first","gemini_first"].flatMap(route=>{
+          const v=raw.reviewVariants[route];
+          return v&&typeof v.text==="string"?[[route,{text:v.text,
+            sectionTitles:Array.isArray(v.sectionTitles)?v.sectionTitles.map(String):[],
+            boldPhrases:Array.isArray(v.boldPhrases)?v.boldPhrases.map(String):[],
+            model:String(v.model||"")}]]:[];
+        })):{},
       sectionTitles: Array.isArray(raw.sectionTitles) ? raw.sectionTitles.map(String).slice(0, 5) : [],
       boldPhrases: Array.isArray(raw.boldPhrases) ? raw.boldPhrases.map(String).slice(0, 4) : [],
       factCheck: raw.factCheck && typeof raw.factCheck === "object" ? raw.factCheck as WFactCheck : null,
@@ -197,7 +208,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     prepared === state.items.length && mapReady && selectedTrends.length > 0 && topicReady && styleReady;
 
   function invalidateMap(current: WState): WState {
-    return { ...current, editorialMap: null, mapContract: 0, selectedTrendIds: [], reviewText: "", sectionTitles: [], boldPhrases: [], factCheck: null, factCheckContract: 0 };
+    return { ...current, editorialMap: null, mapContract: 0, selectedTrendIds: [], reviewText: "",reviewVariants:{},activeReviewRoute:undefined, sectionTitles: [], boldPhrases: [], factCheck: null, factCheckContract: 0 };
   }
   function addUsage(next: WUsage) {
     setUsage((current) => ({
@@ -380,7 +391,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         editorialMap: mapResult.editorialMap,
         mapContract: W_MAP_CONTRACT_VERSION,
         selectedTrendIds: mapResult.editorialMap.trends.filter((trend: WEditorialTrend) => !trend.operator_optional).map((trend: WEditorialTrend) => trend.id),
-        reviewText: "",
+        reviewText: "",reviewVariants:{},activeReviewRoute:undefined,
       }));
       setAnalysisText("");
       const providerSummary=force?
@@ -410,7 +421,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
       addUsage(result.usage);
       setState((current) => ({
         ...current, editorialMap: result.editorialMap, mapContract: W_MAP_CONTRACT_VERSION,
-        selectedTrendIds: result.editorialMap.trends.filter((trend: WEditorialTrend) => !trend.operator_optional).map((trend: WEditorialTrend) => trend.id), reviewText: "", factCheck: null, factCheckContract: 0,
+        selectedTrendIds: result.editorialMap.trends.filter((trend: WEditorialTrend) => !trend.operator_optional).map((trend: WEditorialTrend) => trend.id), reviewText: "",reviewVariants:{},activeReviewRoute:undefined, factCheck: null, factCheckContract: 0,
       }));
       setMessage(be ? "Тэндэнцыі пералічаны." : "Тенденции пересчитаны.");
     } catch (reason) { setError(String(reason)); } finally { setAnalysisText(""); setBusy(""); }
@@ -424,7 +435,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
       editorialMap: null,
       mapContract: 0,
       selectedTrendIds: [],
-      reviewText: "",
+      reviewText: "",reviewVariants:{},activeReviewRoute:undefined,
       sectionTitles: [],
       boldPhrases: [],
       factCheck: null,
@@ -479,13 +490,14 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     } catch (reason) { setError(String(reason)); } finally { setBusy(""); }
   }
 
-  async function synthesize() {
+  async function synthesize(route:"cloudflare_first"|"gemini_first") {
     if (!reviewReady) return;
-    setBusy("synthesize"); setError(""); setMessage("");
+    setBusy(route==="gemini_first"?"synthesize_gemini":"synthesize_cloudflare"); setError(""); setMessage("");
     const {excerpts:styleExcerpts,...styleComposition}=buildStylePattern(state.samples);
     try {
       const result = await wSynthesize({
         topicKey: `workspace-${activeSlot + 1}`,
+        synthesisRoute:route,
         task: operatorTask,
         targetChars: state.targetChars,
         evidenceCards: evidenceCards(state.items),
@@ -499,6 +511,10 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
       }, (seconds) => setMessage(be ? `Ліміт Groq. Генерацыя працягнецца праз ~${seconds} с…` : `Лимит Groq. Генерация продолжится автоматически через ~${seconds} с…`));
       setState(current=>({...current,reviewText:result.reviewText,
         sectionTitles:result.sectionTitles,boldPhrases:result.boldPhrases,
+        activeReviewRoute:route,
+        reviewVariants:{...current.reviewVariants,
+          [route]:{text:result.reviewText,sectionTitles:result.sectionTitles,
+            boldPhrases:result.boldPhrases,model:result.model}},
         factCheck:null,factCheckContract:0,auditDecisions:{}}));
       addUsage(result.usage);
       const warning=result.preflightWarnings.length
@@ -506,7 +522,8 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
       const lengthNotice=result.lengthWithinTolerance?"":(be
         ? ` Аб'ём ${result.actualChars} знакаў замест ${result.targetChars}; праверце паўнату і пры неабходнасці дапрацуйце.`
         : ` Объём ${result.actualChars} знаков вместо ${result.targetChars}; проверьте полноту и при необходимости доработайте.`);
-      setMessage((be?"Агляд атрыманы. Яго можна рэдагаваць і экспартаваць у DOCX.":"Обзор получен. Можно редактировать и экспортировать в DOCX.")+lengthNotice+warning);
+      setMessage((be?"Агляд атрыманы. Яго можна рэдагаваць і экспартаваць у DOCX.":"Обзор получен. Можно редактировать и экспортировать в DOCX.")+
+        " Модель: "+result.model+"." +lengthNotice+warning);
     } catch (reason) {
       const text = String(reason);
       setError(text.includes("w_review_daily_generation_limit")
@@ -651,7 +668,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     </section>
 
     {mapReady&&state.editorialMap&&<section className="panel w-review-map"><div className="panel-head"><div><h3>{be?"3. Тэндэнцыі медыяполя":"3. Тенденции медиаполя"}</h3><p>{be?"Зніміце галачку толькі з тых акцэнтаў, якія не павінны ўваходзіць у агляд." : "Основные тенденции включены по умолчанию. Дополнительные (периферийные) — на выбор оператора."}</p></div><button className="ghost-button small-button" disabled={busy!==""} onClick={recalculateTrends}>{be?"Пералічыць":"Пересчитать"}</button></div>
-      <div className="w-review-trends">{state.editorialMap.trends.map((trend,index)=><label key={trend.id} className={`w-review-trend ${state.selectedTrendIds.includes(trend.id)?"selected":""}`}><input type="checkbox" checked={state.selectedTrendIds.includes(trend.id)} onChange={()=>setState((current)=>({...current,selectedTrendIds:current.selectedTrendIds.includes(trend.id)?current.selectedTrendIds.filter((value)=>value!==trend.id):[...current.selectedTrendIds,trend.id],reviewText:"",factCheck:null,factCheckContract:0}))}/><span><b>{index+1}. {trend.title}{trend.operator_optional ? (be?" — дадатковая, на выбар":" — дополнительная, на выбор") : ""}</b><small>{trend.summary}</small>
+      <div className="w-review-trends">{state.editorialMap.trends.map((trend,index)=><label key={trend.id} className={`w-review-trend ${state.selectedTrendIds.includes(trend.id)?"selected":""}`}><input type="checkbox" checked={state.selectedTrendIds.includes(trend.id)} onChange={()=>setState((current)=>({...current,selectedTrendIds:current.selectedTrendIds.includes(trend.id)?current.selectedTrendIds.filter((value)=>value!==trend.id):[...current.selectedTrendIds,trend.id],reviewText:"",reviewVariants:{},activeReviewRoute:undefined,factCheck:null,factCheckContract:0}))}/><span><b>{index+1}. {trend.title}{trend.operator_optional ? (be?" — дадатковая, на выбар":" — дополнительная, на выбор") : ""}</b><small>{trend.summary}</small>
         {trend.operator_optional&&trend.optional_reason&&<small>{be?"Чаму асобна":"Почему отдельно"}: {trend.optional_reason}</small>}
         <small>{be?"Сюжэтныя лініі":"Сюжетные ветки"}: {trend.branches.length} · {be?"абавязковыя":"обязательные"}: {trend.branches.filter(b=>b.required).length}</small>
         <small>{trend.branches.filter(b=>b.required).map(b=>b.title).join(" · ")}</small>
@@ -668,22 +685,42 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
       </details>
       <div className="w-review-inventory">{be?"Знойдзена ў пуле":"Найдено в пуле"}: <b>{state.editorialMap.inventory.quotes}</b> {be?"цытат":"цитат"} · <b>{state.editorialMap.inventory.headlines}</b> {be?"загалоўкаў":"заголовков"} · <b>{state.editorialMap.inventory.experts}</b> {be?"экспертных каментарыяў":"экспертных комментариев"}</div>
       <div className="w-review-density">
-        <label><span>{be?"Цытаты":"Цитаты"}</span><select value={state.density.quotes} onChange={(e)=>setState({...state,density:{...state.density,quotes:e.target.value as WDensity},reviewText:"",factCheck:null,factCheckContract:0})}>{densityOptions}</select></label>
-        <label><span>{be?"Загалоўкі":"Заголовки"}</span><select value={state.density.headlines} onChange={(e)=>setState({...state,density:{...state.density,headlines:e.target.value as WDensity},reviewText:"",factCheck:null,factCheckContract:0})}>{densityOptions}</select></label>
-        <label><span>{be?"Эксперты":"Эксперты"}</span><select value={state.density.experts} onChange={(e)=>setState({...state,density:{...state.density,experts:e.target.value as WDensity},reviewText:"",factCheck:null,factCheckContract:0})}>{densityOptions}</select></label>
+        <label><span>{be?"Цытаты":"Цитаты"}</span><select value={state.density.quotes} onChange={(e)=>setState({...state,density:{...state.density,quotes:e.target.value as WDensity},reviewText:"",reviewVariants:{},activeReviewRoute:undefined,factCheck:null,factCheckContract:0})}>{densityOptions}</select></label>
+        <label><span>{be?"Загалоўкі":"Заголовки"}</span><select value={state.density.headlines} onChange={(e)=>setState({...state,density:{...state.density,headlines:e.target.value as WDensity},reviewText:"",reviewVariants:{},activeReviewRoute:undefined,factCheck:null,factCheckContract:0})}>{densityOptions}</select></label>
+        <label><span>{be?"Эксперты":"Эксперты"}</span><select value={state.density.experts} onChange={(e)=>setState({...state,density:{...state.density,experts:e.target.value as WDensity},reviewText:"",reviewVariants:{},activeReviewRoute:undefined,factCheck:null,factCheckContract:0})}>{densityOptions}</select></label>
       </div>
     </section>}
 
     <section className="panel w-review-final"><div className="panel-head"><div><h3>{be?"4. Выніковы агляд":"4. Итоговый обзор"}</h3><p>{be?"AI будуе тэкст па выбраных тэндэнцыях.":"AI строит текст по выбранным тенденциям."}</p></div></div>
       <div className="w-review-readiness"><span className={prepared===state.items.length&&state.items.length?"ready":""}>{prepared===state.items.length&&state.items.length?"✓":"○"} {be?"Матэрыялы прааналізаваны":"Материалы проанализированы"}</span><span className={selectedTrends.length?"ready":""}>{selectedTrends.length?"✓":"○"} {be?"Тэндэнцыі выбраны":"Тенденции выбраны"}</span><span className={topicReady?"ready":""}>{topicReady?"✓":"○"} {be?"Тэма ўказана":"Тема указана"}</span><span className={styleReady?"ready":""}>{styleReady?"✓":"○"} {be?"Аўтарскі стыль (абавязкова)":"Авторский стиль (обязательно)"}</span></div>
       {!styleReady&&<p style={{fontSize:11,color:"#9a443b",margin:"0 0 10px"}}>{be?"Перад фарміраваннем агляду стварыце профіль на ўкладцы «Аўтарскі стыль».":"Перед формированием обзора создайте профиль на вкладке «Авторский стиль»."}</p>}
-      <div className="w-review-final-actions"><label className="w-review-length-control"><span>{be?"Аб\’ём, знакаў":"Объём, знаков"}</span><select value={state.targetChars} onChange={(e)=>setState({...state,targetChars:Number(e.target.value),reviewText:"",sectionTitles:[],boldPhrases:[],factCheck:null,factCheckContract:0})}><option value={1000}>1 000</option><option value={2000}>2 000</option><option value={3000}>3 000</option><option value={4000}>4 000</option><option value={6000}>6 000</option><option value={8000}>8 000</option></select></label><button className="primary-button" disabled={busy!==""||!reviewReady} onClick={synthesize}>{busy==="synthesize"?"…":be?"Сфарміраваць агляд":"Сформировать обзор"}</button><button className="secondary-button" disabled={!state.reviewText.trim()||busy!==""} onClick={exportDocx}>DOCX</button>
+      <div className="w-review-final-actions"><label className="w-review-length-control"><span>{be?"Аб\’ём, знакаў":"Объём, знаков"}</span><select value={state.targetChars} onChange={(e)=>setState({...state,targetChars:Number(e.target.value),reviewText:"",reviewVariants:{},activeReviewRoute:undefined,sectionTitles:[],boldPhrases:[],factCheck:null,factCheckContract:0})}><option value={1000}>1 000</option><option value={2000}>2 000</option><option value={3000}>3 000</option><option value={4000}>4 000</option><option value={6000}>6 000</option><option value={8000}>8 000</option></select></label><button className="primary-button" disabled={busy!==""||!reviewReady}
+        onClick={()=>synthesize("cloudflare_first")}>{busy==="synthesize_cloudflare"?"…":be?"Агляд: Cloudflare 120B":"Обзор: Cloudflare 120B"}</button>
+        <button className="secondary-button" disabled={busy!==""||!reviewReady}
+        onClick={()=>synthesize("gemini_first")}>{busy==="synthesize_gemini"?"…":be?"Агляд: Gemini 3.5":"Обзор: Gemini 3.5"}</button><button className="secondary-button" disabled={!state.reviewText.trim()||busy!==""} onClick={exportDocx}>DOCX</button>
 </div>
-      <textarea className="report-editor-textarea w-review-final-text" lang={be?"be":"ru"} spellCheck={true} value={state.reviewText} onChange={(e)=>setState(current=>({
-          ...current,reviewText:e.target.value,
-          sectionTitles:current.sectionTitles.filter(value=>e.target.value.includes(value)),
-          boldPhrases:current.boldPhrases.filter(value=>e.target.value.includes(value)),
-        }))} placeholder={be?"Тут з'явіцца выніковы агляд…":"Здесь появится итоговый обзор…"}/>
+      {(state.reviewVariants?.cloudflare_first||state.reviewVariants?.gemini_first)&&
+        <div className="w-review-compare" style={{display:"flex",gap:8,flexWrap:"wrap",margin:"10px 0"}}>
+          {(["cloudflare_first","gemini_first"] as const).map(route=>{
+            const draft=state.reviewVariants?.[route];
+            return draft?<button key={route} type="button" className={state.activeReviewRoute===route?"primary-button":"secondary-button"}
+              disabled={busy!==""} onClick={()=>setState(current=>({
+                ...current,activeReviewRoute:route,
+                reviewText:draft.text,sectionTitles:draft.sectionTitles,
+                boldPhrases:draft.boldPhrases,factCheck:null,factCheckContract:0
+              }))}>{route==="cloudflare_first"?"Cloudflare":"Gemini"} · {draft.text.length.toLocaleString()} {be?"знакаў":"знаков"}</button>:null;
+          })}
+        </div>}
+      <textarea className="report-editor-textarea w-review-final-text" lang={be?"be":"ru"} spellCheck={true} value={state.reviewText} onChange={(e)=>setState(current=>{
+          const sectionTitles=current.sectionTitles.filter(value=>e.target.value.includes(value));
+          const boldPhrases=current.boldPhrases.filter(value=>e.target.value.includes(value));
+          return {...current,reviewText:e.target.value,sectionTitles,boldPhrases,
+            reviewVariants:current.activeReviewRoute?{
+              ...current.reviewVariants,[current.activeReviewRoute]:{
+                text:e.target.value,sectionTitles,boldPhrases,
+                model:current.reviewVariants?.[current.activeReviewRoute]?.model||""
+              }}:current.reviewVariants};
+        })} placeholder={be?"Тут з'явіцца выніковы агляд…":"Здесь появится итоговый обзор…"}/>
       <div className="w-review-usage">
          {be?"Знакаў":"Знаков"}: {state.reviewText.length.toLocaleString()} / {state.targetChars.toLocaleString()}
          {" · "}{be?"Дапушчальна":"Допуск"}: {Math.round(state.targetChars*.95).toLocaleString()}–{Math.round(state.targetChars*1.05).toLocaleString()}
