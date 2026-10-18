@@ -39,6 +39,7 @@ export function compactDossierCards(cards:string[]):string[]{
     const title=card.match(/^TITLE_RU:\s*(.+)$/m)?.[1]?.trim()||
       card.match(/^ЗАГОЛОВОК:\s*(.+)$/m)?.[1]?.trim()||"Без названия";
     const url=card.match(/^URL:\s*(\S+)/m)?.[1]?.trim()||"";
+    const region=card.match(/^КАТАЛОЖНЫЙ_РЕГИОН:\s*(.+)$/m)?.[1]?.trim()||"";
     const entries=[...card.matchAll(/^E(\d+)\s+\[([a-z_]+)\/(P\d+|TITLE)\]\s+(.+)$/gm)];
     // ALL verified Evidence IDs remain addressable. Only redundant verbatim
     // SOURCE/ORIGINAL excerpts are omitted; final synthesis receives full cards.
@@ -52,6 +53,7 @@ export function compactDossierCards(cards:string[]):string[]{
         (speaker?" | ГОВОРЯЩИЙ: "+speaker.slice(0,80):"");
     });
     return pub+"\nИСТОЧНИК: "+source+"\nЗАГОЛОВОК: "+title+
+      (region?"\nКАТАЛОЖНЫЙ_РЕГИОН: "+region:"")+
       (url?"\nURL: "+url:"")+
       "\nВСЕ ПОДТВЕРЖДЁННЫЕ ЗАПИСИ ("+entries.length+"):\n"+lines.join("\n");
   });
