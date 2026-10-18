@@ -61,6 +61,12 @@ const EMPTY: WState = {
 
 function id(prefix = "w") { return `${prefix}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`; }
 function estimateTokens(chars: number) { return Math.max(0, Math.round(chars / 3.2)); }
+function evidenceModelLabel(model?:string) {
+  if(model==="gemini-3.5-flash-lite")return "Gemini 3.5";
+  if(model==="@cf/openai/gpt-oss-120b")return "Cloudflare 120B";
+  if(model==="openai/gpt-oss-120b")return "Groq 120B";
+  return model||"модель не указана";
+}
 function densityValue(value: unknown): WDensity { return value === "minimum" || value === "many" || value === "all" ? value : "moderate"; }
 
 function loadState(): WState {
@@ -350,7 +356,6 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     try {
       const batches = buildBatches(next,force);
       let evidenceRejected = 0;
-      let evidenceAccepted = 0;
       let done = force ? 0 : next.filter((item) => item.evidence.trim() && item.evidenceContract === W_EVIDENCE_CONTRACT_VERSION).length;
       setAnalysisText(be ? `Аналіз матэрыялаў: ${done} з ${next.length}` : `Анализ материалов: ${done} из ${next.length}`);
       for (const batch of batches) {
@@ -370,7 +375,6 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
             evidenceData:card.evidenceData,evidenceContract:W_EVIDENCE_CONTRACT_VERSION};
           const acceptedData=next[target.index].evidenceData!;
           evidenceRejected+=acceptedData.validation.rejected;
-          evidenceAccepted+=acceptedData.validation.accepted;
           if(acceptedData.quality_warnings?.length)warned.add(target.index);
 
         }
@@ -638,7 +642,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
 
     <section className="w-review-grid">
       <aside className="panel w-review-pool"><div className="panel-head"><div><h3>{be?"Пул матэрыялаў":"Пул материалов"}</h3><p>{state.items.length ? (allEvidenceReady ? (be?`Захаваны Evidence: ${prepared}/${state.items.length}, ${evidenceRecords} запісаў`:`Сохранены Evidence: ${prepared}/${state.items.length}, ${evidenceRecords} записей`) : (be?`Захаваны Evidence: ${prepared}/${state.items.length}`:`Сохранены Evidence: ${prepared}/${state.items.length}`)) : (be?"пакуль пуста":"пока пусто")}{allEvidenceReady&&!mapReady?(be?" · тэндэнцыі не разлічаны":" · тенденции не рассчитаны"):""}</p></div><button className="ghost-button small-button" disabled={busy!==""||!state.items.length} onClick={clearPool}>{be?"Ачысціць":"Очистить"}</button></div>
-        {state.items.map((item,index)=><button key={item.id} className={`w-review-item ${active?.id===item.id?"active":""}`} onClick={()=>setActiveId(item.id)}><span>P{String(index+1).padStart(2,"0")}</span><div><b>{item.title}</b><small>{item.source}{item.evidence&&item.evidenceContract===W_EVIDENCE_CONTRACT_VERSION?" · ✓ "+(item.evidenceData?.records.length||0)+" записей"+(item.evidenceData?.validation ? " · "+item.evidenceData.validation.covered_passages+"/"+item.evidenceData.validation.total_passages+" фрагментов" : ""):""}
+        {state.items.map((item,index)=><button key={item.id} className={`w-review-item ${active?.id===item.id?"active":""}`} onClick={()=>setActiveId(item.id)}><span>P{String(index+1).padStart(2,"0")}</span><div><b>{item.title}</b><small>{item.source}{item.evidence&&item.evidenceContract===W_EVIDENCE_CONTRACT_VERSION?" · ✓ "+(item.evidenceData?.records.length||0)+" записей · "+evidenceModelLabel(item.evidenceData?.model)+(item.evidenceData?.validation ? " · "+item.evidenceData.validation.covered_passages+"/"+item.evidenceData.validation.total_passages+" фрагментов" : ""):""}
           {item.evidenceData?.quality_warnings?.length ? " · проверить полноту" : ""}
           {item.editorialText.length>MAX_ITEM_CHARS?` · +${(item.editorialText.length-MAX_ITEM_CHARS).toLocaleString()} знаков`:""}</small></div></button>)}
         <div className="w-review-pool-action">
