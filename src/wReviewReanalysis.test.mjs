@@ -59,3 +59,10 @@ test("the UI surfaces true pool-sized reanalysis and independent trends action",
   assert.ok(view.includes("Сохранены Evidence:"));
   assert.ok(view.includes("Последний переанализ не завершён"));
 });
+
+test("a failed forced pool refresh blocks the trends action until the next successful pool extraction",()=>{
+  assert.ok(view.includes('const latestReanalysisFailed=state.lastReanalysis?.status==="failed"'));
+  assert.ok(view.includes('disabled={!canRunPool||(allEvidenceReady&&latestReanalysisFailed)}'));
+  assert.ok(dossier.includes('|| latestReanalysisFailed) return;'));
+  assert.ok(view.includes('расчёт тенденций доступен только после успешного переанализа'));
+});
