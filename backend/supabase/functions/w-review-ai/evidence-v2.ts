@@ -122,7 +122,8 @@ export function verifyEvidenceCards(raw:any,documents:EvidenceDocument[]): {card
     const minRecords=Math.min(5,Math.max(1,Math.ceil(doc.passages.length*0.45)));
     const minPassages=doc.passages.length>=4?2:1;
     if(records.length<minRecords || uniqueSegments.size<minPassages)
-      return {cards:[],error:"evidence_insufficient_verified_coverage_material_"+(i+1)};
+      return {cards:[],error:"evidence_insufficient_verified_coverage_material_"+(i+1)+
+        "_records_"+records.length+"_of_"+minRecords+"_passages_"+uniqueSegments.size+"_of_"+minPassages};
     result.push({
       version:2,publication_id:doc.publication_id,title_original:doc.title,
       title_ru:asText(incoming.title_ru,600)||doc.title,
@@ -131,6 +132,24 @@ export function verifyEvidenceCards(raw:any,documents:EvidenceDocument[]): {card
     });
   }
   return {cards:result,error:null};
+}
+// Salvage only individually proven articles from an otherwise failed two-item
+// generation. Their original batch indices must stay intact for the desktop
+// client; an unverified article is never accepted or silently truncated.
+export function verifyEvidenceCardsIndividually(raw:any,documents:EvidenceDocument[]):{
+  accepted:Array<{index:number;card:EvidenceCard}>;failed:Array<{index:number;reason:string}>
+}{
+  const accepted:Array<{index:number;card:EvidenceCard}>=[];
+  const failed:Array<{index:number;reason:string}>=[];
+  const incoming=Array.isArray(raw?.cards)?raw.cards:[];
+  for(let i=0;i<documents.length;i++){
+    const candidate=incoming.find((c:any)=>Number(c?.index)===i);
+    if(!candidate){failed.push({index:i,reason:"missing_card"});continue;}
+    const checked=verifyEvidenceCards({cards:[{...candidate,index:0}]},[{...documents[i],index:0}]);
+    if(!checked.error&&checked.cards[0])accepted.push({index:i,card:checked.cards[0]});
+    else failed.push({index:i,reason:checked.error||"validation_failed"});
+  }
+  return {accepted,failed};
 }
 export function formatEvidenceCard(card:EvidenceCard):string {
   const head="TITLE_ORIGINAL: "+card.title_original+"\nTITLE_RU: "+card.title_ru+

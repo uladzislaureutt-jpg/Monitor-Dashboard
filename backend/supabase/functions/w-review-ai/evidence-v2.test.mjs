@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   makeEvidencePassages,makeEvidenceDocuments,verifyEvidenceCards,
-  formatEvidenceCard,evidenceV2Schema,renderEvidenceMaterials
+  formatEvidenceCard,evidenceV2Schema,renderEvidenceMaterials,verifyEvidenceCardsIndividually
 } from "./evidence-v2.ts";
 const text1="После встречи стороны сообщили об условиях соглашения. По данным ведомства, расходы выросли на 18 процентов.\n\nЭксперт Павел Сидоров отметил, что сроки остаются неопределёнными.";
 const text2="Вторая редакция критикует предложенный механизм финансирования. Министерство считает, что риски ограничены.";
@@ -71,4 +71,47 @@ test("schema requires structured individual records instead of opaque text",()=>
   assert.ok(fields.records);
   assert.equal(fields.records.items.properties.source_excerpt.type,"STRING");
   assert.equal(schema.properties.cards.minItems,2);
+});
+
+test("accepted first article survives when second lacks sufficient evidence",()=>{
+  const raw={cards:[
+    {index:0,title_ru:"Новый договор",records:[
+      rec("fact","Расходы выросли по сведениям ведомства.","P001","расходы выросли на 18 процентов"),
+      rec("expert","Эксперт отметил неопределенность сроков.","P002","сроки остаются неопределёнными")
+    ]},
+    {index:1,title_ru:"Спор о расходах",records:[
+      rec("fact","Неподтвержденное сообщение отсутствует в тексте.","P001","фантазия о расходах")
+    ]}
+  ]};
+  assert.match(verifyEvidenceCards(raw,docs).error||"",/material_2/);
+  const partial=verifyEvidenceCardsIndividually(raw,docs);
+  assert.deepEqual(partial.accepted.map(x=>x.index),[0]);
+  assert.deepEqual(partial.failed.map(x=>x.index),[1]);
+  assert.equal(partial.accepted[0].card.publication_id,"article-a");
+  assert.ok(partial.failed[0].reason.includes("_records_0_of_1"));
+});
+test("accepted second article retains batch index 1 even if article 0 fails",()=>{
+  const raw={cards:[
+    {index:0,title_ru:"Новый договор",records:[]},
+    {index:1,title_ru:"Спор о расходах",records:[
+      rec("fact","Министерство считает риски ограниченными.","P001","Министерство считает, что риски ограничены")
+    ]}
+  ]};
+  const partial=verifyEvidenceCardsIndividually(raw,docs);
+  assert.deepEqual(partial.accepted.map(x=>x.index),[1]);
+  assert.deepEqual(partial.failed.map(x=>x.index),[0]);
+  assert.equal(partial.accepted[0].card.publication_id,"article-b");
+});
+test("fabricated evidence in both articles cannot be salvaged",()=>{
+  const raw={cards:[
+    {index:0,title_ru:"Новый договор",records:[
+      rec("fact","Полностью ложная деталь публикации.","P001","не существующий фрагмент")
+    ]},
+    {index:1,title_ru:"Спор о расходах",records:[
+      rec("fact","Другая неподтвержденная деталь.","P001","невозможная дословная выдержка")
+    ]}
+  ]};
+  const partial=verifyEvidenceCardsIndividually(raw,docs);
+  assert.equal(partial.accepted.length,0);
+  assert.equal(partial.failed.length,2);
 });

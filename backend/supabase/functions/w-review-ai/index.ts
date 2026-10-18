@@ -3,7 +3,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { DOSSIER_INSTRUCTIONS, dossierSchema, normalizeDossier, makeSynthesisDossier } from "./editorial-dossier.ts";
 import { W_REVIEW_GEMINI_PRIMARY, W_REVIEW_GEMINI_FALLBACK, W_REVIEW_GEMINI_ROUTES, wGeminiGenerationConfig } from "./gemini-routing.ts";
 import { evidenceRouteKey, routesWithoutCircuit, suspendStructuralFailure, circuitExpiry } from "./provider-circuit.ts";
-import { evidenceV2Instructions, evidenceV2Schema, makeEvidenceDocuments, renderEvidenceMaterials, verifyEvidenceCards, formatEvidenceCard, type EvidenceCard } from "./evidence-v2.ts";
+import { evidenceV2Instructions, evidenceV2Schema, makeEvidenceDocuments, renderEvidenceMaterials, verifyEvidenceCards, verifyEvidenceCardsIndividually, formatEvidenceCard, type EvidenceCard } from "./evidence-v2.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -102,7 +102,12 @@ async function callCloudflare(accountId: string, token: string, payload: any, ti
     if(typeof content!=="string"||!content.trim())return {ok:false,status:502,retryAfter:null,detail:"cloudflare_empty_reply: "+JSON.stringify({keys:Object.keys(answer||{}).slice(0,12),status:answer.status,finish_reason:answer.choices?.[0]?.finish_reason,usage:answer.usage,output_types:Array.isArray(answer.output)?answer.output.map((v:any)=>v.type).slice(0,5):undefined,errors:data.errors}).slice(0,500)};
     const u=answer.usage||{};
     return {ok:true,content,usage:{prompt_tokens:Number(u.prompt_tokens||0),completion_tokens:Number(u.completion_tokens||0),total_tokens:Number(u.total_tokens||0)},finish_reason:String(answer?.choices?.[0]?.finish_reason||answer?.finish_reason||"" ).slice(0,30),reasoning_tokens:Number(u?.completion_tokens_details?.reasoning_tokens||u?.output_tokens_details?.reasoning_tokens||0)};
-  }catch(e){return {ok:false,status:502,retryAfter:null,detail:String(e).slice(0,150)}}
+  }catch(e){
+    const kind=e instanceof Error?e.name:"unknown";
+    if(kind==="TimeoutError"||kind==="AbortError")
+      return {ok:false,status:504,retryAfter:null,detail:"cloudflare_local_timeout"};
+    return {ok:false,status:502,retryAfter:null,detail:"cloudflare_transport_"+providerField(kind)};
+  }
 }
 // Safe provider metadata only: never record model input, raw HTTP body, user ID or keys.
 function providerField(v:unknown){return String(v||"").replace(/[^A-Za-z0-9._:/-]/g,"").slice(0,150);}
@@ -318,6 +323,29 @@ Deno.serve(async (req: Request) => {
     const models=geminiApiKey?routesWithoutCircuit(W_REVIEW_GEMINI_ROUTES,disabledRoutes):[];
     if (disabledRoutes.length) console.info("w_review_provider_circuit_skip "+
       JSON.stringify({stage:"evidence_batch",models_skipped:W_REVIEW_GEMINI_ROUTES.length-models.length}));
+    // Minimal probe contains NO operator material and has no structured output
+    // requirements. It tests whether the model itself can answer generateContent.
+    async function diagnosticGeminiProbe(model:string) {
+      try {
+        const response=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+
+          encodeURIComponent(model)+":generateContent",{
+            method:"POST",
+            headers:{"x-goog-api-key":geminiApiKey,"Content-Type":"application/json"},
+            signal:AbortSignal.timeout(7500),
+            body:JSON.stringify({contents:[{role:"user",parts:[{text:"Reply with OK only."}]}],
+              generationConfig:{maxOutputTokens:64}})
+          });
+        console.info("w_review_gemini_minimal_probe "+JSON.stringify({
+          model,http_status:response.status,classification:response.ok?"model_available":
+            response.status===400?"minimal_request_invalid":response.status===429?"quota":"unresolved"
+        }));
+      }catch(error){
+        console.warn("w_review_gemini_minimal_probe "+JSON.stringify({
+          model,http_status:null,classification:error instanceof Error&&
+            error.name==="TimeoutError"?"probe_timeout":"probe_network_unavailable"
+        }));
+      }
+    }
     async function suspendGeminiModel(model:string,status:number,googleStatus:string) {
       if(!suspendStructuralFailure(status,googleStatus))return;
       const {error}=await admin.from("w_review_provider_circuit").upsert({
@@ -325,7 +353,12 @@ Deno.serve(async (req: Request) => {
         reason_code:"INVALID_ARGUMENT",http_status:400,updated_at:new Date().toISOString()
       },{onConflict:"route"});
       if(error)console.warn("w_review_provider_circuit_write_failed");
-      else console.info("w_review_provider_circuit_open "+JSON.stringify({stage:"evidence_batch",model,minutes:15}));
+      else {
+        console.info("w_review_provider_circuit_open "+JSON.stringify({
+          stage:"evidence_batch",model,minutes:15
+        }));
+        await diagnosticGeminiProbe(model);
+      }
     }
     let result: AiResult | null = null;
     let parsed: any = null;
@@ -334,6 +367,21 @@ Deno.serve(async (req: Request) => {
     let lastError = "";
     let lastGeminiFailure:AiFailure|null=null;
     const attemptedRoutes:Array<{model:string;status:number;cause:string}> = [];
+    type PartialResponse={accepted:Array<{index:number;card:EvidenceCard}>;result:AiSuccess;model:string};
+    let bestPartial:PartialResponse|null=null;
+    function considerPartial(candidate:AiSuccess,data:any,model:string){
+      const attempt=verifyEvidenceCardsIndividually(data,documents);
+      if(attempt.accepted.length && (!bestPartial ||
+          attempt.accepted.length>bestPartial.accepted.length ||
+          (attempt.accepted.length===bestPartial.accepted.length &&
+           attempt.accepted.reduce((n,v)=>n+v.card.validation.accepted,0)>
+           bestPartial.accepted.reduce((n,v)=>n+v.card.validation.accepted,0))))
+        bestPartial={accepted:attempt.accepted,result:candidate,model};
+      if(attempt.failed.length)console.info("w_review_evidence_partial_diagnostic "+JSON.stringify({
+        model,accepted_articles:attempt.accepted.map(v=>v.index+1),
+        failed:attempt.failed.map(v=>({article:v.index+1,reason:v.reason}))
+      }));
+    }
     gemini_models: for (const model of models) {
       for (let attempt = 0; attempt < 2; attempt++) {
         const candidate = await callGemini(geminiApiKey, model, prompt, schema, 0.1, "evidence_batch");
@@ -344,6 +392,7 @@ Deno.serve(async (req: Request) => {
             result=candidate;parsed=data;verifiedCards=verified.cards;usedModel=model;break;
           }
           lastError=model+": "+verified.error;
+          considerPartial(candidate,data,model);
           attemptedRoutes.push({model,status:422,cause:verified.error});
         } else {
           lastGeminiFailure=candidate;
@@ -373,7 +422,7 @@ Deno.serve(async (req: Request) => {
             "Не обрывай покрытие после вводных абзацев. Верни полный JSON cards."},
           {role:"user",content:prompt}
         ]
-      },80000);
+      },100000);
       if(cfResult.ok){
         const cfData=parseModelJson(cfResult);
         const verified=verifyEvidenceCards(cfData,documents);
@@ -381,11 +430,18 @@ Deno.serve(async (req: Request) => {
           result=cfResult;parsed=cfData;verifiedCards=verified.cards;usedModel="@cf/openai/gpt-oss-120b";
         }else{
           lastError+="; cloudflare_"+verified.error;
+          considerPartial(cfResult,cfData,"@cf/openai/gpt-oss-120b");
           attemptedRoutes.push({model:"@cf/openai/gpt-oss-120b",status:422,cause:verified.error});
         }
       }else{
-        lastError+="; cloudflare_HTTP_"+cfResult.status;
-        attemptedRoutes.push({model:"@cf/openai/gpt-oss-120b",status:cfResult.status,cause:"provider_error"});
+        lastError+="; cloudflare_"+(cfResult.detail==="cloudflare_local_timeout"?"local_timeout":"HTTP_"+cfResult.status);
+        const reason=cfResult.detail==="cloudflare_local_timeout"?"local_timeout":
+          cfResult.detail.startsWith("cloudflare_empty_reply")?"empty_reply":"provider_or_transport";
+        console.warn("w_review_cloudflare_evidence_failure "+JSON.stringify({
+          reason,http_status:cfResult.status,timeout_ms:100000,
+          account_route:hasCfEvidenceBackup?"backup":"primary"
+        }));
+        attemptedRoutes.push({model:"@cf/openai/gpt-oss-120b",status:cfResult.status,cause:reason});
       }
     }
     if ((!result || !parsed) && groqApiKey) {
@@ -410,12 +466,26 @@ Deno.serve(async (req: Request) => {
           result=groqResult;parsed=data;verifiedCards=verified.cards;usedModel="openai/gpt-oss-20b";
         } else {
           lastError += "; groq_"+verified.error;
+          considerPartial(groqResult,data,"openai/gpt-oss-20b");
           attemptedRoutes.push({model:"openai/gpt-oss-20b",status:422,cause:verified.error});
         }
       } else {
         lastError += "; groq_HTTP_" + groqResult.status + ": " + groqResult.detail.slice(0, 200);
         attemptedRoutes.push({model:"openai/gpt-oss-20b",status:groqResult.status,cause:"provider_error"});
       }
+    }
+    let cardIndices=normalized.map((_,i)=>i);
+    if ((!result || !parsed) && bestPartial) {
+      const selected=bestPartial as PartialResponse;
+      result=selected.result;
+      parsed={cards:[]};
+      verifiedCards=selected.accepted.map(v=>v.card);
+      cardIndices=selected.accepted.map(v=>v.index);
+      usedModel=selected.model;
+      console.warn("w_review_evidence_partial_return "+JSON.stringify({
+        accepted_article_indices:cardIndices.map(i=>i+1),
+        pending_articles:normalized.length-cardIndices.length,provider:usedModel
+      }));
     }
     if (!result || !parsed) return json({error:"evidence_providers_unavailable",
       detail:lastError.slice(0,350),attempts:attemptedRoutes,provider:"gemini_cloudflare_groq",issue:lastGeminiFailure?.diagnostic||null,
@@ -425,17 +495,17 @@ Deno.serve(async (req: Request) => {
       return Array.from(new Uint8Array(bytes),value=>value.toString(16).padStart(2,"0")).join("");
     }));
     const cards=verifiedCards.map((card,index)=>({
-      index,evidence:formatEvidenceCard(card),
-      evidence_data:{...card,source_sha256:sourceDigests[index]}
+      index:cardIndices[index],evidence:formatEvidenceCard(card),
+      evidence_data:{...card,source_sha256:sourceDigests[cardIndices[index]]}
     }));
     console.info("w_review_evidence_v2 "+JSON.stringify({
-      cards:cards.length,accepted:verifiedCards.reduce((n,c)=>n+c.validation.accepted,0),
+      cards:cards.length,pending_articles:normalized.length-cards.length,accepted:verifiedCards.reduce((n,c)=>n+c.validation.accepted,0),
       rejected:verifiedCards.reduce((n,c)=>n+c.validation.rejected,0),
       covered_passages:verifiedCards.reduce((n,c)=>n+c.validation.covered_passages,0),
       total_passages:verifiedCards.reduce((n,c)=>n+c.validation.total_passages,0),
       provider:usedModel
     }));
-    return json({cards,model:usedModel,
+    return json({cards,partial:cards.length<normalized.length,model:usedModel,
       provider:usedModel.startsWith("@cf/")?"cloudflare":usedModel.startsWith("openai/")?"groq":"gemini",usage:result.usage});
   }
 
