@@ -311,16 +311,14 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   }
 
   function exact() {
-    if (!active) return;
+    if (!active || busy==="analyze") return;
     const result = exactCompressForProfile(active.editorialText, compressionMode, "l");
     updateItem(active.id, { editorialText: result.text });
     setMessage(`${be ? "Exact-скарачэнне" : "Exact-сокращение"}: ${result.reductionPct}%.`);
   }
 
-  function buildBatches(items: WItem[], force=false) {
-    const pending=force
-      ? items.map((item,index)=>({item,index}))
-      : pendingEvidenceEntries(items,W_EVIDENCE_CONTRACT_VERSION);
+  function buildBatches(items: WItem[]) {
+    const pending=pendingEvidenceEntries(items,W_EVIDENCE_CONTRACT_VERSION);
     const batches: Array<Array<{ item: WItem; index: number }>> = [];
     let current: Array<{ item: WItem; index: number }> = [];
     let chars = 0;
@@ -350,8 +348,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     // Always derive progress from verified cards, not from a stale 'done' counter.
     const isReady=(item:WItem)=>isEvidencePrepared(item,W_EVIDENCE_CONTRACT_VERSION);
     const countReady=()=>next.filter(isReady).length;
-    const initialReady=force?0:countReady();
-    let checkpointStore=workspaces;
+      let checkpointStore=workspaces;
     let savedThisRun=0;
     const batchesProviders:string[]=[];
     const warned=new Set<number>();
@@ -420,7 +417,6 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         throw new Error("Обработано "+ready+" из "+next.length+
           ". Не завершены: "+missing+". Нажмите «Продолжить анализ» — готовые карточки будут пропущены.");
       }
-      if(!savedThisRun&&initialReady===next.length) return;
       const verifiedRecords=next.reduce((n,item)=>n+(item.evidenceData?.validation.accepted||0),0);
       setAnalysisText("");
       setMessage((be?"Аналіз Evidence завершаны. ":"Анализ Evidence завершён. ")+
@@ -440,7 +436,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   }
 
   async function recalculateTrends() {
-    if (!topicReady || state.items.length>MAX_ITEMS || prepared !== state.items.length ) return;
+    if (!topicReady || state.items.length>MAX_ITEMS || prepared !== state.items.length) return;
     setBusy("map"); setError(""); setMessage("");
     try {
       const result = await wEditorialMap(
@@ -457,7 +453,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   }
 
   function clearPool() {
-    if (!state.items.length) return;
+    if (!state.items.length || busy==="analyze") return;
     setState((current) => ({
       ...current,
       items: [],
@@ -628,14 +624,14 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
 
     <section className="panel w-review-import"><div className="panel-head"><div><h3>{be ? "1. Матэрыялы" : "1. Материалы"}</h3><p>{be ? "Прамая загрузка, закладка → Monitor або ручны ўвод." : "Прямая загрузка, закладка → Monitor или ручной ввод."}</p></div></div>
       <div className="w-review-import-row"><input value={url} onChange={(e)=>setUrl(e.target.value)} placeholder="https://…" /><button className="secondary-button" onClick={importUrl} disabled={busy!==""||!url.trim()||state.items.length>=MAX_ITEMS}>{busy==="url"?"…":be?"Спампаваць":"Скачать"}</button><button className="primary-button" onClick={pasteBrowser} disabled={busy!==""||state.items.length>=MAX_ITEMS}>{busy==="clipboard"?"…":be?"Уставіць з браўзера":"Вставить из браузера"}</button><button className="ghost-button" onClick={()=>setManualOpen((v)=>!v)}>{be?"Дадаць уручную":"Добавить вручную"}</button><button className="ghost-button" onClick={copyBookmarklet}>→ Monitor</button></div>
-      {manualOpen&&<div className="w-review-manual"><input placeholder={be?"Загаловак":"Заголовок"} value={manual.title} onChange={(e)=>setManual({...manual,title:e.target.value})}/><input placeholder={be?"Крыніца":"Источник"} value={manual.source} onChange={(e)=>setManual({...manual,source:e.target.value})}/><input placeholder={be?"Краіна / рэгіён":"Страна / регион"} value={manual.region} onChange={(e)=>setManual({...manual,region:e.target.value})}/><input placeholder="URL" value={manual.url} onChange={(e)=>setManual({...manual,url:e.target.value})}/><textarea placeholder={be?"Тэкст публікацыі":"Текст публикации"} value={manual.text} onChange={(e)=>setManual({...manual,text:e.target.value})}/><button className="primary-button" onClick={()=>{try{addItem(manual);setManual({title:"",source:"",region:"",url:"",text:""});setManualOpen(false)}catch(reason){setError(String(reason))}}}>{be?"Дадаць":"Добавить"}</button></div>}
+      {manualOpen&&<div className="w-review-manual"><input placeholder={be?"Загаловак":"Заголовок"} value={manual.title} onChange={(e)=>setManual({...manual,title:e.target.value})}/><input placeholder={be?"Крыніца":"Источник"} value={manual.source} onChange={(e)=>setManual({...manual,source:e.target.value})}/><input placeholder={be?"Краіна / рэгіён":"Страна / регион"} value={manual.region} onChange={(e)=>setManual({...manual,region:e.target.value})}/><input placeholder="URL" value={manual.url} onChange={(e)=>setManual({...manual,url:e.target.value})}/><textarea placeholder={be?"Тэкст публікацыі":"Текст публикации"} value={manual.text} onChange={(e)=>setManual({...manual,text:e.target.value})}/><button className="primary-button" disabled={busy!==""} onClick={()=>{try{addItem(manual);setManual({title:"",source:"",region:"",url:"",text:""});setManualOpen(false)}catch(reason){setError(String(reason))}}}>{be?"Дадаць":"Добавить"}</button></div>}
     </section>
 
     <section className="panel w-review-task">
       <div className="panel-head"><div><h3>{be?"2. Заданне для агляду":"2. Задание для обзора"}</h3>
         <p>{be?"Тэма абавязковая. Задачы і выключэнні — пры неабходнасці.":"Тема обязательна. Задачи и исключения — по необходимости."}</p></div></div>
       <label style={{display:"block",marginBottom:12}}><strong>{be?"Тэма агляду *":"Тема обзора *"}</strong>
-        <input maxLength={140} value={state.topic} onChange={e=>setState(current=>invalidateMap({...current,topic:e.target.value}))}
+        <input maxLength={140} disabled={busy==="analyze"} value={state.topic} onChange={e=>setState(current=>invalidateMap({...current,topic:e.target.value}))}
           placeholder={be?"Напрыклад: Міжнародная рэакцыя на санкцыі":"Например: Международная реакция на санкции"}/>
       </label>
       <div style={{display:"grid",gap:10}}>
@@ -643,19 +639,19 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
           <span style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
             <strong>{be?"Задача":"Задача"} {index+1}{index===0?(be?" (неабавязкова)":" (необязательно)"):""}</strong>
             {index>0&&<button type="button" className="ghost-button small-button" disabled={busy!==""} aria-label={be?"Выдаліць задачу":"Удалить задачу"}
-              onClick={()=>setState(current=>invalidateMap({...current,tasks:current.tasks.filter((_,i)=>i!==index)}))}>×</button>}
+              disabled={busy!==""} onClick={()=>setState(current=>invalidateMap({...current,tasks:current.tasks.filter((_,i)=>i!==index)}))}>×</button>}
           </span>
-          <textarea rows={2} maxLength={160} value={value} onChange={e=>setState(current=>invalidateMap({...current,tasks:current.tasks.map((task,i)=>i===index?e.target.value:task)}))}
+          <textarea rows={2} maxLength={160} disabled={busy==="analyze"} value={value} onChange={e=>setState(current=>invalidateMap({...current,tasks:current.tasks.map((task,i)=>i===index?e.target.value:task)}))}
             placeholder={index===0?"Что проанализировать, на чём сделать акцент? Например: основные тенденции и оценки СМИ."
               :"Дополнительный акцент: аргументы экспертов, риски, прогнозы, различия в позициях…"}/>
         </label>)}
         {state.tasks.length<5&&<button type="button" className="secondary-button small-button" disabled={busy!==""} style={{justifySelf:"start"}}
-          onClick={()=>setState(current=>invalidateMap({...current,tasks:[...current.tasks,""]}))}>
+          disabled={busy!==""} onClick={()=>setState(current=>invalidateMap({...current,tasks:[...current.tasks,""]}))}>
           + {be?"Дадаць задачу":"Добавить задачу"}
         </button>}
       </div>
       <label style={{display:"block",marginTop:14}}><strong>{be?"Што выключыць з агляду":"Что исключить из обзора"}</strong>
-        <textarea rows={2} maxLength={300} value={state.exclusions} onChange={e=>setState(current=>invalidateMap({...current,exclusions:e.target.value}))}
+        <textarea rows={2} maxLength={300} disabled={busy==="analyze"} value={state.exclusions} onChange={e=>setState(current=>invalidateMap({...current,exclusions:e.target.value}))}
           placeholder={be?"Якія сюжэты, звесткі ці аспекты не закранаць…":"Что не затрагивать? Например: историю вопроса, неподтверждённые слухи, второстепенные реакции."}/>
       </label>
     </section>
@@ -677,7 +673,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
           {!topicReady&&state.items.length>0&&<small>{be?"Для аналізу ўкажыце тэму вышэй.":"Для анализа укажите тему выше."}</small>}
           {state.items.length>MAX_ITEMS&&<small style={{color:"#b42318"}}>Сократите пул до {MAX_ITEMS} публикаций. Сохранённые материалы не удаляются автоматически.</small>}</div>
       </aside>
-      <div className="panel w-review-editor">{active?<><div className="panel-head"><div><h3>{active.title}</h3><p>{active.source}{active.region?` · ${active.region}`:""}</p></div><button className="ghost-button small-button" onClick={()=>setState((current)=>invalidateMap({...current,items:current.items.filter((item)=>item.id!==active.id)}))}>{be?"Выдаліць":"Удалить"}</button></div><div className="w-review-exact"><select value={compressionMode} onChange={(e)=>setCompressionMode(e.target.value as CompressionMode)}><option value="light">20–30%</option><option value="standard">30–50%</option><option value="maximum">50–70%</option><option value="extract">70–90%</option></select><button className="secondary-button small-button" onClick={exact}>Exact</button><button className="ghost-button small-button" onClick={()=>updateItem(active.id,{editorialText:active.sourceText})}>{be?"Вярнуць зыходны":"Вернуть исходный"}</button></div><div className="w-review-length-state">
+      <div className="panel w-review-editor">{active?<><div className="panel-head"><div><h3>{active.title}</h3><p>{active.source}{active.region?` · ${active.region}`:""}</p></div><button className="ghost-button small-button" disabled={busy!==""} onClick={()=>setState((current)=>invalidateMap({...current,items:current.items.filter((item)=>item.id!==active.id)}))}>{be?"Выдаліць":"Удалить"}</button></div><div className="w-review-exact"><select value={compressionMode} onChange={(e)=>setCompressionMode(e.target.value as CompressionMode)}><option value="light">20–30%</option><option value="standard">30–50%</option><option value="maximum">50–70%</option><option value="extract">70–90%</option></select><button className="secondary-button small-button" disabled={busy!==""} onClick={exact}>Exact</button><button className="ghost-button small-button" disabled={busy!==""} onClick={()=>updateItem(active.id,{editorialText:active.sourceText})}>{be?"Вярнуць зыходны":"Вернуть исходный"}</button></div><div className="w-review-length-state">
   <span className={active.editorialText.length>MAX_ITEM_CHARS?"exceeded":"within"}>
     {active.editorialText.length.toLocaleString()} / {MAX_ITEM_CHARS.toLocaleString()} {be?"знакаў для ІІ":"знаков для ИИ"}
   </span>
@@ -690,7 +686,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   <div className="w-review-text-backdrop" aria-hidden="true">
     <span>{active.editorialText.slice(0,MAX_ITEM_CHARS)}</span><span className="w-review-text-tail">{active.editorialText.slice(MAX_ITEM_CHARS)}</span>{"\n"}
   </div>
-  <textarea className="report-editor-textarea w-review-edit-input" lang={be?"be":"ru"} spellCheck={true}
+  <textarea className="report-editor-textarea w-review-edit-input" lang={be?"be":"ru"} spellCheck={true} disabled={busy==="analyze"}
     aria-label={be?"Рэдагуемы тэкст публікацыі":"Редактируемый текст публикации"}
     value={active.editorialText} onChange={(e)=>updateItem(active.id,{editorialText:e.target.value})}
     onScroll={(event)=>{
