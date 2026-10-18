@@ -145,9 +145,10 @@ export function normalizeDossier(raw:any,cards:string[],options:DossierValidatio
     // The sole automatic exception is the SAME canonical URL included twice.
     const firstByUrl=new Map<string,string>();
     const uncited:string[]=[];
-    for(let i=0;i<coverage.length;i++){
-      const entry=coverage[i];
-      const rawUrl=txt(cards[i]?.match(/^URL:\s*(https?:\/\/\S+)/m)?.[1],1200);
+    const orderedCoverage=[...coverage].sort((a,b)=>a.publication_id.localeCompare(b.publication_id));
+    for(const entry of orderedCoverage){
+      const cardIndex=Number(entry.publication_id.slice(1))-1;
+      const rawUrl=txt(cards[cardIndex]?.match(/^URL:\s*(https?:\/\/\S+)/m)?.[1],1200);
       const url=rawUrl.replace(/#.*$/,"").replace(/\/$/,"").toLowerCase();
       const original= url ? firstByUrl.get(url) : null;
       if(url&&!original)firstByUrl.set(url,entry.publication_id);
