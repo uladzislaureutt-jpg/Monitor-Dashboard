@@ -63,8 +63,12 @@ export function parseModelJsonObject(content:string):any|null{
       return value&&typeof value==="object"&&!Array.isArray(value)?value:null;
     }catch{return null;}
   };
-  const whole=parsed(clean);
-  if(whole)return whole;
+  // A syntactically valid top-level JSON array is NOT a W-Review object.
+  // Do not salvage its first element as though it were the requested payload.
+  try{
+    const full=JSON.parse(clean);
+    return full&&typeof full==="object"&&!Array.isArray(full)?full:null;
+  }catch{ /* optional preface or trailing markdown, handle below */ }
   // Some models prepend a short explanation or leave a trailing code fence.
   // Extract only one syntactically COMPLETE JSON object. Evidence/dossier
   // validators still reject every unverifiable fact or source reference.
