@@ -21,13 +21,24 @@ test("invalid evidence reference does not turn into an outlet or a fabricated ci
   assert.ok(x.unresolved.includes("P01:E03"));
   assert.ok(x.unresolved.includes("P08"));
 });
-test("detects category error: US CFR / British Guardian cannot be labelled Russian media",()=>{
-  const bad="Российские медиа, включая аналитические статьи «The Guardian» и CFR, представляют Трампа...\n\n"+
-    "В российских медиа обсуждают отдельную тему.";
-  const warnings=inspectReviewAttribution(bad);
-  assert.equal(warnings.filter(w=>w.includes("российских медиа")).length,1);
-  assert.ok(warnings[0].includes("Абзац 1"));
-  assert.equal(inspectReviewAttribution("Британская «The Guardian» и американский CFR пишут о санкциях.").length,0);
+test("country-group warnings apply to any supported catalog region, not hardcoded publishers",()=>{
+  const withOrigins=[
+    "ID: P01\nИСТОЧНИК: «The Guardian»\nКАТАЛОЖНЫЙ_РЕГИОН: Великобритания",
+    "ID: P02\nИСТОЧНИК: «Gazeta Wyborcza»\nКАТАЛОЖНЫЙ_РЕГИОН: Польша",
+    "ID: P03\nИСТОЧНИК: «CFR»\nКАТАЛОЖНЫЙ_РЕГИОН: США"
+  ];
+  const bad="Российские медиа, включая «The Guardian» и CFR, приводят оценки.\n\n"+
+    "Немецкие издания, включая «Gazeta Wyborcza», обсуждают ситуацию.";
+  const warnings=inspectReviewAttribution(bad,withOrigins);
+  assert.equal(warnings.length,3);
+  assert.ok(warnings.some(w=>w.includes("The Guardian")&&w.includes("Великобритания")));
+  assert.ok(warnings.some(w=>w.includes("CFR")&&w.includes("США")));
+  assert.ok(warnings.some(w=>w.includes("Gazeta Wyborcza")&&w.includes("Польша")));
+  assert.equal(inspectReviewAttribution("Британские СМИ, включая «The Guardian», опубликовали анализ.",withOrigins).length,0);
+});
+test("unknown origin never becomes a fabricated country attribution",()=>{
+  const unknown=["ID: P01\nИСТОЧНИК: «Неизвестное медиа»\nКАТАЛОЖНЫЙ_РЕГИОН: не указан"];
+  assert.deepEqual(inspectReviewAttribution("Российские СМИ, включая «Неизвестное медиа», пишут о переговорах.",unknown),[]);
 });
 test("paragraph floor targets 95% length in one pass, without padding",()=>{
   for(const [target,count] of [[8000,16],[6000,13],[4000,8]]){
