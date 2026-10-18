@@ -604,58 +604,126 @@ ${sections.join("; ")}.
   }
 
   if (action === "editorial_map") {
-    if (!geminiApiKey && !groqApiKey) return json({ error: "w_review_map_providers_not_configured" }, 503);
-    const task = String(body?.task || "").trim();
-    if (!task || task.length > 2000) return json({ error: "invalid_task", max_chars: 2000 }, 400);
-    const submittedCards = Array.isArray(body?.evidence_cards) ? body.evidence_cards : [];
-    if (submittedCards.length > 18) return json({error:"w_review_max_articles",limit:18},400);
-    const cards = submittedCards.map((v: unknown) => String(v || "").trim()).filter(Boolean);
-    if (!cards.length) return json({ error: "no_evidence_cards" }, 400);
-    const evidenceText = cards.map((card: string, index: number) => `P${String(index + 1).padStart(2, "0")}\n${card}`).join("\n\n");
-    if (evidenceText.length > 180000) return json({ error: "evidence_too_large", max_chars: 180000 }, 400);
+    const backAccount=Deno.env.get("CLOUDFLARE_BACKUP_ACCOUNT_ID")||"";
+    const backToken=Deno.env.get("CLOUDFLARE_BACKUP_API_TOKEN")||"";
+    const useBackup=Boolean(backAccount&&backToken);
+    const cfId=useBackup?backAccount:(Deno.env.get("CLOUDFLARE_ACCOUNT_ID")||"");
+    const cfToken=useBackup?backToken:(Deno.env.get("CLOUDFLARE_API_TOKEN")||"");
+    if(!geminiApiKey&&!groqApiKey&&!(cfId&&cfToken))
+      return json({error:"w_review_map_providers_not_configured"},503);
+    const task=String(body?.task||"").trim();
+    if(!task||task.length>2000)return json({error:"invalid_task",max_chars:2000},400);
+    const submitted=Array.isArray(body?.evidence_cards)?body.evidence_cards:[];
+    if(submitted.length>18)return json({error:"w_review_max_articles",limit:18},400);
+    const cards=submitted.map((x:unknown)=>String(x||"").trim()).filter(Boolean);
+    if(!cards.length)return json({error:"no_evidence_cards"},400);
+    const evidenceText=cards.map((card:string,i:number)=>
+      "P"+String(i+1).padStart(2,"0")+"\n"+card).join("\n\n");
+    if(evidenceText.length>180000)return json({error:"evidence_too_large",max_chars:180000},400);
     const schema=dossierSchema(cards.length);
     const prompt=DOSSIER_INSTRUCTIONS+"\n\nЗАДАНИЕ ОПЕРАТОРА:\n"+task+
       "\n\nДОКАЗАТЕЛЬНАЯ БАЗА (P01:E01 — E01 в статье P01):\n"+evidenceText;
-    let result:AiResult=geminiApiKey
-      ? await callGemini(geminiApiKey, geminiModel, prompt, schema, 0.1, "editorial_map", 0, {maxOutputTokens:8192})
-      : {ok:false,status:503,retryAfter:null,detail:"gemini_not_configured"};
-    let usedGeminiMapModel=geminiModel;
-    if (!result.ok && result.status !== 429 && geminiApiKey) {
-      result = await callGemini(geminiApiKey, W_REVIEW_GEMINI_FALLBACK, prompt, schema, 0.1, "editorial_map_fallback", 0, {maxOutputTokens:8192});
-      usedGeminiMapModel=W_REVIEW_GEMINI_FALLBACK;
+
+    // A source-verified dossier is mandatory. An invalid JSON map is NEVER
+    // accepted merely to keep the workflow moving.
+    let selected:{dossier:ReturnType<typeof normalizeDossier>["dossier"];result:AiSuccess;model:string;provider:string}|null=null;
+    const attempts:Array<{model:string;status:number;reason:string}>=[];
+    const accept=(res:AiSuccess,model:string,provider:string)=>{
+      const checked=normalizeDossier(parseModelJson(res),cards);
+      if(checked.dossier&&!checked.error){
+        selected={dossier:checked.dossier,result:res,model,provider};return true;
+      }
+      attempts.push({model,status:422,reason:checked.error||"invalid_dossier"});
+      return false;
+    };
+    let geminiProblem:ProviderDiagnostic|null=null;
+    let blocked:string[]=[];
+    if(geminiApiKey){
+      const {data,error}=await admin.from("w_review_provider_circuit")
+        .select("route").gt("suspended_until",new Date().toISOString())
+        .in("route",[
+          ...W_REVIEW_GEMINI_ROUTES.map(model=>evidenceRouteKey(model)),
+          ...W_REVIEW_GEMINI_ROUTES.map(model=>"editorial_map:"+model)
+        ]);
+      if(!error&&Array.isArray(data))blocked=data.map((v:any)=>String(v.route));
+      else if(error)console.warn("w_review_editorial_circuit_read_failed");
     }
-    let provider="gemini";
-    const geminiProblem=!result.ok?result.diagnostic||null:null;
-    const parsed=result.ok?parseModelJson(result):null;
-    let checked=normalizeDossier(parsed,cards);
-    if((!result.ok||checked.error)&&groqApiKey){
+    for(const model of W_REVIEW_GEMINI_ROUTES){
+      if(!geminiApiKey)break;
+      if(blocked.includes(evidenceRouteKey(model))||blocked.includes("editorial_map:"+model)){
+        console.info("w_review_editorial_circuit_skip "+JSON.stringify({model}));
+        continue;
+      }
+      const res=await callGemini(geminiApiKey,model,prompt,schema,0.1,"editorial_map",0,{maxOutputTokens:8192});
+      if(res.ok){
+        if(accept(res,model,"gemini"))break;
+      }else{
+        geminiProblem=res.diagnostic||null;
+        attempts.push({model,status:res.status,reason:res.diagnostic?.kind||"provider_error"});
+        if(res.status===400&&res.diagnostic?.google_status==="INVALID_ARGUMENT"){
+          const {error}=await admin.from("w_review_provider_circuit").upsert({
+            route:"editorial_map:"+model,suspended_until:circuitExpiry(new Date()),
+            reason_code:"INVALID_ARGUMENT",http_status:400,updated_at:new Date().toISOString()
+          },{onConflict:"route"});
+          if(error)console.warn("w_review_editorial_circuit_write_failed");
+        }
+        if(res.status===429)break;
+      }
+    }
+    if(!selected&&cfId&&cfToken){
       console.info("w_review_provider_fallback "+JSON.stringify({
-        stage:"editorial_dossier",from:"gemini",to:"groq",
-        trigger:checked.error||(!result.ok?result.diagnostic?.kind:"invalid_schema")||"other"
+        stage:"editorial_dossier",from:"gemini",to:"cloudflare_gpt_oss_120b"
       }));
-      const fallback=await callGroq(groqApiKey,{
+      const cf=await callCloudflare(cfId,cfToken,{
+        reasoning_effort:"low",temperature:0.1,max_tokens:10000,
+        response_format:{type:"json_object"},
+        messages:[
+          {role:"system",content:DOSSIER_INSTRUCTIONS+
+            "\nОбязательное условие: JSON содержит trends, coverage по всем "+cards.length+
+            " материалам и inventory. Каждый evidence_id должен встречаться в переданной базе."},
+          {role:"user",content:prompt}
+        ]
+      },100000);
+      if(cf.ok)accept(cf,"@cf/openai/gpt-oss-120b","cloudflare");
+      else{
+        const reason=cf.detail==="cloudflare_local_timeout"?"local_timeout":
+          cf.detail.startsWith("cloudflare_empty_reply")?"empty_reply":"provider_or_transport";
+        attempts.push({model:"@cf/openai/gpt-oss-120b",status:cf.status,reason});
+        console.warn("w_review_editorial_cloudflare_failure "+JSON.stringify({reason,status:cf.status}));
+      }
+    }
+    if(!selected&&groqApiKey){
+      console.info("w_review_provider_fallback "+JSON.stringify({
+        stage:"editorial_dossier",from:"cloudflare_or_gemini",to:"groq"
+      }));
+      const groq=await callGroq(groqApiKey,{
         model:"openai/gpt-oss-20b",response_format:{type:"json_object"},
         reasoning_effort:"low",reasoning_format:"hidden",max_completion_tokens:7600,
         messages:[{role:"system",content:DOSSIER_INSTRUCTIONS},{role:"user",content:prompt}]
       });
-      if(fallback.ok){
-        const candidate=normalizeDossier(parseModelJson(fallback),cards);
-        if(!candidate.error){result=fallback;checked=candidate;provider="groq";}
-      }
+      if(groq.ok)accept(groq,"openai/gpt-oss-20b","groq");
+      else attempts.push({model:"openai/gpt-oss-20b",status:groq.status,reason:"provider_error"});
     }
-    if(!result.ok)return json({error:"editorial_dossier_providers_unavailable",
-      provider:"gemini_groq",issue:geminiProblem,retryable:false},503);
-    if(checked.error||!checked.dossier)return json({error:"invalid_editorial_dossier",
-      detail:checked.error||"unknown_dossier_error",provider},502);
-    const docket=checked.dossier;
+    if(!selected){
+      console.warn("w_review_editorial_dossier_failures "+JSON.stringify({
+        attempts,pool_articles:cards.length
+      }));
+      return json({error:"editorial_dossier_providers_unavailable",provider:"gemini_cloudflare_groq",
+        detail:attempts.map(a=>a.model+": "+a.status+" "+a.reason).join("; ").slice(0,320),
+        attempts,issue:geminiProblem,retryable:false},503);
+    }
+    const output=selected as {dossier:NonNullable<ReturnType<typeof normalizeDossier>["dossier"]>;
+      result:AiSuccess;model:string;provider:string};
     console.info("w_review_dossier_v3 "+JSON.stringify({
-      trends:docket.trends.length,branches:docket.trends.reduce((n,t)=>n+t.branches.length,0),
-      mandatory:docket.trends.reduce((n,t)=>n+t.branches.filter(b=>b.required).length,0),
-      publications:docket.coverage.length,
-      used:docket.coverage.filter(c=>["used","supporting"].includes(c.status)).length
+      trends:output.dossier.trends.length,
+      branches:output.dossier.trends.reduce((n,t)=>n+t.branches.length,0),
+      mandatory:output.dossier.trends.reduce((n,t)=>n+t.branches.filter(b=>b.required).length,0),
+      publications:output.dossier.coverage.length,
+      used:output.dossier.coverage.filter(c=>["used","supporting"].includes(c.status)).length,
+      provider:output.provider
     }));
-    return json({editorial_map:docket,model:provider==="groq"?"openai/gpt-oss-20b":usedGeminiMapModel,
-      provider,usage:result.usage});
+    return json({editorial_map:output.dossier,model:output.model,
+      provider:output.provider,usage:output.result.usage});
   }
 
   if (action === "verify_review") {
