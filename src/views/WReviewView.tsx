@@ -6,6 +6,7 @@ import { exactCompressForProfile, type CompressionMode } from "../editorialCompr
 import { wEditorialMap, wEvidenceBatch, wStyleProfile, wSynthesize, type WDensity, type WEditorialMap, type WEditorialTrend, type WFactCheck, type WUsage, type WEvidenceData } from "../wReviewAi";
 import { useI18n } from "../i18n";
 import { buildStylePattern } from "../wReviewStyle";
+import { resolvePoolMarkersForExport } from "../wReviewSourceLabels";
 
 const W_EVIDENCE_CONTRACT_VERSION = 6; // Preserve verified evidence and do not reanalyse articles.
 const W_MAP_CONTRACT_VERSION = 7; // Recalculate only the editorial dossier.
@@ -489,6 +490,13 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
 
   async function exportDocx() {
     if (!state.reviewText.trim()) { setError(be?"Агляд пусты.":"Обзор пуст."); return; }
+    const exportCopy=resolvePoolMarkersForExport(state.reviewText.trim(),state.items);
+    if(exportCopy.unresolved.length){
+      setError((be?"Невядомыя спасылкі на матэрыялы: ":"Не удалось определить источники: ")+
+        exportCopy.unresolved.join(", ")+". "+
+        (be?"Праверце тэкст перад экспартам.":"Проверьте текст перед экспортом."));
+      return;
+    }
     const path = await save({ title: "W-Review DOCX", defaultPath: "W-Review.docx", filters: [{ name: "Word", extensions: ["docx"] }] });
     if (!path) return;
     // Only one unique URL per media outlet may be linked automatically.
@@ -500,8 +508,8 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
           .map(item=>item.url.trim()).filter(url=>/^https?:\/\//i.test(url))));
         return urls.length===1?{name,url:urls[0]}:null;
       }).filter((item):item is {name:string;url:string}=>Boolean(item));
-    await desktopApi.exportWReview(path, state.reviewText.trim(), Array.from(new Set(state.items.map((item) => item.source.trim()).filter(Boolean))), state.sectionTitles, state.boldPhrases, sourceLinks);
-    setMessage(be ? "DOCX захаваны ў фармаце W-Review." : "DOCX сохранён в формате W-Review.");
+    await desktopApi.exportWReview(path, exportCopy.text, Array.from(new Set(state.items.map((item) => item.source.trim()).filter(Boolean))), state.sectionTitles, state.boldPhrases, sourceLinks);
+    setMessage((be ? "DOCX захаваны ў фармаце W-Review." : "DOCX сохранён в формате W-Review.") + (exportCopy.replaced ? (be ? ` Выпраўлена спасылак: ${exportCopy.replaced}.` : ` Заменено внутренних обозначений источников: ${exportCopy.replaced}.`) : ""));
   }
 
   const densityOptions = <><option value="minimum">{be ? "мінімум" : "минимум"}</option><option value="moderate">{be ? "умерана" : "умеренно"}</option><option value="many">{be ? "многа" : "много"}</option><option value="all">{be ? "усе знойдзеныя" : "все найденные"}</option></>;
