@@ -97,3 +97,61 @@ test("Russian explanatory text may include unchanged Latin brand and source name
   d.trends[0].summary="Reuters сообщает об ограничениях Starlink";
   assert.equal(normalizeDossier(d,cards).error,null);
 });
+
+test("new dossier rejects unjustified omission but old saved dossier remains compatible",()=>{
+  const raw=draft();
+  // P03 carries verified substantive Evidence but the model labelled it duplicate.
+  assert.equal(normalizeDossier(raw,cards).error,null);
+  assert.equal(normalizeDossier(raw,cards,{requireEveryDistinctSource:true}).error,
+    "dossier_unlinked_sources_P03");
+  raw.trends[0].branches[0].evidence_ids.push("P03:E01");
+  raw.coverage[2].status="supporting";
+  assert.equal(normalizeDossier(raw,cards,{requireEveryDistinctSource:true}).error,null);
+});
+test("same topic at different news outlets is not a source duplicate",()=>{
+  const marked=draft();
+  const differentUrls=cards.map((v,i)=>v+"\nURL: https://press.example/story-"+i);
+  assert.equal(normalizeDossier(marked,differentUrls,{requireEveryDistinctSource:true}).error,
+    "dossier_unlinked_sources_P03");
+  // Exact same URL (not just same news story), with a previously linked copy.
+  const identical=[differentUrls[0],differentUrls[1],
+    cards[2]+"\nURL: https://press.example/story-0"];
+  assert.equal(normalizeDossier(marked,identical,{requireEveryDistinctSource:true}).error,null);
+});
+test("the last two of 18 publications are required even when Evidence was prepared separately",()=>{
+  const full=Array.from({length:18},(_,i)=>{
+    const src=i>=16?"Поздний резервный провайдер":"Основной провайдер";
+    return "ID: P"+String(i+1).padStart(2,"0")+"\nИСТОЧНИК: «"+src+"»\n"+
+      "URL: https://example.org/story-"+(i+1)+"\n"+
+      "E01 [fact/P001] Факт "+(i+1)+" подтверждён по материалу. | SOURCE: «Факт подтверждён.»";
+  });
+  const raw=draft();
+  raw.trends=[{id:"T1",title:"Анализ международного кризиса",
+    summary:"Факторы и ограничения кризиса",thesis:"Определены самостоятельные последствия",
+    branches:[{...branch(Array.from({length:16},(_,i)=>
+      "P"+String(i+1).padStart(2,"0")+":E01")),contrary_evidence_ids:[]}]}];
+  raw.coverage=Array.from({length:18},(_,i)=>({
+    publication_id:"P"+String(i+1).padStart(2,"0"),
+    status:i<16?"used":"reserve",
+    reason:i<16?"Использованы сведения публикации":"Публикация оставлена за рамками плана"
+  }));
+  assert.equal(normalizeDossier(raw,full,{requireEveryDistinctSource:true}).error,
+    "dossier_unlinked_sources_P17_P18");
+  raw.trends[0].branches[0].evidence_ids.push("P17:E01","P18:E01");
+  // Max 18 references per branch; all 18 are a valid set.
+  raw.coverage[16].status="supporting";raw.coverage[17].status="supporting";
+  assert.equal(normalizeDossier(raw,full,{requireEveryDistinctSource:true}).error,null);
+  // Even when a model reorders the ledger, IDs are the source of truth.
+  raw.coverage.reverse();
+  assert.equal(normalizeDossier(raw,full,{requireEveryDistinctSource:true}).error,null);
+});
+test("headline-only references do not falsely count an article as substantively covered",()=>{
+  const sample=draft(), changed=[...cards];
+  changed[2]+="\nE02 [headline/TITLE] Заголовок о рисках. | SOURCE: «Заголовок о рисках.»";
+  sample.trends[0].branches[0].evidence_ids.push("P03:E02");
+  sample.coverage[2].status="supporting";
+  assert.equal(normalizeDossier(sample,changed,{requireEveryDistinctSource:true}).error,
+    "dossier_unlinked_sources_P03");
+  sample.trends[0].branches[0].evidence_ids.push("P03:E01");
+  assert.equal(normalizeDossier(sample,changed,{requireEveryDistinctSource:true}).error,null);
+});
