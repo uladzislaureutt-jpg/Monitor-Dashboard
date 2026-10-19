@@ -51,11 +51,24 @@ test("Cloudflare final synthesis uses proven simple JSON mode without changing c
  assert.ok(synth.includes("lengthOk=actualChars>=lengthMinimum"));
  assert.ok(synth.includes("&& actualChars<=lengthMaximum"));
  assert.ok(synth.includes('cloudflare_response_format:cloudflareSynthesisPayload.response_format.type'));
- // Target 8000: visible budget 6400, reasoning budget 2560, wrapper 450,
- // rounded to 9500 tokens; this is a CEILING not a requested length.
+ // Operator target 8000, internal model plan 9360 (+17%).
+ // The output budget is a ceiling, not a promised result length.
  const target=8000;
- const visible=Math.ceil(target/1.25);
+ const planning=Math.round(target*1.17);
+ const visible=Math.ceil(planning/1.25);
  const reasoning=Math.max(1000,Math.min(3000,Math.ceil(visible*0.4)));
  const cap=Math.min(11000,Math.max(1500,Math.ceil((visible+reasoning+450)/500)*500));
- assert.equal(cap,9500);
+ assert.equal(cap,11000);
+});
+
+test("all five operator presets use 17% higher model plan without changing acceptance limits",()=>{
+ assert.ok(synth.includes("const planningTargetChars = Math.round(targetChars * 1.17)"));
+ assert.ok(synth.includes("selectedIds,planningTargetChars,cards,measuredMedian"));
+ assert.ok(synth.includes("Внутренний ориентир модели — ${planningTargetChars}"));
+ assert.ok(synth.includes("const estimatedVisibleTokens=Math.ceil(planningTargetChars/1.25)"));
+ assert.ok(synth.includes("model_target_chars:planningTargetChars"));
+ assert.ok(synth.includes("const lengthMinimum=Math.round(targetChars*0.95)"));
+ assert.ok(synth.includes("const lengthMaximum=Math.round(targetChars*1.05)"));
+ assert.deepEqual([3000,4000,5000,6000,8000].map(n=>Math.round(n*1.17)),
+   [3510,4680,5850,7020,9360]);
 });
