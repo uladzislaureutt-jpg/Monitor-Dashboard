@@ -52,7 +52,7 @@ test("recovers only complete cards when outer envelope is cut off",()=>{
  assert.deepEqual(verified.accepted.map(a=>a.index),[0,1]);
 });
 test("long 18k response with broken final JSON rescues complete verified preceding card",()=>{
- const longText="Дополнительный поясняющий контекст { } и \\"кавычки\\". ".repeat(345);
+ const longText='Дополнительный поясняющий контекст { } и "кавычки". '.repeat(345);
  const first=card(0);first.records[0].statement_ru+=longText;
  const malformed='{"cards":['+JSON.stringify(first)+',{"index":1,"title_ru":"не завершено","records":[{"kind":"fact"';
  assert.ok(malformed.length>18000);
@@ -85,7 +85,7 @@ test("discards ambiguous duplicate indices when decoding concatenated replies",(
  assert.deepEqual(r.payload.cards.map(c=>c.index),[1]);
 });
 test("does not log or modify text; retains escaped quotes and exact original fragments",()=>{
- const inputText="Примечание: { не структура } и \\"внутренние кавычки\\"";
+ const inputText='Примечание: { не структура } и "внутренние кавычки"';
  const c=card(0);c.records[0].statement_ru=inputText;
  const r=parseEvidenceJson('{"cards":['+JSON.stringify(c)+']',2);
  assert.equal(r.payload.cards[0].records[0].statement_ru,inputText);
