@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { DOSSIER_INSTRUCTIONS, dossierSchema, normalizeDossier, makeSynthesisDossier, compactDossierCards, dossierOutputContract, dossierShape, evidenceIndex } from "./editorial-dossier.ts";
+import { dossierQualityMetrics } from "./dossier-quality-metrics.ts";
 import { synthesisResponseSchema, readSynthesisBlocks } from "./synthesis-blocks.ts";
 import { reconcileDossierDraft } from "./dossier-reconciliation.ts";
 import { normalizeReviewSourceLabels, poolSourceNames } from "./review-output-guard.ts";
@@ -631,6 +632,12 @@ ${sections.join("; ")}.
       used:output.dossier.coverage.filter(c=>["used","supporting"].includes(c.status)).length,
       provider:output.provider,
       coverage_complete:output.dossier.coverage.every(c=>c.evidence_ids.length>0 || c.status==="duplicate")
+    }));
+    // Diagnostic-only: numeric counts, no operator text/URLs or raw Evidence.
+    // Measures the actual 18-publication / 167-Evidence operator request.
+    console.info("w_review_dossier_quality "+JSON.stringify({
+      model:output.model,provider:output.provider,
+      ...dossierQualityMetrics(output.dossier,cards)
     }));
     return json({editorial_map:output.dossier,model:output.model,
       provider:output.provider,usage:output.result.usage});
