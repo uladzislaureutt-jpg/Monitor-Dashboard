@@ -151,7 +151,16 @@ export function normalizeDossier(raw:any,cards:string[],options:DossierValidatio
     if(!isRussianDossierProse(t?.title)||!isRussianDossierProse(t?.summary)||
        !isRussianDossierProse(t?.thesis))
       return {dossier:null,error:"dossier_non_russian_trend_"+id};
-    if(!Array.isArray(t?.branches)||t.branches.length<1||t.branches.length>9)
+    // Model-authored analytical trends remain capped at nine branches.
+    // Only a source-grounded, explicitly marked EDITOR REVIEW queue generated
+    // by our reconciliation code may hold up to 18 unassigned publications.
+    // These are NOT model-authored analytic conclusions.
+    const technicalReviewQueue=t?.technical_review_queue===true &&
+      t?.operator_optional===true &&
+      /^Публикации для редакционного распределения(?: — часть \d+)?$/.test(String(t?.title||"")) &&
+      Array.isArray(t?.branches)&&t.branches.every((b:any)=>b?.required===false);
+    const branchLimit=technicalReviewQueue?18:9;
+    if(!Array.isArray(t?.branches)||t.branches.length<1||t.branches.length>branchLimit)
       return {dossier:null,error:"dossier_invalid_branches"};
     const optional=typeof t?.operator_optional==="boolean"?t.operator_optional:false;
     const optionalReason=txt(t?.optional_reason,320);
