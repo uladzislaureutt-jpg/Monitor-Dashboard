@@ -60,6 +60,23 @@ const TEMPLATES=[
  "Редакция ставит под сомнение достаточность опубликованных гарантий и предлагает расширить общественный контроль."
 ];
 const KIND=["fact","detail","media_angle","explanation","counterposition","expert","fact","limitation","expert","editorial_stance"];
+// Externally checkable synthetic opposition pairs; not sent to models.
+export const GOLD_OPPOSITION_PAIRS=[
+ ["P01:E05","P04:E05"],["P05:E05","P06:E05"],["P08:E05","P10:E05"],
+ ["P12:E05","P13:E05"],["P16:E05","P18:E05"]
+];
+const OPPOSING_ARGUMENTS={
+  0:"Муниципалитет считает расширение бюджета обеспеченным финансированием.",
+  3:"Независимый эксперт считает расширение бюджета не обеспеченным гарантированными доходами.",
+  4:"Регулятор утверждает, что повышение тарифов неизбежно для всех семей.",
+  5:"Социальный эксперт утверждает, что повышения тарифов можно избежать, а единые тарифы вредят малообеспеченным.",
+  7:"Логистическая компания утверждает, что транзитный маршрут сокращает сроки доставки.",
+  9:"Независимый перевозчик утверждает, что новый маршрут не сокращает сроки из-за задержек.",
+  11:"Ведомственный эксперт утверждает, что экологическое воздействие модернизации незначительно.",
+  12:"Независимая лаборатория утверждает, что экологический эффект существенен и предыдущая оценка недоказана.",
+  15:"Муниципальный чиновник считает раскрытие контрактов достаточным для контроля.",
+  17:"Независимый аналитик считает опубликованные контракты неполными и контроль недостаточным."
+};
 export function fixtureCards(size=8){
  if(size!==8&&size!==18)throw Error("FIXTURE_SIZE_MUST_BE_8_OR_18");
  return SOURCES.slice(0,size).map(([source,title,angle],i)=>{
@@ -68,7 +85,9 @@ export function fixtureCards(size=8){
    // latest production pool's size, but with no production/user content.
    const count=size===18?(i<5?10:9):10;
    const entries=TEMPLATES.slice(0,count).map((statement,j)=>{
-     const unique=statement+" Источник «"+source+"» делает акцент: "+angle+". "+
+     const fact=j===4&&Object.prototype.hasOwnProperty.call(OPPOSING_ARGUMENTS,i)
+       ? OPPOSING_ARGUMENTS[i] : statement;
+     const unique=fact+" Источник «"+source+"» делает акцент: "+angle+". "+
        "Вариант интерпретации "+(j+1)+" относится исключительно к этому публикационному материалу.";
      const id="E"+String(j+1).padStart(2,"0");
      return id+" ["+KIND[j]+"/P"+String(j+1).padStart(3,"0")+"] "+unique+
@@ -145,6 +164,12 @@ export function editorialQualityProxies(dossier,cards){
    Array.isArray(b.contrary_evidence_ids)?b.contrary_evidence_ids:[])
    .filter(id=>index.byId.has(id)));
  const sourceOpposition=new Set([...contraryIds].map(id=>index.byId.get(id).publication));
+ const goldPairs=GOLD_OPPOSITION_PAIRS.filter(pair=>pair.every(id=>index.byId.has(id)));
+ const linkedPairs=goldPairs.filter(pair=>pair.every(id=>brief.some(b=>b.ids.has(id))));
+ const contrastedPairs=goldPairs.filter(([a,b])=>branches.some(branch=>{
+   const supporting=new Set(branch.evidence_ids||[]),contrary=new Set(branch.contrary_evidence_ids||[]);
+   return (supporting.has(a)&&contrary.has(b))||(supporting.has(b)&&contrary.has(a));
+ }));
  const explicitOpposition=new Set([...contraryIds].filter(id=>{
    const kind=index.byId.get(id).kind;
    return kind==="counterposition"||kind==="editorial_stance";
@@ -154,6 +179,9 @@ export function editorialQualityProxies(dossier,cards){
    facets_grouped:facetData.filter(x=>x.branch_grouped).length,
    facets:facetData,
    contrary_evidence_distinct:contraryIds.size,
+   gold_opposition_pairs_total:goldPairs.length,
+   gold_opposition_pairs_linked:linkedPairs.length,
+   gold_opposition_pairs_contrasted:contrastedPairs.length,
    contrary_publications_distinct:sourceOpposition.size,
    contrary_as_counterposition_or_stance:explicitOpposition.size,
    branches_with_contrary_and_counterpoint:brief.filter(b=>b.hasContrary&&b.hasCounterpoint).length,
