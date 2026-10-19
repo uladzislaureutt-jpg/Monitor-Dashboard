@@ -549,7 +549,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         ? ` Аб'ём ${result.actualChars} знакаў замест ${result.targetChars}; праверце паўнату і пры неабходнасці дапрацуйце.`
         : ` Объём ${result.actualChars} знаков вместо ${result.targetChars}; проверьте полноту и при необходимости доработайте.`);
       setMessage((be?"Агляд атрыманы. Яго можна рэдагаваць і экспартаваць у DOCX.":"Обзор получен. Можно редактировать и экспортировать в DOCX.")+
-        " Модель: "+result.model+"." +lengthNotice+warning);
+        lengthNotice+warning);
     } catch (reason) {
       const text = String(reason);
       setError(text.includes("w_review_daily_generation_limit")
@@ -727,21 +727,9 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
       <div className="w-review-readiness"><span className={prepared===state.items.length&&state.items.length?"ready":""}>{prepared===state.items.length&&state.items.length?"✓":"○"} {be?"Матэрыялы прааналізаваны":"Материалы проанализированы"}</span><span className={selectedTrends.length?"ready":""}>{selectedTrends.length?"✓":"○"} {be?"Тэндэнцыі выбраны":"Тенденции выбраны"}</span><span className={topicReady?"ready":""}>{topicReady?"✓":"○"} {be?"Тэма ўказана":"Тема указана"}</span><span className={styleReady?"ready":""}>{styleReady?"✓":"○"} {be?"Аўтарскі стыль (абавязкова)":"Авторский стиль (обязательно)"}</span></div>
       {!styleReady&&<p style={{fontSize:11,color:"#9a443b",margin:"0 0 10px"}}>{be?"Перад фарміраваннем агляду стварыце профіль на ўкладцы «Аўтарскі стыль».":"Перед формированием обзора создайте профиль на вкладке «Авторский стиль»."}</p>}
       <div className="w-review-final-actions"><label className="w-review-length-control"><span>{be?"Аб\’ём, знакаў":"Объём, знаков"}</span><select value={state.targetChars} onChange={(e)=>setState({...state,targetChars:Number(e.target.value),reviewText:"",reviewVariants:{},activeReviewRoute:undefined,sectionTitles:[],boldPhrases:[],factCheck:null,factCheckContract:0})}><option value={1000}>1 000</option><option value={2000}>2 000</option><option value={3000}>3 000</option><option value={4000}>4 000</option><option value={6000}>6 000</option><option value={8000}>8 000</option></select></label><button className="primary-button" disabled={busy!==""||!reviewReady}
-        onClick={()=>synthesize("gemini_first")}>{busy==="synthesize_gemini"?"…":be?"Агляд: Gemini 3.5 (рэзерв 120B)":"Обзор: Gemini 3.5 (резерв 120B)"}</button>
+        onClick={()=>synthesize("gemini_first")}>{busy==="synthesize_gemini"?"…":be?"Стварыць агляд":"Сформировать обзор"}</button>
         <button className="secondary-button" disabled={!state.reviewText.trim()||busy!==""} onClick={exportDocx}>DOCX</button>
 </div>
-      {(state.reviewVariants?.cloudflare_first||state.reviewVariants?.gemini_first)&&
-        <div className="w-review-compare" style={{display:"flex",gap:8,flexWrap:"wrap",margin:"10px 0"}}>
-          {(["cloudflare_first","gemini_first"] as const).map(route=>{
-            const draft=state.reviewVariants?.[route];
-            return draft?<button key={route} type="button" className={state.activeReviewRoute===route?"primary-button":"secondary-button"}
-              disabled={busy!==""} onClick={()=>setState(current=>({
-                ...current,activeReviewRoute:route,
-                reviewText:draft.text,sectionTitles:draft.sectionTitles,
-                boldPhrases:draft.boldPhrases,factCheck:null,factCheckContract:0
-              }))}>{route==="cloudflare_first"?"Cloudflare":"Gemini"} · {draft.text.length.toLocaleString()} {be?"знакаў":"знаков"}</button>:null;
-          })}
-        </div>}
       <textarea className="report-editor-textarea w-review-final-text" lang={be?"be":"ru"} spellCheck={true} value={state.reviewText} onChange={(e)=>setState(current=>{
           const sectionTitles=current.sectionTitles.filter(value=>e.target.value.includes(value));
           const boldPhrases=current.boldPhrases.filter(value=>e.target.value.includes(value));
@@ -758,6 +746,11 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
          {state.reviewText.trim()&& (state.reviewText.length<Math.round(state.targetChars*.95)||state.reviewText.length>Math.round(state.targetChars*1.05))?
            <strong style={{color:"#9a443b"}}> · {be?"Адхіленне ад аб'ёму":"Отклонение от объёма"}</strong>:null}
          {" · "}{be?"Токенаў у гэтай сесіі":"Токенов в этой сессии"}: {usage.totalTokens.toLocaleString()}
+       </div>
+       <div className="w-review-model-info" style={{fontSize:12,opacity:0.72,marginTop:8}}>
+         {be?"Маршрут генерацыі":"Маршрут генерации"}: Gemini 3.5 → Cloudflare GPT-OSS-120B ({be?"асноўны акаўнт":"основной аккаунт"}) → Cloudflare GPT-OSS-120B ({be?"рэзервовы акаўнт":"резервный аккаунт"}).
+         {state.activeReviewRoute && state.reviewVariants?.[state.activeReviewRoute]?.model ?
+           <> {" · "}{be?"Першапачатковая мадэль гэтага тэксту":"Исходная модель этого текста"}: {evidenceModelLabel(state.reviewVariants[state.activeReviewRoute]?.model)}</> : null}
        </div>
     </section>
   </div>;
