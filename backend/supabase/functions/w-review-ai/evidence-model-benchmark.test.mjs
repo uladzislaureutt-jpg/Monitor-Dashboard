@@ -101,3 +101,32 @@ test("six-call diagnostic saves synthetic metrics without touching production",a
  await assert.rejects(runEvidenceComparison({keys:{},models:EVIDENCE_MODELS,
    cohorts:[...corpus,...corpus],delayMs:0,output:"ignored"}),/REQUEST_LIMIT_EXCEEDED/);
 });
+
+test("Cloudflare internal 3036 means daily Neurons, while 3040 means temporary out of capacity",async()=>{
+ const docs=testCorpus()[0].docs;
+ const keys={cfAccount:"a",cfToken:"k"};
+ for(const [code,name] of [[3036,"daily_neuron_quota"],[3040,"cloudflare_out_of_capacity"]]){
+   const row=await callEvidenceModel(EVIDENCE_MODELS[2],docs,keys,
+     async()=>new Response(JSON.stringify({errors:[{code,message:"not logged"}]}),{
+       status:429,headers:{"retry-after":"12"}}),1000);
+   assert.equal(row.error_category,name);
+   assert.equal(row.provider_error_code,code);
+   assert.equal(row.retry_after_seconds,12);
+ }
+});
+test("once a Cloudflare account is blocked by 3036 the later provider requests are skipped",async()=>{
+ const cohorts=testCorpus(),folder=mkdtempSync(join(tmpdir(),"w-evidence-quota-"));
+ const called=[];
+ try{
+   const rows=await runEvidenceComparison({
+     keys:{cfAccount:"a",cfToken:"k"},models:EVIDENCE_MODELS.slice(1),
+     cohorts,delayMs:0,output:folder,fetchImpl:async url=>{
+       called.push(url);return new Response(JSON.stringify({errors:[{code:3036}]}),{status:429});
+     }
+   });
+   assert.equal(called.length,1);
+   assert.equal(rows.length,4);
+   assert.equal(rows[0].provider_error_code,3036);
+   assert.ok(rows.slice(1).every(x=>x.error_category==="skipped_cloudflare_daily_neuron_quota"));
+ }finally{rmSync(folder,{recursive:true,force:true});}
+});

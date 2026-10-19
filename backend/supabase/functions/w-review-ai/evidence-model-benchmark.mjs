@@ -144,8 +144,16 @@ export async function callEvidenceModel(spec,docs,keys,fetchImpl=fetch,timeoutMs
    result.eligibility=response.status===200?"available":response.status===403?
      "paid_or_permission_restricted":response.status===429?"quota_or_capacity":"unverified";
    if(!response.ok){
+     // Cloudflare 429/3036 is a daily-neuron account limit; 429/3040 is
+     // temporary capacity. Do NOT log provider free-text error messages.
+     const code=Number(bodyResponse?.errors?.[0]?.code??bodyResponse?.error?.code??0);
+     result.provider_error_code=Number.isSafeInteger(code)?code:0;
+     const retry=response.headers.get("retry-after")||"";
+     if(/^\d{1,4}$/.test(retry))result.retry_after_seconds=Number(retry);
      result.error_category=response.status===400?"invalid_request":response.status===403?
-       "free_tier_or_auth":response.status===429?"quota_or_capacity":
+       "free_tier_or_auth":response.status===429&&code===3036?"daily_neuron_quota":
+       response.status===429&&code===3040?"cloudflare_out_of_capacity":
+       response.status===429?"cloudflare_429_other":
        response.status===413?"request_too_large":"provider_error";
      return result;
    }
@@ -191,15 +199,21 @@ export async function runEvidenceComparison({keys,models=EVIDENCE_MODELS,
  cohorts=testCorpus(),fetchImpl=fetch,output="out/w-review-evidence-models",delayMs=9000,maxCalls=6}){
  if(cohorts.length*models.length>maxCalls)throw Error("REQUEST_LIMIT_EXCEEDED");
  const rows=[];let count=0;const outputs=[];
+ let dailyNeuronBlocked=false;
  for(const cohort of cohorts)for(const spec of models){
    if(count++&&delayMs>0)await pause(delayMs);
-   const row=await callEvidenceModel(spec,cohort.docs,keys,fetchImpl,110000,
-     raw=>outputs.push({...raw,cohort:cohort.name}));
+   const row=spec.provider==="cloudflare"&&dailyNeuronBlocked
+     ?{model_id:spec.id,provider:spec.provider,status:0,elapsed_ms:0,
+       cards_requested:cohort.docs.length,passages_total:cohort.docs.reduce((n,d)=>n+d.passages.length,0),
+       eligibility:"not_tested",error_category:"skipped_cloudflare_daily_neuron_quota"}
+     :await callEvidenceModel(spec,cohort.docs,keys,fetchImpl,110000,
+       raw=>outputs.push({...raw,cohort:cohort.name}));
+   if(row.provider_error_code===3036)dailyNeuronBlocked=true;
    row.cohort=cohort.name;rows.push(row);
    console.info(JSON.stringify({cohort:row.cohort,model_id:row.model_id,status:row.status,
      elapsed_ms:row.elapsed_ms,cards_accepted:row.cards_accepted,
      records_accepted:row.records_accepted,passages_covered:row.passages_covered,
-     error_category:row.error_category}));
+     error_category:row.error_category,provider_error_code:row.provider_error_code}));
  }
  mkdirSync(output,{recursive:true});
  writeFileSync(output+"/metrics.json",JSON.stringify({
