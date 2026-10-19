@@ -274,7 +274,7 @@ export function ReportView() {
       const usage=result.usage;
       const entry={at:new Date().toISOString(),prompt:Number(usage.prompt_tokens||0),completion:Number(usage.completion_tokens||0),total:Number(usage.total_tokens||0),remaining:result.limits.remaining_requests??null};
       setTranslationStats(previous=>{const next={...previous,[provider]:[...(previous[provider]||[]),entry].slice(-100)};localStorage.setItem("l-translation-stats-v1",JSON.stringify(next));return next;});
-      setStatus(`${provider==="qwen"?"Qwen":"Gemini"}: ${usage.total_tokens ?? 0} токенов (вход ${usage.prompt_tokens ?? 0}, выход ${usage.completion_tokens ?? 0}). Перевод сохранён в рабочем тексте.`);
+      setStatus(`${result.provider==="qwen"?"Qwen":result.provider==="gemini"?"Gemini 3.5":"Cloudflare GPT-OSS-120B (резерв)"}: ${usage.total_tokens ?? 0} токенов (вход ${usage.prompt_tokens ?? 0}, выход ${usage.completion_tokens ?? 0}). Перевод сохранён в рабочем тексте.`);
     } catch(reason) {setError(String(reason));}
     finally {setTranslationBusy(false);}
   }
