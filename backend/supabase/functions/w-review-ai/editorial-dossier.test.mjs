@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { evidenceIndex, normalizeDossier, makeSynthesisDossier, dossierSchema, isRussianDossierProse, compactDossierCards } from "./editorial-dossier.ts";
+import { evidenceIndex, normalizeDossier, makeSynthesisDossier, dossierSchema, isRussianDossierProse, compactDossierCards, DOSSIER_INSTRUCTIONS } from "./editorial-dossier.ts";
 const cards=[
   "ID: P01\nИСТОЧНИК: «Reuters»\nPUBLICATION_ID: story-A\nE01 [fact/P001] Прогноз снизился на 2%. | SOURCE: «Прогноз снизился на 2%.»\nE02 [counterposition/P002] Сценарий оспаривают эксперты. | SOURCE: «Сценарий оспаривают эксперты.»",
   "ID: P02\nИСТОЧНИК: «Bloomberg»\nPUBLICATION_ID: story-B\nE01 [expert/P003] Аналитик видит риск роста цен. | SOURCE: «Аналитик видит риск роста цен.»",
@@ -230,4 +230,15 @@ test('JSON-only dossier contract includes all nested fields and full pool cardin
  assert.ok(example.trends[0].branches[0].evidence_ids.length);
  assert.match(contract,/ровно 18 записей/);
  assert.deepEqual(dossierShape({trends:[{branches:[{},{}]}],coverage:[{}]}),{parsed_object:true,trends_array:true,trends_count:1,branch_counts:[2],coverage_count:1});
+});
+
+test("dossier one-pass editorial protocol requires grounded counterpositions, expert attribution, late evidence and nonduplicated branches",()=>{
+  const contract=DOSSIER_INSTRUCTIONS;
+  for(const phrase of ["ВНУТРЕННЯЯ РЕДАКЦИОННАЯ СВЕРКА","значимые поздние Evidence","contrary_evidence_ids",
+     "публикации действительно оспаривают","Не включай один Evidence ID",
+     "НЕ ДУБЛИРУЙ ВЕТКИ","АТРИБУЦИЯ","ФИНАЛЬНАЯ СВЕРКА"]){
+    assert.ok(contract.includes(phrase),"Missing editorial safeguard: "+phrase);
+  }
+  assert.ok(contract.includes("Верни только JSON"));
+  assert.ok(!contract.includes("в ответе покажи ход рассуждений"));
 });
