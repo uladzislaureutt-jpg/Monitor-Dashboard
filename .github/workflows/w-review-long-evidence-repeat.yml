@@ -1,0 +1,58 @@
+name: W-Review long Evidence repeated model comparison
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/supabase/functions/w-review-ai/long-evidence-repeat*.mjs'
+      - 'backend/supabase/functions/w-review-ai/evidence-model-benchmark.mjs'
+      - '.github/workflows/w-review-long-evidence-repeat.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'backend/supabase/functions/w-review-ai/long-evidence-repeat*.mjs'
+      - '.github/workflows/w-review-long-evidence-repeat.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: w-review-long-evidence-repeat
+  cancel-in-progress: false
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check identical long source prompts, ABBA schedule, 9000-token ceiling
+        run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/long-evidence-repeat.test.mjs
+
+  live:
+    if: github.event_name != 'pull_request'
+    needs: offline
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Compare twice each with controlled long Evidence, one provider at a time
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GOOGLE_GEMINI_API_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node --experimental-strip-types backend/supabase/functions/w-review-ai/long-evidence-repeat.mjs
+      - name: Publish source-grounded metrics and synthetic-only full replies
+        uses: actions/upload-artifact@v4
+        with:
+          name: w-review-long-evidence-repeat-${{ github.run_number }}
+          path: out/w-review-long-evidence-repeat/
+          retention-days: 14
+          if-no-files-found: error
