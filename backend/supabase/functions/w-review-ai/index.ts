@@ -346,13 +346,13 @@ Deno.serve(async (req: Request) => {
             log:event=>console.info("w_review_gemini_response "+JSON.stringify({stage:"evidence_batch",model,...event}))});
           return {reply,model};
         }
-        const payload={reasoning_effort:"low",temperature:0.1,max_tokens:10000,
+        const payload={reasoning_effort:"low",temperature:0.1,max_tokens:9000,
           response_format:{type:"json_object"},messages:[{role:"system",content:evidencePrompt},
           {role:"user",content:input}]};
         if(provider==="groq"){
           const model="openai/gpt-oss-120b";
           const {max_tokens:_cfMaxTokens,...groqPayload}=payload;
-          const reply=await callGroq(groqApiKey,{...groqPayload,model,max_completion_tokens:10000},
+          const reply=await callGroq(groqApiKey,{...groqPayload,model,max_completion_tokens:9000},
             preparationBudget(attemptDeadline,31000));
           return {reply,model};
         }
@@ -556,23 +556,9 @@ ${sections.join("; ")}.
         {role:"user",content:mapUserInput}
       ]
     };
-    // Run the fast, fully evidence-validated Gemini 3.5 route FIRST.
-    // A structurally invalid draft is not accepted; CF/Groq get their own
-    // bounded windows without a second, redundant CF timeout.
-    if(geminiApiKey&&availableTime()>=12000){
-      console.info("w_review_map_route "+JSON.stringify({provider:"gemini",model:W_REVIEW_GEMINI_PRIMARY}));
-      const timeout=Math.min(42000,availableTime());
-      const response=await structuredGeminiRequest({deadline:Date.now()+timeout,
-        initialMode:"json",
-        call:(jsonMode,budget)=>callGemini(geminiApiKey,W_REVIEW_GEMINI_PRIMARY,prompt,schema,
-          0.1,"editorial_map",budget,{jsonMode,maxOutputTokens:16384,thinkingLevel:"low"}),
-        log:event=>console.info("w_review_gemini_response "+JSON.stringify({
-          stage:"editorial_map",model:W_REVIEW_GEMINI_PRIMARY,...event}))
-      });
-      if(response.ok)accept(response,W_REVIEW_GEMINI_PRIMARY,"gemini");
-      else attempts.push({model:W_REVIEW_GEMINI_PRIMARY,status:response.status,
-        reason:response.diagnostic?.kind||response.detail});
-    }
+    // Dossier trends: Cloudflare GPT-OSS-120B FIRST; Gemini 3.5 SECOND;
+    // Groq GPT-OSS-120B THIRD. Evidence extraction stays Gemini-first.
+    // Revalidate each result against all original publication IDs.
     const cfRoute=cfPrimaryReady?"primary":cfBackupReady?"backup":null;
     if(!selected&&cfRoute&&availableTime()>=6000){
       const account=cfRoute==="primary"?cfPrimaryId:cfBackupId;
@@ -592,6 +578,20 @@ ${sections.join("; ")}.
       else attempts.push({model:"@cf/openai/gpt-oss-120b",status:response.status,
         reason:response.detail==="cloudflare_local_timeout"?"local_timeout":
           response.detail.startsWith("cloudflare_empty_reply")?"empty_reply":"provider_or_transport"});
+    }
+    if(!selected&&geminiApiKey&&availableTime()>=12000){
+      console.info("w_review_map_route "+JSON.stringify({provider:"gemini",model:W_REVIEW_GEMINI_PRIMARY}));
+      const timeout=Math.min(42000,availableTime());
+      const response=await structuredGeminiRequest({deadline:Date.now()+timeout,
+        initialMode:"json",
+        call:(jsonMode,budget)=>callGemini(geminiApiKey,W_REVIEW_GEMINI_PRIMARY,prompt,schema,
+          0.1,"editorial_map",budget,{jsonMode,maxOutputTokens:16384,thinkingLevel:"low"}),
+        log:event=>console.info("w_review_gemini_response "+JSON.stringify({
+          stage:"editorial_map",model:W_REVIEW_GEMINI_PRIMARY,...event}))
+      });
+      if(response.ok)accept(response,W_REVIEW_GEMINI_PRIMARY,"gemini");
+      else attempts.push({model:W_REVIEW_GEMINI_PRIMARY,status:response.status,
+        reason:response.diagnostic?.kind||response.detail});
     }
     if(!selected&&groqApiKey&&availableTime()>=6000){
       const model="openai/gpt-oss-120b";
