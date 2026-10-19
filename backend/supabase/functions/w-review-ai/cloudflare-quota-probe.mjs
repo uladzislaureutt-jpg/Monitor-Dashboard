@@ -1,7 +1,8 @@
 // Small, read-only Cloudflare Workers AI free-tier diagnostic.
-// Max seven probes; no operator content, no production writes, no large response expected.
+// Max nine probes; no operator content, no production writes.
 import {writeFileSync,mkdirSync,appendFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
+import {testCorpus,identicalEvidencePrompt,evaluateEvidence} from "./evidence-model-benchmark.mjs";
 export const PROBES=[
   {id:"llama1b64",model:"@cf/meta/llama-3.2-1b-instruct",max_tokens:64},
   {id:"oss120_64",model:"@cf/openai/gpt-oss-120b",max_tokens:64},
@@ -9,7 +10,9 @@ export const PROBES=[
   {id:"oss120_512",model:"@cf/openai/gpt-oss-120b",max_tokens:512},
   {id:"nemotron120_512",model:"@cf/nvidia/nemotron-3-120b-a12b",max_tokens:512},
   {id:"oss120_12000",model:"@cf/openai/gpt-oss-120b",max_tokens:12000},
-  {id:"nemotron120_12000",model:"@cf/nvidia/nemotron-3-120b-a12b",max_tokens:12000}
+  {id:"nemotron120_12000",model:"@cf/nvidia/nemotron-3-120b-a12b",max_tokens:12000},
+  {id:"oss120_short_evidence",model:"@cf/openai/gpt-oss-120b",max_tokens:12000,evidence:true},
+  {id:"nemotron120_short_evidence",model:"@cf/nvidia/nemotron-3-120b-a12b",max_tokens:12000,evidence:true}
 ];
 export function safeProviderFailure(http,statusBody){
   const err=statusBody?.errors?.[0]??statusBody?.error??{};
@@ -31,8 +34,11 @@ export async function probeOne(spec,keys,fetchImpl=fetch){
   const controller=new AbortController();
   const t=setTimeout(()=>controller.abort(),25000);
   try{
-    const body={messages:[{role:"user",content:"Reply with exactly the word OK."}],
+    const docs=spec.evidence?testCorpus()[0].docs:null;
+    const input=docs?identicalEvidencePrompt(docs):"Reply with exactly the word OK.";
+    const body={messages:[{role:"user",content:input}],
       max_tokens:spec.max_tokens,temperature:0};
+    if(spec.evidence&&spec.model.includes("gpt-oss"))body.response_format={type:"json_object"};
     if(spec.model.includes("gpt-oss"))body.reasoning_effort="low";
     if(spec.model.includes("nemotron"))body.chat_template_kwargs={enable_thinking:false};
     const response=await fetchImpl("https://api.cloudflare.com/client/v4/accounts/"+
@@ -52,9 +58,18 @@ export async function probeOne(spec,keys,fetchImpl=fetch){
       const usage=data?.result?.usage??data?.usage??{};
       row.input_tokens=Number(usage.prompt_tokens||0);
       row.output_tokens=Number(usage.completion_tokens||0);
-      row.has_content=Boolean(
-        data?.result?.response||data?.result?.choices?.[0]?.message?.content
-        ||data?.result?.output_text||data?.response);
+      const raw=data?.result?.response||data?.result?.choices?.[0]?.message?.content||
+        data?.result?.output_text||data?.response||"";
+      row.has_content=Boolean(raw);
+      if(docs){
+        const content=typeof raw==="string"?raw:JSON.stringify(raw);
+        const metrics=evaluateEvidence(content,docs);
+        row.cards_accepted=metrics.cards_accepted;
+        row.records_accepted=metrics.records_accepted;
+        row.covered_passages=metrics.passages_covered;
+        row.total_passages=metrics.passages_total;
+        row.json_recovery=metrics.json_recovery;
+      }
     }
   }catch(error){row.status=0;row.error_category=String(error?.name||"transport").slice(0,45);}
   finally{clearTimeout(t);row.elapsed_ms=Date.now()-started;}
@@ -75,7 +90,7 @@ export async function runProbes({keys,fetchImpl=fetch,output="out/cloudflare-400
       // The latter diagnoses quota pre-admission based on max_tokens.
       // Do not attempt a larger cap for a model that failed the preceding cap.
       const prefix=p.id.split("_")[0];
-      const prerequisite=p.max_tokens===512?prefix+"_64":prefix+"_512";
+      const prerequisite=p.evidence?prefix+"_12000":p.max_tokens===512?prefix+"_64":prefix+"_512";
       if(!rows.some(x=>x.id===prerequisite&&x.status===200))continue;
       const result=await probeOne(p,keys,fetchImpl);
       rows.push(result);console.log("CF_PROBE "+JSON.stringify(result));
@@ -92,7 +107,7 @@ export async function runProbes({keys,fetchImpl=fetch,output="out/cloudflare-400
   writeFileSync(output+"/results.json",JSON.stringify(all,null,2)+"\n");
   const table=[
     "# Cloudflare 4006 minimal diagnostic",
-    "", "Only artificial 2-word prompts, max 7 requests. The 12,000 limit is an output ceiling, not a requested length.",
+    "", "Seven tiny control prompts and at most two synthetic evidence requests. The 12,000 limit is an output ceiling, not a requested length.",
     "", "| Model | Max tokens | HTTP | Internal code | Message category | Time ms |",
     "|---|---:|---:|---:|---|---:|",
     ...rows.map(x=>"| "+[x.model,x.max_tokens,x.status??0,x.code??"-",x.message_class??x.error_category??"-",x.elapsed_ms].join(" | ")+" |"),
