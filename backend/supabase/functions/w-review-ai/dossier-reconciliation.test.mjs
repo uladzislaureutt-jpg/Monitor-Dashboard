@@ -173,3 +173,59 @@ test("never exceed five dossier trends merely to force a technical review queue"
   }));
   assert.equal(reconcileDossierDraft(raw,manyCards),null);
 });
+
+test("18-publication 5-trend dossier survives a single invented ID without discarding real citations",()=>{
+ const pool=Array.from({length:18},(_,i)=>[
+   "ID: P"+String(i+1).padStart(2,"0"),
+   "ИСТОЧНИК: «Издание "+(i+1)+"»",
+   "URL: https://example.invalid/article-"+i,
+   "E01 [fact/P001] Проверенный факт о международном сюжете публикации. | SOURCE: «текст»",
+   "E02 [expert/P002] Проверенное экспертное объяснение обстоятельств. | SOURCE: «текст»",
+   "E03 [counterposition/P003] В статье приводится противоположная интерпретация. | SOURCE: «текст»"
+ ].join("\n"));
+ const group=(t,pubs)=>({
+    id:"T"+t,title:"Тематическая линия "+t,
+    summary:"Издания рассматривают самостоятельные вопросы.",
+    thesis:"Доказательства разных источников представлены совместно.",
+    operator_optional:false,optional_reason:"",
+    branches:[coreBranch(pubs.map(x=>x+":E01"))]
+ });
+ const groups=[
+  ["P01","P02","P03","P04"],["P05","P06","P07","P08"],
+  ["P09","P10","P11","P12"],["P13","P14","P15"],["P16","P17","P18"]
+ ];
+ const raw={
+   trends:groups.map((g,i)=>group(i+1,g)),
+   coverage:pool.map((_,i)=>({
+     publication_id:"P"+String(i+1).padStart(2,"0"),
+     status:"used",reason:"Источник подтверждает соответствующую смысловую линию."
+   })),
+   inventory:{quotes:0,headlines:0,experts:18}
+ };
+ // The actual model error was precisely P07:E09, which did not exist.
+ raw.trends[1].branches[0].evidence_ids.push("P07:E09");
+ assert.equal(normalizeDossier(raw,pool,{requireEveryDistinctSource:true}).error,
+   "dossier_unknown_or_missing_evidence");
+ const fixed=reconcileDossierDraft(raw,pool);
+ assert.ok(fixed,"one invalid auxiliary ID must not erase a fully grounded five-trend map");
+ assert.equal(fixed.discardedEvidenceRefs,1);
+ assert.equal(fixed.removedBranches,0);
+ assert.deepEqual(fixed.additionalSources,[]);
+ assert.equal(fixed.draft.trends.length,5);
+ assert.ok(!JSON.stringify(fixed.draft).includes("P07:E09"));
+ assert.ok(fixed.draft.trends[1].branches[0].evidence_ids.includes("P07:E01"));
+ assert.equal(normalizeDossier(fixed.draft,pool,{requireEveryDistinctSource:true}).error,null);
+ assert.equal(fixed.repaired,true);
+});
+test("fabricated contrary Evidence is quarantined; unsubstantiated counterpoint is cleared",()=>{
+ const original=draft();
+ original.trends[0].branches[0].contrary_evidence_ids=["P02:E10"];
+ original.trends[0].branches[0].counterpoint=
+   "Эксперты якобы полностью отвергают приведённые доказательства.";
+ const fixed=reconcileDossierDraft(original,cards);
+ assert.ok(fixed);
+ assert.equal(fixed.discardedEvidenceRefs,1);
+ assert.deepEqual(fixed.draft.trends[0].branches[0].contrary_evidence_ids,[]);
+ assert.equal(fixed.draft.trends[0].branches[0].counterpoint,"");
+ assert.equal(normalizeDossier(fixed.draft,cards,{requireEveryDistinctSource:true}).error,null);
+});

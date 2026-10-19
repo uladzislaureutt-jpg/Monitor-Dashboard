@@ -29,6 +29,16 @@ export function evidenceIndex(cards:string[]){
   }
   return {entries,publications,byId:new Map(entries.map(r=>[r.id,r]))};
 }
+// Send an explicit per-publication whitelist with the compact Evidence.
+// This reduces E09/E10 hallucinations when P07, for example, has fewer
+// verified records. Do not manufacture missing sequential IDs.
+export function dossierEvidenceIdWhitelist(cards:string[]):string{
+  const ix=evidenceIndex(cards);
+  return ix.publications.map(pub=>{
+    const ids=ix.entries.filter(r=>r.publication===pub).map(r=>r.id);
+    return pub+": "+(ids.length?ids.join(", "):"нет проверенных записей");
+  }).join("\n");
+}
 // Map stage needs semantic summaries and stable verified IDs, not repeated
 // source excerpts/quotes already validated by Evidence v2. The final synthesis
 // still receives the FULL original Evidence Cards. This view never mutates them.
