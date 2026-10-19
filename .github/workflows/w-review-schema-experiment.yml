@@ -1,0 +1,72 @@
+name: W-Review Gemini 3.5 schema A-B-C diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/supabase/functions/w-review-ai/schema-benchmark*.mjs'
+      - '.github/workflows/w-review-schema-experiment.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'backend/supabase/functions/w-review-ai/schema-benchmark*.mjs'
+      - '.github/workflows/w-review-schema-experiment.yml'
+  workflow_dispatch:
+    inputs:
+      repeats:
+        description: 'Repeats per fixture/variant (1 or 2; max 12 live requests)'
+        required: true
+        default: '2'
+        type: choice
+        options: ['1', '2']
+
+permissions:
+  contents: read
+
+jobs:
+  offline-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate synthetic fixtures, variant schemas and server-side Evidence checks (no Gemini API)
+        run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/schema-benchmark.test.mjs
+
+  live-comparison:
+    if: github.event_name != 'pull_request'
+    needs: offline-validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check key availability without printing credentials
+        id: check-key
+        env:
+          TEST_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GOOGLE_GEMINI_API_KEY || secrets.GOOGLE_API_KEY }}
+        run: |
+          if [ -n "$TEST_KEY" ]; then
+            echo "available=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=no" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Gemini A/B/C::No GitHub Actions Gemini secret is configured. Real provider comparison was NOT run. Configure repository Actions secret GEMINI_API_KEY and trigger workflow_dispatch; Supabase secrets are separate."
+          fi
+      - name: Compare JSON, minimal JSON Schema, extended JSON Schema against Gemini 3.5
+        if: steps.check-key.outputs.available == 'yes'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GOOGLE_GEMINI_API_KEY || secrets.GOOGLE_API_KEY }}
+          EXPERIMENT_REPEATS: ${{ inputs.repeats || '2' }}
+        run: node --experimental-strip-types backend/supabase/functions/w-review-ai/schema-benchmark.mjs
+      - name: Attach JSON metrics and Markdown comparison
+        if: steps.check-key.outputs.available == 'yes'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gemini35-evidence-schema-abc-${{ github.run_number }}
+          path: out/gemini-schema-abc/
+          retention-days: 14
+          if-no-files-found: error
