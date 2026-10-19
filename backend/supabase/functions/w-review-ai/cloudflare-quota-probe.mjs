@@ -1,5 +1,5 @@
 // Small, read-only Cloudflare Workers AI free-tier diagnostic.
-// Max five probes; no operator content, no production writes, no large output.
+// Max seven probes; no operator content, no production writes, no large response expected.
 import {writeFileSync,mkdirSync,appendFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 export const PROBES=[
@@ -7,7 +7,9 @@ export const PROBES=[
   {id:"oss120_64",model:"@cf/openai/gpt-oss-120b",max_tokens:64},
   {id:"nemotron120_64",model:"@cf/nvidia/nemotron-3-120b-a12b",max_tokens:64},
   {id:"oss120_512",model:"@cf/openai/gpt-oss-120b",max_tokens:512},
-  {id:"nemotron120_512",model:"@cf/nvidia/nemotron-3-120b-a12b",max_tokens:512}
+  {id:"nemotron120_512",model:"@cf/nvidia/nemotron-3-120b-a12b",max_tokens:512},
+  {id:"oss120_12000",model:"@cf/openai/gpt-oss-120b",max_tokens:12000},
+  {id:"nemotron120_12000",model:"@cf/nvidia/nemotron-3-120b-a12b",max_tokens:12000}
 ];
 export function safeProviderFailure(http,statusBody){
   const err=statusBody?.errors?.[0]??statusBody?.error??{};
@@ -69,9 +71,12 @@ export async function runProbes({keys,fetchImpl=fetch,output="out/cloudflare-400
   const largeWorthTrying=rows.some(x=>x.status===200);
   if(largeWorthTrying){
     for(const p of PROBES.slice(3)){
-      // Allow two bounded 512-token probes only where the 64-token variant succeeded.
-      const baseId=p.id.split("_")[0]+"_64";
-      if(!rows.some(x=>x.id===baseId&&x.status===200))continue;
+      // First 512 then a short-answer prompt with a 12000-token *ceiling*.
+      // The latter diagnoses quota pre-admission based on max_tokens.
+      // Do not attempt a larger cap for a model that failed the preceding cap.
+      const prefix=p.id.split("_")[0];
+      const prerequisite=p.max_tokens===512?prefix+"_64":prefix+"_512";
+      if(!rows.some(x=>x.id===prerequisite&&x.status===200))continue;
       const result=await probeOne(p,keys,fetchImpl);
       rows.push(result);console.log("CF_PROBE "+JSON.stringify(result));
     }
@@ -81,12 +86,13 @@ export async function runProbes({keys,fetchImpl=fetch,output="out/cloudflare-400
     hints:{
       all_4006_daily:rows.length>=3&&rows.slice(0,3).every(x=>x.code===4006&&x.message_class==="daily_neurons"),
       all_4006_capacity:rows.length>=3&&rows.slice(0,3).every(x=>x.code===4006&&x.message_class==="capacity"),
-      small_success_but_large_error:rows.some(x=>x.status===200)&&rows.some(x=>x.max_tokens===512&&x.status===429)
+      small_success_but_large_error:rows.some(x=>x.max_tokens===512&&x.status===200)&&
+        rows.some(x=>x.max_tokens===12000&&x.status===429)
     }};
   writeFileSync(output+"/results.json",JSON.stringify(all,null,2)+"\n");
   const table=[
     "# Cloudflare 4006 minimal diagnostic",
-    "", "Only artificial 2-word prompts, max 5 requests. Never tests actual editorial data.",
+    "", "Only artificial 2-word prompts, max 7 requests. The 12,000 limit is an output ceiling, not a requested length.",
     "", "| Model | Max tokens | HTTP | Internal code | Message category | Time ms |",
     "|---|---:|---:|---:|---|---:|",
     ...rows.map(x=>"| "+[x.model,x.max_tokens,x.status??0,x.code??"-",x.message_class??x.error_category??"-",x.elapsed_ms].join(" | ")+" |"),
