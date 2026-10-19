@@ -7,7 +7,7 @@ import {EVIDENCE_MODELS,testCorpus,identicalEvidencePrompt,evaluateEvidence,
   callEvidenceModel,runEvidenceComparison} from "./evidence-model-benchmark.mjs";
 
 const makeRecords=(d)=>d.passages.slice(0,5).map(p=>({
-  kind:"fact",statement_ru:"Тестовая публикация содержит конкретное подтверждённое утверждение о программе.",
+  kind:"fact",statement_ru:"Тестовое утверждение по фрагменту "+p.id+" содержит конкретные сведения о расходах и оценках.",
   anchor_id:p.id,source_excerpt:p.text.slice(0,Math.min(60,p.text.length)),
   original_quote:"",quote_ru:"",speaker:"",role:""
 }));
