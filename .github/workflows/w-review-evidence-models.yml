@@ -33,7 +33,7 @@ jobs:
         run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/evidence-model-benchmark.test.mjs
 
   live-compare:
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch'
     needs: static-checks
     runs-on: ubuntu-latest
     timeout-minutes: 18
@@ -42,7 +42,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: One short and one long article pair per model (six calls total)
+      - name: Manual only — one short and one long article pair per model (six calls total)
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GOOGLE_GEMINI_API_KEY }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
