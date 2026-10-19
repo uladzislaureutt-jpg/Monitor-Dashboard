@@ -44,6 +44,8 @@ jobs:
         run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/evidence-v2.test.mjs
       - name: Validate editorial dossier and coverage
         run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/editorial-dossier.test.mjs
+      - name: Verify privacy-safe dossier quality metrics on actual Evidence structures
+        run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/dossier-quality-metrics.test.mjs
       - name: Guard runtime import of dossier Evidence index
         run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/dossier-runtime-imports.test.mjs
       - name: Verify source-anchored dossier reconciliation
