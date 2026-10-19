@@ -1,0 +1,56 @@
+name: W-Review Cloudflare GPT-OSS 70-140s trend dossier test
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/supabase/functions/w-review-ai/cloudflare-dossier-time-ladder*.mjs'
+      - '.github/workflows/w-review-cloudflare-dossier-time-ladder.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'backend/supabase/functions/w-review-ai/cloudflare-dossier-time-ladder*.mjs'
+      - '.github/workflows/w-review-cloudflare-dossier-time-ladder.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: w-review-cloudflare-dossier-time-ladder
+  cancel-in-progress: false
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify one-request six-threshold timing and source-based dossier validation
+        run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/cloudflare-dossier-time-ladder.test.mjs
+
+  live:
+    if: github.event_name != 'pull_request'
+    needs: offline
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: One 140-second Cloudflare GPT-OSS-120B call; observe six deadlines
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node --experimental-strip-types backend/supabase/functions/w-review-ai/cloudflare-dossier-time-ladder.mjs
+      - name: Save threshold report and synthetic model output for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: w-review-cloudflare-dossier-time-ladder-${{ github.run_number }}
+          path: out/w-review-cloudflare-time-ladder/
+          retention-days: 14
+          if-no-files-found: error
