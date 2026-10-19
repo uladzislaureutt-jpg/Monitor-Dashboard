@@ -481,7 +481,8 @@ ${sections.join("; ")}.
       "\n\nСТРОГИЙ ПЕРЕЧЕНЬ ДОПУСТИМЫХ EVIDENCE ID ПО КАЖДОЙ ПУБЛИКАЦИИ:\n"+
       dossierEvidenceIdWhitelist(cards)+
       "\nВставляй в evidence_ids и contrary_evidence_ids только дословно перечисленные выше ID. "+
-      "Отсутствующий P07:E09 не заменяй на P07:E08: используй только подтверждённые "+
+      "Если какого-либо номера нет в перечне, не придумывай его и не "+
+      "заменяй соседним номером: используй только подлинные "+
       "значимые Evidence из соответствующей публикации.\n\n"+
       dossierOutputContract(cards.length);
     const prompt=DOSSIER_INSTRUCTIONS+"\n\n"+mapUserInput;
