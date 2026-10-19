@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {parseEvidenceJson} from "./evidence-json-recovery.ts";
 import {makeEvidenceDocuments,verifyEvidenceCardsIndividually} from "./evidence-v2.ts";
 
-const articleText="В материале сказано, что компания увеличила выручку на двадцать процентов.";
+const articleText="В материале сказано: Компания увеличила выручку на двадцать процентов.";
 const input=makeEvidenceDocuments([0,1].map(index=>({
  index,publication_id:"src-"+index,source:"Редакция",title:"Событие",
  text:articleText
