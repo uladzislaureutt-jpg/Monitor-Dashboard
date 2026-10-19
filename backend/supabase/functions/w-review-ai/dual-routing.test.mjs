@@ -29,15 +29,19 @@ test("Dossier prefers Cloudflare first with bounded hedged Gemini after 70s and 
   assert.ok(map.includes('requireEveryDistinctSource:true'));
   assert.ok(map.includes('w_review_dossier_shape'));
 });
-test("UI generates through Gemini-first with reserved Cloudflare and keeps legacy variants",()=>{
+test("UI generates one review, hides model A/B selectors, and preserves existing drafts",()=>{
   assert.ok(!ui.includes('onClick={()=>synthesize("cloudflare_first")}'));
   assert.ok(edge.includes('const synthesisRoute="gemini_first"'));
   assert.ok(edge.includes('["gemini_3_5","cloudflare_primary","cloudflare_backup"]'));
   assert.ok(ui.includes('onClick={()=>synthesize("gemini_first")}'));
-  assert.ok(ui.includes("резерв 120B"));
+  assert.ok(ui.includes("Сформировать обзор"));
+  assert.ok(ui.includes("Маршрут генерации"));
+  assert.ok(!ui.includes('className="w-review-compare"'));
+  assert.ok(ui.includes("Исходная модель этого текста"));
   assert.ok(ui.includes('activeReviewRoute:route'));
   assert.ok(ui.includes('reviewVariants:{...current.reviewVariants'));
-  assert.ok(ui.includes('draft.text.length.toLocaleString()'));
+  assert.ok(ui.includes("reviewVariants:raw.reviewVariants"));
+  assert.ok(ui.includes("reviewVariants:current.activeReviewRoute?"));
   assert.ok(ui.includes('reviewVariants:current.activeReviewRoute?'));
   assert.ok(api.includes('synthesis_route: input.synthesisRoute'));
 });
