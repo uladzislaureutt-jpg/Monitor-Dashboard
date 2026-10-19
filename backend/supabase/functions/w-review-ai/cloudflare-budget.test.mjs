@@ -12,9 +12,10 @@ test("Dossier prioritizes CF GPT-OSS-120B, then Gemini 3.5, then Groq 120B",()=>
   assert.ok(dossier.indexOf('if(!selected&&geminiApiKey')>=0);
   assert.ok(dossier.indexOf('if(!selected&&cfRoute')<dossier.indexOf('if(!selected&&geminiApiKey'));
   assert.ok(dossier.indexOf('if(!selected&&geminiApiKey')<dossier.indexOf('if(!selected&&groqApiKey'));
-  assert.ok(dossier.includes('Math.min(42000,availableTime())'));
-  assert.ok(dossier.includes('Math.min(46000,availableTime())'));
+  assert.ok(dossier.includes('Math.min(62000,availableTime())'));
   assert.ok(dossier.includes('Math.min(34000,availableTime())'));
+  assert.ok(dossier.includes('Math.min(29000,availableTime())'));
+  assert.ok(62000+34000+29000+7000<=140000);
   assert.ok(dossier.includes('preparationDeadline=Date.now()+W_REVIEW_REQUEST_BUDGET_MS'));
   assert.ok(dossier.includes('preparationDeadline-Date.now()-7000'));
   assert.ok(dossier.includes('w_review_map_cloudflare_result'));
