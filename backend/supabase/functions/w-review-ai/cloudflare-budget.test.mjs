@@ -7,9 +7,11 @@ const index=readFileSync(new URL("./index.ts",import.meta.url),"utf8");
 const preparation=readFileSync(new URL("./preparation.ts",import.meta.url),"utf8");
 const dossier=index.slice(index.indexOf('if (action === "editorial_map")'),index.indexOf('if (action === "expand_review")'));
 const extraction=index.slice(index.indexOf('if (action === "evidence_batch")'),index.indexOf('if (action === "style_profile")'));
-test("Dossier gives Gemini first slot, then bounded CF120 and Groq120 windows",()=>{
-  assert.ok(dossier.indexOf('if(geminiApiKey&&availableTime()')<dossier.indexOf('if(!selected&&cfRoute'));
-  assert.ok(dossier.indexOf('if(!selected&&cfRoute')<dossier.indexOf('if(!selected&&groqApiKey'));
+test("Dossier prioritizes CF GPT-OSS-120B, then Gemini 3.5, then Groq 120B",()=>{
+  assert.ok(dossier.indexOf('if(!selected&&cfRoute')>=0);
+  assert.ok(dossier.indexOf('if(!selected&&geminiApiKey')>=0);
+  assert.ok(dossier.indexOf('if(!selected&&cfRoute')<dossier.indexOf('if(!selected&&geminiApiKey'));
+  assert.ok(dossier.indexOf('if(!selected&&geminiApiKey')<dossier.indexOf('if(!selected&&groqApiKey'));
   assert.ok(dossier.includes('Math.min(42000,availableTime())'));
   assert.ok(dossier.includes('Math.min(46000,availableTime())'));
   assert.ok(dossier.includes('Math.min(34000,availableTime())'));
@@ -17,6 +19,12 @@ test("Dossier gives Gemini first slot, then bounded CF120 and Groq120 windows",(
   assert.ok(dossier.includes('preparationDeadline-Date.now()-7000'));
   assert.ok(dossier.includes('w_review_map_cloudflare_result'));
   assert.ok(dossier.includes('w_review_map_groq_result'));
+  assert.ok(index.includes('max_tokens:9000,'));
+  assert.ok(index.includes('max_completion_tokens:9000'));
+  const evidence=index.slice(index.indexOf('if (action === "evidence_batch")'),
+     index.indexOf('if (action === "editorial_map")'));
+  assert.ok(evidence.includes('cloudflareFirst:false'));
+  assert.ok(evidence.includes('routes:["gemini_3.5","cloudflare_120b","groq_120b"]'));
 });
 test("Evidence reserves time for Groq 120B and does not spend 75s on CF first",()=>{
   assert.ok(extraction.includes("cloudflareFirst:false"));
