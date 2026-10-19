@@ -558,12 +558,14 @@ ${sections.join("; ")}.
     };
     // Dossier trends: Cloudflare GPT-OSS-120B FIRST; Gemini 3.5 SECOND;
     // Groq GPT-OSS-120B THIRD. Evidence extraction stays Gemini-first.
+    // Give primary CF 62s (prior full-pool test was 47.2s), then allow up to
+    // 34s for Gemini and 29s for Groq, inside the 140s shared deadline.
     // Revalidate each result against all original publication IDs.
     const cfRoute=cfPrimaryReady?"primary":cfBackupReady?"backup":null;
     if(!selected&&cfRoute&&availableTime()>=6000){
       const account=cfRoute==="primary"?cfPrimaryId:cfBackupId;
       const token=cfRoute==="primary"?cfPrimaryToken:cfBackupToken;
-      const timeout=Math.min(46000,availableTime());
+      const timeout=Math.min(62000,availableTime());
       console.info("w_review_map_route "+JSON.stringify({route:cfRoute,provider:"cloudflare",
         timeout_ms:timeout,request_chars:JSON.stringify(cfPayload).length}));
       const started=Date.now();
@@ -581,7 +583,7 @@ ${sections.join("; ")}.
     }
     if(!selected&&geminiApiKey&&availableTime()>=12000){
       console.info("w_review_map_route "+JSON.stringify({provider:"gemini",model:W_REVIEW_GEMINI_PRIMARY}));
-      const timeout=Math.min(42000,availableTime());
+      const timeout=Math.min(34000,availableTime());
       const response=await structuredGeminiRequest({deadline:Date.now()+timeout,
         initialMode:"json",
         call:(jsonMode,budget)=>callGemini(geminiApiKey,W_REVIEW_GEMINI_PRIMARY,prompt,schema,
@@ -595,7 +597,7 @@ ${sections.join("; ")}.
     }
     if(!selected&&groqApiKey&&availableTime()>=6000){
       const model="openai/gpt-oss-120b";
-      const timeout=Math.min(34000,availableTime());
+      const timeout=Math.min(29000,availableTime());
       console.info("w_review_map_route "+JSON.stringify({provider:"groq",model,timeout_ms:timeout}));
       const started=Date.now();
       const {max_tokens:_cfMaxTokens,...groqPayload}=cfPayload;
