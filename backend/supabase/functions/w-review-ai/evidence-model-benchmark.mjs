@@ -125,13 +125,13 @@ export async function callEvidenceModel(spec,docs,keys,fetchImpl=fetch,timeoutMs
        encodeURIComponent(spec.model)+":generateContent";
      headers={"x-goog-api-key":keys.gemini,"content-type":"application/json"};
      body={contents:[{role:"user",parts:[{text:prompt}]}],
-       generationConfig:{responseMimeType:"application/json",maxOutputTokens:12000,
+       generationConfig:{responseMimeType:"application/json",maxOutputTokens:9000,
          thinkingConfig:{thinkingLevel:"low"}}};
    }else{
      url="https://api.cloudflare.com/client/v4/accounts/"+
        encodeURIComponent(keys.cfAccount)+"/ai/run/"+spec.model;
      headers={"authorization":"Bearer "+keys.cfToken,"content-type":"application/json"};
-     body={messages:[{role:"user",content:prompt}],temperature:0.1,max_tokens:12000};
+     body={messages:[{role:"user",content:prompt}],temperature:0.1,max_tokens:9000};
      if(spec.id==="oss120"){
        body.response_format={type:"json_object"};body.reasoning_effort="low";
      }
