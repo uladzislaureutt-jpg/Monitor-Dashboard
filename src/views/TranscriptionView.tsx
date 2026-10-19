@@ -200,14 +200,15 @@ export function TranscriptionView() {
         headers: { apikey: config.anonKey, Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" },
         body: JSON.stringify({ text, app_version: version }),
       });
-      const data = await response.json() as { edited_text?: string; error?: string; model?: string; status?: number };
+      const data = await response.json() as { edited_text?: string; error?: string; model?: string; provider?: string; status?: number };
       if (!response.ok || !data.edited_text) throw new Error(`${data.error || "gemini_failed"}${data.status ? ` (${data.status})` : ""}`);
       const key = `transcription-ai-runs:${state.url || inputUrl}`;
       const used = Math.min(2, aiRuns + 1);
       localStorage.setItem(key, String(used));
       setAiRuns(used);
       setState((current) => ({ ...current, editorialText: data.edited_text || current.editorialText }));
-      setMessage(be ? `Gemini: тэкст адрэдагаваны. Выкарыстана ${used}/2.` : `Gemini: текст отредактирован. Использовано ${used}/2.`);
+      const providerLabel=data.provider==="cloudflare"?"Cloudflare GPT-OSS-120B (резерв)":"Gemini 3.5";
+      setMessage(be ? `${providerLabel}: тэкст адрэдагаваны. Выкарыстана ${used}/2.` : `${providerLabel}: текст отредактирован. Использовано ${used}/2.`);
     } catch (reason) { setError(String(reason)); }
     finally { setBusy(""); }
   }
@@ -296,7 +297,7 @@ export function TranscriptionView() {
     </section>
 
     <section className="panel transcription-image-text">
-      <div className="panel-head"><div><h3>{be?"Тэкст на відэа (скрыншот)":"Текст на видео (скриншот)"}</h3><p>{be?"Gemini распазнае надпісы на кадры. Праверце тэкст перад даданнем у экспарт.":"Gemini распознаёт надписи на кадре. Проверьте результат перед добавлением в текст для экспорта."}</p></div></div>
+      <div className="panel-head"><div><h3>{be?"Тэкст на відэа (скрыншот)":"Текст на видео (скриншот)"}</h3><p>{be?"ІІ распазнае надпісы на кадры. Праверце тэкст перад даданнем у экспарт.":"ИИ распознаёт надписи на кадре. Проверьте результат перед добавлением в текст для экспорта."}</p></div></div>
       <div className="transcription-inline-actions">
         <button className="secondary-button small-button" disabled={busy!==""} onClick={recognizeScreenshot}>{busy==="ocr"?"Gemini…":be?"Выбраць скрыншот":"Выбрать скриншот"}</button>
         <button className="secondary-button small-button" disabled={busy!=="" || !state.imageText.trim()} onClick={()=>setState((current)=>({...current,editorialText:[current.editorialText.trim(),current.imageText.trim()].filter(Boolean).join("\n\n")}))}>{be?"Дадаць да тэксту для экспарту":"Добавить к тексту для экспорта"}</button>
