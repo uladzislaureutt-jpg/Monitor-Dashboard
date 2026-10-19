@@ -32,7 +32,7 @@ test("tiny probes always compare three models; account-denied responses do not t
    assert.ok(called.every(x=>x.max_tokens===64));
  }finally{rmSync(folder,{recursive:true,force:true});}
 });
-test("probe escalates 64 to 512 and then 12000 only after the same model succeeds",async()=>{
+test("probe escalates 64 to 512 to 12000 and then real synthetic Evidence only on success",async()=>{
  const folder=temp(),urls=[];
  try{
    const result=await runProbes({keys:{account:"test",token:"test"},
@@ -42,8 +42,8 @@ test("probe escalates 64 to 512 and then 12000 only after the same model succeed
           usage:{prompt_tokens:12,completion_tokens:1}}}),
          {status:200});
      }});
-   assert.equal(result.rows.length,7);
-   assert.deepEqual(result.rows.map(x=>x.max_tokens),[64,64,64,512,512,12000,12000]);
+   assert.equal(result.rows.length,9);
+   assert.deepEqual(result.rows.map(x=>x.max_tokens),[64,64,64,512,512,12000,12000,12000,12000]);
    assert.ok(urls.find(x=>x.url.includes("nemotron")).body.chat_template_kwargs.enable_thinking===false);
    assert.ok(urls.find(x=>x.url.includes("gpt-oss")).body.reasoning_effort==="low");
  }finally{rmSync(folder,{recursive:true,force:true});}
