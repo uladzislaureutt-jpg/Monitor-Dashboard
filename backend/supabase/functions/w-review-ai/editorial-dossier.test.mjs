@@ -242,3 +242,11 @@ test("dossier one-pass editorial protocol requires grounded counterpositions, ex
   assert.ok(contract.includes("Верни только JSON"));
   assert.ok(!contract.includes("в ответе покажи ход рассуждений"));
 });
+
+test("editorial contract clusters source articles by meaning rather than one branch per publication",()=>{
+  const content=DOSSIER_INSTRUCTIONS;
+  for(const text of ["ГРУППИРОВКА СМИ","НЕ одну публикацию","НАСТОЯЩЕЕ ПРОТИВОПОСТАВЛЕНИЕ",
+    "НЕ ПРИВЯЗЫВАЙ ОДИН ТИП E01/E05","действительно уникальный самостоятельный сюжет"]){
+    assert.ok(content.includes(text),text);
+  }
+});
