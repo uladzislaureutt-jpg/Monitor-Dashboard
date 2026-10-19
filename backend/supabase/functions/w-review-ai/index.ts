@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { DOSSIER_INSTRUCTIONS, dossierSchema, normalizeDossier, makeSynthesisDossier, compactDossierCards, dossierOutputContract, dossierShape, evidenceIndex } from "./editorial-dossier.ts";
+import { DOSSIER_INSTRUCTIONS, dossierSchema, normalizeDossier, makeSynthesisDossier, compactDossierCards, dossierOutputContract, dossierShape, evidenceIndex, dossierEvidenceIdWhitelist } from "./editorial-dossier.ts";
 import { dossierQualityMetrics } from "./dossier-quality-metrics.ts";
 import { scheduleHedgedBackup, groqDossierBudget } from "./dossier-provider-hedge.ts";
 import { synthesisResponseSchema, readSynthesisBlocks } from "./synthesis-blocks.ts";
@@ -477,7 +477,13 @@ ${sections.join("; ")}.
     if(evidenceText.length>180000)return json({error:"evidence_too_large",max_chars:180000},400);
     const schema=dossierSchema(cards.length);
     const mapUserInput="ЗАДАНИЕ ОПЕРАТОРА:\n"+task+
-      "\n\nДОКАЗАТЕЛЬНАЯ БАЗА (P01:E01 — E01 в статье P01):\n"+evidenceText+"\n\n"+dossierOutputContract(cards.length);
+      "\n\nДОКАЗАТЕЛЬНАЯ БАЗА (P01:E01 — E01 в статье P01):\n"+evidenceText+
+      "\n\nСТРОГИЙ ПЕРЕЧЕНЬ ДОПУСТИМЫХ EVIDENCE ID ПО КАЖДОЙ ПУБЛИКАЦИИ:\n"+
+      dossierEvidenceIdWhitelist(cards)+
+      "\nВставляй в evidence_ids и contrary_evidence_ids только дословно перечисленные выше ID. "+
+      "Отсутствующий P07:E09 не заменяй на P07:E08: используй только подтверждённые "+
+      "значимые Evidence из соответствующей публикации.\n\n"+
+      dossierOutputContract(cards.length);
     const prompt=DOSSIER_INSTRUCTIONS+"\n\n"+mapUserInput;
 
     // A source-verified dossier is mandatory. An invalid JSON map is NEVER
