@@ -35,7 +35,7 @@ test("actual Evidence validation retains source anchors and warns on sparse long
  for(const cohort of testCorpus()){
    const good=evaluateEvidence(payload(cohort.docs),cohort.docs);
    assert.equal(good.cards_accepted,2);
-   assert.equal(good.records_accepted,10);
+   assert.equal(good.records_accepted,cohort.docs.reduce((n,d)=>n+Math.min(5,d.passages.length),0));
    assert.equal(good.records_rejected,0);
    assert.equal(good.cards_requested,2);
    assert.equal(good.failures.length,0);
@@ -65,7 +65,7 @@ test("three API models see identical input and identical anchored verifier",asyn
    const r=await callEvidenceModel(spec,cohort.docs,keys,mock,2000);
    assert.equal(r.status,200);
    assert.equal(r.cards_accepted,2);
-   assert.equal(r.records_accepted,10);
+   assert.equal(r.records_accepted,cohort.docs.reduce((n,d)=>n+Math.min(5,d.passages.length),0));
    assert.equal(r.input_tokens,700);
    assert.ok(r.elapsed_ms>=0);
  }
