@@ -19,8 +19,8 @@ test("exact synthetic pool size and real v3 source-grounded plan for 3000-8000",
     "opening","line_1","line_2","line_3","line_4","line_5","ending"]);
   assert.equal(fx.plan.requiredBranches,5);
   assert.ok(fx.evidenceChars>25000);
-  assert.ok(fx.user.includes("P18:E09"));
-  assert.ok(fx.user.includes("P01:E10"));
+  assert.ok(fx.user.includes("E09 [expert/P009]"));
+  assert.ok(fx.user.includes("E10 [editorial_stance/P010]"));
   assert.equal(fx.sourceNames.length,18);
   assert.ok(fx.bodyChars>25000);
   assert.ok(fx.expectedRefs.length>=25);
@@ -87,7 +87,7 @@ test("one direct API request per provider; no Supabase, no automatic fallback or
  assert.ok(seen.every(x=>x.prompt.includes("SOURCE_REGISTRY")));
  assert.ok(seen.every(x=>x.prompt.includes("РЕДАКЦИОННОЕ ДОСЬЕ")));
  assert.ok(seen.every(x=>x.prompt.includes("STYLE_ONLY")));
- assert.ok(seen.every(x=>x.prompt.includes("P18:E09")));
+ assert.ok(seen.every(x=>x.prompt.includes("E09 [expert/P009]")));
  assert.ok(!seen.some(x=>/supabase\.co|service_role/i.test(x.url)));
 });
 test("both success and provider failure persist machine-readable metrics without claiming quality pass",async()=>{
@@ -103,6 +103,6 @@ test("both success and provider failure persist machine-readable metrics without
   assert.equal(metrics.evidence_total,167);
   assert.equal(metrics.source_publications,18);
   assert.match(report,/6000/);
-  assert.match(report,/Cloudflare/);
+  assert.match(report,/cloudflare/);
  }finally{rmSync(folder,{recursive:true,force:true});}
 });
