@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { evidenceIndex, normalizeDossier, makeSynthesisDossier, dossierSchema, isRussianDossierProse, compactDossierCards, DOSSIER_INSTRUCTIONS } from "./editorial-dossier.ts";
+import { evidenceIndex, normalizeDossier, makeSynthesisDossier, dossierSchema, isRussianDossierProse, compactDossierCards, DOSSIER_INSTRUCTIONS, dossierEvidenceIdWhitelist } from "./editorial-dossier.ts";
 const cards=[
   "ID: P01\nИСТОЧНИК: «Reuters»\nPUBLICATION_ID: story-A\nE01 [fact/P001] Прогноз снизился на 2%. | SOURCE: «Прогноз снизился на 2%.»\nE02 [counterposition/P002] Сценарий оспаривают эксперты. | SOURCE: «Сценарий оспаривают эксперты.»",
   "ID: P02\nИСТОЧНИК: «Bloomberg»\nPUBLICATION_ID: story-B\nE01 [expert/P003] Аналитик видит риск роста цен. | SOURCE: «Аналитик видит риск роста цен.»",
@@ -249,4 +249,18 @@ test("editorial contract clusters source articles by meaning rather than one bra
     "НЕ ПРИВЯЗЫВАЙ ОДИН ТИП E01/E05","действительно уникальный самостоятельный сюжет"]){
     assert.ok(content.includes(text),text);
   }
+});
+
+test("Explicit allowed IDs are grounded in the current pool, not inferred from record numbering",()=>{
+ const pool=[
+  "ID: P01\nИСТОЧНИК: «Reuters»\nE01 [fact/P001] Факт. | SOURCE: «текст»\nE03 [expert/P002] Оценка. | SOURCE: «текст»",
+  "ID: P02\nИСТОЧНИК: «BBC»\nE01 [fact/P001] Другой факт. | SOURCE: «текст»",
+  "ID: P03\nИСТОЧНИК: «Agence France-Presse»\nE01 [fact/P001] Ещё один факт. | SOURCE: «текст»"
+ ];
+ const whitelist=dossierEvidenceIdWhitelist(pool);
+ assert.match(whitelist,/P01: P01:E01, P01:E03/);
+ assert.match(whitelist,/P02: P02:E01/);
+ assert.ok(!whitelist.includes("P01:E02"));
+ assert.ok(!whitelist.includes("P02:E02"));
+ assert.equal(whitelist.split("\n").length,3);
 });
