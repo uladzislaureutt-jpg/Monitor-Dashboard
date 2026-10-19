@@ -1,0 +1,56 @@
+name: W-Review GPT-OSS-120B 8000-char synthesis threshold
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/supabase/functions/w-review-ai/synthesis-oss120-latency-threshold*.mjs'
+      - '.github/workflows/w-review-oss120-8000-threshold.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'backend/supabase/functions/w-review-ai/synthesis-oss120-latency-threshold*.mjs'
+      - '.github/workflows/w-review-oss120-8000-threshold.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: w-review-oss120-8000-threshold
+  cancel-in-progress: false
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify payload parity and explicit 8000-char ceiling
+        run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/synthesis-oss120-latency-threshold.test.mjs
+
+  live:
+    if: github.event_name != 'pull_request'
+    needs: offline
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Four sequential bounded Cloudflare latency and input-format comparisons
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node --experimental-strip-types backend/supabase/functions/w-review-ai/synthesis-oss120-latency-threshold.mjs
+      - name: Save metrics and full synthetic outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: w-review-oss120-8000-threshold-${{ github.run_number }}
+          path: out/w-review-oss120-8000-latency/
+          retention-days: 14
+          if-no-files-found: error
