@@ -171,8 +171,14 @@ export function normalizeDossier(raw:any,cards:string[],options:DossierValidatio
     for(let bi=0;bi<t.branches.length;bi++){
       const b=t.branches[bi],bid=id+":B"+(bi+1);
       const refs=uniq<string>(Array.isArray(b?.evidence_ids)?b.evidence_ids.map((v:unknown)=>txt(v,40)):[]);
-      const contrary=uniq<string>(Array.isArray(b?.contrary_evidence_ids)?b.contrary_evidence_ids.map((v:unknown)=>txt(v,40)):[]);
-      if(!refs.length||refs.length>18||contrary.length>12||[...refs,...contrary].some(v=>!index.byId.has(v)))
+      const rawContrary=uniq<string>(Array.isArray(b?.contrary_evidence_ids)?b.contrary_evidence_ids.map((v:unknown)=>txt(v,40)):[]);
+      // A single Evidence item cannot prove and refute the same thesis.
+      // Quarantine a duplicated contrary citation; never reassign its ID or
+      // infer a replacement from adjacent source records.
+      const primaryIds=new Set(refs);
+      const contrary=rawContrary.filter(id=>!primaryIds.has(id));
+      const counterpoint=rawContrary.length>0&&contrary.length===0?"":txt(b?.counterpoint,500);
+      if(!refs.length||refs.length>18||contrary.length>12||[...refs,...rawContrary].some(v=>!index.byId.has(v)))
         return {dossier:null,error:"dossier_unknown_or_missing_evidence"};
       if(!txt(b?.claim)||!txt(b?.title)||!txt(b?.significance))
         return {dossier:null,error:"dossier_empty_branch"};
@@ -186,7 +192,7 @@ export function normalizeDossier(raw:any,cards:string[],options:DossierValidatio
         return {dossier:null,error:"dossier_invalid_priority"};
       refs.concat(contrary).forEach(v=>usedRefs.add(v));
       branches.push({id:bid,title:txt(b.title,130),claim:txt(b.claim,550),
-        mechanism:txt(b.mechanism,500),counterpoint:txt(b.counterpoint,500),
+        mechanism:txt(b.mechanism,500),counterpoint,
         limitation:txt(b.limitation,500),significance:txt(b.significance,450),
         priority:b.priority,required:b.required,evidence_ids:refs,contrary_evidence_ids:contrary});
     }

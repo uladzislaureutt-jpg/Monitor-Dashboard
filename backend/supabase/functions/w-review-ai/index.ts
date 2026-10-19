@@ -597,6 +597,13 @@ ${sections.join("; ")}.
         route:cfRoute,status:response.ok?200:response.status,elapsed_ms:Date.now()-started,
         finish_reason:response.ok?response.finish_reason||"unknown":"",
         output_chars:response.ok?response.content.length:0,
+        input_tokens:response.ok?(response.usage.prompt_tokens||null):null,
+        output_tokens:response.ok?(response.usage.completion_tokens||null):null,
+        output_token_ceiling:cfPayload.max_tokens,
+        output_utilization_percent:response.ok&&response.usage.completion_tokens>0?
+          Math.round(100*response.usage.completion_tokens/cfPayload.max_tokens):null,
+        output_near_limit:response.ok&&response.usage.completion_tokens>0?
+          response.usage.completion_tokens>=Math.floor(cfPayload.max_tokens*0.9):null,
         issue:response.ok?"":response.detail==="cloudflare_local_timeout"?"local_timeout":"provider_failure"
       }));
       if(response.ok)accept(response,"@cf/openai/gpt-oss-120b","cloudflare");

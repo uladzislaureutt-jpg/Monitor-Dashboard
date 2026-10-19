@@ -146,3 +146,14 @@ test("shared 140s W-Review budget applies to Evidence, dossier and synthesis und
   assert.ok(dossier.includes("preparationDeadline-Date.now()-7000"));
   assert.ok(index.includes("remaining=()=>Math.max(0,deadline-Date.now()-9000)"));
 });
+
+test("Successful real-dossier route keeps 7500 output-token ceiling and logs usage instead of reducing content",()=>{
+ assert.ok(dossier.includes('reasoning_effort:"low",temperature:0.1,max_tokens:7500'));
+ assert.ok(dossier.includes("output_token_ceiling:cfPayload.max_tokens"));
+ assert.ok(dossier.includes("output_tokens:response.ok?"));
+ assert.ok(dossier.includes("output_near_limit:response.ok"));
+ assert.ok(dossier.includes("output_utilization_percent:response.ok"));
+ assert.ok(dossier.includes('Math.min(101000,availableTime())'));
+ assert.ok(dossier.includes('scheduleHedgedBackup(runGeminiMap,70000)'));
+ assert.ok(dossier.includes("w_review_dossier_quality"));
+});
