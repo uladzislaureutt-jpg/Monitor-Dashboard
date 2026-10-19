@@ -13,7 +13,7 @@ test("Dossier gives Gemini first slot, then bounded CF120 and Groq120 windows",(
   assert.ok(dossier.includes('Math.min(42000,availableTime())'));
   assert.ok(dossier.includes('Math.min(46000,availableTime())'));
   assert.ok(dossier.includes('Math.min(34000,availableTime())'));
-  assert.ok(dossier.includes('preparationDeadline=Date.now()+130000'));
+  assert.ok(dossier.includes('preparationDeadline=Date.now()+W_REVIEW_REQUEST_BUDGET_MS'));
   assert.ok(dossier.includes('preparationDeadline-Date.now()-7000'));
   assert.ok(dossier.includes('w_review_map_cloudflare_result'));
   assert.ok(dossier.includes('w_review_map_groq_result'));
@@ -30,7 +30,7 @@ test("Evidence reserves time for Groq 120B and does not spend 75s on CF first",(
 test("Cloudflare-first Evidence allows primary >60 seconds without removing fallback",async()=>{
   const docs=makeEvidenceDocuments([{index:0,publication_id:"a",source:"Публикация",title:"Тема",text:"В материале приведены проверяемые данные."}]);
   const calls=[];
-  const result=await prepareEvidence({documents:docs,deadline:Date.now()+130000,
+  const result=await prepareEvidence({documents:docs,deadline:Date.now()+140000,
     cloudflareFirst:true,available:{primary:true,cloudflare:true,fallback:true,groq:false},
     generate:async(provider,docs,deadline)=>{
       calls.push({provider,remaining:deadline-Date.now()});
@@ -47,7 +47,7 @@ test("Cloudflare-first Evidence allows primary >60 seconds without removing fall
 test("Gemini-first Evidence reaches CF then Groq when no provider yields verified cards",async()=>{
   const docs=makeEvidenceDocuments([{index:0,publication_id:"x",source:"СМИ",title:"Публикация",text:"Данные о публикации."}]);
   const calls=[];
-  await prepareEvidence({documents:docs,deadline:Date.now()+130000,
+  await prepareEvidence({documents:docs,deadline:Date.now()+140000,
     cloudflareFirst:false,available:{primary:true,cloudflare:true,fallback:false,groq:true},
     generate:async(provider,articles,deadline)=>{
       calls.push({provider,remaining:deadline-Date.now()});
@@ -72,7 +72,7 @@ test("Gemini-first has time for two separately verified article repairs after ma
   const savedNow=Date.now;let now=1_800_000_000_000;Date.now=()=>now;
   try{
     const called=[];
-    const res=await prepareEvidence({documents:docs,deadline:now+130000,cloudflareFirst:false,
+    const res=await prepareEvidence({documents:docs,deadline:now+140000,cloudflareFirst:false,
       available:{primary:true,cloudflare:true,fallback:false,groq:true},
       generate:async(provider,articles,deadline)=>{
         called.push([provider,articles.map(a=>a.publication_id),deadline-now]);
@@ -107,7 +107,7 @@ test("never waste quota on a 2.8 second Gemini repair; move to bounded Cloudflar
   const savedNow=Date.now;let now=1_800_000_000_000;Date.now=()=>now;
   try{
     const called=[];
-    const res=await prepareEvidence({documents:docs,deadline:now+130000,
+    const res=await prepareEvidence({documents:docs,deadline:now+140000,
       available:{primary:true,cloudflare:true,fallback:false,groq:false},
       generate:async(provider,articles,deadline)=>{
         called.push([provider,articles.map(a=>a.publication_id),deadline-now]);
@@ -125,4 +125,13 @@ test("never waste quota on a 2.8 second Gemini repair; move to bounded Cloudflar
     assert.ok(called[2][2]>=30000);
     assert.equal(res.articles.length,2);
   }finally{Date.now=savedNow;}
+});
+
+test("shared 140s W-Review budget applies to Evidence, dossier and synthesis under Supabase's 150s ceiling",()=>{
+  assert.ok(index.includes("const W_REVIEW_REQUEST_BUDGET_MS = 140_000;"));
+  assert.ok(extraction.includes("const deadline=Date.now()+W_REVIEW_REQUEST_BUDGET_MS"));
+  assert.ok(dossier.includes("const preparationDeadline=Date.now()+W_REVIEW_REQUEST_BUDGET_MS"));
+  assert.ok(index.includes("const deadline=synthesisStart+W_REVIEW_REQUEST_BUDGET_MS"));
+  assert.ok(dossier.includes("preparationDeadline-Date.now()-7000"));
+  assert.ok(index.includes("remaining=()=>Math.max(0,deadline-Date.now()-9000)"));
 });
