@@ -1,0 +1,41 @@
+name: Monitor AI provider fallback checks
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/supabase/functions/l-translate/**'
+      - 'backend/supabase/functions/transcription-edit/**'
+      - 'backend/supabase/functions/media-transcribe/**'
+      - 'backend/supabase/functions/transcription-image-ocr/**'
+      - 'backend/supabase/functions/monitor-ai-fallback.test.mjs'
+      - 'src/lTranslate.ts'
+      - 'src/views/ReportView.tsx'
+      - 'src/views/TranscriptionView.tsx'
+      - '.github/workflows/monitor-ai-fallback.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'backend/supabase/functions/l-translate/**'
+      - 'backend/supabase/functions/transcription-edit/**'
+      - 'backend/supabase/functions/media-transcribe/**'
+      - 'backend/supabase/functions/transcription-image-ocr/**'
+      - 'backend/supabase/functions/monitor-ai-fallback.test.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fallback-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Verify TypeScript syntax and simulate primary-provider overload
+        run: node --test backend/supabase/functions/monitor-ai-fallback.test.mjs
+      - name: Type-check desktop caller contracts
+        run: npm run check
