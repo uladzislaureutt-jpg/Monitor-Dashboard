@@ -4,7 +4,7 @@ import {readFileSync,mkdtempSync,rmSync,existsSync} from "node:fs";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
 import {
- MODEL_SPECS,fixtureCards,fixtureSet,evaluateDossier,extractCloudflareText,
+ MODEL_SPECS,FULL_TEST_IDS,GOLD_OPPOSITION_PAIRS,ANALYTIC_CONTRAST_CONTRACT,fixtureCards,fixtureSet,evaluateDossier,extractCloudflareText,
  callCandidate,runComparison
 } from "./trend-model-benchmark.mjs";
 
@@ -120,4 +120,65 @@ test("never attempt live calls when both GitHub secrets are missing",async()=>{
 test("bounded live experiment forbids more than ten model calls",async()=>{
  await assert.rejects(runComparison({keys:{},cohorts:["small","full","small"],delayMs:0,
    output:"unused-output"}),/TEST_CALL_LIMIT_EXCEEDED/);
+});
+
+test("full experiment is exactly 3 models, 18 sources and 167 Evidence",()=>{
+ assert.deepEqual(FULL_TEST_IDS,["gemini35","oss120","nemotron120"]);
+ const f=fixtureSet("full");
+ assert.equal(f.evidence_count,167);
+ assert.equal(f.source_count,18);
+ assert.ok(f.prompt.includes("ПРОВЕРЯЕМАЯ РЕДАКЦИОННАЯ ДИСЦИПЛИНА"));
+ assert.ok(ANALYTIC_CONTRAST_CONTRACT.includes("contrary_evidence_ids"));
+ assert.equal(GOLD_OPPOSITION_PAIRS.length,5);
+ for(const [positive,opposing] of GOLD_OPPOSITION_PAIRS){
+   assert.ok(f.evidenceText.includes(positive),"Missing "+positive);
+   assert.ok(f.evidenceText.includes(opposing),"Missing "+opposing);
+ }
+});
+test("five gold disagreements are evaluated from anchored references, not raw output size",()=>{
+ const f=fixtureSet("full"),d=makeDossier(f.cards);
+ const base=evaluateDossier(JSON.stringify(d),f.cards,"P18");
+ assert.equal(base.gold_opposition_pairs_total,5);
+ assert.equal(base.gold_opposition_pairs_contrasted,0);
+ assert.equal(base.facets_with_all_publications,5);
+ assert.equal(base.invalid_references,0);
+ const b=d.trends[0].branches[0];
+ b.evidence_ids.push("P01:E05");
+ b.contrary_evidence_ids=["P04:E05"];
+ const withDisagreement=evaluateDossier(JSON.stringify(d),f.cards,"P18");
+ assert.equal(withDisagreement.gold_opposition_pairs_linked,1);
+ assert.equal(withDisagreement.gold_opposition_pairs_contrasted,1);
+ assert.equal(withDisagreement.contrary_evidence_distinct,1);
+ assert.equal(withDisagreement.contrary_publications_distinct,1);
+});
+test("repeated titles and IDs are flagged as possible duplicate branches, not silently removed",()=>{
+ const f=fixtureSet("small"),d=makeDossier(f.cards);
+ const original=d.trends[0].branches[0];
+ const copy={...original,id:"B_DUPLICATE",evidence_ids:[...original.evidence_ids]};
+ d.trends[0].branches.push(copy);
+ const q=evaluateDossier(JSON.stringify(d),f.cards,"P08");
+ assert.ok(q.suspicious_duplicate_text_pairs>=1);
+ assert.ok(q.suspicious_duplicate_evidence_pairs>=1);
+});
+test("three providers all see the SAME amplified contract, and synthetic outputs remain reviewable",async()=>{
+ const f=fixtureSet("full"),seen=[],outputs=[];
+ const modelIds=FULL_TEST_IDS.map(id=>MODEL_SPECS.find(model=>model.id===id));
+ const mock=async (_url,opts)=>{
+   const body=JSON.parse(opts.body);
+   seen.push(_url.includes("generativelanguage")?body.contents[0].parts[0].text:
+     body.messages[0].content+"\n\n"+body.messages[1].content);
+   const reply=JSON.stringify(makeDossier(f.cards));
+   return new Response(JSON.stringify(_url.includes("generativelanguage")
+     ?{candidates:[{finishReason:"STOP",content:{parts:[{text:reply}]}}]}
+     :{success:true,result:{response:reply}}),{status:200,headers:{"content-type":"application/json"}});
+ };
+ for(const spec of modelIds){
+   const r=await callCandidate(spec,f,{gemini:"dummy",cfAccount:"test",cfToken:"dummy"},
+     mock,5000,x=>outputs.push(x));
+   assert.equal(r.http_status,200);
+   assert.equal(r.gold_opposition_pairs_total,5);
+ }
+ assert.equal(new Set(seen).size,1);
+ assert.equal(outputs.length,3);
+ assert.ok(outputs.every(x=>x.cohort==="full"&&x.content.includes('"trends"')));
 });
