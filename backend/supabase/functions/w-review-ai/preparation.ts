@@ -1,5 +1,6 @@
 import { parseModelJsonObject, type GeminiJsonMode } from "./gemini-routing.ts";
 import { verifyEvidenceCardsIndividually, evidenceQualityWarnings, type EvidenceDocument, type EvidenceCard } from "./evidence-v2.ts";
+import {parseEvidenceJson} from "./evidence-json-recovery.ts";
 
 export type PreparationReply = {ok:true;content:string;usage:{prompt_tokens:number;completion_tokens:number;total_tokens:number};finish_reason?:string;reasoning_tokens?:number} |
   {ok:false;status:number;retryAfter:string|null;detail:string;diagnostic?:{kind:string;retryable:boolean}};
@@ -74,8 +75,10 @@ export async function prepareEvidence(input:{
     const pool_indices=indices.map(i=>input.poolIndices?.[i]??i+1);
     if(reply.ok){
       for(const k of ["prompt_tokens","completion_tokens","total_tokens"] as const)usage[k]+=reply.usage[k]||0;
-      const parsed=parseModelJsonObject(reply.content);
-      // Complete individual cards can survive a failed peer, but incomplete JSON cannot.
+      const decoded=parseEvidenceJson(reply.content,docs.length);
+      const parsed=decoded.payload as any;
+      // Only FULL, closed card objects survive broken outer JSON; no
+      // partial record is invented and every anchor is source-verified.
       const checked=verifyEvidenceCardsIndividually(parsed,docs);
       for(const entry of checked.accepted){
         const index=indices[entry.index],warnings=evidenceQualityWarnings(entry.card,docs[entry.index]);
@@ -89,6 +92,7 @@ export async function prepareEvidence(input:{
       attempts.push({provider,model,status:200,articles:indices.map(i=>i+1),pool_indices,
         finish_reason:reply.finish_reason||"unknown",elapsed_ms,accepted:checked.accepted.length,
         response_chars:reply.content.length,completion_tokens:reply.usage.completion_tokens,
+        json_recovery:decoded.method,recovered_cards:decoded.recovered_cards,
         per_article:checked.accepted.map(e=>({pool_index:pool_indices[e.index],accepted:e.card.validation.accepted,
           covered_passages:e.card.validation.covered_passages,total_passages:e.card.validation.total_passages,
           warnings:evidenceQualityWarnings(e.card,docs[e.index])})),
@@ -101,18 +105,23 @@ export async function prepareEvidence(input:{
     input.log?.(attempts.at(-1)!);
     return reply;
   }
-  // Cloudflare-first is retained for legacy callers. W-Review Evidence now
-  // uses Gemini 3.5 first (42 s), one Cloudflare account (up to 48 s),
-  // and Groq GPT-OSS-120B (up to 31 s), within the 130 s request limit.
-  const primaryDeadline=Math.min(input.deadline,start+(input.cloudflareFirst?70000:42000));
+  // The Gemini-first route gets up to 60 s to complete a two-article
+  // request plus two single-article repairs. One Cloudflare account then
+  // gets up to 35 s, and Groq up to 31 s within the 130 s server window.
+  const primaryDeadline=Math.min(input.deadline,start+(input.cloudflareFirst?70000:60000));
   if(input.available.primary){
     const first=await attempt("primary",remaining(),Math.min(primaryDeadline,start+(input.cloudflareFirst?68000:37000)));
     // A useful first card is not rerun merely because its peer failed.
-    if(first?.ok)for(const index of remaining())await attempt("primary",[index],primaryDeadline);
+    if(first?.ok)for(const index of remaining()){
+      // A 2.8 s single-article request is useless and burns quota. Reserve
+      // at least 12 s for a repair, otherwise fall through to CF/Groq.
+      if(preparationBudget(primaryDeadline,35000)<12000)break;
+      await attempt("primary",[index],primaryDeadline);
+    }
   }
   if(input.available.cloudflare)await attempt("cloudflare",remaining(),
     Math.min(input.deadline-(input.cloudflareFirst?18000:35000),
-      Date.now()+(input.cloudflareFirst?60000:48000)));
+      Date.now()+(input.cloudflareFirst?60000:35000)));
   if(input.available.fallback)await attempt("fallback",remaining(),Math.min(input.deadline,Date.now()+22000));
   if(input.available.groq)await attempt("groq",remaining(),
     Math.min(input.deadline,Date.now()+(input.cloudflareFirst?12000:31000)));
