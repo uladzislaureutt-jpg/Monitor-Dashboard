@@ -20,9 +20,9 @@ test("Evidence routes Gemini 3.5 -> one Cloudflare 120B -> Groq 120B",()=>{
   assert.ok(!ev.includes('callGemini(geminiApiKey,W_REVIEW_GEMINI_FALLBACK'));
   // Legacy 3.1 cards are still flagged when reading previously saved Evidence.
 });
-test("Dossier prefers Gemini 3.5, one Cloudflare account, then Groq 120B",()=>{
-  assert.ok(map.indexOf('if(geminiApiKey&&availableTime()')<map.indexOf('if(!selected&&cfRoute'));
-  assert.ok(map.indexOf('if(!selected&&cfRoute')<map.indexOf('if(!selected&&groqApiKey'));
+test("Dossier prefers Cloudflare first with bounded hedged Gemini after 70s and Groq preflight",()=>{
+  assert.ok(map.indexOf('if(cfRoute&&availableTime()')<map.indexOf('if(!selected&&geminiApiKey'));
+  assert.ok(map.indexOf('if(!selected&&geminiApiKey')<map.indexOf('if(!selected&&groqApiKey'));
   assert.ok(map.includes('W_REVIEW_GEMINI_PRIMARY'));
   assert.ok(map.includes('model="openai/gpt-oss-120b"'));
   assert.ok(!map.includes('W_REVIEW_GEMINI_FALLBACK'));
