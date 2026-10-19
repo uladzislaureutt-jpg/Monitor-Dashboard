@@ -41,14 +41,21 @@ const TEMPLATES=[
  "Авторы различают позицию государственных органов и самостоятельные оценки приглашенных специалистов.",
  "Журналист выделяет механизм изменения условий проекта и риск задержки выполнения программы.",
  "Эксперт, которого цитирует издание, выдвигает проверяемый контраргумент против ведущего прогноза.",
- "В материале отмечена уникальная подробность, которую другие редакции пока не рассматривали."
+ "В материале отмечена уникальная подробность, которую другие редакции пока не рассматривали.",
+ "Приведен отдельный количественный пример: величина показателя выросла на 7 процентов по сравнению с исходным сценарием.",
+ "Авторы указывают на неопределенность сроков и различие между первоначальным и скорректированным планами.",
+ "В заключении содержится прогноз: модернизация может дать выигрыш только при контроле расходов и независимой экспертизе.",
+ "Редакция ставит под сомнение достаточность опубликованных гарантий и предлагает расширить общественный контроль."
 ];
-const KIND=["fact","detail","media_angle","explanation","counterposition","expert"];
+const KIND=["fact","detail","media_angle","explanation","counterposition","expert","fact","limitation","expert","editorial_stance"];
 export function fixtureCards(size=8){
  if(size!==8&&size!==18)throw Error("FIXTURE_SIZE_MUST_BE_8_OR_18");
  return SOURCES.slice(0,size).map(([source,title,angle],i)=>{
    const pub="P"+String(i+1).padStart(2,"0");
-   const entries=TEMPLATES.map((statement,j)=>{
+   // Full cohort has exactly 167 Evidence (5 x 10, 13 x 9), matching the
+   // latest production pool's size, but with no production/user content.
+   const count=size===18?(i<5?10:9):10;
+   const entries=TEMPLATES.slice(0,count).map((statement,j)=>{
      const unique=statement+" Источник «"+source+"» делает акцент: "+angle+". "+
        "Вариант интерпретации "+(j+1)+" относится исключительно к этому публикационному материалу.";
      const id="E"+String(j+1).padStart(2,"0");
@@ -147,10 +154,10 @@ export async function callCandidate(spec,fixture,keys,fetchImpl=fetch,timeoutMs=
  const started=Date.now();
  try{
    if(spec.provider==="gemini"&&!keys.gemini){
-     return {...row,error_category:"missing_gemini_secret",model_eligible:"not_tested"};
+     row.error_category="missing_gemini_secret";row.model_eligible="not_tested";return row;
    }
    if(spec.provider==="cloudflare"&&(!keys.cfAccount||!keys.cfToken)){
-     return {...row,error_category:"missing_cloudflare_secret",model_eligible:"not_tested"};
+     row.error_category="missing_cloudflare_secret";row.model_eligible="not_tested";return row;
    }
    let url,headers,body;
    if(spec.provider==="gemini"){
@@ -193,13 +200,14 @@ export async function callCandidate(spec,fixture,keys,fetchImpl=fetch,timeoutMs=
    const content=spec.provider==="gemini"?parseGoogleText(payload):extractCloudflareText(payload);
    const stats=evaluateDossier(content,fixture.cards,fixture.rareSource);
    const u=spec.provider==="gemini"?payload?.usageMetadata:payload?.result?.usage??payload?.usage;
-   return {...row,...stats,output_characters:content.length,
+   Object.assign(row,stats,{output_characters:content.length,
      output_tokens:Number(u?.candidatesTokenCount??u?.completion_tokens??0),
      input_tokens:Number(u?.promptTokenCount??u?.prompt_tokens??0),
      finish_reason:String(spec.provider==="gemini"?payload?.candidates?.[0]?.finishReason:
-       payload?.result?.choices?.[0]?.finish_reason??payload?.result?.finish_reason??"").slice(0,25)};
+       payload?.result?.choices?.[0]?.finish_reason??payload?.result?.finish_reason??"").slice(0,25)});
+   return row;
  }catch(err){
-   return {...row,error_category:safeError(err?.name||err)};
+   row.error_category=safeError(err?.name||err);return row;
  }finally{
    clearTimeout(timer);
    row.elapsed_ms=Date.now()-started;
