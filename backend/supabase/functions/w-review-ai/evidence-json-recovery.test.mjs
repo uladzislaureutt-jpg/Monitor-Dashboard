@@ -81,7 +81,8 @@ test("discards ambiguous duplicate indices when decoding concatenated replies",(
  const r=parseEvidenceJson(mixed,2);
  // Even if the generic parser accepts first card, the safe scanner must
  // prevent treating two different P01 records as an authoritative choice.
- assert.equal(r.method,"single_card");
+ assert.equal(r.method,"complete_card_objects");
+ assert.deepEqual(r.payload.cards.map(c=>c.index),[1]);
 });
 test("does not log or modify text; retains escaped quotes and exact original fragments",()=>{
  const inputText="Примечание: { не структура } и \\"внутренние кавычки\\"";
