@@ -8,6 +8,11 @@ import { W_REVIEW_GEMINI_PRIMARY, W_REVIEW_GEMINI_FALLBACK, W_REVIEW_GEMINI_ROUT
 import { prepareEvidence, structuredGeminiRequest, preparationBudget } from "./preparation.ts";
 import { evidenceV2Instructions, evidenceV2Schema, makeEvidenceDocuments, renderEvidenceMaterials, verifyEvidenceCards, verifyEvidenceCardsIndividually, formatEvidenceCard, type EvidenceCard } from "./evidence-v2.ts";
 
+// 140 s maximum per long W-Review HTTP operation. Supabase's hosted
+// request idle timeout is 150 s; keep >=10 s for response serialization
+// and network/worker overhead. Per-provider timeouts remain independent.
+const W_REVIEW_REQUEST_BUDGET_MS = 140_000;
+
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -316,7 +321,7 @@ Deno.serve(async (req: Request) => {
     if (normalized.some((item: any) => !item.text || item.text.length > 10000) || totalChars > 20000)
       return json({error:"evidence_article_too_long",max_article_chars:10000,max_batch_chars:20000,max_items:2},400);
     const documents = makeEvidenceDocuments(normalized);
-    const deadline=Date.now()+130000;
+    const deadline=Date.now()+W_REVIEW_REQUEST_BUDGET_MS;
     const cfEvidenceRoute=cfEvidencePrimaryReady?"primary":cfEvidenceBackupReady?"backup":null;
     console.info("w_review_evidence_routes "+JSON.stringify({
       routes:["gemini_3.5","cloudflare_120b","groq_120b"],
@@ -537,7 +542,7 @@ ${sections.join("; ")}.
       attempts.push({model,status:422,reason:checked.error||"invalid_dossier"});
       return false;
     };
-    const preparationDeadline=Date.now()+130000;
+    const preparationDeadline=Date.now()+W_REVIEW_REQUEST_BUDGET_MS;
     const availableTime=()=>Math.max(0,preparationDeadline-Date.now()-7000);
     const cfPayload={
       reasoning_effort:"low",temperature:0.1,max_tokens:7500,
@@ -997,7 +1002,7 @@ ${styleOnlyText || "Дополнительные фрагменты недост
     // selected dossier and style: CF-main -> CF-backup -> Gemini 3.5, or
     // Gemini 3.5 -> CF-main -> CF-backup. One successful provider completion
     // per press; no rewriting or extra model request to inflate the length.
-    const deadline=synthesisStart+135000;
+    const deadline=synthesisStart+W_REVIEW_REQUEST_BUDGET_MS;
     const remaining=()=>Math.max(0,deadline-Date.now()-9000);
     const providerBudget=(max:number)=>Math.max(0,Math.min(max,remaining()));
     const normalizeReview=(raw:any)=>{
