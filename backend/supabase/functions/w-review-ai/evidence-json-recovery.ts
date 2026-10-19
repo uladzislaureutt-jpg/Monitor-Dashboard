@@ -53,6 +53,8 @@ export function parseEvidenceJson(content:string,limit=2):EvidenceJsonRecovery {
     const full=JSON.parse(unwrapped);
     if(isCards(full,limit))
       return {payload:{cards:full},method:"top_level_cards",recovered_cards:full.length};
+    if(cardShaped(full))
+      return {payload:{cards:[full]},method:"single_card",recovered_cards:1};
   }catch{/* damaged envelope or prefaced JSON */}
   const direct=parseModelJsonObject(text);
   if(Array.isArray(direct?.cards))
@@ -66,10 +68,12 @@ export function parseEvidenceJson(content:string,limit=2):EvidenceJsonRecovery {
         return {payload:{cards:nested.cards},method:"wrapped",recovered_cards:nested.cards.length};
     }
     if(cardShaped(direct)){
+      // Do NOT trust only the first element of concatenated/card arrays.
+      // The complete-card scanner detects duplicate indices and omits them.
       const completed=collectFullyClosedCards(text,limit);
-      if(completed.length>1)
-        return {payload:{cards:completed},method:"complete_card_objects",recovered_cards:completed.length};
-      return {payload:{cards:[direct]},method:"single_card",recovered_cards:1};
+      return completed.length
+        ? {payload:{cards:completed},method:"complete_card_objects",recovered_cards:completed.length}
+        : {payload:null,method:"unrecognized",recovered_cards:0};
     }
     return {payload:direct,method:"unrecognized",recovered_cards:0};
   }
