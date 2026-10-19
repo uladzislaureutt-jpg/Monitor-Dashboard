@@ -1017,11 +1017,16 @@ ${styleOnlyText || "Дополнительные фрагменты недост
     const synthesisOutputTokenBudget=Math.min(11000,
       Math.max(1500,Math.ceil((estimatedVisibleTokens+
         estimatedReasoningTokens+450)/500)*500));
+    // Real Cloudflare 8000-character benchmark (167 synthetic Evidence):
+    // strict json_schema timed out at 125s on full/compact and medium/low,
+    // while json_object returned 7832 chars in 52s with seven valid blocks.
+    // Server-side source, block and length validation remains unchanged.
     const cloudflareSynthesisPayload = {
       ...groqPayload,
       temperature:0.36,
       reasoning_effort:"medium",
       max_tokens:synthesisOutputTokenBudget,
+      response_format:{type:"json_object"},
     };
     const topicKeyRaw = String(body?.topic_key || "legacy-workspace").trim();
     const topicKey = /^workspace-[1-3]$/.test(topicKeyRaw) ? topicKeyRaw : "legacy-workspace";
@@ -1071,6 +1076,7 @@ ${styleOnlyText || "Дополнительные фрагменты недост
     let cloudflareRoute:"primary"|"backup"|null=null;
     console.info("w_review_synthesis_start "+JSON.stringify({
       requested_route:synthesisRoute,planned_routes:routes,
+      cloudflare_response_format:cloudflareSynthesisPayload.response_format.type,
       cards:cards.length,selected_trends:selectedIds.length,
       required_branches:synthesisDossier.requiredBranches,
       target_chars:targetChars,evidence_chars:evidenceText.length,
