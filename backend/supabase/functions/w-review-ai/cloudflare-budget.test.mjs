@@ -8,14 +8,16 @@ const preparation=readFileSync(new URL("./preparation.ts",import.meta.url),"utf8
 const dossier=index.slice(index.indexOf('if (action === "editorial_map")'),index.indexOf('if (action === "expand_review")'));
 const extraction=index.slice(index.indexOf('if (action === "evidence_batch")'),index.indexOf('if (action === "style_profile")'));
 test("Dossier prioritizes CF GPT-OSS-120B, then Gemini 3.5, then Groq 120B",()=>{
-  assert.ok(dossier.indexOf('if(!selected&&cfRoute')>=0);
+  assert.ok(dossier.indexOf('if(cfRoute&&availableTime()')>=0);
   assert.ok(dossier.indexOf('if(!selected&&geminiApiKey')>=0);
-  assert.ok(dossier.indexOf('if(!selected&&cfRoute')<dossier.indexOf('if(!selected&&geminiApiKey'));
+  assert.ok(dossier.indexOf('if(cfRoute&&availableTime()')<dossier.indexOf('if(!selected&&geminiApiKey'));
   assert.ok(dossier.indexOf('if(!selected&&geminiApiKey')<dossier.indexOf('if(!selected&&groqApiKey'));
-  assert.ok(dossier.includes('Math.min(62000,availableTime())'));
-  assert.ok(dossier.includes('Math.min(34000,availableTime())'));
+  assert.ok(dossier.includes('Math.min(101000,availableTime())'));
+  assert.ok(dossier.includes('Math.min(56000,availableTime())'));
   assert.ok(dossier.includes('Math.min(29000,availableTime())'));
-  assert.ok(62000+34000+29000+7000<=140000);
+  assert.ok(70000+56000+7000<=140000);
+  assert.ok(dossier.includes('scheduleHedgedBackup(runGeminiMap,70000)'));
+  assert.ok(dossier.includes('groqDossierBudget(cfPayload.messages)'));
   assert.ok(dossier.includes('preparationDeadline=Date.now()+W_REVIEW_REQUEST_BUDGET_MS'));
   assert.ok(dossier.includes('preparationDeadline-Date.now()-7000'));
   assert.ok(dossier.includes('w_review_map_cloudflare_result'));

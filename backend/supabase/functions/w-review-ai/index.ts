@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { DOSSIER_INSTRUCTIONS, dossierSchema, normalizeDossier, makeSynthesisDossier, compactDossierCards, dossierOutputContract, dossierShape, evidenceIndex } from "./editorial-dossier.ts";
 import { dossierQualityMetrics } from "./dossier-quality-metrics.ts";
+import { scheduleHedgedBackup, groqDossierBudget } from "./dossier-provider-hedge.ts";
 import { synthesisResponseSchema, readSynthesisBlocks } from "./synthesis-blocks.ts";
 import { reconcileDossierDraft } from "./dossier-reconciliation.ts";
 import { normalizeReviewSourceLabels, poolSourceNames } from "./review-output-guard.ts";
@@ -500,7 +501,9 @@ ${sections.join("; ")}.
               formats:invalid.slice(0,4).map((x:any)=>String(x).trim().slice(0,18))}:null;
           }).filter(Boolean):[]):[];
         console.warn("w_review_dossier_shape "+JSON.stringify({model,provider,
-          error:checked.error,...dossierShape(raw),invalid_refs:badBranches.slice(0,24)}));
+          error:checked.error,...dossierShape(raw),invalid_refs:badBranches.slice(0,24),
+          output_chars:res.content.length,finish_reason:res.finish_reason||"unknown",
+          output_tokens:res.usage.completion_tokens,parsed_object:Boolean(raw)}));
       }
       if(checked.dossier&&!checked.error){
         selected={dossier:checked.dossier,result:res,model,provider};return true;
@@ -552,23 +555,35 @@ ${sections.join("; ")}.
         {role:"system",content:DOSSIER_INSTRUCTIONS+
           "\nОбязательное условие: JSON содержит trends, coverage по всем "+cards.length+
           " материалам и inventory. Каждый evidence_id должен встречаться в переданной базе."+
-          "\nКОМПАКТНОСТЬ: краткие русские поля без повторов; 2–5 проверенных идентификаторов на ветку. Источники из разных СМИ независимы."+
+          "\nКОМПАКТНОСТЬ: краткие русские поля без повторов; используй все действительно значимые доказательства, а не фиксированное число 2–5 ссылок. Не подменяй аналитический вывод перечислением ID. Источники из разных СМИ независимы."+
           "\nАдреса Evidence КОПИРУЙ строго из списка выше, не придумывай и не округляй номера. Форма исключительно P01:E01; для любой Pxx должен существовать хотя бы один содержательный evidence_id в ветках."},
         {role:"user",content:mapUserInput}
       ]
     };
-    // Dossier trends: Cloudflare GPT-OSS-120B FIRST; Gemini 3.5 SECOND;
-    // Groq GPT-OSS-120B THIRD. Evidence extraction stays Gemini-first.
-    // Give primary CF 62s (prior full-pool test was 47.2s), then allow up to
-    // 34s for Gemini and 29s for Groq, inside the 140s shared deadline.
-    // Revalidate each result against all original publication IDs.
+    // Cloudflare stays first. If it is still pending after 70s, begin
+    // Gemini in parallel without discarding any source or truncating Evidence.
+    // Primary is always checked first; Gemini is used only if it fails.
+    const runGeminiMap=()=>{
+      const timeout=Math.min(56000,availableTime());
+      console.info("w_review_map_route "+JSON.stringify({provider:"gemini",
+        model:W_REVIEW_GEMINI_PRIMARY,timeout_ms:timeout}));
+      return structuredGeminiRequest({deadline:Date.now()+timeout,initialMode:"json",
+        call:(jsonMode,budget)=>callGemini(geminiApiKey,W_REVIEW_GEMINI_PRIMARY,prompt,schema,
+          0.1,"editorial_map",budget,{jsonMode,maxOutputTokens:16384,thinkingLevel:"low"}),
+        log:event=>console.info("w_review_gemini_response "+JSON.stringify({
+          stage:"editorial_map",model:W_REVIEW_GEMINI_PRIMARY,...event}))
+      });
+    };
     const cfRoute=cfPrimaryReady?"primary":cfBackupReady?"backup":null;
-    if(!selected&&cfRoute&&availableTime()>=6000){
+    const geminiHedge=cfRoute&&geminiApiKey?
+      scheduleHedgedBackup(runGeminiMap,70000):null;
+    if(cfRoute&&availableTime()>=6000){
       const account=cfRoute==="primary"?cfPrimaryId:cfBackupId;
       const token=cfRoute==="primary"?cfPrimaryToken:cfBackupToken;
-      const timeout=Math.min(62000,availableTime());
+      const timeout=Math.min(101000,availableTime());
       console.info("w_review_map_route "+JSON.stringify({route:cfRoute,provider:"cloudflare",
-        timeout_ms:timeout,request_chars:JSON.stringify(cfPayload).length}));
+        timeout_ms:timeout,hedge_after_ms:geminiHedge?70000:null,
+        request_chars:JSON.stringify(cfPayload).length}));
       const started=Date.now();
       const response=await callCloudflare(account,token,cfPayload,timeout);
       console.info("w_review_map_cloudflare_result "+JSON.stringify({
@@ -582,37 +597,42 @@ ${sections.join("; ")}.
         reason:response.detail==="cloudflare_local_timeout"?"local_timeout":
           response.detail.startsWith("cloudflare_empty_reply")?"empty_reply":"provider_or_transport"});
     }
+    if(selected)geminiHedge?.cancel();
     if(!selected&&geminiApiKey&&availableTime()>=12000){
-      console.info("w_review_map_route "+JSON.stringify({provider:"gemini",model:W_REVIEW_GEMINI_PRIMARY}));
-      const timeout=Math.min(34000,availableTime());
-      const response=await structuredGeminiRequest({deadline:Date.now()+timeout,
-        initialMode:"json",
-        call:(jsonMode,budget)=>callGemini(geminiApiKey,W_REVIEW_GEMINI_PRIMARY,prompt,schema,
-          0.1,"editorial_map",budget,{jsonMode,maxOutputTokens:16384,thinkingLevel:"low"}),
-        log:event=>console.info("w_review_gemini_response "+JSON.stringify({
-          stage:"editorial_map",model:W_REVIEW_GEMINI_PRIMARY,...event}))
-      });
+      const response=geminiHedge?await geminiHedge.waitOrStart():await runGeminiMap();
       if(response.ok)accept(response,W_REVIEW_GEMINI_PRIMARY,"gemini");
       else attempts.push({model:W_REVIEW_GEMINI_PRIMARY,status:response.status,
         reason:response.diagnostic?.kind||response.detail});
     }
     if(!selected&&groqApiKey&&availableTime()>=6000){
       const model="openai/gpt-oss-120b";
-      const timeout=Math.min(29000,availableTime());
-      console.info("w_review_map_route "+JSON.stringify({provider:"groq",model,timeout_ms:timeout}));
-      const started=Date.now();
-      const {max_tokens:_cfMaxTokens,...groqPayload}=cfPayload;
-      const response=await callGroq(groqApiKey,{
-        ...groqPayload,model,max_completion_tokens:7500
-      },timeout);
-      console.info("w_review_map_groq_result "+JSON.stringify({
-        status:response.ok?200:response.status,elapsed_ms:Date.now()-started,
-        finish_reason:response.ok?response.finish_reason||"unknown":"",
-        output_chars:response.ok?response.content.length:0,
-        issue:response.ok?"":providerField(response.detail).slice(0,90)
-      }));
-      if(response.ok)accept(response,model,"groq");
-      else attempts.push({model,status:response.status,reason:response.detail.slice(0,80)});
+      const groqBudget=groqDossierBudget(cfPayload.messages);
+      if(!groqBudget.eligible){
+        console.warn("w_review_map_groq_preflight "+JSON.stringify({
+          reason:"estimated_request_over_free_tpm",model,
+          request_chars:groqBudget.requestChars,
+          estimated_input_tokens:groqBudget.estimatedInputTokens}));
+        attempts.push({model,status:413,reason:"skipped_over_groq_free_tpm"});
+      }else{
+        const timeout=Math.min(29000,availableTime());
+        console.info("w_review_map_route "+JSON.stringify({provider:"groq",model,
+          timeout_ms:timeout,max_completion_tokens:groqBudget.maxCompletionTokens}));
+        const started=Date.now();
+        const {max_tokens:_cfMaxTokens,...groqPayload}=cfPayload;
+        const response=await callGroq(groqApiKey,{
+          ...groqPayload,model,max_completion_tokens:groqBudget.maxCompletionTokens
+        },timeout);
+        console.info("w_review_map_groq_result "+JSON.stringify({
+          status:response.ok?200:response.status,elapsed_ms:Date.now()-started,
+          finish_reason:response.ok?response.finish_reason||"unknown":"",
+          output_chars:response.ok?response.content.length:0,
+          issue:response.ok?"":response.status===413?"request_exceeds_groq_free_tpm":
+            providerField(response.detail).slice(0,90)
+        }));
+        if(response.ok)accept(response,model,"groq");
+        else attempts.push({model,status:response.status,
+          reason:response.status===413?"request_exceeds_groq_free_tpm":"provider_or_transport"});
+      }
     }
     if(!selected){
       console.warn("w_review_editorial_dossier_failures "+JSON.stringify({
