@@ -1,0 +1,57 @@
+name: W-Review final synthesis Cloudflare Gemini A-B diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/supabase/functions/w-review-ai/synthesis-model-benchmark*.mjs'
+      - '.github/workflows/w-review-final-synthesis-ab.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'backend/supabase/functions/w-review-ai/synthesis-model-benchmark*.mjs'
+      - '.github/workflows/w-review-final-synthesis-ab.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: w-review-final-synthesis-ab
+  cancel-in-progress: false
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate 3000-8000 size planner, 18 publications 167 Evidence and both provider inputs
+        run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/synthesis-model-benchmark.test.mjs
+
+  live:
+    if: github.event_name != 'pull_request'
+    needs: offline
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Single direct Cloudflare synthesis followed by direct Gemini synthesis
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GOOGLE_GEMINI_API_KEY }}
+        run: node --experimental-strip-types backend/supabase/functions/w-review-ai/synthesis-model-benchmark.mjs
+      - name: Archive synthetic outputs, block metrics and comparison report
+        uses: actions/upload-artifact@v4
+        with:
+          name: w-review-final-synthesis-ab-${{ github.run_number }}
+          path: out/w-review-synthesis-comparison/
+          retention-days: 14
+          if-no-files-found: error
