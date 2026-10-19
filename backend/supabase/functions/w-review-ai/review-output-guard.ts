@@ -7,13 +7,20 @@ export type WReviewOutputGuard={
   attributionWarnings:string[];
 };
 const strip=(s:string)=>s.trim().replace(/^«|»$/g,"").trim();
+// Canonicalize known outlet labels, never the underlying article URL.
+// CFR publishes at cfr.org; the trailing slash is not part of its name.
+export function canonicalWReviewSourceName(value:string):string{
+  const raw=strip(value).replace(/^["“”]|["“”]$/g,"");
+  const noTrailingSlash=/^(?:[a-z0-9-]+\.)+[a-z]{2,24}\/+$/i.test(raw)
+    ? raw.replace(/\/+$/,""):raw;
+  return /^cfr\.org$/i.test(noTrailingSlash)?"CFR.org":noTrailingSlash;
+}
 export function poolSourceNames(cards:string[]):Map<string,string>{
   const sources=new Map<string,string>();
   for(let index=0;index<cards.length;index++){
     const id="P"+String(index+1).padStart(2,"0");
     const reported=cards[index].match(/^ИСТОЧНИК:\s*(.+)$/m)?.[1]||"";
-    let name=strip(reported).replace(/^["“”]|["“”]$/g,"");
-    if(/^(?:[a-z0-9-]+\.)+[a-z]{2,24}\/+$/i.test(name))name=name.replace(/\/+$/,"");
+    const name=canonicalWReviewSourceName(reported);
     if(name&&name!=="Источник"&&name.length<=300) sources.set(id,name);
   }
   return sources;
@@ -78,12 +85,17 @@ export function normalizeReviewSourceLabels(text:string,cards:string[]):WReviewO
   // Explicitly quoted model mistakes («P03») and bare P03 in source lists.
   // Deliberately leave Evidence IDs P03:E04 intact for diagnostics rather
   // than turning them into fictional source names or hiding them.
-  const fixed=text.replace(/«(P\d{2})»|\b(P\d{2})\b(?!:E\d+)/g,(full,q,b)=>{
+  const marked=text.replace(/«(P\d{2})»|\b(P\d{2})\b(?!:E\d+)/g,(full,q,b)=>{
     const id=q||b,source=sources.get(id);
     if(!source){unresolved.add(id);return full;}
     substitutions++;
     return "«"+source+"»";
   });
+  // Also fix model-written citations, not only internal Pxx substitutions.
+  // Limit the rewrite to quoted outlet names, never URLs or other prose.
+  const fixed=sources.size&&[...sources.values()].includes("CFR.org")
+    ?marked.replace(/«\s*cfr\.org\/+\s*»|«\s*cfr\.org\s*»/gi,"«CFR.org»")
+    :marked;
   for(const m of fixed.matchAll(/\bP\d{2}(?::E\d+)?\b/g))unresolved.add(m[0]);
   const attributionWarnings=inspectReviewAttribution(fixed,cards);
   if(unresolved.size)attributionWarnings.push("Не удалось разрешить обозначения: "+[...unresolved].join(", ")+". Проверьте источники перед экспортом.");

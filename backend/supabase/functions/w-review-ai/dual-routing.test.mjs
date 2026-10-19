@@ -29,9 +29,12 @@ test("Dossier prefers Cloudflare first with bounded hedged Gemini after 70s and 
   assert.ok(map.includes('requireEveryDistinctSource:true'));
   assert.ok(map.includes('w_review_dossier_shape'));
 });
-test("Two UI buttons are true independent syntheses, not duplicated actions",()=>{
-  assert.ok(ui.includes('onClick={()=>synthesize("cloudflare_first")}'));
+test("UI generates through Gemini-first with reserved Cloudflare and keeps legacy variants",()=>{
+  assert.ok(!ui.includes('onClick={()=>synthesize("cloudflare_first")}'));
+  assert.ok(edge.includes('const synthesisRoute="gemini_first"'));
+  assert.ok(edge.includes('["gemini_3_5","cloudflare_primary","cloudflare_backup"]'));
   assert.ok(ui.includes('onClick={()=>synthesize("gemini_first")}'));
+  assert.ok(ui.includes("резерв 120B"));
   assert.ok(ui.includes('activeReviewRoute:route'));
   assert.ok(ui.includes('reviewVariants:{...current.reviewVariants'));
   assert.ok(ui.includes('draft.text.length.toLocaleString()'));
@@ -43,4 +46,11 @@ test("No global Evidence cap of 124 or destructive replay of 18 original documen
   assert.ok(!ev.includes('limit(124)'));
   assert.ok(ev.includes('max_items:2'));
   assert.ok(ev.includes('formatEvidenceCard(entry.card)'));
+});
+
+test("CFR canonical name is sent to Evidence, synthesis and DOCX with original hyperlink",()=>{
+ assert.ok(ui.includes("ИСТОЧНИК: «${canonicalWReviewSourceName(item.source)}»"));
+ assert.ok(ui.includes("sourceNames: Array.from(new Set(state.items.map((item) => canonicalWReviewSourceName(item.source)"));
+ assert.ok(ui.includes("filter(item=>canonicalWReviewSourceName(item.source)===name)"));
+ assert.ok(ui.includes("exportWReview(path, exportCopy.text, sourceNames"));
 });
