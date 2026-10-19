@@ -57,3 +57,22 @@ test("No operator text or addresses are included in metric fields",()=>{
  assert.ok(!out.includes("Позиции"));
  assert.ok(!out.includes("P01:E01"));
 });
+
+test("detects one-article-per-branch template and genuine cross-outlet contrast",()=>{
+  const onePerSource=dossier([
+    branch(["P01:E01"],["P01:E02"]),
+    branch(["P02:E01"],["P02:E02"]),
+    branch(["P03:E01"],["P03:E02"])
+  ]);
+  const bad=dossierQualityMetrics(onePerSource,docs);
+  assert.equal(bad.branches_with_single_publication,3);
+  assert.equal(bad.branches_with_multiple_publications,0);
+  assert.equal(bad.cross_publication_contrary_branches,0);
+  assert.equal(bad.evidence_E01_refs,3);
+  const together=dossierQualityMetrics(dossier([
+    branch(["P01:E01","P02:E01"],["P03:E02"])
+  ]),docs);
+  assert.equal(together.branches_with_multiple_publications,1);
+  assert.equal(together.branches_with_single_publication,0);
+  assert.equal(together.cross_publication_contrary_branches,1);
+});
