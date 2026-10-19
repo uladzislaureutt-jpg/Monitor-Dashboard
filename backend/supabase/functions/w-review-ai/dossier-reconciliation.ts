@@ -113,13 +113,15 @@ export function reconcileDossierDraft(raw:any,cards:string[]):DossierRepairResul
       const queuePubs=missing.slice(start,start+reviewBatchSize);
       const waiting:any[]=[];
       for(const pub of queuePubs){
-        const proven=ix.entries.filter(e=>e.publication===pub&&e.kind!=="headline"&&
-          isRussianDossierProse(e.summary));
-        const row=proven[0];
+        const substantive=ix.entries.filter(e=>e.publication===pub&&e.kind!=="headline");
+        const row=substantive.find(e=>isRussianDossierProse(e.summary))||
+          substantive[0]||ix.entries.find(e=>e.publication===pub);
         if(!row)return null;
+        const groundedClaim=isRussianDossierProse(row.summary)?trim(row.summary,550):
+          "Имеется проверенная запись Evidence; содержание требует редакционной проверки и распределения по темам.";
         waiting.push({id:"B"+(waiting.length+1),
           title:"Материал "+pub+" — "+row.source,
-          claim:trim(row.summary,550),mechanism:"",counterpoint:"",limitation:"",
+          claim:groundedClaim,mechanism:"",counterpoint:"",limitation:"",
           significance:"Материал подтверждён, но модель не распределила его по аналитическим сюжетам.",
           priority:"medium",required:false,evidence_ids:[row.id],contrary_evidence_ids:[]});
         linked.add(row.id);allAdded.push(pub);
