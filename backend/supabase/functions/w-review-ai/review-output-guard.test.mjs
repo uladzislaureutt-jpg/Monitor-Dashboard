@@ -8,10 +8,10 @@ const cards=[
   "ID: P03\nИСТОЧНИК: «cfr.org/»\nЗАГОЛОВОК: Материал"
 ];
 test("Pxx is internal and replaced by exact real outlet identity, in prose and source list",()=>{
-  assert.equal(poolSourceNames(cards).get("P03"),"cfr.org");
+  assert.equal(poolSourceNames(cards).get("P03"),"CFR.org");
   const x=normalizeReviewSourceLabels(
     "Указывает «P01»; подробнее P03 («P01», «P02», «P03»).",cards);
-  assert.equal(x.text,'Указывает «The Guardian»; подробнее «cfr.org» («The Guardian», «CNN», «cfr.org»).');
+  assert.equal(x.text,'Указывает «The Guardian»; подробнее «CFR.org» («The Guardian», «CNN», «CFR.org»).');
   assert.equal(x.substitutions,5);
   assert.deepEqual(x.unresolved,[]);
 });
@@ -63,4 +63,11 @@ test("short generic phrases or thematic paraphrases do not trigger STYLE_ONLY co
  assert.deepEqual(inspectStyleOnlyCopy("Редакции по-разному оценивают прозрачность процедур и результаты общественного контроля.",examples),[]);
  assert.deepEqual(inspectStyleOnlyCopy("В этом состоит различие между описанием процесса.",examples),[]);
  assert.deepEqual(inspectStyleOnlyCopy("Синтетический фрагмент тестовой статьи.",[]),[]);
+});
+
+test("CFR alias is canonical even when generated directly, and article URLs remain unchanged",()=>{
+ const draft="Оценка «cfr.org/» и «Cfr.org» («cfr.org/»). URL https://www.cfr.org/articles/existing/";
+ const fixed=normalizeReviewSourceLabels(draft,cards);
+ assert.equal(fixed.text,'Оценка «CFR.org» и «CFR.org» («CFR.org»). URL https://www.cfr.org/articles/existing/');
+ assert.equal(fixed.substitutions,0);
 });
