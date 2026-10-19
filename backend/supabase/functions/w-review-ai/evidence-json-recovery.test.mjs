@@ -11,7 +11,7 @@ const input=makeEvidenceDocuments([0,1].map(index=>({
 const card=index=>({
  index,title_ru:"Сообщение "+index,records:[{
    kind:"fact",statement_ru:"Компания увеличила выручку на двадцать процентов.",
-   anchor_id:"P001",source_excerpt:"компания увеличила выручку на двадцать процентов",
+   anchor_id:"P001",source_excerpt:"Компания увеличила выручку на двадцать процентов",
    original_quote:"",quote_ru:"",speaker:"",role:""
  }]
 });
