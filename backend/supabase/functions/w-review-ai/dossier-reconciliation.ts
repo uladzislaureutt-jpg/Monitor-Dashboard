@@ -46,13 +46,16 @@ export function reconcileDossierDraft(raw:any,cards:string[]):DossierRepairResul
       const invalid=rawRefs.concat(rawContrary).filter((id:string)=>!canonicalEvidenceId(id,ix.byId));
       const refs=rawRefs.map((id:string)=>canonicalEvidenceId(id,ix.byId)).filter(Boolean);
       const contrary=rawContrary.map((id:string)=>canonicalEvidenceId(id,ix.byId)).filter(Boolean);
-      // Do NOT reattach a different record to a branch whose cited support
-      // is fabricated. Discard the entire branch instead.
-      if(!refs.length||invalid.length||refs.length>18||contrary.length>12){
+      // Never reassign fabricated IDs to another record. If a branch retains
+      // genuine MAIN Evidence, a lone invalid secondary citation can be
+      // quarantined without throwing away the supported branch. A branch
+      // with no validated primary support is still discarded in full.
+      if(!refs.length||refs.length>18||contrary.length>12){
         removedBranches++;
         discardedEvidenceRefs+=invalid.length;
         continue;
       }
+      discardedEvidenceRefs+=invalid.length;
       if(!isRussianDossierProse(b.title)||!isRussianDossierProse(b.claim)||
          !isRussianDossierProse(b.significance))return null;
       for(const key of ["mechanism","counterpoint","limitation"]){
@@ -61,6 +64,9 @@ export function reconcileDossierDraft(raw:any,cards:string[]):DossierRepairResul
       }
       const valid={...b,evidence_ids:[...new Set(refs)],
         contrary_evidence_ids:[...new Set(contrary)],
+        // A claimed counterposition whose ONLY citation was fabricated is
+        // no longer supported and cannot stay as editorial analysis.
+        counterpoint:rawContrary.length>0&&contrary.length===0?"":b.counterpoint,
         priority:["high","medium","low"].includes(b.priority)?b.priority:"medium",
         required:typeof b.required==="boolean"?b.required:true};
       refs.concat(contrary).forEach((id:string)=>linked.add(id));
@@ -145,6 +151,6 @@ export function reconcileDossierDraft(raw:any,cards:string[]):DossierRepairResul
   const draft={trends,coverage,inventory:raw.inventory||{quotes:0,headlines:0,experts:0}};
   const verified=normalizeDossier(draft,cards,{requireEveryDistinctSource:true});
   if(verified.error||!verified.dossier)return null;
-  return {draft,repaired:missing.length>0||removedBranches>0,
+  return {draft,repaired:missing.length>0||removedBranches>0||discardedEvidenceRefs>0,
     removedBranches,additionalSources:allAdded,discardedEvidenceRefs};
 }
