@@ -40,7 +40,7 @@ test("Counts 3-publication coverage, distinct IDs, and accurate contrary referen
 test("Separately flags superficial text-only contradiction, reused IDs and highly overlapping branches",()=>{
  const m=dossierQualityMetrics(dossier([
    branch(["P01:E01","P02:E01"],["P01:E02"]),
-   branch(["P01:E01","P02:E01"],["P01:E01"])
+   branch(["P01:E01","P02:E01"],["P01:E01","P01:E02"])
  ]),docs);
  assert.equal(m.linked_publications,2);
  assert.equal(m.unlinked_publications,1);
