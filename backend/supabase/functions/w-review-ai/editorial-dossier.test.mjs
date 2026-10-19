@@ -234,7 +234,7 @@ test('JSON-only dossier contract includes all nested fields and full pool cardin
 
 test("dossier one-pass editorial protocol requires grounded counterpositions, expert attribution, late evidence and nonduplicated branches",()=>{
   const contract=DOSSIER_INSTRUCTIONS;
-  for(const phrase of ["ВНУТРЕННЯЯ РЕДАКЦИОННАЯ СВЕРКА","значимые поздние Evidence","contrary_evidence_ids",
+  for(const phrase of ["ВНУТРЕННЯЯ РЕДАКЦИОННАЯ СВЕРКА","важные поздние Evidence","contrary_evidence_ids",
      "публикации действительно оспаривают","Не включай один Evidence ID",
      "НЕ ДУБЛИРУЙ ВЕТКИ","АТРИБУЦИЯ","ФИНАЛЬНАЯ СВЕРКА"]){
     assert.ok(contract.includes(phrase),"Missing editorial safeguard: "+phrase);
