@@ -4,6 +4,7 @@ export type DossierBranch = {id:string;title:string;claim:string;mechanism:strin
   counterpoint:string;limitation:string;significance:string;priority:"high"|"medium"|"low";
   required:boolean;evidence_ids:string[];contrary_evidence_ids:string[]};
 export type DossierTrend = {id:string;title:string;summary:string;thesis:string;
+  technical_review_queue?:boolean;
   sources:string[];branches:DossierBranch[];operator_optional:boolean;optional_reason:string};
 export type DossierCoverage = {publication_id:string;status:"used"|"supporting"|"duplicate"|"excluded"|"insufficient"|"reserve";
   reason:string;evidence_ids:string[]};
@@ -192,7 +193,9 @@ export function normalizeDossier(raw:any,cards:string[],options:DossierValidatio
     const sources=uniq(branches.flatMap(b=>b.evidence_ids.concat(b.contrary_evidence_ids))
       .map(ref=>index.byId.get(ref)!.source));
     trends.push({id,title:txt(t?.title,160),summary:txt(t?.summary,450),
-      thesis:txt(t?.thesis,500),sources,branches,operator_optional:optional,optional_reason:optionalReason});
+      thesis:txt(t?.thesis,500),sources,branches,
+      ...(technicalReviewQueue?{technical_review_queue:true}:{}),
+      operator_optional:optional,optional_reason:optionalReason});
   }
   if(!Array.isArray(raw?.coverage)||raw.coverage.length!==all.size)
     return {dossier:null,error:"dossier_incomplete_publication_inventory"};
