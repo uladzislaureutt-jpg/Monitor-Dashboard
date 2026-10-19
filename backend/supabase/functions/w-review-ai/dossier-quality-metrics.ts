@@ -43,6 +43,16 @@ export function dossierQualityMetrics(dossier:EditorialDossier,cards:string[]){
     unlinked_publications:countsByPub.filter(x=>!x.refs).length,
     contrary_unique_evidence:uniqueContrary.size,
     branches_with_contrary:branchRows.filter(b=>b.contrary.size>0).length,
+    // Detect the misleading pattern: one branch for every publication, each
+    // made from E01 (claim) + E05 (supposed counterpoint) of the same outlet.
+    branches_with_multiple_publications:branchRows.filter(b=>b.pubs.size>=2).length,
+    branches_with_single_publication:branchRows.filter(b=>b.pubs.size===1).length,
+    branches_with_only_one_evidence_record:branchRows.filter(b=>b.ids.size===1).length,
+    cross_publication_contrary_branches:branchRows.filter(b=>
+      [...b.contrary].some(id=>[...b.refs].some(main=>
+        source.byId.get(id)?.publication!==source.byId.get(main)?.publication))).length,
+    evidence_E01_refs:branchRows.reduce((n,b)=>n+
+      [...b.ids].filter(id=>/:E01$/.test(id)).length,0),
     branches_with_counterpoint_text:branchRows.filter(b=>b.textCounterpoint).length,
     counterpoint_text_without_contrary_refs:branchRows.filter(b=>b.textCounterpoint&&!b.contrary.size).length,
     same_id_on_both_sides:branchRows.reduce((n,b)=>n+b.overlap,0),
