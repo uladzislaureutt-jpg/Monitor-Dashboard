@@ -15,6 +15,18 @@ export const MODEL_SPECS=[
   {id:"glm47",provider:"cloudflare",model:"@cf/zai-org/glm-4.7-flash",tier:"Workers AI free allocation"}
 ];
 export const COHORTS=["small","full"];
+// This large-run cohort compares precisely three providers that completed
+// the preliminary 8-publication test. Others are excluded to conserve neurons.
+export const FULL_TEST_IDS=["gemini35","oss120","nemotron120"];
+export const ANALYTIC_CONTRAST_CONTRACT=[
+  "ПРОВЕРЯЕМАЯ РЕДАКЦИОННАЯ ДИСЦИПЛИНА (только для этого эксперимента):",
+  "1. Сначала различи самостоятельные смысловые линии: бюджет и финансирование, тарифы и население, логистика и внешняя торговля, экологические последствия, открытость контрактов. Создавай отдельные ветки только там, где разные механизмы подтверждены Evidence; не дроби искусственно один сюжет.",
+  "2. Для каждой смысловой ветки явно различи подтверждающий аргумент, самостоятельный контраргумент и пределы вывода. При наличии подтверждённого возражения укажи соответствующие ID в contrary_evidence_ids и объясни реальное противоречие в counterpoint. Если подтверждённого возражения нет, оставь поля пустыми.",
+  "3. Не считай цитату эксперта автоматически позицией редакции. Отделяй чужую речь от собственного редакционного анализа и отмечай различия в их оценках без выдуманных атрибуций.",
+  "4. Не создавай две ветки с одинаковыми тезисами и преимущественно одинаковыми Evidence ID. Дополняющие источники одной линии объединяй; принципиально новые аргументы, в том числе редкие и противоположные, сохраняй.",
+  "5. Каждая P01...Pn должна иметь хотя бы один точный содержательный Evidence ID в ветках. Нельзя имитировать охват включением источника только в coverage.",
+  "6. Подкрепляй основные утверждения существующими Evidence ID; не повышай число ссылок ради формального показателя. Используй все пять тематических направлений, когда они действительно представлены доказательной базой."
+].join("\n");
 const SOURCES=[
  ["Северная деловая редакция","Финансирование региональной модернизации","Рост бюджетного участия"],
  ["Бюджетное обозрение","Долговое обеспечение проектов","Потребность в новых гарантиях"],
@@ -79,11 +91,77 @@ export function fixtureSet(cohort="small"){
  const mapUserInput="ЗАДАНИЕ ОПЕРАТОРА:\n"+task+
    "\n\nДОКАЗАТЕЛЬНАЯ БАЗА (P01:E01 — E01 в статье P01):\n"+evidenceText+
    "\n\n"+dossierOutputContract(cards.length);
- const prompt=DOSSIER_INSTRUCTIONS+"\n\n"+mapUserInput;
+ const prompt=DOSSIER_INSTRUCTIONS+"\n\n"+ANALYTIC_CONTRAST_CONTRACT+"\n\n"+mapUserInput;
  const index=evidenceIndex(cards);
  return {cohort,cards,compact,prompt,evidenceText,source_count:cards.length,
    evidence_count:index.entries.length,rareSource:cohort==="small"?"P08":"P18",
    input_characters:prompt.length};
+}
+export const GOLD_FACETS=[
+  {id:"finance",name:"Финансирование и гарантии",publications:["P01","P02","P03","P04"]},
+  {id:"tariffs",name:"Тарифы и социальные последствия",publications:["P05","P06","P07"]},
+  {id:"logistics",name:"Торговля и логистика",publications:["P08","P09","P10","P11"]},
+  {id:"ecology",name:"Экологические последствия",publications:["P12","P13","P14","P15"]},
+  {id:"oversight",name:"Контроль и редкая контраргументация",publications:["P16","P17","P18"]}
+];
+// Diagnostic proxies only. Word similarity and Evidence kind do not prove
+// actual editorial quality; retain synthetic full outputs for human review.
+const words=text=>new Set(String(text||"").toLocaleLowerCase("ru")
+ .match(/[а-яёa-z0-9]{4,}/gi)||[]);
+const jaccard=(a,b)=>{
+ const left=new Set(a),right=new Set(b);
+ const union=new Set([...left,...right]).size;
+ return union?[...left].filter(x=>right.has(x)).length/union:0;
+};
+export function editorialQualityProxies(dossier,cards){
+ const all=Array.isArray(dossier?.trends)?dossier.trends:[];
+ const index=evidenceIndex(cards);
+ const branches=all.flatMap(t=>Array.isArray(t.branches)?t.branches:[]);
+ const brief=branches.map(b=>{
+   const ids=[...(Array.isArray(b.evidence_ids)?b.evidence_ids:[]),
+      ...(Array.isArray(b.contrary_evidence_ids)?b.contrary_evidence_ids:[])];
+   const pubs=new Set(ids.filter(id=>typeof id==="string"&&index.byId.has(id))
+     .map(id=>index.byId.get(id).publication));
+   return {ids:new Set(ids.filter(id=>typeof id==="string"&&index.byId.has(id))),
+     pubs,terms:words([b.title,b.claim,b.mechanism].join(" ")),
+     hasContrary:(b.contrary_evidence_ids||[]).some(id=>index.byId.has(id)),
+     hasCounterpoint:Boolean(String(b.counterpoint||"").trim())};
+ });
+ const facetData=GOLD_FACETS.map(f=>{
+   const pubs=new Set(f.publications);
+   const linked=new Set([...brief.flatMap(b=>[...b.pubs])].filter(p=>pubs.has(p)));
+   const separated=brief.some(b=>[...b.pubs].filter(p=>pubs.has(p)).length>=2 &&
+     [...b.pubs].filter(p=>!pubs.has(p)).length<=1);
+   return {id:f.id,publications_linked:linked.size,
+     publications_total:f.publications.length,branch_grouped:separated};
+ });
+ let suspiciousDuplicatePairs=0,nearSameEvidencePairs=0;
+ for(let i=0;i<brief.length;i++)for(let j=i+1;j<brief.length;j++){
+   if(jaccard(brief[i].terms,brief[j].terms)>=0.78)suspiciousDuplicatePairs++;
+   if(brief[i].ids.size>=2&&brief[j].ids.size>=2 &&
+      jaccard(brief[i].ids,brief[j].ids)>=0.80)nearSameEvidencePairs++;
+ }
+ const contraryIds=new Set(branches.flatMap(b=>
+   Array.isArray(b.contrary_evidence_ids)?b.contrary_evidence_ids:[])
+   .filter(id=>index.byId.has(id)));
+ const sourceOpposition=new Set([...contraryIds].map(id=>index.byId.get(id).publication));
+ const explicitOpposition=new Set([...contraryIds].filter(id=>{
+   const kind=index.byId.get(id).kind;
+   return kind==="counterposition"||kind==="editorial_stance";
+ }));
+ return {
+   facets_with_all_publications:facetData.filter(x=>x.publications_linked===x.publications_total).length,
+   facets_grouped:facetData.filter(x=>x.branch_grouped).length,
+   facets:facetData,
+   contrary_evidence_distinct:contraryIds.size,
+   contrary_publications_distinct:sourceOpposition.size,
+   contrary_as_counterposition_or_stance:explicitOpposition.size,
+   branches_with_contrary_and_counterpoint:brief.filter(b=>b.hasContrary&&b.hasCounterpoint).length,
+   suspicious_duplicate_text_pairs:suspiciousDuplicatePairs,
+   suspicious_duplicate_evidence_pairs:nearSameEvidencePairs,
+   editorial_stance_cited:branches.flatMap(b=>b.evidence_ids||[]).filter(id=>index.byId.get(id)?.kind==="editorial_stance").length,
+   expert_cited:branches.flatMap(b=>b.evidence_ids||[]).filter(id=>index.byId.get(id)?.kind==="expert").length
+ };
 }
 const safeError=err=>{
  const raw=String(err||"");
@@ -127,7 +205,8 @@ export function evaluateDossier(content,cards,rareSource){
    total_evidence_ids:index.entries.length,
    coverage_complete:Boolean(chosen)&&chosen.coverage.length===cards.length,
    recovered_sources:repair?.additionalSources??0,
-   discarded_branches:repair?.removedBranches??0
+   discarded_branches:repair?.removedBranches??0,
+   ...editorialQualityProxies(data,cards)
  };
 }
 export function extractCloudflareText(payload){
@@ -144,7 +223,8 @@ function parseGoogleText(payload){
    .map(x=>String(x?.text||"")).join("");
 }
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-export async function callCandidate(spec,fixture,keys,fetchImpl=fetch,timeoutMs=100000){
+export async function callCandidate(spec,fixture,keys,fetchImpl=fetch,timeoutMs=100000,
+  onOutput=()=>{}){
  const controller=new AbortController();
  const timer=setTimeout(()=>controller.abort(),timeoutMs);
  let row={model_id:spec.id,model:spec.model,cohort:fixture.cohort,provider:spec.provider,
@@ -198,6 +278,9 @@ export async function callCandidate(spec,fixture,keys,fetchImpl=fetch,timeoutMs=
      return row;
    }
    const content=spec.provider==="gemini"?parseGoogleText(payload):extractCloudflareText(payload);
+   // Synthetic prompts only. Persist the model-produced dossier for a
+   // qualitative reviewer: automated metrics cannot verify editorial depth.
+   onOutput({model_id:spec.id,cohort:fixture.cohort,content:content.slice(0,180000)});
    const stats=evaluateDossier(content,fixture.cards,fixture.rareSource);
    const u=spec.provider==="gemini"?payload?.usageMetadata:payload?.result?.usage??payload?.usage;
    Object.assign(row,stats,{output_characters:content.length,
@@ -219,34 +302,44 @@ const report=(res)=>{
    "No operator data. No production model switches. Results measure structural and Evidence-reference correctness, not expert semantic quality.",
    "All models receive the current W-Review dossier instructions, the same verified compact Evidence and the same per-publication coverage obligation.",
    "",
-   "| Model | Cohort | HTTP | Seconds | Strict valid | Reconciled | Trends | Branches | Sources linked | Valid IDs | Invalid IDs | Rare source |",
-   "|---|---|---:|---:|---|---|---:|---:|---:|---:|---:|---|"];
+   "| Model | Cohort | HTTP | Seconds | Strict valid | Reconciled | Trends | Branches | Sources linked | Valid IDs | Contraries | Five facets | Duplicate pairs |",
+   "|---|---|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|"];
  for(const r of rows)h.push("| "+[r.model_id,r.cohort,r.http_status,
    ((r.elapsed_ms||0)/1000).toFixed(1),r.strict_valid?"yes":"no",
    r.repaired_valid?"yes":"no",r.trends??0,r.branches??0,
    (r.linked_publications??0)+"/"+r.source_count,r.valid_references??0,
-   r.invalid_references??0,r.rare_source_linked?"yes":"no"].join(" | ")+" |");
+   r.contrary_evidence_distinct??0,(r.facets_with_all_publications??0)+"/5",
+   (r.suspicious_duplicate_text_pairs??0)+(r.suspicious_duplicate_evidence_pairs??0)].join(" | ")+" |");
  h.push("","## Free-tier and API eligibility","",
    "| Model | Provider | Eligibility | Error category |",
    "|---|---|---|---|");
  for(const r of rows)h.push("| "+[r.model_id,r.provider,r.model_eligible,
    r.error_category??(r.strict_error||"-")].join(" | ")+" |");
- h.push("","Each Cloudflare Workers AI request consumes neurons from a shared account-wide daily allowance. A successful request does not prove unlimited free usage.",
+ h.push("","## Editorial proxy metrics (require human review)", "",
+   "| Model | Opposing sources | Contraries with explicit counterpoint | Facet-grouped branches | Editorial stances | Expert references | Near duplicate text | Near duplicate IDs |",
+   "|---|---:|---:|---:|---:|---:|---:|---:|");
+ for(const r of rows)h.push("| "+[r.model_id,r.contrary_publications_distinct??0,
+   r.branches_with_contrary_and_counterpoint??0,r.facets_grouped??0,
+   r.editorial_stance_cited??0,r.expert_cited??0,
+   r.suspicious_duplicate_text_pairs??0,r.suspicious_duplicate_evidence_pairs??0].join(" | ")+" |");
+ h.push("","These are heuristics over synthetic evidence, not a semantic verdict. Full synthetic model dossiers are saved for direct editorial review.",
+   "","Each Cloudflare Workers AI request consumes neurons from a shared account-wide daily allowance. A successful request does not prove unlimited free usage.",
    "Missing GitHub Actions secrets produce NOT_TESTED, not a successful benchmark.",
    "Real production pools and secrets never enter the output artifact.");
  return h.join("\n")+"\n";
 };
 export async function runComparison({keys,cohorts=["small","full"],
- models=MODEL_SPECS,delayMs=8000,fetchImpl=fetch,
- output="out/w-review-trends-model-compare",maxCalls=10}){
+ models=MODEL_SPECS.filter(x=>FULL_TEST_IDS.includes(x.id)),delayMs=8000,fetchImpl=fetch,
+ output="out/w-review-trends-model-compare",maxCalls=3}){
  if(!Array.isArray(cohorts)||cohorts.some(c=>!COHORTS.includes(c)))throw Error("INVALID_COHORT");
  if(models.length*cohorts.length>maxCalls)throw Error("TEST_CALL_LIMIT_EXCEEDED");
- const rows=[];let n=0;
+ const rows=[];let n=0; const syntheticDossiers=[];
  for(const cohort of cohorts){
    const fixture=fixtureSet(cohort);
    for(const spec of models){
      if(n++>0&&delayMs>0)await sleep(delayMs);
-     const row=await callCandidate(spec,fixture,keys,fetchImpl,cohort==="full"?115000:85000);
+     const row=await callCandidate(spec,fixture,keys,fetchImpl,
+       cohort==="full"?115000:85000,output=>syntheticDossiers.push(output));
      rows.push(row);
      console.info(JSON.stringify({model_id:row.model_id,cohort:row.cohort,
        http_status:row.http_status,elapsed_ms:row.elapsed_ms,strict_valid:row.strict_valid,
@@ -259,16 +352,22 @@ export async function runComparison({keys,cohorts=["small","full"],
  mkdirSync(output,{recursive:true});
  writeFileSync(output+"/metrics.json",JSON.stringify(result,null,2)+"\n");
  writeFileSync(output+"/report.md",report(result));
+ // Texts are synthetic-only: this is for human appraisal of actual branch
+ // distinctions, counterpositions, and source attribution.
+ mkdirSync(output+"/dossiers",{recursive:true});
+ for(const item of syntheticDossiers)writeFileSync(
+   output+"/dossiers/"+item.cohort+"-"+item.model_id+".txt",item.content+"\n");
  if(process.env.GITHUB_STEP_SUMMARY)appendFileSync(process.env.GITHUB_STEP_SUMMARY,report(result));
  return result;
 }
 if(process.argv[1]&&fileURLToPath(import.meta.url)===process.argv[1]){
- const cohort=process.env.TEST_COHORT||"both";
+ const cohort=process.env.TEST_COHORT||"full";
  runComparison({
    keys:{gemini:process.env.GEMINI_API_KEY||process.env.GOOGLE_GEMINI_API_KEY||"",
      cfAccount:process.env.CLOUDFLARE_ACCOUNT_ID||"",
      cfToken:process.env.CLOUDFLARE_API_TOKEN||""},
    cohorts:cohort==="both"?["small","full"]:[cohort],
+   maxCalls:3,
    delayMs:8000
  }).catch(err=>{console.error("DIAGNOSTIC_FAILED "+safeError(err?.message||err));process.exitCode=1;});
 }
