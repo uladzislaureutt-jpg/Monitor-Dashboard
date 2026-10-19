@@ -6,7 +6,12 @@ export function scheduleHedgedBackup<T>(start:()=>Promise<T>,delayMs:number){
   let cancelled=false;
   const launch=():Promise<T>|null=>{
     if(cancelled)return null;
-    if(!current)current=Promise.resolve().then(start);
+    if(!current){
+      current=Promise.resolve().then(start);
+      // If the primary succeeds after the hedge starts, the unused
+      // backup response must never become an unhandled rejection.
+      void current.catch(()=>{});
+    }
     return current;
   };
   const timer=setTimeout(()=>{void launch();},Math.max(0,delayMs));
