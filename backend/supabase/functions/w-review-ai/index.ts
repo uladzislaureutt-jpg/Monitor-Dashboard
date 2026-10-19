@@ -5,7 +5,7 @@ import { dossierQualityMetrics } from "./dossier-quality-metrics.ts";
 import { scheduleHedgedBackup, groqDossierBudget } from "./dossier-provider-hedge.ts";
 import { synthesisResponseSchema, readSynthesisBlocks } from "./synthesis-blocks.ts";
 import { reconcileDossierDraft } from "./dossier-reconciliation.ts";
-import { normalizeReviewSourceLabels, poolSourceNames, inspectStyleOnlyCopy } from "./review-output-guard.ts";
+import { normalizeReviewSourceLabels, poolSourceNames, inspectStyleOnlyCopy, canonicalWReviewSourceName } from "./review-output-guard.ts";
 import { W_REVIEW_GEMINI_PRIMARY, W_REVIEW_GEMINI_FALLBACK, W_REVIEW_GEMINI_ROUTES, wGeminiGenerationConfig, wGeminiPromptJsonConfig, W_GEMINI_JSON_ONLY_SUFFIX, parseModelJsonObject, wGeminiStructuredConfig, type GeminiJsonMode } from "./gemini-routing.ts";
 import { prepareEvidence, structuredGeminiRequest, preparationBudget } from "./preparation.ts";
 import { evidenceV2Instructions, evidenceV2Schema, makeEvidenceDocuments, renderEvidenceMaterials, verifyEvidenceCards, verifyEvidenceCardsIndividually, formatEvidenceCard, type EvidenceCard } from "./evidence-v2.ts";
@@ -782,7 +782,7 @@ ${evidenceText}`;
     const cards = Array.isArray(body?.evidence_cards) ? body.evidence_cards.map((v: unknown) => String(v || "").trim()).filter(Boolean).slice(0, 30) : [];
     const styleProfile = String(body?.style_profile || "").trim().slice(0, 10000);
     const trends = Array.isArray(body?.trends) ? body.trends.slice(0, 5) : [];
-    const sourceNames = Array.isArray(body?.source_names) ? body.source_names.map((v: unknown) => String(v || "").trim()).filter(Boolean).slice(0, 30) : [];
+    const sourceNames = Array.isArray(body?.source_names) ? body.source_names.map((v: unknown) => canonicalWReviewSourceName(String(v || ""))).filter(Boolean).slice(0, 30) : [];
     if (!task || !draft || !cards.length || !trends.length) return json({ error: "missing_expand_input" }, 400);
     const d = body?.density || {};
     const quoteDensity = density(d.quotes), headlineDensity = density(d.headlines), expertDensity = density(d.experts);
@@ -876,7 +876,9 @@ ${styleProfile || "Живой сдержанный редакционный ст
     if (!cloudflareConfigured && !geminiApiKey) return json({ error: "w_review_no_synthesis_provider" }, 503);
     const task = String(body?.task || "").trim();
     if (!task || task.length > 2000) return json({ error: "invalid_task", max_chars: 2000 }, 400);
-    const synthesisRoute=body?.synthesis_route==="gemini_first"?"gemini_first":"cloudflare_first";
+    // Gemini 3.5 is the production first choice. The old Cloudflare-first
+    // client flag is ignored so already-installed applications follow policy.
+    const synthesisRoute="gemini_first";
     const targetChars = Math.max(1000, Math.min(8000, Number(body?.target_chars || 3000)));
     // A single planning uplift for every length preset: not a change to the
     // operator-requested length or the server-side acceptance interval.
@@ -936,7 +938,7 @@ ${styleProfile || "Живой сдержанный редакционный ст
        selectedIds.some(id=>!checkedDossier.dossier!.trends.some(t=>t.id===id)))
       return json({error:"w_review_invalid_selected_dossier_lines"},400);
     const synthesisDossier=makeSynthesisDossier(checkedDossier.dossier,selectedIds,planningTargetChars,cards,measuredMedian);
-    const sourceNames = Array.isArray(body?.source_names) ? body.source_names.map((v: unknown) => String(v || "").trim()).filter(Boolean).slice(0, 30) : [];
+    const sourceNames = Array.isArray(body?.source_names) ? body.source_names.map((v: unknown) => canonicalWReviewSourceName(String(v || ""))).filter(Boolean).slice(0, 30) : [];
     if (!cards.length || !trends.length) return json({ error: "missing_synthesis_input" }, 400);
     const d = body?.density || {};
     const quoteDensity = density(d.quotes), headlineDensity = density(d.headlines), expertDensity = density(d.experts);
@@ -975,9 +977,11 @@ ${styleProfile || "Живой сдержанный редакционный ст
 
 ЯЗЫК. Весь видимый текст ОБЗОРА, включая прямую речь, заголовки и цитаты, пиши НА РУССКОМ ЯЗЫКЕ. Исключение: цитаты на белорусском языке можно оставить по-белорусски. Иностранный оригинал из поля ORIGINAL не вставляй — используй точный перевод из TITLE_RU или QUOTES_WITH_SPEAKERS.RU. Названия зарубежных СМИ, организаций и собственные имена сохраняй в принятом написании, например «CNN», «The Guardian»; это НЕ разрешение оставлять английские цитаты. Никаких непереведённых английских предложений, английских цитатных вставок, Markdown или искусственных заголовков. Кавычки « », тире –.
 
-МАНЕРА. STYLE_PROFILE и настоящие связные абзацы STYLE_ONLY задают индивидуальный зачин, интонацию, ритм, способ сопоставления СМИ, развитие сюжета и способ смыслового завершения, а не только отдельные обороты. Метки ЗАЧИН / РАЗВИТИЕ / СОПОСТАВЛЕНИЕ / ЗАВЕРШЕНИЕ обозначают место фрагмента в авторском оригинале, а не обязательные рубрики итогового текста. Не копируй содержание образцов, включая любые длинные дословные фразы (12 и более слов); воспроизводи только ритм, интонацию и способ переходов. Построй общую аналитику по тенденциям: раскрывай подтверждённые детали, аргументы и контрпозиции, а не последовательность публикаций. Не навязывай абзацам одинаковую длину. Следуй измеренному авторскому ритму, чередуй короткие связки и развернутые аналитические абзацы в той мере, в какой это характерно автору. Не превращай финал в механическое повторение зачина. Не начинай заключительный абзац формулами «Таким образом», «Итоговый вывод», «Суммарно», «В совокупности» или «В заключение». Не сочиняй собственную итоговую цитату, выдавая её за подлинный заголовок. Законченный обзор заверши доказательной содержательной мыслью, а не школьным повтором написанного.
+МАНЕРА. STYLE_PROFILE и настоящие связные абзацы STYLE_ONLY задают индивидуальный зачин, интонацию, ритм, способ сопоставления СМИ, развитие сюжета и способ смыслового завершения, а не только отдельные обороты.
+СТИЛЕВОЙ ПРИОРИТЕТ W-REVIEW. Авторская манера фактографична и сдержанна. В каждом сюжетном направлении прежде всего раскрывай проверяемые обстоятельства, значимые числа и конкретные редакционные оценки; затем сопоставляй различающиеся позиции СМИ и подкрепляй сопоставление дословными выразительными цитатами из Evidence, когда они действительно доступны. Важны точные цитаты заголовков, оценки самих редакций и позиции названных экспертов, но не путай их друг с другом. Цитируй только реально содержащиеся в Evidence формулировки либо их предоставленный точный русский перевод; не составляй из пересказа собственную псевдоцитату. Если цитат нет, не выдумывай. Показывай, чем позиции отличаются и на каких фактах основаны; не заменяй сопоставление простым перечислением изданий.
+ЗАПРЕТ ПУСТОЙ РИТОРИКИ. Избегай самостоятельных пафосных обобщений и штампов вроде «тектонический сдвиг», «точка невозврата», «колоссальные потребности», «беспрецедентный кризис», «архитектура мировой безопасности» без точного подтверждения. Подобные выражения допустимы только как чётко атрибутированная цитата из Evidence. Предпочитай краткий проверяемый вывод из конкретных публикаций. Не повторяй один и тот же вывод в зачине, нескольких блоках и заключении. Метки ЗАЧИН / РАЗВИТИЕ / СОПОСТАВЛЕНИЕ / ЗАВЕРШЕНИЕ обозначают место фрагмента в авторском оригинале, а не обязательные рубрики итогового текста. Не копируй содержание образцов, включая любые длинные дословные фразы (12 и более слов); воспроизводи только ритм, интонацию и способ переходов. Построй общую аналитику по тенденциям: раскрывай подтверждённые детали, аргументы и контрпозиции, а не последовательность публикаций. Не навязывай абзацам одинаковую длину. Следуй измеренному авторскому ритму, чередуй короткие связки и развернутые аналитические абзацы в той мере, в какой это характерно автору. Не превращай финал в механическое повторение зачина. Не начинай заключительный абзац формулами «Таким образом», «Итоговый вывод», «Суммарно», «В совокупности» или «В заключение». Не сочиняй собственную итоговую цитату, выдавая её за подлинный заголовок. Законченный обзор заверши доказательной содержательной мыслью, а не школьным повтором написанного.
 
-АТРИБУЦИЯ В ТЕКСТЕ. Все названия СМИ — в русских кавычках «ёлочках», как в основном тексте, так и в библиографических скобках. Названия СМИ будут автоматически выделены курсивом при экспорте DOCX. Ссылки на публикации указывай перед ЗАКЛЮЧИТЕЛЬНОЙ точкой предложения, без точки непосредственно перед скобками: «... оценка («CNN», «Bloomberg»).», а НЕ «... оценка. (CNN, Bloomberg)». Приводи только те конкретные СМИ, чьи Evidence Cards подтверждают данное утверждение; не прикрывай спорные выводы перечнем всех изданий. Канонические источники: ${canonicalSources}.\nSOURCE_REGISTRY (внутренний индекс → реальное СМИ): ${sourceRegistry}.
+АТРИБУЦИЯ В ТЕКСТЕ. Все названия СМИ — в русских кавычках «ёлочках», как в основном тексте, так и в библиографических скобках. Названия СМИ будут автоматически выделены курсивом при экспорте DOCX. КАНОНИЧЕСКОЕ НАПИСАНИЕ. Аналитический центр Council on Foreign Relations в ссылках всегда указывай «CFR.org»: заглавные CFR, строчные .org, без косой черты после названия. Это относится только к названию источника; URL публикации не меняй. Ссылки на публикации указывай перед ЗАКЛЮЧИТЕЛЬНОЙ точкой предложения, без точки непосредственно перед скобками: «... оценка («CNN», «Bloomberg»).», а НЕ «... оценка. (CNN, Bloomberg)». Приводи только те конкретные СМИ, чьи Evidence Cards подтверждают данное утверждение; не прикрывай спорные выводы перечнем всех изданий. Канонические источники: ${canonicalSources}.\nSOURCE_REGISTRY (внутренний индекс → реальное СМИ): ${sourceRegistry}.
 Цитаты: ${densityRule("Цитаты",quoteDensity)}
 Заголовки: ${densityRule("Выразительные заголовки",headlineDensity)}
 Эксперты: ${densityRule("Эксперты",expertDensity)}
@@ -1049,10 +1053,8 @@ ${styleOnlyText || "Дополнительные фрагменты недост
       const {data,error} = await admin.rpc("w_review_quota_finish",{p_id:reservationId,p_success:success});
       return !error && data===true;
     }
-    // Operator-controlled A/B comparison on exactly the same Evidence,
-    // selected dossier and style: CF-main -> CF-backup -> Gemini 3.5, or
-    // Gemini 3.5 -> CF-main -> CF-backup. One successful provider completion
-    // per press; no rewriting or extra model request to inflate the length.
+    // Gemini 3.5 -> Cloudflare 120B main -> Cloudflare 120B backup.
+    // Same Evidence, dossier and style. One usable provider answer per press.
     const deadline=synthesisStart+W_REVIEW_REQUEST_BUDGET_MS;
     const remaining=()=>Math.max(0,deadline-Date.now()-9000);
     const providerBudget=(max:number)=>Math.max(0,Math.min(max,remaining()));
@@ -1069,13 +1071,11 @@ ${styleOnlyText || "Дополнительные фрагменты недост
     };
     const usable=(r:AiResult,p:any)=>r.ok&&typeof p?.review_text==="string"&&Boolean(p.review_text.trim());
     type SynthRoute="cloudflare_primary"|"cloudflare_backup"|"gemini_3_5";
-    const routes:SynthRoute[]=synthesisRoute==="gemini_first"
-      ?["gemini_3_5","cloudflare_primary","cloudflare_backup"]
-      :["cloudflare_primary","cloudflare_backup","gemini_3_5"];
+    const routes:SynthRoute[]=["gemini_3_5","cloudflare_primary","cloudflare_backup"];
     let result:AiResult={ok:false,status:503,retryAfter:null,detail:"all_synthesis_routes_unavailable"};
     let parsed:any=null;
-    let selectedProvider:"cloudflare"|"gemini"="cloudflare";
-    let selectedModel="@cf/openai/gpt-oss-120b";
+    let selectedProvider:"cloudflare"|"gemini"="gemini";
+    let selectedModel=W_REVIEW_GEMINI_PRIMARY;
     let cloudflareRoute:"primary"|"backup"|null=null;
     console.info("w_review_synthesis_start "+JSON.stringify({
       requested_route:synthesisRoute,planned_routes:routes,
@@ -1089,11 +1089,9 @@ ${styleOnlyText || "Дополнительные фрагменты недост
     for(const route of routes){
       const configured=route==="gemini_3_5"?Boolean(geminiApiKey):
         route==="cloudflare_primary"?cfPrimaryReady:cfBackupReady;
-      const budget=providerBudget(route==="gemini_3_5"
-        ?(synthesisRoute==="gemini_first"?70000:35000)
-        :(synthesisRoute==="cloudflare_first"?
-          (route==="cloudflare_primary"?65000:45000):
-          (route==="cloudflare_primary"?46000:36000)));
+      // Leave room for Cloudflare's ~52s JSON-object response if Gemini fails.
+      const budget=providerBudget(route==="gemini_3_5"?40000:
+        route==="cloudflare_primary"?70000:25000);
       if(!configured||budget<10000)continue;
       console.info("w_review_synthesis_route "+JSON.stringify({requested_route:synthesisRoute,
         route,timeout_ms:budget,elapsed_ms:Date.now()-synthesisStart}));
