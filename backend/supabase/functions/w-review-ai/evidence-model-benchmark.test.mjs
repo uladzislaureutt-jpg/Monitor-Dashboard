@@ -105,28 +105,52 @@ test("six-call diagnostic saves synthetic metrics without touching production",a
 test("Cloudflare internal 3036 means daily Neurons, while 3040 means temporary out of capacity",async()=>{
  const docs=testCorpus()[0].docs;
  const keys={cfAccount:"a",cfToken:"k"};
- for(const [code,name] of [[3036,"daily_neuron_quota"],[4006,"daily_neuron_quota"],[3040,"cloudflare_out_of_capacity"]]){
+ for(const [code,message,name] of [
+   [3036,"daily free allocation of 10,000 neurons","daily_neuron_quota"],
+   [4006,"used up your daily free allocation of 10,000 neurons","daily_neuron_quota"],
+   [4006,"Service temporarily at capacity","cloudflare_out_of_capacity"],
+   [4006,"Unspecified provider error","cloudflare_429_other"],
+   [3040,"Capacity temporarily exceeded","cloudflare_out_of_capacity"]
+ ]){
    const row=await callEvidenceModel(EVIDENCE_MODELS[2],docs,keys,
-     async()=>new Response(JSON.stringify({errors:[{code,message:"not logged"}]}),{
+     async()=>new Response(JSON.stringify({errors:[{code,message}]}),{
        status:429,headers:{"retry-after":"12"}}),1000);
    assert.equal(row.error_category,name);
    assert.equal(row.provider_error_code,code);
    assert.equal(row.retry_after_seconds,12);
  }
 });
-test("once a Cloudflare account is blocked by 4006 the later provider requests are skipped",async()=>{
+test("once Cloudflare explicitly reports daily quota, later requests are skipped",async()=>{
  const cohorts=testCorpus(),folder=mkdtempSync(join(tmpdir(),"w-evidence-quota-"));
  const called=[];
  try{
    const rows=await runEvidenceComparison({
      keys:{cfAccount:"a",cfToken:"k"},models:EVIDENCE_MODELS.slice(1),
      cohorts,delayMs:0,output:folder,fetchImpl:async url=>{
-       called.push(url);return new Response(JSON.stringify({errors:[{code:4006}]}),{status:429});
+       called.push(url);return new Response(JSON.stringify({errors:[{code:4006,message:"used up your daily free allocation of 10,000 neurons"}]}),{status:429});
      }
    });
    assert.equal(called.length,1);
    assert.equal(rows.length,4);
    assert.equal(rows[0].provider_error_code,4006);
    assert.ok(rows.slice(1).every(x=>x.error_category==="skipped_cloudflare_daily_neuron_quota"));
+ }finally{rmSync(folder,{recursive:true,force:true});}
+});
+
+test("capacity 4006 does not block unrelated Cloudflare model attempts",async()=>{
+ const folder=mkdtempSync(join(tmpdir(),"w-evidence-capacity-"));
+ const seen=[];
+ try{
+   const rows=await runEvidenceComparison({
+     keys:{cfAccount:"a",cfToken:"k"},models:EVIDENCE_MODELS.slice(1),
+     cohorts:[testCorpus()[0]],delayMs:0,output:folder,
+     fetchImpl:async url=>{
+       seen.push(url);return new Response(JSON.stringify({errors:[{
+         code:4006,message:"Service temporarily at capacity"
+       }]}),{status:429});
+     }
+   });
+   assert.equal(seen.length,2);
+   assert.ok(rows.every(x=>x.error_category==="cloudflare_out_of_capacity"));
  }finally{rmSync(folder,{recursive:true,force:true});}
 });
