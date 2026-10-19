@@ -1,0 +1,72 @@
+name: W-Review trend models comparison
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/supabase/functions/w-review-ai/trend-model-benchmark*.mjs'
+      - '.github/workflows/w-review-trend-models.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'backend/supabase/functions/w-review-ai/trend-model-benchmark*.mjs'
+      - '.github/workflows/w-review-trend-models.yml'
+  workflow_dispatch:
+    inputs:
+      cohort:
+        description: 'Small = 8 publications; full = 18 publications / 167 Evidence; both = up to 10 calls'
+        type: choice
+        required: true
+        default: small
+        options: [small, full, both]
+
+permissions:
+  contents: read
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Offline simulation and consistency checks (no provider calls)
+        run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/trend-model-benchmark.test.mjs
+      - name: Check actual W-Review dossier validator regressions
+        run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/editorial-dossier.test.mjs
+
+  live-compare:
+    if: github.event_name != 'pull_request'
+    needs: static-checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 33
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Record which providers have required secrets (no values printed)
+        id: credentials
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GOOGLE_GEMINI_API_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -n "$GEMINI_API_KEY" ]; then echo "gemini=yes" >> "$GITHUB_OUTPUT"; else echo "::notice::Gemini secret absent; Gemini will be NOT_TESTED"; fi
+          if [ -n "$CLOUDFLARE_ACCOUNT_ID" ] && [ -n "$CLOUDFLARE_API_TOKEN" ]; then echo "cloudflare=yes" >> "$GITHUB_OUTPUT"; else echo "::notice::Cloudflare ID or token absent; all Cloudflare models will be NOT_TESTED"; fi
+      - name: Compare Gemini 3.5 and four free-eligible Cloudflare Workers AI models
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GOOGLE_GEMINI_API_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TEST_COHORT: ${{ github.event_name == 'workflow_dispatch' && inputs.cohort || 'small' }}
+        run: node --experimental-strip-types backend/supabase/functions/w-review-ai/trend-model-benchmark.mjs
+      - name: Save synthetic-only metrics and comparison
+        uses: actions/upload-artifact@v4
+        with:
+          name: w-review-trend-models-${{ github.run_number }}
+          path: out/w-review-trends-model-compare/
+          retention-days: 14
+          if-no-files-found: error
