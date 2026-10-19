@@ -21,7 +21,7 @@ test("Gemini-first and Cloudflare-first prioritize configured providers without 
   assert.ok(synth.includes('model:selectedModel,provider:selectedProvider,cloudflare_route:cloudflareRoute,requested_route:synthesisRoute'));
 });
 test("each provider is time-bounded below the Edge request limit",()=>{
-  assert.ok(synth.includes("deadline=synthesisStart+135000"));
+  assert.ok(synth.includes("deadline=synthesisStart+W_REVIEW_REQUEST_BUDGET_MS"));
   assert.ok(synth.includes("remaining=()=>Math.max(0,deadline-Date.now()-9000)"));
   assert.ok(synth.includes("if(!configured||budget<10000)continue"));
   assert.ok(synth.includes("callCloudflare(isBackup?cfBackupId:cfId"));
