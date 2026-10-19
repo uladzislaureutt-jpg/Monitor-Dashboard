@@ -878,6 +878,9 @@ ${styleProfile || "Живой сдержанный редакционный ст
     if (!task || task.length > 2000) return json({ error: "invalid_task", max_chars: 2000 }, 400);
     const synthesisRoute=body?.synthesis_route==="gemini_first"?"gemini_first":"cloudflare_first";
     const targetChars = Math.max(1000, Math.min(8000, Number(body?.target_chars || 3000)));
+    // A single planning uplift for every length preset: not a change to the
+    // operator-requested length or the server-side acceptance interval.
+    const planningTargetChars = Math.round(targetChars * 1.17);
     const submittedCards = Array.isArray(body?.evidence_cards) ? body.evidence_cards : [];
     if (submittedCards.length > 18) return json({error:"w_review_max_articles",limit:18},400);
     const cards = submittedCards.map((v: unknown) => String(v || "").trim()).filter(Boolean);
@@ -932,7 +935,7 @@ ${styleProfile || "Живой сдержанный редакционный ст
     if(!selectedIds.length||new Set(selectedIds).size!==selectedIds.length||
        selectedIds.some(id=>!checkedDossier.dossier!.trends.some(t=>t.id===id)))
       return json({error:"w_review_invalid_selected_dossier_lines"},400);
-    const synthesisDossier=makeSynthesisDossier(checkedDossier.dossier,selectedIds,targetChars,cards,measuredMedian);
+    const synthesisDossier=makeSynthesisDossier(checkedDossier.dossier,selectedIds,planningTargetChars,cards,measuredMedian);
     const sourceNames = Array.isArray(body?.source_names) ? body.source_names.map((v: unknown) => String(v || "").trim()).filter(Boolean).slice(0, 30) : [];
     if (!cards.length || !trends.length) return json({ error: "missing_synthesis_input" }, 400);
     const d = body?.density || {};
@@ -989,7 +992,7 @@ STYLE_ONLY (образцы авторской манеры, НЕ ИСТОЧНИ�
 ${styleOnlyText || "Дополнительные фрагменты недоступны. Следуй STYLE_PROFILE."}
 
 РЕЗУЛЬТАТ. Верни ОДИН JSON с массивом blocks и массивами section_titles, bold_phrases. Каждый blocks содержит block_id из единого плана и paragraphs — массив естественных абзацев готового обзора. Верни каждый блок ровно один раз в порядке плана: opening, выбранные line_*, ending. Это одно непрерывное авторское повествование, не отдельные статьи; границы блоков и их ID читателю не показываются. Объём и ориентиры абзацев бери только из единого плана. Короткие связки допустимы; общего минимума длины абзаца нет. Обязательны раскрытие всех выбранных сюжетов и общая длина. Не выдавай план вместо текста. section_titles:[] и bold_phrases:[] допустимы. Не вставляй Markdown ** или __. Без промежуточных замечаний.` },
-        { role: "user", content: `ЗАДАНИЕ ОПЕРАТОРА:\n${task}\n\nРЕДАКЦИОННОЕ ДОСЬЕ И РАСПРЕДЕЛЕНИЕ ОБЪЁМА:\n${trendText}\n\nИНСТРУКЦИЯ ДЛЯ ЭТАПА:\n${String(body?.stage_note || "").slice(0,500)}\n\nEVIDENCE CARDS:\n${evidenceText}\n\nФИНАЛЬНОЕ ЗАДАНИЕ: создай ОДИН непрерывный авторский аналитический обзор в массиве blocks, с общим объёмом после соединения абзацев ${targetChars} знаков с пробелами, допустимый коридор ${lengthMinimum}–${lengthMaximum}. Следуй единому плану блоков, ориентир суммарно ${paragraphTarget} естественных абзацев разной длины. Бюджет каждого блока включает атрибуцию и переходы; не заменяй развёрнутое раскрытие кратким упоминанием. Если фактологического материала достаточно, используй его для развития аргументации, а не сворачивай анализ раньше достижения ${lengthMinimum} знаков. Каждый следующий развивает общую мысль, а не описывает следующее СМИ. После обработки всех тенденций заверши подтверждённым содержательным акцентом, не формальной сводкой. Не допускай ни одной непереведённой англоязычной цитаты (кроме официальных названий), расставляй источники только по образцу «... («CNN», «BBC News»).», не создавай собственных псевдоцитат и шаблонной итоговой концовки. Не используй Markdown, ненужные подзаголовки и списки источников.` }],
+        { role: "user", content: `ЗАДАНИЕ ОПЕРАТОРА:\n${task}\n\nРЕДАКЦИОННОЕ ДОСЬЕ И РАСПРЕДЕЛЕНИЕ ОБЪЁМА:\n${trendText}\n\nИНСТРУКЦИЯ ДЛЯ ЭТАПА:\n${String(body?.stage_note || "").slice(0,500)}\n\nEVIDENCE CARDS:\n${evidenceText}\n\nФИНАЛЬНОЕ ЗАДАНИЕ: создай ОДИН непрерывный авторский аналитический обзор в массиве blocks. Внутренний ориентир модели — ${planningTargetChars} знаков с пробелами (плановый запас +17% относительно выбранных оператором ${targetChars} знаков для компенсации систематического недобора). Развивай содержание и распределяй объём по этому увеличенному плану; не сокращай заранее аналитические блоки до номинала оператора. Следуй единому плану блоков, ориентир суммарно ${paragraphTarget} естественных абзацев разной длины. Бюджет каждого блока включает атрибуцию и переходы; не заменяй развёрнутое раскрытие кратким упоминанием. Если фактологического материала достаточно, используй его для развития аргументации, а не сворачивай анализ раньше достижения ${lengthMinimum} знаков. Каждый следующий развивает общую мысль, а не описывает следующее СМИ. После обработки всех тенденций заверши подтверждённым содержательным акцентом, не формальной сводкой. Не допускай ни одной непереведённой англоязычной цитаты (кроме официальных названий), расставляй источники только по образцу «... («CNN», «BBC News»).», не создавай собственных псевдоцитат и шаблонной итоговой концовки. Не используй Markdown, ненужные подзаголовки и списки источников.` }],
       response_format: {type:"json_schema",json_schema:{name:"w_review_blocks_v1",strict:true,
         schema:synthesisResponseSchema(synthesisDossier.blocks)}},
     };
@@ -1011,7 +1014,7 @@ ${styleOnlyText || "Дополнительные фрагменты недост
     // Dynamic output budget is tied to the requested visible Russian-language
     // character count. The budget must also accommodate model reasoning and the
     // JSON wrapper. It is a CEILING, not a guaranteed response length.
-    const estimatedVisibleTokens=Math.ceil(targetChars/1.25);
+    const estimatedVisibleTokens=Math.ceil(planningTargetChars/1.25);
     const estimatedReasoningTokens=Math.max(1000,
       Math.min(3000,Math.ceil(estimatedVisibleTokens*0.4)));
     const synthesisOutputTokenBudget=Math.min(11000,
@@ -1079,7 +1082,7 @@ ${styleOnlyText || "Дополнительные фрагменты недост
       cloudflare_response_format:cloudflareSynthesisPayload.response_format.type,
       cards:cards.length,selected_trends:selectedIds.length,
       required_branches:synthesisDossier.requiredBranches,
-      target_chars:targetChars,evidence_chars:evidenceText.length,
+      target_chars:targetChars,model_target_chars:planningTargetChars,evidence_chars:evidenceText.length,
       style_chars:styleProfile.length,dossier_chars:trendText.length,
       output_tokens:synthesisOutputTokenBudget,quota_reserved:Boolean(reservationId)
     }));
@@ -1153,7 +1156,7 @@ ${styleOnlyText || "Дополнительные фрагменты недост
     ];
     if(!lengthOk) preflightWarnings.push(`Объём ${actualChars} знаков вне допуска ${lengthMinimum}–${lengthMaximum}; текст сохранён для редактирования.`);
     console.info("w_review_single_pass "+JSON.stringify({
-      provider:selectedProvider,model:selectedModel,target_chars:targetChars,
+      provider:selectedProvider,model:selectedModel,target_chars:targetChars,model_target_chars:planningTargetChars,
       actual_chars:actualChars,within_tolerance:lengthOk,
       requested_route:synthesisRoute,cloudflare_route:cloudflareRoute,
       requested_output_token_budget:selectedProvider==="cloudflare"?synthesisOutputTokenBudget:16000,
@@ -1184,7 +1187,7 @@ ${styleOnlyText || "Дополнительные фрагменты недост
         ?parsed.bold_phrases.map((v:unknown)=>String(v||"").trim())
            .filter((v:string)=>v&&reviewText.includes(v)).slice(0,4):[],
       model:selectedModel,provider:selectedProvider,cloudflare_route:cloudflareRoute,requested_route:synthesisRoute,
-      target_chars:targetChars,actual_chars:actualChars,
+      target_chars:targetChars,model_target_chars:planningTargetChars,actual_chars:actualChars,
       length_within_tolerance:lengthOk,usage:result.usage,preflight_warnings:preflightWarnings
 
     });
