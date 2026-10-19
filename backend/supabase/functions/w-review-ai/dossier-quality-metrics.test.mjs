@@ -76,3 +76,23 @@ test("detects one-article-per-branch template and genuine cross-outlet contrast"
   assert.equal(together.branches_with_single_publication,0);
   assert.equal(together.cross_publication_contrary_branches,1);
 });
+
+test("technical review coverage is never counted as genuine semantic clustering",()=>{
+ const primary=branch(["P01:E01"],[],"");
+ const queued=branch(["P02:E01","P03:E01"],[],"");
+ queued.required=false;
+ const raw=dossier([primary]);
+ raw.trends.push({
+  id:"T2",title:"Публикации для редакционного распределения",
+  summary:"Материалы требуют редакционного распределения.",
+  thesis:"Эти публикации требуют отдельного внимания.",
+  operator_optional:true,optional_reason:"Это техническая подборка.",
+  technical_review_queue:true,
+  branches:[queued]
+ });
+ const m=dossierQualityMetrics(raw,docs);
+ assert.equal(m.linked_publications,3);
+ assert.equal(m.genuinely_grouped_publications,1);
+ assert.equal(m.publications_needing_editorial_distribution,2);
+ assert.equal(m.technical_review_queues,1);
+});

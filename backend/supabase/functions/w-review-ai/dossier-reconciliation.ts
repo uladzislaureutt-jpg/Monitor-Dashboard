@@ -99,23 +99,29 @@ export function reconcileDossierDraft(raw:any,cards:string[]):DossierRepairResul
   // infer publication priority; it remains OFF until the operator chooses.
   const allAdded:string[]=[];
   if(missing.length){
-    // The schema allows up to 5 trends and 9 branches per trend.
-    // A single 9-source review queue silently invalidated otherwise useful
-    // maps when 10+ sources were left unlinked by just two invalid citations.
-    // Use ONLY available slots; never create >5 trends or discard a source.
-    const queueCount=Math.ceil(missing.length/9);
-    if(queueCount>5-trends.length)return null;
-    for(let start=0;start<missing.length;start+=9){
-      const queuePubs=missing.slice(start,start+9);
+    // Authored trends have 9 branches maximum. A single explicitly marked
+    // technical review queue may contain up to 18 *unassigned* sources, but
+    // ONLY if using nine-source queues would exceed the remaining trend slots.
+    // Review queues are never silently promoted to editorial judgments.
+    const freeTrendSlots=5-trends.length;
+    const standardQueues=Math.ceil(missing.length/9);
+    const reviewBatchSize=standardQueues>freeTrendSlots&&
+      freeTrendSlots>0&&missing.length<=18?18:9;
+    const queueCount=Math.ceil(missing.length/reviewBatchSize);
+    if(queueCount>freeTrendSlots)return null;
+    for(let start=0;start<missing.length;start+=reviewBatchSize){
+      const queuePubs=missing.slice(start,start+reviewBatchSize);
       const waiting:any[]=[];
       for(const pub of queuePubs){
-        const proven=ix.entries.filter(e=>e.publication===pub&&e.kind!=="headline"&&
-          isRussianDossierProse(e.summary));
-        const row=proven[0];
+        const substantive=ix.entries.filter(e=>e.publication===pub&&e.kind!=="headline");
+        const row=substantive.find(e=>isRussianDossierProse(e.summary))||
+          substantive[0]||ix.entries.find(e=>e.publication===pub);
         if(!row)return null;
+        const groundedClaim=isRussianDossierProse(row.summary)?trim(row.summary,550):
+          "Имеется проверенная запись Evidence; содержание требует редакционной проверки и распределения по темам.";
         waiting.push({id:"B"+(waiting.length+1),
           title:"Материал "+pub+" — "+row.source,
-          claim:trim(row.summary,550),mechanism:"",counterpoint:"",limitation:"",
+          claim:groundedClaim,mechanism:"",counterpoint:"",limitation:"",
           significance:"Материал подтверждён, но модель не распределила его по аналитическим сюжетам.",
           priority:"medium",required:false,evidence_ids:[row.id],contrary_evidence_ids:[]});
         linked.add(row.id);allAdded.push(pub);
@@ -123,6 +129,7 @@ export function reconcileDossierDraft(raw:any,cards:string[]):DossierRepairResul
       const queueIndex=Math.floor(start/9)+1;
       trends.push({
         id:"T"+(trends.length+1),
+        technical_review_queue:reviewBatchSize>9,
         title:"Публикации для редакционного распределения"+
           (queueCount>1?" — часть "+queueIndex:""),
         summary:"Материалы присутствуют в доказательной базе, но не получили достоверных ссылок в построенных сюжетах.",

@@ -4,6 +4,7 @@ export type DossierBranch = {id:string;title:string;claim:string;mechanism:strin
   counterpoint:string;limitation:string;significance:string;priority:"high"|"medium"|"low";
   required:boolean;evidence_ids:string[];contrary_evidence_ids:string[]};
 export type DossierTrend = {id:string;title:string;summary:string;thesis:string;
+  technical_review_queue?:boolean;
   sources:string[];branches:DossierBranch[];operator_optional:boolean;optional_reason:string};
 export type DossierCoverage = {publication_id:string;status:"used"|"supporting"|"duplicate"|"excluded"|"insufficient"|"reserve";
   reason:string;evidence_ids:string[]};
@@ -151,7 +152,16 @@ export function normalizeDossier(raw:any,cards:string[],options:DossierValidatio
     if(!isRussianDossierProse(t?.title)||!isRussianDossierProse(t?.summary)||
        !isRussianDossierProse(t?.thesis))
       return {dossier:null,error:"dossier_non_russian_trend_"+id};
-    if(!Array.isArray(t?.branches)||t.branches.length<1||t.branches.length>9)
+    // Model-authored analytical trends remain capped at nine branches.
+    // Only a source-grounded, explicitly marked EDITOR REVIEW queue generated
+    // by our reconciliation code may hold up to 18 unassigned publications.
+    // These are NOT model-authored analytic conclusions.
+    const technicalReviewQueue=t?.technical_review_queue===true &&
+      t?.operator_optional===true &&
+      /^Публикации для редакционного распределения(?: — часть \d+)?$/.test(String(t?.title||"")) &&
+      Array.isArray(t?.branches)&&t.branches.every((b:any)=>b?.required===false);
+    const branchLimit=technicalReviewQueue?18:9;
+    if(!Array.isArray(t?.branches)||t.branches.length<1||t.branches.length>branchLimit)
       return {dossier:null,error:"dossier_invalid_branches"};
     const optional=typeof t?.operator_optional==="boolean"?t.operator_optional:false;
     const optionalReason=txt(t?.optional_reason,320);
@@ -183,7 +193,9 @@ export function normalizeDossier(raw:any,cards:string[],options:DossierValidatio
     const sources=uniq(branches.flatMap(b=>b.evidence_ids.concat(b.contrary_evidence_ids))
       .map(ref=>index.byId.get(ref)!.source));
     trends.push({id,title:txt(t?.title,160),summary:txt(t?.summary,450),
-      thesis:txt(t?.thesis,500),sources,branches,operator_optional:optional,optional_reason:optionalReason});
+      thesis:txt(t?.thesis,500),sources,branches,
+      ...(technicalReviewQueue?{technical_review_queue:true}:{}),
+      operator_optional:optional,optional_reason:optionalReason});
   }
   if(!Array.isArray(raw?.coverage)||raw.coverage.length!==all.size)
     return {dossier:null,error:"dossier_incomplete_publication_inventory"};

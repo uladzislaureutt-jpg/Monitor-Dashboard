@@ -13,6 +13,17 @@ export function dossierQualityMetrics(dossier:EditorialDossier,cards:string[]){
       references:all.size,
       pubs:new Set([...all].map(id=>source.byId.get(id)!.publication))};
   }));
+  // Model-authored topical coverage is not the same as technical review-queue
+  // coverage. Never claim 18/18 were analytically grouped when ten were only
+  // parked for operator review.
+  const technicalReviewTrends=dossier.trends.filter(t=>t.technical_review_queue===true);
+  const editorialTrends=dossier.trends.filter(t=>t.technical_review_queue!==true);
+  const analyticLinked=new Set(editorialTrends.flatMap(t=>t.branches.flatMap(b=>
+    b.evidence_ids.concat(b.contrary_evidence_ids))).map(id=>
+      source.byId.get(id)?.publication).filter(Boolean));
+  const reviewLinked=new Set(technicalReviewTrends.flatMap(t=>t.branches.flatMap(b=>
+    b.evidence_ids.concat(b.contrary_evidence_ids))).map(id=>
+      source.byId.get(id)?.publication).filter(Boolean));
   const uniqueEvidence=new Set(branchRows.flatMap(b=>[...b.ids]));
   const uniqueContrary=new Set(branchRows.flatMap(b=>[...b.contrary]));
   const pubs=new Set([...uniqueEvidence].map(id=>source.byId.get(id)!.publication));
@@ -33,6 +44,9 @@ export function dossierQualityMetrics(dossier:EditorialDossier,cards:string[]){
     publications_total:cards.length,source_evidence_total:source.entries.length,
     source_non_headline_total:nonHeadline.size,
     trends:dossier.trends.length,branches:branchRows.length,
+    genuinely_grouped_publications:analyticLinked.size,
+    publications_needing_editorial_distribution:reviewLinked.size,
+    technical_review_queues:technicalReviewTrends.length,
     optional_trends:dossier.trends.filter(t=>t.operator_optional).length,
     mandatory_branches:dossier.trends.flatMap(t=>t.branches).filter(b=>b.required).length,
     unique_used_evidence:uniqueEvidence.size,

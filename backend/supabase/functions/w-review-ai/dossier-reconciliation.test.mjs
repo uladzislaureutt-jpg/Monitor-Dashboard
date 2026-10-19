@@ -229,3 +229,81 @@ test("fabricated contrary Evidence is quarantined; unsubstantiated counterpoint 
  assert.equal(fixed.draft.trends[0].branches[0].counterpoint,"");
  assert.equal(normalizeDossier(fixed.draft,cards,{requireEveryDistinctSource:true}).error,null);
 });
+
+test("18 publications, four valid trends and ten unassigned articles form ONE explicitly optional 10-source review queue",()=>{
+ const pool=Array.from({length:18},(_,i)=>[
+  "ID: P"+String(i+1).padStart(2,"0"),
+  "TITLE_RU: Международный сюжет",
+  "ИСТОЧНИК: «Издание "+(i+1)+"»",
+  "URL: https://source.invalid/item-"+i,
+  "E01 [fact/P001] Проверенная фактическая информация из статьи. | SOURCE: «текст»"
+ ].join("\n"));
+ const ids=Array.from({length:18},(_,i)=>"P"+String(i+1).padStart(2,"0"));
+ const trends=Array.from({length:4},(_,i)=>({
+  id:"T"+(i+1),title:"Самостоятельная тенденция "+(i+1),
+  summary:"Несколько редакций рассматривают международные события.",
+  thesis:"Источники освещают разные аспекты общей политической темы.",
+  operator_optional:false,optional_reason:"",
+  branches:[coreBranch(ids.slice(i*2,i*2+2).map(pub=>pub+":E01"))]
+ }));
+ const original={trends,coverage:ids.map(pub=>({
+  publication_id:pub,status:"used",
+  reason:"Публикация подтверждает важный аналитический сюжет."
+ })),inventory:{quotes:0,headlines:18,experts:0}};
+ assert.equal(normalizeDossier(original,pool,{requireEveryDistinctSource:true}).error,
+  "dossier_unsubstantiated_publication");
+ const repaired=reconcileDossierDraft(original,pool);
+ assert.ok(repaired,"10 unlinked publications must not be rejected merely for a nine-branch review cap");
+ assert.equal(repaired.draft.trends.length,5);
+ const queue=repaired.draft.trends[4];
+ assert.equal(queue.technical_review_queue,true);
+ assert.equal(queue.operator_optional,true);
+ assert.ok(queue.title.startsWith("Публикации для редакционного распределения"));
+ assert.equal(queue.branches.length,10);
+ assert.ok(queue.branches.every(b=>b.required===false));
+ assert.deepEqual(repaired.additionalSources,ids.slice(8));
+ assert.ok(repaired.draft.trends.slice(0,4).every(t=>t.branches.length===1));
+ const checked=normalizeDossier(repaired.draft,pool,{requireEveryDistinctSource:true});
+ assert.equal(checked.error,null);
+ assert.equal(checked.dossier.trends[4].technical_review_queue,true);
+ const serialized=JSON.parse(JSON.stringify(checked.dossier));
+ assert.equal(normalizeDossier(serialized,pool).error,null,
+   "the saved dossier must remain valid for the subsequent synthesis request");
+});
+test("unmarked model-authored trend cannot bypass the strict nine-branch limit",()=>{
+ const card=["ID: P01","ИСТОЧНИК: «Источник»",
+  "E01 [fact/P001] Настоящее подтверждённое утверждение. | SOURCE: «текст»"].join("\n");
+ const row=draft();
+ row.trends[0].branches=Array.from({length:10},()=>coreBranch(["P01:E01"]));
+ assert.equal(normalizeDossier(row,[card],{requireEveryDistinctSource:true}).error,
+   "dossier_invalid_branches");
+});
+test("review queue preserves non-Russian evidence without making up a translation",()=>{
+ const pool=Array.from({length:18},(_,i)=>[
+ "ID: P"+String(i+1).padStart(2,"0"),
+ "ИСТОЧНИК: «Тестовое СМИ»",
+ "URL: https://example.invalid/stories/"+i,
+ "E01 [fact/P001] "+(i>7?"International arguments and editor positions.":"Проверенный факт международной тематики.")+" | SOURCE: «fragment»"
+ ].join("\n"));
+ const refs=Array.from({length:8},(_,i)=>"P"+String(i+1).padStart(2,"0")+":E01");
+ const raw={
+  trends:Array.from({length:4},(_,i)=>({
+   id:"T"+(i+1),title:"Аналитический сюжет "+i,
+   summary:"Несколько изданий сравнивают международные события.",
+   thesis:"Обсуждаются возможные политические последствия.",
+   operator_optional:false,optional_reason:"",
+   branches:[coreBranch(refs.slice(i*2,i*2+2))]
+  })),
+  coverage:pool.map((_,i)=>({
+    publication_id:"P"+String(i+1).padStart(2,"0"),
+    status:"used",reason:"Публикация рассматривает различные аспекты происходящего."
+  })),
+  inventory:{quotes:0,headlines:18,experts:0}
+ };
+ const repaired=reconcileDossierDraft(raw,pool);
+ assert.ok(repaired);
+ assert.equal(repaired.additionalSources.length,10);
+ assert.ok(repaired.draft.trends[4].branches.every(b=>
+   b.claim.includes("требует редакционной проверки")));
+ assert.equal(normalizeDossier(repaired.draft,pool,{requireEveryDistinctSource:true}).error,null);
+});
