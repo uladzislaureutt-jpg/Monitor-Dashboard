@@ -350,6 +350,12 @@ const report=(res)=>{
    r.branches_with_contrary_and_counterpoint??0,r.facets_grouped??0,
    r.editorial_stance_cited??0,r.expert_cited??0,
    r.suspicious_duplicate_text_pairs??0,r.suspicious_duplicate_evidence_pairs??0].join(" | ")+" |");
+ h.push("","## Five known synthetic opposition pairs","",
+   "| Model | Linked in dossier | Explicitly contrasted within a branch |",
+   "|---|---:|---:|");
+ for(const r of rows)h.push("| "+[r.model_id,
+   (r.gold_opposition_pairs_linked??0)+"/"+(r.gold_opposition_pairs_total??0),
+   (r.gold_opposition_pairs_contrasted??0)+"/"+(r.gold_opposition_pairs_total??0)].join(" | ")+" |");
  h.push("","These are heuristics over synthetic evidence, not a semantic verdict. Full synthetic model dossiers are saved for direct editorial review.",
    "","Each Cloudflare Workers AI request consumes neurons from a shared account-wide daily allowance. A successful request does not prove unlimited free usage.",
    "Missing GitHub Actions secrets produce NOT_TESTED, not a successful benchmark.",
