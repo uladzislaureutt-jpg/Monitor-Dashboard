@@ -555,16 +555,16 @@ ${sections.join("; ")}.
         {role:"system",content:DOSSIER_INSTRUCTIONS+
           "\nОбязательное условие: JSON содержит trends, coverage по всем "+cards.length+
           " материалам и inventory. Каждый evidence_id должен встречаться в переданной базе."+
-          "\nКОМПАКТНОСТЬ: краткие русские поля без повторов; 2–5 проверенных идентификаторов на ветку. Источники из разных СМИ независимы."+
+          "\nКОМПАКТНОСТЬ: краткие русские поля без повторов; используй все действительно значимые доказательства, а не фиксированное число 2–5 ссылок. Не подменяй аналитический вывод перечислением ID. Источники из разных СМИ независимы."+
           "\nАдреса Evidence КОПИРУЙ строго из списка выше, не придумывай и не округляй номера. Форма исключительно P01:E01; для любой Pxx должен существовать хотя бы один содержательный evidence_id в ветках."},
         {role:"user",content:mapUserInput}
       ]
     };
-    // Cloudflare stays first. If it is still pending after 50s, begin
+    // Cloudflare stays first. If it is still pending after 70s, begin
     // Gemini in parallel without discarding any source or truncating Evidence.
     // Primary is always checked first; Gemini is used only if it fails.
     const runGeminiMap=()=>{
-      const timeout=Math.min(66000,availableTime());
+      const timeout=Math.min(56000,availableTime());
       console.info("w_review_map_route "+JSON.stringify({provider:"gemini",
         model:W_REVIEW_GEMINI_PRIMARY,timeout_ms:timeout}));
       return structuredGeminiRequest({deadline:Date.now()+timeout,initialMode:"json",
@@ -576,13 +576,13 @@ ${sections.join("; ")}.
     };
     const cfRoute=cfPrimaryReady?"primary":cfBackupReady?"backup":null;
     const geminiHedge=cfRoute&&geminiApiKey?
-      scheduleHedgedBackup(runGeminiMap,50000):null;
+      scheduleHedgedBackup(runGeminiMap,70000):null;
     if(cfRoute&&availableTime()>=6000){
       const account=cfRoute==="primary"?cfPrimaryId:cfBackupId;
       const token=cfRoute==="primary"?cfPrimaryToken:cfBackupToken;
       const timeout=Math.min(101000,availableTime());
       console.info("w_review_map_route "+JSON.stringify({route:cfRoute,provider:"cloudflare",
-        timeout_ms:timeout,hedge_after_ms:geminiHedge?50000:null,
+        timeout_ms:timeout,hedge_after_ms:geminiHedge?70000:null,
         request_chars:JSON.stringify(cfPayload).length}));
       const started=Date.now();
       const response=await callCloudflare(account,token,cfPayload,timeout);
