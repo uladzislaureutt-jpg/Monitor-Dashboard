@@ -32,7 +32,7 @@ export async function probeOne(spec,keys,fetchImpl=fetch){
   const started=Date.now(),row={id:spec.id,model:spec.model,max_tokens:spec.max_tokens};
   if(!keys.account||!keys.token)return {...row,status:0,error_category:"missing_secret",elapsed_ms:0};
   const controller=new AbortController();
-  const t=setTimeout(()=>controller.abort(),25000);
+  const t=setTimeout(()=>controller.abort(),spec.evidence?100000:25000);
   try{
     const docs=spec.evidence?testCorpus()[0].docs:null;
     const input=docs?identicalEvidencePrompt(docs):"Reply with exactly the word OK.";
@@ -106,7 +106,7 @@ export async function runProbes({keys,fetchImpl=fetch,output="out/cloudflare-400
     }};
   writeFileSync(output+"/results.json",JSON.stringify(all,null,2)+"\n");
   const table=[
-    "# Cloudflare 4006 minimal diagnostic",
+    "# Cloudflare 4006 and Evidence-size diagnostic",
     "", "Seven tiny control prompts and at most two synthetic evidence requests. The 12,000 limit is an output ceiling, not a requested length.",
     "", "| Model | Max tokens | HTTP | Internal code | Message category | Time ms |",
     "|---|---:|---:|---:|---|---:|",
