@@ -8,7 +8,7 @@ import { useI18n } from "../i18n";
 import { buildStylePattern } from "../wReviewStyle";
 import { writeEvidenceCheckpoint } from "../wReviewEvidenceCheckpoint";
 import { isEvidencePrepared, pendingEvidenceEntries } from "../wReviewEvidenceProgress";
-import { resolvePoolMarkersForExport } from "../wReviewSourceLabels";
+import { resolvePoolMarkersForExport, canonicalWReviewSourceName } from "../wReviewSourceLabels";
 
 const W_EVIDENCE_CONTRACT_VERSION = 6; // Preserve verified evidence and do not reanalyse articles.
 const W_MAP_CONTRACT_VERSION = 8; // Recalculate only the editorial dossier.
@@ -229,7 +229,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     }));
   }
   function evidenceCards(items: WItem[]) {
-    return items.map((item,index) => `ID: P${String(index+1).padStart(2,"0")}\nИСТОЧНИК: «${item.source}»\nКАТАЛОЖНЫЙ_РЕГИОН: ${item.region||"не указан"}\nЗАГОЛОВОК: ${item.title}\nURL: ${item.url||"не указан"}\n${item.evidence}`);
+    return items.map((item,index) => `ID: P${String(index+1).padStart(2,"0")}\nИСТОЧНИК: «${canonicalWReviewSourceName(item.source)}»\nКАТАЛОЖНЫЙ_РЕГИОН: ${item.region||"не указан"}\nЗАГОЛОВОК: ${item.title}\nURL: ${item.url||"не указан"}\n${item.evidence}`);
   }
 
   function addItem(input: { title: string; source: string; region?: string; url?: string; text: string }) {
@@ -533,7 +533,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         trends: selectedTrends,
         dossier: state.editorialMap!,
         density: state.density,
-        sourceNames: Array.from(new Set(state.items.map((item) => item.source.trim()).filter(Boolean))),
+        sourceNames: Array.from(new Set(state.items.map((item) => canonicalWReviewSourceName(item.source)).filter(Boolean))),
       }, (seconds) => setMessage(be ? `Ліміт Groq. Генерацыя працягнецца праз ~${seconds} с…` : `Лимит Groq. Генерация продолжится автоматически через ~${seconds} с…`));
       setState(current=>({...current,reviewText:result.reviewText,
         sectionTitles:result.sectionTitles,boldPhrases:result.boldPhrases,
@@ -574,13 +574,15 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     // Only one unique URL per media outlet may be linked automatically.
     // Multiple different articles by the same outlet are left unlinked to
     // avoid sending the reader to the wrong publication.
-    const sourceLinks=Array.from(new Set(state.items.map(item=>item.source.trim()).filter(Boolean)))
-      .map(name=>{
-        const urls=Array.from(new Set(state.items.filter(item=>item.source.trim()===name)
+    const sourceNames=Array.from(new Set(state.items
+      .map(item=>canonicalWReviewSourceName(item.source)).filter(Boolean)));
+    const sourceLinks=sourceNames.map(name=>{
+        const urls=Array.from(new Set(state.items
+          .filter(item=>canonicalWReviewSourceName(item.source)===name)
           .map(item=>item.url.trim()).filter(url=>/^https?:\/\//i.test(url))));
         return urls.length===1?{name,url:urls[0]}:null;
       }).filter((item):item is {name:string;url:string}=>Boolean(item));
-    await desktopApi.exportWReview(path, exportCopy.text, Array.from(new Set(state.items.map((item) => item.source.trim()).filter(Boolean))), state.sectionTitles, state.boldPhrases, sourceLinks);
+    await desktopApi.exportWReview(path, exportCopy.text, sourceNames, state.sectionTitles, state.boldPhrases, sourceLinks);
     setMessage((be ? "DOCX захаваны ў фармаце W-Review." : "DOCX сохранён в формате W-Review.") + (exportCopy.replaced ? (be ? ` Выпраўлена спасылак: ${exportCopy.replaced}.` : ` Заменено внутренних обозначений источников: ${exportCopy.replaced}.`) : ""));
   }
 
@@ -725,9 +727,8 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
       <div className="w-review-readiness"><span className={prepared===state.items.length&&state.items.length?"ready":""}>{prepared===state.items.length&&state.items.length?"✓":"○"} {be?"Матэрыялы прааналізаваны":"Материалы проанализированы"}</span><span className={selectedTrends.length?"ready":""}>{selectedTrends.length?"✓":"○"} {be?"Тэндэнцыі выбраны":"Тенденции выбраны"}</span><span className={topicReady?"ready":""}>{topicReady?"✓":"○"} {be?"Тэма ўказана":"Тема указана"}</span><span className={styleReady?"ready":""}>{styleReady?"✓":"○"} {be?"Аўтарскі стыль (абавязкова)":"Авторский стиль (обязательно)"}</span></div>
       {!styleReady&&<p style={{fontSize:11,color:"#9a443b",margin:"0 0 10px"}}>{be?"Перад фарміраваннем агляду стварыце профіль на ўкладцы «Аўтарскі стыль».":"Перед формированием обзора создайте профиль на вкладке «Авторский стиль»."}</p>}
       <div className="w-review-final-actions"><label className="w-review-length-control"><span>{be?"Аб\’ём, знакаў":"Объём, знаков"}</span><select value={state.targetChars} onChange={(e)=>setState({...state,targetChars:Number(e.target.value),reviewText:"",reviewVariants:{},activeReviewRoute:undefined,sectionTitles:[],boldPhrases:[],factCheck:null,factCheckContract:0})}><option value={1000}>1 000</option><option value={2000}>2 000</option><option value={3000}>3 000</option><option value={4000}>4 000</option><option value={6000}>6 000</option><option value={8000}>8 000</option></select></label><button className="primary-button" disabled={busy!==""||!reviewReady}
-        onClick={()=>synthesize("cloudflare_first")}>{busy==="synthesize_cloudflare"?"…":be?"Агляд: Cloudflare 120B":"Обзор: Cloudflare 120B"}</button>
-        <button className="secondary-button" disabled={busy!==""||!reviewReady}
-        onClick={()=>synthesize("gemini_first")}>{busy==="synthesize_gemini"?"…":be?"Агляд: Gemini 3.5":"Обзор: Gemini 3.5"}</button><button className="secondary-button" disabled={!state.reviewText.trim()||busy!==""} onClick={exportDocx}>DOCX</button>
+        onClick={()=>synthesize("gemini_first")}>{busy==="synthesize_gemini"?"…":be?"Агляд: Gemini 3.5 (рэзерв 120B)":"Обзор: Gemini 3.5 (резерв 120B)"}</button>
+        <button className="secondary-button" disabled={!state.reviewText.trim()||busy!==""} onClick={exportDocx}>DOCX</button>
 </div>
       {(state.reviewVariants?.cloudflare_first||state.reviewVariants?.gemini_first)&&
         <div className="w-review-compare" style={{display:"flex",gap:8,flexWrap:"wrap",margin:"10px 0"}}>
