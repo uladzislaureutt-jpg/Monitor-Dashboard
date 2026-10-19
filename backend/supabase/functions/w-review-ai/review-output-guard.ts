@@ -95,3 +95,35 @@ export function minimumParagraphChars(targetChars:number,minParagraphs:number):n
   const total=Math.round(targetChars*0.95),count=Math.max(1,minParagraphs);
   return Math.max(80,Math.ceil((total-(count-1)*2)/count));
 }
+
+
+// Advisory only. Detect literal copying from STYLE_ONLY examples without
+// deleting or rewriting prose and without calling another AI provider.
+// Only numeric counts and a generic paragraph warning leave the server.
+const editorialWords=(text:string)=>text.toLocaleLowerCase("ru")
+  .replace(/ё/g,"е").match(/[\p{L}\p{N}]+/gu)||[];
+export function inspectStyleOnlyCopy(reviewText:string,
+  excerpts:{text:string}[],minConsecutiveWords=16):string[]{
+  if(!reviewText||!excerpts?.length)return [];
+  const size=Math.max(12,Math.min(40,Math.floor(minConsecutiveWords)));
+  const samples=new Set<string>();
+  for(const example of excerpts){
+    const words=editorialWords(String(example?.text||""));
+    for(let i=0;i<=words.length-size;i++){
+      const part=words.slice(i,i+size).join(" ");
+      if(part.length>=70)samples.add(part);
+    }
+  }
+  if(!samples.size)return [];
+  const warnings:string[]=[];
+  const paragraphs=reviewText.split(/\n\s*\n/).filter(Boolean);
+  for(let i=0;i<paragraphs.length;i++){
+    const words=editorialWords(paragraphs[i]);
+    const overlap=words.some((_,start)=>start<=words.length-size&&
+      samples.has(words.slice(start,start+size).join(" ")));
+    if(overlap)warnings.push("Абзац "+(i+1)+
+      ": обнаружен длинный дословный фрагмент из STYLE_ONLY; "+
+      "проверьте самостоятельность формулировки. Текст не изменён.");
+  }
+  return warnings;
+}
