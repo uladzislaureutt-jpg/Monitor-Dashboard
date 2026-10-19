@@ -264,3 +264,85 @@ test("Explicit allowed IDs are grounded in the current pool, not inferred from r
  assert.ok(!whitelist.includes("P02:E02"));
  assert.equal(whitelist.split("\n").length,3);
 });
+
+test("One Evidence cannot play both primary and contrary roles; normalize without making a substitute",()=>{
+ const draftCase=draft();
+ draftCase.trends[0].branches[0].contrary_evidence_ids=["P01:E01"];
+ draftCase.trends[0].branches[0].counterpoint="Редакции возражают против утверждения.";
+ const normalized=normalizeDossier(draftCase,cards);
+ assert.equal(normalized.error,null);
+ const b=normalized.dossier.trends[0].branches[0];
+ assert.deepEqual(b.contrary_evidence_ids,[]);
+ assert.equal(b.counterpoint,"");
+ assert.ok(b.evidence_ids.includes("P01:E01"));
+ assert.deepEqual(normalizeDossier(normalized.dossier,cards).dossier.trends[0].branches[0].contrary_evidence_ids,[]);
+});
+test("Only overlapping contrary ID removed; independent verified contrary Evidence and text survive",()=>{
+ const sample=draft();
+ sample.trends[0].branches[0].contrary_evidence_ids=["P01:E01","P01:E02"];
+ const normalized=normalizeDossier(sample,cards);
+ assert.equal(normalized.error,null);
+ const b=normalized.dossier.trends[0].branches[0];
+ assert.deepEqual(b.contrary_evidence_ids,["P01:E02"]);
+ assert.equal(b.counterpoint,"Есть иные оценки");
+ assert.equal(b.evidence_ids.length,2);
+});
+test("Lock in full 18-publication 167-Evidence success with four genuine trends and eight branches",async()=>{
+ const {dossierQualityMetrics}=await import("./dossier-quality-metrics.ts");
+ const pool=Array.from({length:18},(_,i)=>{
+   const entries=Array.from({length:i<5?10:9},(_,n)=>{
+     const e="E"+String(n+1).padStart(2,"0");
+     const anchor="P"+String(n+1).padStart(3,"0");
+     return e+" [fact/"+anchor+"] Проверенный факт о теме "+(i+1)+
+       " из публикации. | SOURCE: «Исходный фрагмент публикации.»";
+   });
+   return ["ID: P"+String(i+1).padStart(2,"0"),
+     "ИСТОЧНИК: «СМИ "+(i+1)+"»",
+     "URL: https://example.invalid/realistic-"+i,
+     ...entries].join("\n");
+ });
+ assert.equal(evidenceIndex(pool).entries.length,167);
+ const branchGroups=Array.from({length:8},()=>[]);
+ for(let i=0;i<18;i++){
+   const pub="P"+String(i+1).padStart(2,"0");
+   for(let n=1;n<=(i<15?5:4);n++)
+     branchGroups[i%8].push(pub+":E"+String(n).padStart(2,"0"));
+ }
+ const trends=Array.from({length:4},(_,i)=>({
+   id:"T"+(i+1),title:"Аналитическая тенденция "+(i+1),
+   summary:"Несколько редакций рассматривают общий сюжет.",
+   thesis:"Разные публикации подтверждают общую тематическую линию.",
+   operator_optional:false,optional_reason:"",
+   branches:[0,1].map((offset)=>({
+     id:"B"+(offset+1),title:"Самостоятельная сюжетная ветка",
+     claim:"Издания обсуждают самостоятельный аспект темы.",
+     mechanism:"Общая причинная связь рассматриваемых событий.",
+     counterpoint:"",limitation:"",
+     significance:"Важный аспект международного освещения.",
+     priority:"high",required:true,
+     evidence_ids:branchGroups[i*2+offset],
+     contrary_evidence_ids:[]
+   }))
+ }));
+ const draftCase={
+   trends,
+   coverage:Array.from({length:18},(_,i)=>({
+     publication_id:"P"+String(i+1).padStart(2,"0"),
+     status:"used",reason:"Публикация непосредственно подтверждает соответствующий сюжет."
+   })),
+   inventory:{quotes:0,headlines:0,experts:0}
+ };
+ const normalized=normalizeDossier(draftCase,pool,{requireEveryDistinctSource:true});
+ assert.equal(normalized.error,null);
+ const d=normalized.dossier;
+ const q=dossierQualityMetrics(d,pool);
+ assert.equal(q.publications_total,18);
+ assert.equal(q.source_evidence_total,167);
+ assert.equal(q.genuinely_grouped_publications,18);
+ assert.equal(q.technical_review_queues,0);
+ assert.equal(q.trends,4);
+ assert.equal(q.branches,8);
+ assert.equal(q.unique_used_evidence,87);
+ assert.equal(q.same_id_on_both_sides,0);
+ assert.equal(normalizeDossier(d,pool,{requireEveryDistinctSource:true}).error,null);
+});
