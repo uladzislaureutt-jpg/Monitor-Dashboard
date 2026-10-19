@@ -1,0 +1,57 @@
+name: W-Review Nemotron Evidence extraction comparison
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/supabase/functions/w-review-ai/evidence-model-benchmark*.mjs'
+      - '.github/workflows/w-review-evidence-models.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'backend/supabase/functions/w-review-ai/evidence-model-benchmark*.mjs'
+      - '.github/workflows/w-review-evidence-models.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: w-review-nemotron-evidence-models
+  cancel-in-progress: false
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate synthetic short/long article fixtures and grounded Evidence verifier
+        run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/evidence-model-benchmark.test.mjs
+
+  live-compare:
+    if: github.event_name != 'pull_request'
+    needs: static-checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: One short and one long article pair per model (six calls total)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.GOOGLE_GEMINI_API_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node --experimental-strip-types backend/supabase/functions/w-review-ai/evidence-model-benchmark.mjs
+      - name: Save comparison, grounded metrics and synthetic-only model replies
+        uses: actions/upload-artifact@v4
+        with:
+          name: w-review-nemotron-evidence-${{ github.run_number }}
+          path: out/w-review-evidence-models/
+          retention-days: 14
+          if-no-files-found: error
