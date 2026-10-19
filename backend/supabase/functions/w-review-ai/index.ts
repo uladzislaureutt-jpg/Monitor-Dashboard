@@ -5,7 +5,7 @@ import { dossierQualityMetrics } from "./dossier-quality-metrics.ts";
 import { scheduleHedgedBackup, groqDossierBudget } from "./dossier-provider-hedge.ts";
 import { synthesisResponseSchema, readSynthesisBlocks } from "./synthesis-blocks.ts";
 import { reconcileDossierDraft } from "./dossier-reconciliation.ts";
-import { normalizeReviewSourceLabels, poolSourceNames } from "./review-output-guard.ts";
+import { normalizeReviewSourceLabels, poolSourceNames, inspectStyleOnlyCopy } from "./review-output-guard.ts";
 import { W_REVIEW_GEMINI_PRIMARY, W_REVIEW_GEMINI_FALLBACK, W_REVIEW_GEMINI_ROUTES, wGeminiGenerationConfig, wGeminiPromptJsonConfig, W_GEMINI_JSON_ONLY_SUFFIX, parseModelJsonObject, wGeminiStructuredConfig, type GeminiJsonMode } from "./gemini-routing.ts";
 import { prepareEvidence, structuredGeminiRequest, preparationBudget } from "./preparation.ts";
 import { evidenceV2Instructions, evidenceV2Schema, makeEvidenceDocuments, renderEvidenceMaterials, verifyEvidenceCards, verifyEvidenceCardsIndividually, formatEvidenceCard, type EvidenceCard } from "./evidence-v2.ts";
@@ -968,11 +968,11 @@ ${styleProfile || "Живой сдержанный редакционный ст
 
 ОБОБЩЕНИЯ. Содержательные аналитические выводы обязательны. Общая позиция группы изданий требует подтверждения несколькими самостоятельными источниками соответствующей группы. Один источник может подтверждать конкретный факт, но не консенсус национального медиаполя. Когда оценки противоположны, прямо раскрывай это различие без искусственного единодушия.
 
-ТОЛЬКО ДОКАЗАТЕЛЬНАЯ ФАКТУРА. Даты, лица, цитаты, переводы, числа, экспертные оценки и причинные связи — исключительно из текущих Evidence Cards. Используй ID записей внутри публикаций как адреса доказательств, не превращай ID в видимый текст обзора. ОБЯЗАТЕЛЬНО: внутри и в конце каждого абзаца называй СМИ по подлинному названию из SOURCE_REGISTRY, а не P01, P02, P18 или по номерам карточек. Запрещены кавычки «Pxx». Никаких внешних сведений, догадок или фактов из STYLE_ONLY. Исключения оператора обязательны. Недостающую фактуру не восполняй выдумками или повторами.
+ТОЛЬКО ДОКАЗАТЕЛЬНАЯ ФАКТУРА. Даты, лица, цитаты, переводы, числа, экспертные оценки и причинные связи — исключительно из текущих Evidence Cards. Используй ID записей внутри публикаций как адреса доказательств, не превращай ID в видимый текст обзора. ОБЯЗАТЕЛЬНО: внутри и в конце каждого абзаца называй СМИ по подлинному названию из SOURCE_REGISTRY, а не P01, P02, P18 или по номерам карточек. Запрещены кавычки «Pxx». Никаких внешних сведений, догадок или фактов из STYLE_ONLY. Исключения оператора обязательны. Не вставляй заголовочные фрагменты Evidence в текст как именные предложения без грамматического согласования: преобразуй их в естественный русский оборот, не изменяя смысл. Недостающую фактуру не восполняй выдумками или повторами.
 
 ЯЗЫК. Весь видимый текст ОБЗОРА, включая прямую речь, заголовки и цитаты, пиши НА РУССКОМ ЯЗЫКЕ. Исключение: цитаты на белорусском языке можно оставить по-белорусски. Иностранный оригинал из поля ORIGINAL не вставляй — используй точный перевод из TITLE_RU или QUOTES_WITH_SPEAKERS.RU. Названия зарубежных СМИ, организаций и собственные имена сохраняй в принятом написании, например «CNN», «The Guardian»; это НЕ разрешение оставлять английские цитаты. Никаких непереведённых английских предложений, английских цитатных вставок, Markdown или искусственных заголовков. Кавычки « », тире –.
 
-МАНЕРА. STYLE_PROFILE и настоящие связные абзацы STYLE_ONLY задают индивидуальный зачин, интонацию, ритм, способ сопоставления СМИ, развитие сюжета и способ смыслового завершения, а не только отдельные обороты. Метки ЗАЧИН / РАЗВИТИЕ / СОПОСТАВЛЕНИЕ / ЗАВЕРШЕНИЕ обозначают место фрагмента в авторском оригинале, а не обязательные рубрики итогового текста. Не копируй содержание образцов. Построй общую аналитику по тенденциям: раскрывай подтверждённые детали, аргументы и контрпозиции, а не последовательность публикаций. Не навязывай абзацам одинаковую длину. Следуй измеренному авторскому ритму, чередуй короткие связки и развернутые аналитические абзацы в той мере, в какой это характерно автору. Не превращай финал в механическое повторение зачина. Не начинай заключительный абзац формулами «Таким образом», «Итоговый вывод», «Суммарно», «В совокупности» или «В заключение». Не сочиняй собственную итоговую цитату, выдавая её за подлинный заголовок. Законченный обзор заверши доказательной содержательной мыслью, а не школьным повтором написанного.
+МАНЕРА. STYLE_PROFILE и настоящие связные абзацы STYLE_ONLY задают индивидуальный зачин, интонацию, ритм, способ сопоставления СМИ, развитие сюжета и способ смыслового завершения, а не только отдельные обороты. Метки ЗАЧИН / РАЗВИТИЕ / СОПОСТАВЛЕНИЕ / ЗАВЕРШЕНИЕ обозначают место фрагмента в авторском оригинале, а не обязательные рубрики итогового текста. Не копируй содержание образцов, включая любые длинные дословные фразы (12 и более слов); воспроизводи только ритм, интонацию и способ переходов. Построй общую аналитику по тенденциям: раскрывай подтверждённые детали, аргументы и контрпозиции, а не последовательность публикаций. Не навязывай абзацам одинаковую длину. Следуй измеренному авторскому ритму, чередуй короткие связки и развернутые аналитические абзацы в той мере, в какой это характерно автору. Не превращай финал в механическое повторение зачина. Не начинай заключительный абзац формулами «Таким образом», «Итоговый вывод», «Суммарно», «В совокупности» или «В заключение». Не сочиняй собственную итоговую цитату, выдавая её за подлинный заголовок. Законченный обзор заверши доказательной содержательной мыслью, а не школьным повтором написанного.
 
 АТРИБУЦИЯ В ТЕКСТЕ. Все названия СМИ — в русских кавычках «ёлочках», как в основном тексте, так и в библиографических скобках. Названия СМИ будут автоматически выделены курсивом при экспорте DOCX. Ссылки на публикации указывай перед ЗАКЛЮЧИТЕЛЬНОЙ точкой предложения, без точки непосредственно перед скобками: «... оценка («CNN», «Bloomberg»).», а НЕ «... оценка. (CNN, Bloomberg)». Приводи только те конкретные СМИ, чьи Evidence Cards подтверждают данное утверждение; не прикрывай спорные выводы перечнем всех изданий. Канонические источники: ${canonicalSources}.\nSOURCE_REGISTRY (внутренний индекс → реальное СМИ): ${sourceRegistry}.
 Цитаты: ${densityRule("Цитаты",quoteDensity)}
@@ -1139,7 +1139,12 @@ ${styleOnlyText || "Дополнительные фрагменты недост
     const lengthOk=actualChars>=lengthMinimum
       && actualChars<=lengthMaximum;
     // Only deterministic warnings. Keep the draft even when outside tolerance.
-    const preflightWarnings:string[]=[...normalizedSources.attributionWarnings,...(parsed.block_warnings||[])];
+    const styleCopyWarnings=inspectStyleOnlyCopy(reviewText,styleExcerpts);
+    const preflightWarnings:string[]=[
+      ...normalizedSources.attributionWarnings,
+      ...(parsed.block_warnings||[]),
+      ...styleCopyWarnings
+    ];
     if(!lengthOk) preflightWarnings.push(`Объём ${actualChars} знаков вне допуска ${lengthMinimum}–${lengthMaximum}; текст сохранён для редактирования.`);
     console.info("w_review_single_pass "+JSON.stringify({
       provider:selectedProvider,model:selectedModel,target_chars:targetChars,
@@ -1157,6 +1162,7 @@ ${styleOnlyText || "Дополнительные фрагменты недост
       resolved_pool_source_labels:normalizedSources.substitutions,
       unresolved_source_labels:normalizedSources.unresolved.length,
       semantic_attribution_warnings:normalizedSources.attributionWarnings.length,
+       style_copy_warnings:styleCopyWarnings.length,
       source_mentions:sourceNames.filter((name:string)=>reviewText.includes("«"+name+"»")).length,
       source_names:sourceNames.length,
       cards:cards.length,trends:trends.length,required_branches:synthesisDossier.requiredBranches,

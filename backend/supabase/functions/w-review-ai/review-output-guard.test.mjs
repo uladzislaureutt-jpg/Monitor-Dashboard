@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {normalizeReviewSourceLabels,poolSourceNames,inspectReviewAttribution,minimumParagraphChars}
+import {normalizeReviewSourceLabels,poolSourceNames,inspectReviewAttribution,minimumParagraphChars,inspectStyleOnlyCopy}
  from "./review-output-guard.ts";
 const cards=[
   "ID: P01\nИСТОЧНИК: «The Guardian»\nЗАГОЛОВОК: Материал",
@@ -46,4 +46,21 @@ test("paragraph floor targets 95% length in one pass, without padding",()=>{
     assert.ok(count*minimum+2*(count-1)>=Math.round(target*.95));
     assert.ok(minimum>80);
   }
+});
+
+test("warning detects actual long passage copied from STYLE_ONLY, without rewriting draft",()=>{
+ const excerpt="Дальнейшее развитие темы будет зависеть от появления проверяемых данных о затратах и результатах, а также от возможности сопоставить первоначальные обещания с ходом работ.";
+ const review="Материалы опираются на разные оценки исполнения бюджета.\n\n"+
+   "Дальнейшее развитие темы будет зависеть от появления проверяемых данных о затратах и результатах, а также от возможности сопоставить первоначальные обещания с реальным ходом работ.";
+ const warnings=inspectStyleOnlyCopy(review,[{text:excerpt}]);
+ assert.equal(warnings.length,1);
+ assert.match(warnings[0],/Абзац 2/);
+ assert.ok(!warnings[0].includes("Дальнейшее развитие темы"));
+ assert.ok(review.includes("с реальным ходом работ"));
+});
+test("short generic phrases or thematic paraphrases do not trigger STYLE_ONLY copying",()=>{
+ const examples=[{text:"Одни редакции выделяют недостаток информации, другие обращают внимание на открытость процедур. В этом состоит различие между описанием процесса и оценкой фактического результата."}];
+ assert.deepEqual(inspectStyleOnlyCopy("Редакции по-разному оценивают прозрачность процедур и результаты общественного контроля.",examples),[]);
+ assert.deepEqual(inspectStyleOnlyCopy("В этом состоит различие между описанием процесса.",examples),[]);
+ assert.deepEqual(inspectStyleOnlyCopy("Синтетический фрагмент тестовой статьи.",[]),[]);
 });
