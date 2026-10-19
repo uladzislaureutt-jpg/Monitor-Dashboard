@@ -46,6 +46,14 @@ function collectFullyClosedCards(source:string,limit:number):any[]{
 export function parseEvidenceJson(content:string,limit=2):EvidenceJsonRecovery {
   const text=String(content||"").trim().replace(/^\uFEFF/,"");
   if(text.length>2_000_000)return {payload:null,method:"unrecognized",recovered_cards:0};
+  const unwrapped=text.replace(/^\x60{3}(?:json)?\s*/i,"").replace(/\s*\x60{3}$/,"").trim();
+  // A valid TOP-LEVEL ARRAY must be handled before the generic object parser
+  // which intentionally finds only its first object.
+  try{
+    const full=JSON.parse(unwrapped);
+    if(isCards(full,limit))
+      return {payload:{cards:full},method:"top_level_cards",recovered_cards:full.length};
+  }catch{/* damaged envelope or prefaced JSON */}
   const direct=parseModelJsonObject(text);
   if(Array.isArray(direct?.cards))
     return {payload:direct,method:"direct",recovered_cards:direct.cards.length};
@@ -57,15 +65,14 @@ export function parseEvidenceJson(content:string,limit=2):EvidenceJsonRecovery {
       if(isCards(nested?.cards,limit))
         return {payload:{cards:nested.cards},method:"wrapped",recovered_cards:nested.cards.length};
     }
-    if(cardShaped(direct))return {payload:{cards:[direct]},method:"single_card",recovered_cards:1};
+    if(cardShaped(direct)){
+      const completed=collectFullyClosedCards(text,limit);
+      if(completed.length>1)
+        return {payload:{cards:completed},method:"complete_card_objects",recovered_cards:completed.length};
+      return {payload:{cards:[direct]},method:"single_card",recovered_cards:1};
+    }
     return {payload:direct,method:"unrecognized",recovered_cards:0};
   }
-  const unwrapped=text.replace(/^\x60{3}(?:json)?\s*/i,"").replace(/\s*\x60{3}$/,"").trim();
-  try{
-    const value=JSON.parse(unwrapped);
-    if(isCards(value,limit))
-      return {payload:{cards:value},method:"top_level_cards",recovered_cards:value.length};
-  }catch{/* incomplete outer envelope or extra prose; scan complete cards below */}
   const cards=collectFullyClosedCards(text,limit);
   if(cards.length)return {payload:{cards},method:"complete_card_objects",recovered_cards:cards.length};
   return {payload:null,method:"unrecognized",recovered_cards:0};
