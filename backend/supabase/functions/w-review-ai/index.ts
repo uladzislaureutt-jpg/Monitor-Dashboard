@@ -1169,16 +1169,23 @@ ${styleOnlyText || "Дополнительные фрагменты недост
     const styleCopyWarnings=inspectStyleOnlyCopy(reviewText,styleExcerpts);
     const quoteOutcome=editorialQuoteUsage(reviewText,quoteCandidates);
     const headlineOutcome=editorialHeadlineUsage(reviewText,publicationHeadlines);
+    const openingParagraph=reviewText.split(/\n\s*\n/,1)[0]||"";
+    // Source quotation punctuation is a useful diagnostic, not a
+    // deterministic hallucination check. The operator retains final judgment.
+    const openingStartsWithQuote=/^\s*[«„]/u.test(openingParagraph);
+    const openingCitesSource=sourceNames.some((name:string)=>
+      openingParagraph.includes("«"+name+"»"));
     const preflightWarnings:string[]=[
       ...normalizedSources.attributionWarnings,
       ...(parsed.block_warnings||[]),
       ...styleCopyWarnings
     ];
     if(!lengthOk) preflightWarnings.push(`Объём ${actualChars} знаков вне допуска ${lengthMinimum}–${lengthMaximum}; текст сохранён для редактирования.`);
-    if(quoteCandidates.length===0){
-      preflightWarnings.push("В Evidence отсутствуют проверенные прямые цитаты. Стилевая полнота ограничена: нельзя добавлять цитаты без исходных материалов.");
-    }else if(quoteOutcome.used<Math.min(quoteTarget,Math.max(1,Math.floor(quoteTarget*0.65)))){
-      preflightWarnings.push(`Модель использовала только ${quoteOutcome.used} из ${quoteCandidates.length} доступных проверенных цитат (ориентир ${quoteTarget}). Текст сохранён без повторного запроса.`);
+    // The author-style skill forbids numerical quote quotas. A missing safe
+    // quote corpus is actionable diagnostics, but low quote uptake by itself
+    // is NOT evidence of poor writing or grounds for another model call.
+    if(quoteCandidates.length===0 && publicationHeadlines.length===0){
+      preflightWarnings.push("В Evidence не найдено дословных цитат или оригинальных заголовков: цитатный зачин без дополнительных источников невозможен.");
     }
     console.info("w_review_single_pass "+JSON.stringify({
       provider:selectedProvider,model:selectedModel,target_chars:targetChars,model_target_chars:planningTargetChars,
@@ -1197,6 +1204,8 @@ ${styleOnlyText || "Дополнительные фрагменты недост
       publication_headlines:publicationHeadlines.length,headline_target:headlineTarget,
       directly_quoted_entries_used:quoteOutcome.used,quoted_sources:quoteOutcome.sources,
       headlines_available:headlineOutcome.titlesAvailable,headlines_directly_quoted:headlineOutcome.quotedTitles,
+      editorial_contract:"media_review_v2",opening_starts_with_quote:openingStartsWithQuote,
+      opening_cites_real_source:openingCitesSource,
       resolved_pool_source_labels:normalizedSources.substitutions,
       unresolved_source_labels:normalizedSources.unresolved.length,
       semantic_attribution_warnings:normalizedSources.attributionWarnings.length,
