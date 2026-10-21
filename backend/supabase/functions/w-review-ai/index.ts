@@ -9,6 +9,7 @@ import { normalizeReviewSourceLabels, poolSourceNames, inspectStyleOnlyCopy, can
 import { W_REVIEW_GEMINI_PRIMARY, W_REVIEW_GEMINI_FALLBACK, W_REVIEW_GEMINI_ROUTES, wGeminiGenerationConfig, wGeminiPromptJsonConfig, W_GEMINI_JSON_ONLY_SUFFIX, parseModelJsonObject, wGeminiStructuredConfig, type GeminiJsonMode } from "./gemini-routing.ts";
 import { prepareEvidence, structuredGeminiRequest, preparationBudget } from "./preparation.ts";
 import { evidenceV2Instructions, evidenceV2Schema, makeEvidenceDocuments, renderEvidenceMaterials, verifyEvidenceCards, verifyEvidenceCardsIndividually, formatEvidenceCard, type EvidenceCard } from "./evidence-v2.ts";
+import { editorialQuoteInventory, editorialQuoteTarget, editorialQuoteBrief, editorialQuoteUsage } from "./editorial-quotes.ts";
 
 // 140 s maximum per long W-Review HTTP operation. Supabase's hosted
 // request idle timeout is 150 s; keep >=10 s for response serialization
@@ -954,6 +955,10 @@ ${styleProfile || "Живой сдержанный редакционный ст
     const trendText=synthesisDossier.text;
     const densityRule = (name: string, value: string) => value === "minimum" ? `${name}: редко, только самые сильные 1–2 элемента, если доступны.` : value === "all" ? `${name}: использовать все реально найденные пригодные элементы этого типа, но не выдумывать и не повторять один и тот же элемент.` : value === "many" ? `${name}: насыщенно, использовать большинство сильных элементов без перегруза и повторов.` : `${name}: умеренно, несколько лучших элементов по ходу текста.`;
     const canonicalSources = sourceNames.length ? sourceNames.map((name: string) => `«${name}»`).join(", ") : "используй названия из Evidence Cards";
+    // One-pass, verified evidence-only quote plan; never overwrite stored cards.
+    const quoteCandidates=editorialQuoteInventory(cards);
+    const quoteTarget=editorialQuoteTarget(quoteCandidates.length,targetChars,quoteDensity);
+    const quoteBrief=editorialQuoteBrief(quoteCandidates,quoteTarget);
 
     const lengthMinimum=Math.round(targetChars*0.95);
     const lengthMaximum=Math.round(targetChars*1.05);
@@ -984,6 +989,7 @@ ${styleProfile || "Живой сдержанный редакционный ст
 ЯЗЫК. Весь видимый текст ОБЗОРА, включая прямую речь, заголовки и цитаты, пиши НА РУССКОМ ЯЗЫКЕ. Исключение: цитаты на белорусском языке можно оставить по-белорусски. Иностранный оригинал из поля ORIGINAL не вставляй — используй точный перевод из TITLE_RU или QUOTES_WITH_SPEAKERS.RU. Названия зарубежных СМИ, организаций и собственные имена сохраняй в принятом написании, например «CNN», «The Guardian»; это НЕ разрешение оставлять английские цитаты. Никаких непереведённых английских предложений, английских цитатных вставок, Markdown или искусственных заголовков. Кавычки « », тире –.
 
 МАНЕРА. STYLE_PROFILE и настоящие связные абзацы STYLE_ONLY задают индивидуальный зачин, интонацию, ритм, способ сопоставления СМИ, развитие сюжета и способ смыслового завершения, а не только отдельные обороты.
+ЦИТАТЫ КАК ЧАСТЬ АВТОРСКОЙ МАНЕРЫ. Ссылки на издания в скобках и названия СМИ в «ёлочках» НЕ являются прямыми цитатами. В доказательную ткань повествования встраивай подлинные содержательные высказывания, редакционные формулировки или слова экспертов из РЕЕСТРА ДОПУСТИМЫХ ЦИТАТ. Не своди цитаты к одному-двум словам и не помещай их без контекста в конце обзора. Сопоставляй содержание цитат с аргументами других публикаций. Дословное цитирование разрешено только из подтверждённых kind=quote в Evidence с предоставленным русским переводом; если цитат недостаточно, НЕ придумывай их и не выдавай русскоязычный пересказ за цитату. Никаких новых ИИ-вызовов для искусственного увеличения числа цитат.
 СТИЛЕВОЙ ПРИОРИТЕТ W-REVIEW. Авторская манера фактографична и сдержанна. В каждом сюжетном направлении прежде всего раскрывай проверяемые обстоятельства, значимые числа и конкретные редакционные оценки; затем сопоставляй различающиеся позиции СМИ и подкрепляй сопоставление дословными выразительными цитатами из Evidence, когда они действительно доступны. Важны точные цитаты заголовков, оценки самих редакций и позиции названных экспертов, но не путай их друг с другом. Цитируй только реально содержащиеся в Evidence формулировки либо их предоставленный точный русский перевод; не составляй из пересказа собственную псевдоцитату. Если цитат нет, не выдумывай. Показывай, чем позиции отличаются и на каких фактах основаны; не заменяй сопоставление простым перечислением изданий.
 ЗАПРЕТ ПУСТОЙ РИТОРИКИ. Избегай самостоятельных пафосных обобщений и штампов вроде «тектонический сдвиг», «точка невозврата», «колоссальные потребности», «беспрецедентный кризис», «архитектура мировой безопасности» без точного подтверждения. Подобные выражения допустимы только как чётко атрибутированная цитата из Evidence. Предпочитай краткий проверяемый вывод из конкретных публикаций. Не повторяй один и тот же вывод в зачине, нескольких блоках и заключении. Метки ЗАЧИН / РАЗВИТИЕ / СОПОСТАВЛЕНИЕ / ЗАВЕРШЕНИЕ обозначают место фрагмента в авторском оригинале, а не обязательные рубрики итогового текста. Не копируй содержание образцов, включая любые длинные дословные фразы (12 и более слов); воспроизводи только ритм, интонацию и способ переходов. Построй общую аналитику по тенденциям: раскрывай подтверждённые детали, аргументы и контрпозиции, а не последовательность публикаций. Не навязывай абзацам одинаковую длину. Следуй измеренному авторскому ритму, чередуй короткие связки и развернутые аналитические абзацы в той мере, в какой это характерно автору. Не превращай финал в механическое повторение зачина. Не начинай заключительный абзац формулами «Таким образом», «Итоговый вывод», «Суммарно», «В совокупности» или «В заключение». Не сочиняй собственную итоговую цитату, выдавая её за подлинный заголовок. Законченный обзор заверши доказательной содержательной мыслью, а не школьным повтором написанного.
 
@@ -1002,7 +1008,7 @@ STYLE_ONLY (образцы авторской манеры, НЕ ИСТОЧНИ�
 ${styleOnlyText || "Дополнительные фрагменты недоступны. Следуй STYLE_PROFILE."}
 
 РЕЗУЛЬТАТ. Верни ОДИН JSON с массивом blocks и массивами section_titles, bold_phrases. Каждый blocks содержит block_id из единого плана и paragraphs — массив естественных абзацев готового обзора. Верни каждый блок ровно один раз в порядке плана: opening, выбранные line_*, ending. Это одно непрерывное авторское повествование, не отдельные статьи; границы блоков и их ID читателю не показываются. Объём и ориентиры абзацев бери только из единого плана. Короткие связки допустимы; общего минимума длины абзаца нет. Обязательны раскрытие всех выбранных сюжетов и общая длина. Не выдавай план вместо текста. section_titles:[] и bold_phrases:[] допустимы. Не вставляй Markdown ** или __. Без промежуточных замечаний.` },
-        { role: "user", content: `ЗАДАНИЕ ОПЕРАТОРА:\n${task}\n\nРЕДАКЦИОННОЕ ДОСЬЕ И РАСПРЕДЕЛЕНИЕ ОБЪЁМА:\n${trendText}\n\nИНСТРУКЦИЯ ДЛЯ ЭТАПА:\n${String(body?.stage_note || "").slice(0,500)}\n\nEVIDENCE CARDS:\n${evidenceText}\n\nФИНАЛЬНОЕ ЗАДАНИЕ: создай ОДИН непрерывный авторский аналитический обзор в массиве blocks. Внутренний ориентир модели — ${planningTargetChars} знаков с пробелами (плановый запас +17% относительно выбранных оператором ${targetChars} знаков для компенсации систематического недобора). Развивай содержание и распределяй объём по этому увеличенному плану; не сокращай заранее аналитические блоки до номинала оператора. Следуй единому плану блоков, ориентир суммарно ${paragraphTarget} естественных абзацев разной длины. Бюджет каждого блока включает атрибуцию и переходы; не заменяй развёрнутое раскрытие кратким упоминанием. Если фактологического материала достаточно, используй его для развития аргументации, а не сворачивай анализ раньше приближения к внутренней цели ${planningTargetChars} знаков. Каждый следующий развивает общую мысль, а не описывает следующее СМИ. После обработки всех тенденций заверши подтверждённым содержательным акцентом, не формальной сводкой. Не допускай ни одной непереведённой англоязычной цитаты (кроме официальных названий), расставляй источники только по образцу «... («CNN», «BBC News»).», не создавай собственных псевдоцитат и шаблонной итоговой концовки. Не используй Markdown, ненужные подзаголовки и списки источников.` }],
+        { role: "user", content: `ЗАДАНИЕ ОПЕРАТОРА:\n${task}\n\nРЕДАКЦИОННОЕ ДОСЬЕ И РАСПРЕДЕЛЕНИЕ ОБЪЁМА:\n${trendText}\n\nЦИТАТЫ ДЛЯ ОСМЫСЛЕННОГО ИСПОЛЬЗОВАНИЯ:\n${quoteBrief}\n\nИНСТРУКЦИЯ ДЛЯ ЭТАПА:\n${String(body?.stage_note || "").slice(0,500)}\n\nEVIDENCE CARDS:\n${evidenceText}\n\nФИНАЛЬНОЕ ЗАДАНИЕ: создай ОДИН непрерывный авторский аналитический обзор в массиве blocks. Внутренний ориентир модели — ${planningTargetChars} знаков с пробелами (плановый запас +17% относительно выбранных оператором ${targetChars} знаков для компенсации систематического недобора). Развивай содержание и распределяй объём по этому увеличенному плану; не сокращай заранее аналитические блоки до номинала оператора. Следуй единому плану блоков, ориентир суммарно ${paragraphTarget} естественных абзацев разной длины. Бюджет каждого блока включает атрибуцию и переходы; не заменяй развёрнутое раскрытие кратким упоминанием. Если фактологического материала достаточно, используй его для развития аргументации, а не сворачивай анализ раньше приближения к внутренней цели ${planningTargetChars} знаков. Каждый следующий развивает общую мысль, а не описывает следующее СМИ. После обработки всех тенденций заверши подтверждённым содержательным акцентом, не формальной сводкой. Не допускай ни одной непереведённой англоязычной цитаты (кроме официальных названий), расставляй источники только по образцу «... («CNN», «BBC News»).», не создавай собственных псевдоцитат и шаблонной итоговой концовки. Не используй Markdown, ненужные подзаголовки и списки источников.` }],
       response_format: {type:"json_schema",json_schema:{name:"w_review_blocks_v1",strict:true,
         schema:synthesisResponseSchema(synthesisDossier.blocks)}},
     };
@@ -1089,6 +1095,7 @@ ${styleOnlyText || "Дополнительные фрагменты недост
       cards:cards.length,selected_trends:selectedIds.length,
       required_branches:synthesisDossier.requiredBranches,
       target_chars:targetChars,model_target_chars:planningTargetChars,evidence_chars:evidenceText.length,
+      verified_quote_candidates:quoteCandidates.length,quote_target:quoteTarget,
       style_chars:styleProfile.length,dossier_chars:trendText.length,
       output_tokens:synthesisOutputTokenBudget,quota_reserved:Boolean(reservationId)
     }));
@@ -1153,12 +1160,18 @@ ${styleOnlyText || "Дополнительные фрагменты недост
       && actualChars<=lengthMaximum;
     // Only deterministic warnings. Keep the draft even when outside tolerance.
     const styleCopyWarnings=inspectStyleOnlyCopy(reviewText,styleExcerpts);
+    const quoteOutcome=editorialQuoteUsage(reviewText,quoteCandidates);
     const preflightWarnings:string[]=[
       ...normalizedSources.attributionWarnings,
       ...(parsed.block_warnings||[]),
       ...styleCopyWarnings
     ];
     if(!lengthOk) preflightWarnings.push(`Объём ${actualChars} знаков вне допуска ${lengthMinimum}–${lengthMaximum}; текст сохранён для редактирования.`);
+    if(quoteCandidates.length===0){
+      preflightWarnings.push("В Evidence отсутствуют проверенные прямые цитаты. Стилевая полнота ограничена: нельзя добавлять цитаты без исходных материалов.");
+    }else if(quoteOutcome.used<Math.min(quoteTarget,Math.max(1,Math.floor(quoteTarget*0.65)))){
+      preflightWarnings.push(`Модель использовала только ${quoteOutcome.used} из ${quoteCandidates.length} доступных проверенных цитат (ориентир ${quoteTarget}). Текст сохранён без повторного запроса.`);
+    }
     console.info("w_review_single_pass "+JSON.stringify({
       provider:selectedProvider,model:selectedModel,target_chars:targetChars,model_target_chars:planningTargetChars,
       actual_chars:actualChars,within_tolerance:lengthOk,
@@ -1172,6 +1185,8 @@ ${styleOnlyText || "Дополнительные фрагменты недост
       finish_reason:result.ok?result.finish_reason||"not_reported":"error",
       reasoning_tokens:result.ok?result.reasoning_tokens||0:0,
       style_chars:styleProfile.length,style_excerpt_chars:styleOnlyText.length,evidence_chars:evidenceText.length,
+      verified_quote_candidates:quoteCandidates.length,quote_target:quoteTarget,
+      directly_quoted_entries_used:quoteOutcome.used,quoted_sources:quoteOutcome.sources,
       resolved_pool_source_labels:normalizedSources.substitutions,
       unresolved_source_labels:normalizedSources.unresolved.length,
       semantic_attribution_warnings:normalizedSources.attributionWarnings.length,
