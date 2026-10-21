@@ -123,7 +123,21 @@ export async function prepareEvidence(input:{
     Math.min(input.deadline-(input.cloudflareFirst?18000:35000),
       Date.now()+(input.cloudflareFirst?60000:35000)));
   if(input.available.fallback)await attempt("fallback",remaining(),Math.min(input.deadline,Date.now()+22000));
-  if(input.available.groq)await attempt("groq",remaining(),
-    Math.min(input.deadline,Date.now()+(input.cloudflareFirst?12000:31000)));
+  if(input.available.groq){
+    const originalGroq=await attempt("groq",remaining(),
+      Math.min(input.deadline,Date.now()+(input.cloudflareFirst?12000:31000)));
+    // Groq can return perfectly parsed, source-anchored Evidence with one
+    // too-few factual record per article. Salvage every individually valid
+    // short article and request ONLY unresolved articles once more as
+    // single-article batches. This is a bounded repair inside the original
+    // operator action, not a repeat of already accepted cards.
+    if(originalGroq?.ok){
+      const unresolved=input.documents.map((_,index)=>index).filter(index=>!best.has(index));
+      for(const index of unresolved.slice(0,2)){
+        if(preparationBudget(input.deadline,31000)<14000)break;
+        await attempt("groq",[index],Math.min(input.deadline,Date.now()+26000));
+      }
+    }
+  }
   return {articles:[...best.values()].sort((a,b)=>a.index-b.index),usage,attempts};
 }
