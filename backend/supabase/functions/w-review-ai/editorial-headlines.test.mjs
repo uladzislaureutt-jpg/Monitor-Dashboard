@@ -63,7 +63,7 @@ test("Synthesis receives all publisher headlines in the original single-call con
   assert.ok(synth.includes("// SINGLE-PASS"));
 });
 test("UI distinguishes twelve source titles from separately tagged headline records",()=>{
-  const ui=readFileSync(new URL("../../../src/views/WReviewView.tsx",import.meta.url),"utf8");
+  const ui=readFileSync(new URL("../../../../src/views/WReviewView.tsx",import.meta.url),"utf8");
   assert.ok(ui.includes('state.items.filter(item=>item.title.trim().length>0).length'));
   assert.ok(ui.includes('"заголовков публикаций"'));
   assert.ok(ui.includes('"отдельно выделено в Evidence"'));
