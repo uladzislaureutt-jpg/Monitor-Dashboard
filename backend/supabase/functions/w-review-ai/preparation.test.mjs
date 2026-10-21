@@ -102,3 +102,51 @@ test('map JSON entrypoint avoids known rejected schema calls',async()=>{
  }});
  assert.deepEqual(modes,['json']);
 });
+
+test('21 Oct live-failure shape: Groq salvages short article and repairs only long one',async()=>{
+  const longText=Array.from({length:30},(_,i)=>"Раздел "+i+": "+("Публикация приводит различающиеся оценки и конкретные обстоятельства ситуации. ".repeat(4))).join("\n\n");
+  const shortText=Array.from({length:28},(_,i)=>"Фрагмент "+i+": политик сообщил о важных обстоятельствах.").join("\n\n");
+  const articles=makeEvidenceDocuments([
+    {index:0,publication_id:'long-8389',source:'Газета А',title:'Большой материал',text:longText},
+    {index:1,publication_id:'short-1433',source:'Газета Б',title:'Краткий материал',text:shortText}
+  ]);
+  assert.ok(longText.length>3500);
+  assert.ok(shortText.length>1000&&shortText.length<3500);
+  const makeRecords=(doc,n)=>Array.from({length:n},(_,i)=>({
+    kind:'fact',statement_ru:'Подтвержденная запись о ситуации под номером '+i,
+    anchor_id:doc.passages[i].id,source_excerpt:doc.passages[i].text.slice(0,55),
+    original_quote:'',quote_ru:'',speaker:'',role:''
+  }));
+  const calls=[];
+  const result=await prepareEvidence({
+    documents:articles,deadline:Date.now()+130000,
+    available:{primary:true,cloudflare:true,fallback:false,groq:true},
+    generate:async(provider,documents)=>{
+      calls.push({provider,ids:documents.map(d=>d.publication_id),index:documents.map(d=>d.index)});
+      if(provider!=='groq')return {reply:bad(504,'local_timeout'),model:provider};
+      const two=documents.length===2;
+      const cards=documents.map((doc,index)=>({
+        index,title_ru:doc.title,records:makeRecords(doc,two?4:9)
+      }));
+      return {reply:ok({cards}),model:'openai/gpt-oss-120b'};
+    }
+  });
+  assert.deepEqual(calls.map(c=>c.provider),['primary','cloudflare','groq','groq']);
+  assert.deepEqual(calls[3].ids,['long-8389']);
+  assert.deepEqual(calls[3].index,[0]);
+  assert.deepEqual(result.articles.map(a=>a.index),[0,1]);
+  assert.equal(result.articles[0].card.validation.accepted,9);
+  assert.equal(result.articles[1].card.validation.accepted,4);
+  assert.equal(result.articles[0].card.publication_id,'long-8389');
+  assert.equal(result.articles[1].card.publication_id,'short-1433');
+  assert.ok(result.attempts[2].failed.some(x=>String(x.reason).includes('records_4_of_5')));
+});
+test('Do not initiate repair on timeout or malformed answer',async()=>{
+  const calls=[];
+  await prepareEvidence({
+    documents:[docs[0]],deadline:Date.now()+130000,
+    available:{primary:false,cloudflare:false,fallback:false,groq:true},
+    generate:async(provider)=>{calls.push(provider);return {reply:bad(504,'local_timeout'),model:provider};}
+  });
+  assert.deepEqual(calls,['groq']);
+});
