@@ -7,6 +7,7 @@ import { wEditorialMap, wEvidenceBatch, wStyleProfile, wSynthesize, type WDensit
 import { useI18n } from "../i18n";
 import { buildStylePattern } from "../wReviewStyle";
 import { writeEvidenceCheckpoint } from "../wReviewEvidenceCheckpoint";
+import { isTechnicalReviewQueue, pendingEditorialAssignments, availableEditorialTargets, assignQueuedPublication } from "../wReviewEditorialDistribution";
 import { isEvidencePrepared, pendingEvidenceEntries } from "../wReviewEvidenceProgress";
 import { resolvePoolMarkersForExport, canonicalWReviewSourceName } from "../wReviewSourceLabels";
 
@@ -184,6 +185,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   const [error, setError] = useState("");
   const [compressionMode, setCompressionMode] = useState<CompressionMode>("standard");
   const [analysisText, setAnalysisText] = useState("");
+  const [queueTargets, setQueueTargets] = useState<Record<string,string>>({});
   const [usage, setUsage] = useState<WUsage>({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
 
   useEffect(() => { localStorage.setItem(WORKSPACES_KEY, JSON.stringify(workspaces)); }, [workspaces]);
@@ -204,7 +206,10 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   }
   const prepared = state.items.filter((item) => isEvidencePrepared(item,W_EVIDENCE_CONTRACT_VERSION)).length;
   const mapReady = Boolean(state.editorialMap?.version === 3 && state.editorialMap?.trends?.length && state.mapContract === W_MAP_CONTRACT_VERSION);
-  const selectedTrends = mapReady ? state.editorialMap!.trends.filter((trend) => state.selectedTrendIds.includes(trend.id)) : [];
+  const selectedTrends = mapReady ? state.editorialMap!.trends.filter((trend) =>
+    state.selectedTrendIds.includes(trend.id)&&!isTechnicalReviewQueue(trend)) : [];
+  const reviewQueueItems = mapReady ? pendingEditorialAssignments(state.editorialMap) : [];
+  const editorialTargets = mapReady ? availableEditorialTargets(state.editorialMap) : [];
   const styleReady = Boolean(state.styleProfile.trim() && state.styleContract === W_STYLE_CONTRACT_VERSION);
   const topicReady = state.topic.trim().length > 0;
   const operatorTask = useMemo(() => {
@@ -451,6 +456,28 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
       }));
       setMessage(be ? "Тэндэнцыі пералічаны." : "Тенденции пересчитаны.");
     } catch (reason) { setError(String(reason)); } finally { setAnalysisText(""); setBusy(""); }
+  }
+
+  function reassignReviewQueue(publicationId:string){
+    if(busy||!state.editorialMap)return;
+    const target=queueTargets[publicationId];
+    if(!target){setError("Сначала выберите содержательную сюжетную ветку.");return;}
+    try{
+      const next=assignQueuedPublication(state.editorialMap,publicationId,target);
+      const itemIndex=Number(publicationId.slice(1))-1;
+      const article=state.items[itemIndex];
+      const targetTitle=editorialTargets.find(t=>t.branchId===target)?.branchTitle||target;
+      setState(current=>({...current,editorialMap:next,
+        selectedTrendIds:current.selectedTrendIds.filter(id=>
+          next.trends.some(t=>t.id===id&&!isTechnicalReviewQueue(t))),
+        factCheck:null,factCheckContract:0
+      }));
+      setQueueTargets(current=>({...current,[publicationId]:""}));
+      setError("");
+      setMessage((be?"Матэрыял":"Материал")+" "+(article?.title||publicationId)+
+        (be?" размеркаваны ў сюжэт «":" распределён в сюжет «")+targetTitle+"». "+
+        (be?"Захаваны агляд не зменены.":"Сохранённый обзор не изменён; новый синтез учтёт перераспределение."));
+    }catch(error){setError(String(error));}
   }
 
   function clearPool() {
@@ -700,11 +727,42 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
     </section>
 
     {mapReady&&state.editorialMap&&<section className="panel w-review-map"><div className="panel-head"><div><h3>{be?"3. Тэндэнцыі медыяполя":"3. Тенденции медиаполя"}</h3><p>{be?"Зніміце галачку толькі з тых акцэнтаў, якія не павінны ўваходзіць у агляд." : "Основные тенденции включены по умолчанию. Дополнительные (периферийные) — на выбор оператора."}</p></div><button className="ghost-button small-button" disabled={busy!==""} onClick={recalculateTrends}>{be?"Пералічыць":"Пересчитать"}</button></div>
-      <div className="w-review-trends">{state.editorialMap.trends.map((trend,index)=><label key={trend.id} className={`w-review-trend ${state.selectedTrendIds.includes(trend.id)?"selected":""}`}><input type="checkbox" checked={state.selectedTrendIds.includes(trend.id)} onChange={()=>setState((current)=>({...current,selectedTrendIds:current.selectedTrendIds.includes(trend.id)?current.selectedTrendIds.filter((value)=>value!==trend.id):[...current.selectedTrendIds,trend.id],reviewText:"",reviewVariants:{},activeReviewRoute:undefined,factCheck:null,factCheckContract:0}))}/><span><b>{index+1}. {trend.title}{trend.operator_optional ? (be?" — дадатковая, на выбар":" — дополнительная, на выбор") : ""}</b><small>{trend.summary}</small>
+      <div className="w-review-trends">{state.editorialMap.trends.map((trend,index)=><label key={trend.id} className={`w-review-trend ${state.selectedTrendIds.includes(trend.id)&&!isTechnicalReviewQueue(trend)?"selected":""}`}><input type="checkbox" disabled={busy!==""||isTechnicalReviewQueue(trend)} checked={!isTechnicalReviewQueue(trend)&&state.selectedTrendIds.includes(trend.id)} onChange={()=>{if(isTechnicalReviewQueue(trend))return;setState((current)=>({...current,selectedTrendIds:current.selectedTrendIds.includes(trend.id)?current.selectedTrendIds.filter((value)=>value!==trend.id):[...current.selectedTrendIds,trend.id],reviewText:"",reviewVariants:{},activeReviewRoute:undefined,factCheck:null,factCheckContract:0}));}}/><span><b>{index+1}. {trend.title}{isTechnicalReviewQueue(trend)?(be?" — патрабуе размеркавання":" — требуется распределение"):trend.operator_optional?(be?" — дадатковая, на выбар":" — дополнительная, на выбор"):""}</b><small>{trend.summary}</small>
         {trend.operator_optional&&trend.optional_reason&&<small>{be?"Чаму асобна":"Почему отдельно"}: {trend.optional_reason}</small>}
         <small>{be?"Сюжэтныя лініі":"Сюжетные ветки"}: {trend.branches.length} · {be?"абавязковыя":"обязательные"}: {trend.branches.filter(b=>b.required).length}</small>
         <small>{trend.branches.filter(b=>b.required).map(b=>b.title).join(" · ")}</small>
         </span></label>)}</div>
+      {reviewQueueItems.length>0&&<div className="w-review-editorial-review-queue" style={{border:"1px solid #d6a573",borderRadius:12,padding:12,margin:"12px 0",fontSize:13}}>
+        <b>{be?"Не размеркаваныя па сюжэтах публікацыі":"Публикации, не распределённые по сюжетам"}: {reviewQueueItems.length}</b>
+        <p style={{fontSize:12,margin:"5px 0 10px"}}>{be?
+          "Матэрыялы ўжо знаходзяцца ў пуле і маюць правераныя Evidence. Гэта не асобная тэндэнцыя. Прызначце кожны матэрыял да адпаведнай сюжэтнай веткі, не запускаючы ІІ паўторна.":
+          "Эти материалы уже есть в пуле и имеют проверенные Evidence. Это не самостоятельная тенденция. Назначьте каждому подходящую сюжетную ветку без повторного анализа ИИ."}</p>
+        {reviewQueueItems.map(p=>{
+          const position=Number(p.publicationId.slice(1))-1;
+          const item=state.items[position];
+          return <div key={p.publicationId} style={{padding:"8px 0",borderTop:"1px solid #dcd4cb"}}>
+            <div><b>{p.publicationId} · {item?.title||p.publicationId}</b>
+              {" · "}<span>{item?.source||"Источник"}</span></div>
+            <p style={{fontSize:12,margin:"4px 0"}}>{p.claim}</p>
+            <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center"}}>
+              <select aria-label={"Выбрать сюжет для "+p.publicationId} value={queueTargets[p.publicationId]||""}
+                disabled={busy!==""}
+                onChange={e=>setQueueTargets(current=>({...current,[p.publicationId]:e.target.value}))}
+                style={{minWidth:240,maxWidth:"100%",flex:"1 1 240px"}}>
+                <option value="">{be?"Абярыце сюжэтную ветку":"Выберите сюжетную ветку"}</option>
+                {editorialTargets.map(t=><option key={t.branchId} value={t.branchId}>{t.trendTitle+" → "+t.branchTitle}</option>)}
+              </select>
+              <button type="button" className="secondary-button" disabled={busy!==""||!queueTargets[p.publicationId]}
+                onClick={()=>reassignReviewQueue(p.publicationId)}>
+                {be?"Замацаваць за сюжэтам":"Привязать к сюжету"}
+              </button>
+            </div>
+          </div>;
+        })}
+        <small>{be?
+          "Калі публікацыя не адпавядае ніводнай ветцы, не размяркоўвайце яе фармальна: яна застанецца па-за выбраным аглядам.":
+          "Если публикация не соответствует ни одной ветке, не распределяйте её формально: она останется вне выбранного обзора."}</small>
+      </div>}
       <details style={{margin:"10px 0",fontSize:12}}>
         <summary>{be?"Улік усіх публікацый":"Учёт всех публикаций"} — {state.editorialMap.coverage.length};
           {" "}{be?"звязана з сюжэтамі":"связано с сюжетами"}: {state.editorialMap.coverage.filter(c=>c.status==="used"||c.status==="supporting").length}; {" "}{be?"у выбраных тэндэнцыях":"в выбранных тенденциях"}: {new Set(selectedTrends.flatMap(t=>t.branches.flatMap(b=>[...b.evidence_ids,...b.contrary_evidence_ids].map(ref=>ref.split(":")[0])))).size}
