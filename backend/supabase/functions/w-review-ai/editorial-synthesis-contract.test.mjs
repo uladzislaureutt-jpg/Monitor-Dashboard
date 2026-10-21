@@ -48,6 +48,11 @@ test("block schema and all verified material are preserved; no extra model calls
  assert.ok(synth.includes("finishQuota(true)"));
  assert.ok(synth.includes("editorial_contract:\"media_review_v2\""));
  assert.ok(synth.includes("opening_starts_with_quote:openingStartsWithQuote"));
+ assert.ok(synth.includes("opening_matches_source_title:openingVerifiedHeadlines>0"));
+ assert.ok(synth.includes("editorialHeadlineUsage(\n      openingParagraph,publicationHeadlines)"));
+ assert.ok(contract.includes("выразительность должна усиливать"));
+ assert.ok(!contract.includes("W-Review-5"));
+ assert.ok(!contract.includes("W-Review-6"));
  assert.ok(synth.includes("quoteOutcome=editorialQuoteUsage(reviewText,quoteCandidates)"));
  assert.ok(!synth.includes("quoteOutcome.used<Math.min(quoteTarget"));
  const d=readFileSync(new URL("./editorial-dossier.ts",import.meta.url),"utf8");
