@@ -124,7 +124,12 @@ export function verifyEvidenceCards(raw:any,documents:EvidenceDocument[]): {card
     }
     rejected+=Math.max(0,incoming.records.length-45);
     const uniqueSegments=new Set(records.map(item=>item.anchor_id).filter(id=>id!=="TITLE"));
-    const minRecords=Math.min(5,Math.max(1,Math.ceil(doc.passages.length*0.45)));
+    // Minimum number of distinct verified records must reflect REAL article
+    // length, not the paragraph count. A 1.4k-character article containing
+    // 28 short paragraphs should not have the same five-record minimum as
+    // an 8.4k-character investigation containing 30 paragraphs.
+    const sourceChars=doc.passages.reduce((total,p)=>total+p.text.length,0);
+    const minRecords=sourceChars>=3500?5:sourceChars>=1000?3:sourceChars>=500?2:1;
     const minPassages=doc.passages.length>=4?2:1;
     if(records.length<minRecords || uniqueSegments.size<minPassages)
       return {cards:[],error:"evidence_insufficient_verified_coverage_material_"+(i+1)+
