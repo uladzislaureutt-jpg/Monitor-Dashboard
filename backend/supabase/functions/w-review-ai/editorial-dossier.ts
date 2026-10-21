@@ -269,7 +269,10 @@ export function makeSynthesisDossier(dossier:EditorialDossier,selected:string[],
     if(!b.evidence_ids.length||b.evidence_ids.concat(b.contrary_evidence_ids).some(ref=>!index.byId.has(ref)))
       throw Error("dossier_unverified_reference");
   }
-  const opening=Math.round(targetChars*0.065),ending=Math.round(targetChars*0.045),body=targetChars-opening-ending;
+  // Keep sufficient room for an attributable media-quote lede, and reserve
+  // only a short concrete ending: editorial examples do not impose a stock
+  // conclusion. Block budgets are guides, never permission to omit Evidence.
+  const opening=Math.round(targetChars*0.085),ending=Math.round(targetChars*0.025),body=targetChars-opening-ending;
   // Count distinct statements, not repeated references, when budgeting evidence capacity.
   const branchWeight=(b:DossierBranch)=>{
     const distinct=new Set(b.evidence_ids.concat(b.contrary_evidence_ids).map(id=>
@@ -304,14 +307,12 @@ export function makeSynthesisDossier(dossier:EditorialDossier,selected:string[],
   const notSelected=dossier.coverage.filter(c=>!used.has(c.publication_id))
     .map(c=>c.publication_id+" / "+c.status+" / "+c.reason).join("\n");
   const text="РЕДАКЦИОННОЕ ДОСЬЕ v3 (план, а не готовая статья)."+
-    "\nОБЪЁМ: "+targetChars+" знаков, включая атрибуцию и переходы. Зачин ~"+opening+
-    " знаков, завершение ~"+ending+" знаков. Не увеличивай объём банальностями и повторами."+
-    "\nБЛОК opening: зачин, 1 естественный абзац. БЛОК ending: завершение, 1 естественный абзац."+
-    "\nЕдиный план: объём задан для блоков, число абзацев — ориентир авторского ритма. Короткие связки допустимы; общего минимума длины абзаца нет. "+
-    "Объёмы веток входят в объём своей линии, а не добавляются к нему. Перераспределяй место внутри блока по содержательной ёмкости. "+
-    "Раскрывай тезис разными фактами, существенной деталью или подлинной цитатой, сопоставлением позиций и обоснованным значением. "+
-    "Если механизм, контрпозиция или последствия не установлены, не придумывай их. Не повторяй один факт ради объёма. "+
-    "Обязательно раскрывай все ОБЯЗАТЕЛЬНЫЕ ветки, дополнительные по значимости. Технические ID только в block_id, не в тексте обзора.\n\n"+
+    "\nОБЪЁМ: "+targetChars+" знаков, включая атрибуцию и переходы. Планируй приблизительно, отдавая место важной фактуре."+
+    "\nБЛОК opening: открытие подлинным цитатным заголовком/точной формулировкой СМИ и ранней контрпозицией, когда она подтверждена; без универсального вступления о месте и дате события. БЛОК ending: короткий конкретный факт, предел прогноза либо оценка источника, не обязательное заключение."+
+    "\nБлоки нужны только для JSON и контрольного объёма: их границы и симметрия не определяют авторскую композицию. "+
+    "Ориентиры длины и абзацев не являются редакционными квотами. Развивай наиболее важные доказанные аргументы полно, не сворачивай статью ради числа вставленных цитат."+
+    "Показывай точные формулировки редакций, разные экспертные объяснения и реальные контрпозиции вместе с фактами и пределами выводов."+
+    "Не придумывай недоказанный механизм или заключение. Все обязательные ветки должны получить содержательное, а не номинальное раскрытие. Технические ID только в block_id.\n\n"+
     lines+"\n\nПРОСМОТРЕННЫЕ, НО НЕ ВОШЕДШИЕ В ВЫБРАННЫЕ ЛИНИИ:\n"+
     (notSelected||"Нет.");
   return {text,blocks,paragraphTarget:blocks.reduce((n,b)=>n+b.paragraphs,0),coveredPublications:used.size,totalPublications:index.publications.length,

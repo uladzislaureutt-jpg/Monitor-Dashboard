@@ -76,9 +76,11 @@ test("all five operator presets use 17% higher model plan without changing accep
 });
 
 test("author style prioritizes confirmed comparisons and no rhetorical inventions",()=>{
- assert.ok(synth.includes("СТИЛЕВОЙ ПРИОРИТЕТ W-REVIEW"));
- assert.ok(synth.includes("ЗАПРЕТ ПУСТОЙ РИТОРИКИ"));
- assert.ok(synth.includes("тектонический сдвиг"));
+ assert.ok(synth.includes("EDITORIAL_SYNTHESIS_CONTRACT_V2"));
+ const contract=readFileSync(new URL("./editorial-synthesis-contract.ts",import.meta.url),"utf8");
+ assert.ok(contract.includes("ЗАЧИН-ЦИТАТА"));
+ assert.ok(contract.includes("КОНТРПОЗИЦИЯ СРАЗУ ПОСЛЕ ЗАЧИНА"));
+ assert.ok(contract.includes("СОДЕРЖАТЕЛЬНАЯ ПОЛНОТА"));
  assert.ok(synth.includes("КАНОНИЧЕСКОЕ НАПИСАНИЕ"));
  assert.ok(synth.includes("«CFR.org»"));
 });

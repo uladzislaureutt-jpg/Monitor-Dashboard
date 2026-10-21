@@ -44,7 +44,7 @@ test("distinct sources take priority; canonical CFR is preserved; identical quot
   const brief=editorialQuoteBrief(candidates,2);
   assert.match(brief,/P01:E01/);
   assert.match(brief,/P02:E02/);
-  assert.match(brief,/не приписывайте её редакции/);
+  assert.match(brief,/не приписывай слова редакции без оснований/);
 });
 test("default quotation objectives are bounded by available evidence and user choice",()=>{
   assert.equal(editorialQuoteTarget(15,6000,"moderate"),4);
