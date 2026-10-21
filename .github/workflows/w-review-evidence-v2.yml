@@ -64,6 +64,8 @@ jobs:
         run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/editorial-quotes.test.mjs
       - name: Verify all publisher headlines are available independently of tagged Evidence
         run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/editorial-headlines.test.mjs
+      - name: Verify technical publication reallocation is evidence-safe
+        run: node --experimental-strip-types --test src/wReviewEditorialDistribution.test.mjs
       - name: Validate source-label attribution and single-pass length
         run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/review-output-guard.test.mjs
       - name: Test export of saved W-Review source labels
