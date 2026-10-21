@@ -338,7 +338,13 @@ Deno.serve(async (req: Request) => {
       log:event=>console.info("w_review_evidence_attempt "+JSON.stringify(event)),
       generate:async(provider,docs,attemptDeadline)=>{
         const materialText=renderEvidenceMaterials(docs);
-        const input="Верни ровно "+docs.length+" карточек, index начиная с нуля.\n\n"+materialText;
+        const isGroqSingleRepair=provider==="groq"&&docs.length===1;
+        const repairInstruction=isGroqSingleRepair
+          ?"\n\nАДРЕСНОЕ ВОССТАНОВЛЕНИЕ ПОЛНОТЫ: предыдущий ответ для этой публикации не прошёл проверку количества подтверждённых наблюдений. "+
+           "Для длинного текста (3500+ знаков) постарайся выделить 8–15 РАЗЛИЧНЫХ проверяемых записей из начала, середины и конца; "+
+           "для короткого достаточно 3–6 содержательных записей. Всякий source_excerpt обязан быть ДОСЛОВНЫМ фрагментом "+
+           "своего anchor_id. Не выдумывай наблюдения ради числа записей; недостаточно доказательств — лучше меньше фактов.":"";
+        const input="Верни ровно "+docs.length+" карточек, index начиная с нуля.\n\n"+materialText+repairInstruction;
         const schema=evidenceV2Schema(docs.length);
         if(provider==="primary"){
           const model=W_REVIEW_GEMINI_PRIMARY;
