@@ -10,6 +10,7 @@ import { W_REVIEW_GEMINI_PRIMARY, W_REVIEW_GEMINI_FALLBACK, W_REVIEW_GEMINI_ROUT
 import { prepareEvidence, structuredGeminiRequest, preparationBudget } from "./preparation.ts";
 import { evidenceV2Instructions, evidenceV2Schema, makeEvidenceDocuments, renderEvidenceMaterials, verifyEvidenceCards, verifyEvidenceCardsIndividually, formatEvidenceCard, type EvidenceCard } from "./evidence-v2.ts";
 import { editorialQuoteInventory, editorialQuoteTarget, editorialQuoteBrief, editorialQuoteUsage } from "./editorial-quotes.ts";
+import { publicationHeadlineInventory, editorialHeadlineTarget, editorialHeadlineBrief, editorialHeadlineUsage } from "./editorial-headlines.ts";
 
 // 140 s maximum per long W-Review HTTP operation. Supabase's hosted
 // request idle timeout is 150 s; keep >=10 s for response serialization
@@ -959,6 +960,11 @@ ${styleProfile || "Живой сдержанный редакционный ст
     const quoteCandidates=editorialQuoteInventory(cards);
     const quoteTarget=editorialQuoteTarget(quoteCandidates.length,targetChars,quoteDensity);
     const quoteBrief=editorialQuoteBrief(quoteCandidates,quoteTarget);
+    // Every publication's real title is available even without a special
+    // Evidence kind=headline. Do not confuse AI's inventory with title count.
+    const publicationHeadlines=publicationHeadlineInventory(cards);
+    const headlineTarget=editorialHeadlineTarget(publicationHeadlines.length,targetChars,headlineDensity);
+    const headlineBrief=editorialHeadlineBrief(publicationHeadlines,headlineTarget);
 
     const lengthMinimum=Math.round(targetChars*0.95);
     const lengthMaximum=Math.round(targetChars*1.05);
@@ -996,6 +1002,7 @@ ${styleProfile || "Живой сдержанный редакционный ст
 АТРИБУЦИЯ В ТЕКСТЕ. Все названия СМИ — в русских кавычках «ёлочках», как в основном тексте, так и в библиографических скобках. Названия СМИ будут автоматически выделены курсивом при экспорте DOCX. КАНОНИЧЕСКОЕ НАПИСАНИЕ. Аналитический центр Council on Foreign Relations в ссылках всегда указывай «CFR.org»: заглавные CFR, строчные .org, без косой черты после названия. Это относится только к названию источника; URL публикации не меняй. Ссылки на публикации указывай перед ЗАКЛЮЧИТЕЛЬНОЙ точкой предложения, без точки непосредственно перед скобками: «... оценка («CNN», «Bloomberg»).», а НЕ «... оценка. (CNN, Bloomberg)». Приводи только те конкретные СМИ, чьи Evidence Cards подтверждают данное утверждение; не прикрывай спорные выводы перечнем всех изданий. Канонические источники: ${canonicalSources}.\nSOURCE_REGISTRY (внутренний индекс → реальное СМИ): ${sourceRegistry}.
 Цитаты: ${densityRule("Цитаты",quoteDensity)}
 Заголовки: ${densityRule("Выразительные заголовки",headlineDensity)}
+ЗАГОЛОВКИ В АВТОРСКОМ ЖАНРЕ: отдельная запись kind=headline НЕ нужна, чтобы цитировать реальный заголовок публикации из реестра. Заголовок – самостоятельное журналистское высказывание: сопоставляй выразительные и контрастные названия статей, а не ограничивайся сухим пересказом их фабулы. Не путай цитирование названия материала с прямой речью собеседника. Не придумывай заголовков.
 Эксперты: ${densityRule("Эксперты",expertDensity)}
 
 STYLE_PROFILE:
@@ -1008,7 +1015,7 @@ STYLE_ONLY (образцы авторской манеры, НЕ ИСТОЧНИ�
 ${styleOnlyText || "Дополнительные фрагменты недоступны. Следуй STYLE_PROFILE."}
 
 РЕЗУЛЬТАТ. Верни ОДИН JSON с массивом blocks и массивами section_titles, bold_phrases. Каждый blocks содержит block_id из единого плана и paragraphs — массив естественных абзацев готового обзора. Верни каждый блок ровно один раз в порядке плана: opening, выбранные line_*, ending. Это одно непрерывное авторское повествование, не отдельные статьи; границы блоков и их ID читателю не показываются. Объём и ориентиры абзацев бери только из единого плана. Короткие связки допустимы; общего минимума длины абзаца нет. Обязательны раскрытие всех выбранных сюжетов и общая длина. Не выдавай план вместо текста. section_titles:[] и bold_phrases:[] допустимы. Не вставляй Markdown ** или __. Без промежуточных замечаний.` },
-        { role: "user", content: `ЗАДАНИЕ ОПЕРАТОРА:\n${task}\n\nРЕДАКЦИОННОЕ ДОСЬЕ И РАСПРЕДЕЛЕНИЕ ОБЪЁМА:\n${trendText}\n\nЦИТАТЫ ДЛЯ ОСМЫСЛЕННОГО ИСПОЛЬЗОВАНИЯ:\n${quoteBrief}\n\nИНСТРУКЦИЯ ДЛЯ ЭТАПА:\n${String(body?.stage_note || "").slice(0,500)}\n\nEVIDENCE CARDS:\n${evidenceText}\n\nФИНАЛЬНОЕ ЗАДАНИЕ: создай ОДИН непрерывный авторский аналитический обзор в массиве blocks. Внутренний ориентир модели — ${planningTargetChars} знаков с пробелами (плановый запас +17% относительно выбранных оператором ${targetChars} знаков для компенсации систематического недобора). Развивай содержание и распределяй объём по этому увеличенному плану; не сокращай заранее аналитические блоки до номинала оператора. Следуй единому плану блоков, ориентир суммарно ${paragraphTarget} естественных абзацев разной длины. Бюджет каждого блока включает атрибуцию и переходы; не заменяй развёрнутое раскрытие кратким упоминанием. Если фактологического материала достаточно, используй его для развития аргументации, а не сворачивай анализ раньше приближения к внутренней цели ${planningTargetChars} знаков. Каждый следующий развивает общую мысль, а не описывает следующее СМИ. После обработки всех тенденций заверши подтверждённым содержательным акцентом, не формальной сводкой. Не допускай ни одной непереведённой англоязычной цитаты (кроме официальных названий), расставляй источники только по образцу «... («CNN», «BBC News»).», не создавай собственных псевдоцитат и шаблонной итоговой концовки. Не используй Markdown, ненужные подзаголовки и списки источников.` }],
+        { role: "user", content: `ЗАДАНИЕ ОПЕРАТОРА:\n${task}\n\nРЕДАКЦИОННОЕ ДОСЬЕ И РАСПРЕДЕЛЕНИЕ ОБЪЁМА:\n${trendText}\n\nЦИТАТЫ ДЛЯ ОСМЫСЛЕННОГО ИСПОЛЬЗОВАНИЯ:\n${quoteBrief}\n\nПОЛНЫЙ РЕЕСТР ЗАГОЛОВКОВ ДЛЯ РЕДАКЦИОННОГО СОПОСТАВЛЕНИЯ:\n${headlineBrief}\n\nИНСТРУКЦИЯ ДЛЯ ЭТАПА:\n${String(body?.stage_note || "").slice(0,500)}\n\nEVIDENCE CARDS:\n${evidenceText}\n\nФИНАЛЬНОЕ ЗАДАНИЕ: создай ОДИН непрерывный авторский аналитический обзор в массиве blocks. Внутренний ориентир модели — ${planningTargetChars} знаков с пробелами (плановый запас +17% относительно выбранных оператором ${targetChars} знаков для компенсации систематического недобора). Развивай содержание и распределяй объём по этому увеличенному плану; не сокращай заранее аналитические блоки до номинала оператора. Следуй единому плану блоков, ориентир суммарно ${paragraphTarget} естественных абзацев разной длины. Бюджет каждого блока включает атрибуцию и переходы; не заменяй развёрнутое раскрытие кратким упоминанием. Если фактологического материала достаточно, используй его для развития аргументации, а не сворачивай анализ раньше приближения к внутренней цели ${planningTargetChars} знаков. Каждый следующий развивает общую мысль, а не описывает следующее СМИ. После обработки всех тенденций заверши подтверждённым содержательным акцентом, не формальной сводкой. Не допускай ни одной непереведённой англоязычной цитаты (кроме официальных названий), расставляй источники только по образцу «... («CNN», «BBC News»).», не создавай собственных псевдоцитат и шаблонной итоговой концовки. Не используй Markdown, ненужные подзаголовки и списки источников.` }],
       response_format: {type:"json_schema",json_schema:{name:"w_review_blocks_v1",strict:true,
         schema:synthesisResponseSchema(synthesisDossier.blocks)}},
     };
@@ -1096,6 +1103,7 @@ ${styleOnlyText || "Дополнительные фрагменты недост
       required_branches:synthesisDossier.requiredBranches,
       target_chars:targetChars,model_target_chars:planningTargetChars,evidence_chars:evidenceText.length,
       verified_quote_candidates:quoteCandidates.length,quote_target:quoteTarget,
+      publication_headlines:publicationHeadlines.length,headline_target:headlineTarget,
       style_chars:styleProfile.length,dossier_chars:trendText.length,
       output_tokens:synthesisOutputTokenBudget,quota_reserved:Boolean(reservationId)
     }));
@@ -1161,6 +1169,7 @@ ${styleOnlyText || "Дополнительные фрагменты недост
     // Only deterministic warnings. Keep the draft even when outside tolerance.
     const styleCopyWarnings=inspectStyleOnlyCopy(reviewText,styleExcerpts);
     const quoteOutcome=editorialQuoteUsage(reviewText,quoteCandidates);
+    const headlineOutcome=editorialHeadlineUsage(reviewText,publicationHeadlines);
     const preflightWarnings:string[]=[
       ...normalizedSources.attributionWarnings,
       ...(parsed.block_warnings||[]),
@@ -1186,7 +1195,9 @@ ${styleOnlyText || "Дополнительные фрагменты недост
       reasoning_tokens:result.ok?result.reasoning_tokens||0:0,
       style_chars:styleProfile.length,style_excerpt_chars:styleOnlyText.length,evidence_chars:evidenceText.length,
       verified_quote_candidates:quoteCandidates.length,quote_target:quoteTarget,
+      publication_headlines:publicationHeadlines.length,headline_target:headlineTarget,
       directly_quoted_entries_used:quoteOutcome.used,quoted_sources:quoteOutcome.sources,
+      headlines_available:headlineOutcome.titlesAvailable,headlines_directly_quoted:headlineOutcome.quotedTitles,
       resolved_pool_source_labels:normalizedSources.substitutions,
       unresolved_source_labels:normalizedSources.unresolved.length,
       semantic_attribution_warnings:normalizedSources.attributionWarnings.length,
