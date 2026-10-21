@@ -67,5 +67,6 @@ test("UI distinguishes twelve source titles from separately tagged headline reco
   assert.ok(ui.includes('state.items.filter(item=>item.title.trim().length>0).length'));
   assert.ok(ui.includes('"заголовков публикаций"'));
   assert.ok(ui.includes('"отдельно выделено в Evidence"'));
-  assert.ok(ui.includes("state.editorialMap.inventory.headlines"));
+  assert.ok(ui.includes('item.evidenceData?.records?.filter(record=>record.kind==="headline")'));
+  assert.ok(!ui.includes('<b>{state.editorialMap.inventory.headlines}</b>'));
 });
