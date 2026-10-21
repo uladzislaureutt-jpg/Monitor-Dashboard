@@ -129,3 +129,29 @@ test("catalog region travels only as context, without changing source passages o
   assert.equal(docs[0].passages[0].text,"Редакция цитирует слова зарубежного эксперта.");
   assert.ok(!("region" in evidenceV2Schema(2).properties.cards.items.properties));
 });
+
+test("21 Oct regression: 28 short paragraphs do not demand five distinct facts",()=>{
+  const text=Array.from({length:28},(_,i)=>"Сведения о событии "+i+": участник высказал конкретную позицию.").join("\n\n");
+  const d=makeEvidenceDocuments([{index:0,publication_id:"short",source:"СМИ",title:"Краткий материал",text}]);
+  assert.equal(d[0].passages.length,28);
+  assert.ok(text.length>1000&&text.length<3500);
+  const records=[0,5,10,20].map(i=>rec("fact","Зафиксирована позиция участника номер "+i,
+    d[0].passages[i].id,d[0].passages[i].text.slice(0,42)));
+  const verified=verifyEvidenceCards({cards:[{index:0,title_ru:"Краткий материал",records}]},d);
+  assert.equal(verified.error,null);
+  assert.equal(verified.cards[0].validation.accepted,4);
+});
+test("21 Oct regression: four source-anchored records remain insufficient for 8k article",()=>{
+  const text=Array.from({length:30},(_,i)=>"Абзац "+i+": "+("Редакция приводит проверяемые оценки и существенные подробности события. ".repeat(4))).join("\n\n");
+  const d=makeEvidenceDocuments([{index:0,publication_id:"long",source:"СМИ",title:"Большая статья",text}]);
+  assert.ok(d[0].passages.length>=20);
+  assert.ok(text.length>3500);
+  const build=n=>({cards:[{index:0,title_ru:"Большая статья",records:
+    Array.from({length:n},(_,i)=>rec("fact","Статья содержит наблюдение под номером "+i,
+      d[0].passages[i].id,d[0].passages[i].text.slice(0,46)))}]});
+  const rejected=verifyEvidenceCards(build(4),d);
+  assert.match(rejected.error||"",/records_4_of_5_passages_4_of_2/);
+  const accepted=verifyEvidenceCards(build(8),d);
+  assert.equal(accepted.error,null);
+  assert.equal(accepted.cards[0].validation.accepted,8);
+});
