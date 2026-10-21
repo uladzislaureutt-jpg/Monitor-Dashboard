@@ -1175,6 +1175,11 @@ ${styleOnlyText || "Дополнительные фрагменты недост
     const openingStartsWithQuote=/^\s*[«„]/u.test(openingParagraph);
     const openingCitesSource=sourceNames.some((name:string)=>
       openingParagraph.includes("«"+name+"»"));
+    // Verify the literal media headline in the opening against the actual
+    // operator-submitted publication titles. A leading guillemet alone
+    // does NOT prove the model quoted anything authentic.
+    const openingVerifiedHeadlines=editorialHeadlineUsage(
+      openingParagraph,publicationHeadlines).quotedTitles;
     const preflightWarnings:string[]=[
       ...normalizedSources.attributionWarnings,
       ...(parsed.block_warnings||[]),
@@ -1186,6 +1191,9 @@ ${styleOnlyText || "Дополнительные фрагменты недост
     // is NOT evidence of poor writing or grounds for another model call.
     if(quoteCandidates.length===0 && publicationHeadlines.length===0){
       preflightWarnings.push("В Evidence не найдено дословных цитат или оригинальных заголовков: цитатный зачин без дополнительных источников невозможен.");
+    }
+    if(publicationHeadlines.length && !openingVerifiedHeadlines){
+      preflightWarnings.push("Зачин не содержит дословного заголовка из реестра публикаций. Если в источниках есть подходящая формулировка, проверьте первый абзац; автоматическая псевдоцитата не добавляется.");
     }
     console.info("w_review_single_pass "+JSON.stringify({
       provider:selectedProvider,model:selectedModel,target_chars:targetChars,model_target_chars:planningTargetChars,
@@ -1206,6 +1214,7 @@ ${styleOnlyText || "Дополнительные фрагменты недост
       headlines_available:headlineOutcome.titlesAvailable,headlines_directly_quoted:headlineOutcome.quotedTitles,
       editorial_contract:"media_review_v2",opening_starts_with_quote:openingStartsWithQuote,
       opening_cites_real_source:openingCitesSource,
+      opening_matches_source_title:openingVerifiedHeadlines>0,
       resolved_pool_source_labels:normalizedSources.substitutions,
       unresolved_source_labels:normalizedSources.unresolved.length,
       semantic_attribution_warnings:normalizedSources.attributionWarnings.length,
