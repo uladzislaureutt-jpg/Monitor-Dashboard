@@ -12,7 +12,7 @@ export type WEditorialBranch = {
 export type WEditorialTrend = {
   id: string; title: string; summary: string; thesis: string;
   sources: string[]; branches: WEditorialBranch[];
-  operator_optional?: boolean; optional_reason?: string;
+  operator_optional?: boolean; optional_reason?: string; technical_review_queue?:boolean;
 };
 export type WEditorialCoverage = {
   publication_id: string; status: "used"|"supporting"|"duplicate"|"excluded"|"insufficient"|"reserve";
@@ -126,6 +126,7 @@ export async function wEditorialMap(input: { task: string; evidenceCards: string
     thesis:String(t?.thesis||""),
     operator_optional:t?.operator_optional===true,
     optional_reason:String(t?.optional_reason||""),
+    technical_review_queue:t?.technical_review_queue===true,
     sources:Array.isArray(t?.sources)?t.sources.map(String):[],
     branches:Array.isArray(t?.branches)?t.branches.map((b:any)=>({
       id:String(b?.id||""),title:String(b?.title||""),claim:String(b?.claim||""),
