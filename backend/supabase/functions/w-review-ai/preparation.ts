@@ -65,7 +65,12 @@ export async function prepareEvidence(input:{
   const usage={prompt_tokens:0,completion_tokens:0,total_tokens:0};
   const attempts:Array<Record<string,unknown>>=[];
   // Only unresolved or low-quality results of THIS request may be retried; no saved previous-run versions.
+  // Accepted-but-sparse cards are VALID and durable. An optional bounded
+  // Gemini single-article enhancement may improve them once. Do NOT send
+  // accepted cards through the full provider cascade (CF/Groq): it caused
+  // 60-80s waits in the 21 Oct run while returning the same weak evidence.
   const remaining=()=>input.documents.map((_,i)=>i).filter(i=>!best.has(i)||best.get(i)!.warnings.length>0);
+  const missing=()=>input.documents.map((_,i)=>i).filter(i=>!best.has(i));
   async function attempt(provider:"primary"|"cloudflare"|"fallback"|"groq",indices:number[],deadline:number){
     if(!indices.length||preparationBudget(deadline,35000)<2000)return;
     const docs=indices.map((i,index)=>({...input.documents[i],index}));
@@ -119,12 +124,12 @@ export async function prepareEvidence(input:{
       await attempt("primary",[index],primaryDeadline);
     }
   }
-  if(input.available.cloudflare)await attempt("cloudflare",remaining(),
+  if(input.available.cloudflare)await attempt("cloudflare",missing(),
     Math.min(input.deadline-(input.cloudflareFirst?18000:35000),
       Date.now()+(input.cloudflareFirst?60000:35000)));
-  if(input.available.fallback)await attempt("fallback",remaining(),Math.min(input.deadline,Date.now()+22000));
+  if(input.available.fallback)await attempt("fallback",missing(),Math.min(input.deadline,Date.now()+22000));
   if(input.available.groq){
-    const originalGroq=await attempt("groq",remaining(),
+    const originalGroq=await attempt("groq",missing(),
       Math.min(input.deadline,Date.now()+(input.cloudflareFirst?12000:31000)));
     // Groq can return perfectly parsed, source-anchored Evidence with one
     // too-few factual record per article. Salvage every individually valid
