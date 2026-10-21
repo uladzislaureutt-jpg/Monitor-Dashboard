@@ -150,3 +150,54 @@ test('Do not initiate repair on timeout or malformed answer',async()=>{
   });
   assert.deepEqual(calls,['groq']);
 });
+
+test('21 Oct regression: accepted sparse card never cascades to Cloudflare/Groq',async()=>{
+  const long=makeEvidenceDocuments([{index:0,publication_id:'long-accepted',source:'Газета',title:'Тест',
+    text:Array.from({length:12},(_,i)=>
+      'Раздел '+i+': '+('Редакция сообщает доказуемые обстоятельства. '.repeat(12))).join('\\n\\n')}]);
+  assert.ok(long[0].passages.length>=6);
+  const source=long[0].passages[0].text;
+  const records=Array.from({length:5},(_,i)=>({
+    kind:'fact',statement_ru:'Редакция сообщает проверяемое обстоятельство № '+i,
+    anchor_id:long[0].passages[i%3].id,
+    source_excerpt:long[0].passages[i%3].text.slice(0,65),
+    original_quote:'',quote_ru:'',speaker:'',role:''
+  }));
+  const calls=[];
+  const out=await prepareEvidence({documents:long,deadline:Date.now()+130000,
+    available:{primary:true,cloudflare:true,fallback:true,groq:true},
+    generate:async(provider,documents)=>{
+      calls.push([provider,documents.length]);
+      return {reply:ok({cards:[{index:0,title_ru:'Тест',records}]}),model:'gemini-3.5-flash-lite'};
+    }});
+  assert.deepEqual(calls,[['primary',1],['primary',1]]);
+  assert.equal(out.articles.length,1);
+  assert.equal(out.articles[0].card.validation.accepted,5);
+  assert.ok(out.articles[0].warnings.includes('sparse_records'));
+  assert.equal(out.attempts.length,2);
+});
+test('21 Oct regression: only truly missing card is eligible for reserve',async()=>{
+  const long=makeEvidenceDocuments([0,1].map(index=>({index,publication_id:'doc-'+index,
+    source:'Газета',title:'Статья',text:Array.from({length:8},(_,j)=>
+    'Часть '+j+'. '+('Редакция приводит конкретные факты. '.repeat(20))).join('\\n\\n')})));
+  const records=doc=>Array.from({length:5},(_,i)=>({kind:'fact',
+    statement_ru:'Проверяемая запись об обстоятельствах № '+i,
+    anchor_id:doc.passages[i%3].id,
+    source_excerpt:doc.passages[i%3].text.slice(0,60),
+    original_quote:'',quote_ru:'',speaker:'',role:''}));
+  const calls=[];
+  const result=await prepareEvidence({documents:long,deadline:Date.now()+130000,
+    available:{primary:true,cloudflare:true,fallback:false,groq:true},
+    generate:async(provider,documents)=>{
+      calls.push([provider,...documents.map(d=>d.publication_id)]);
+      if(provider==='primary'&&documents.length===2)return {reply:ok({cards:[
+        {index:0,title_ru:'Статья',records:records(documents[0])},
+        {index:1,title_ru:'Статья',records:[]}
+      ]}),model:provider};
+      if(provider==='primary')return {reply:bad(504,'timeout'),model:provider};
+      const cards=documents.map((doc,index)=>({index,title_ru:'Статья',records:records(doc)}));
+      return {reply:ok({cards}),model:provider};
+    }});
+  assert.deepEqual(calls.filter(c=>c[0]==='cloudflare'),[['cloudflare','doc-1']]);
+  assert.deepEqual(result.articles.map(x=>x.card.publication_id),['doc-0','doc-1']);
+});
