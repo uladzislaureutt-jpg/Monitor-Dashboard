@@ -715,7 +715,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
           </p>)}
         </div>
       </details>
-      <div className="w-review-inventory">{be?"Знойдзена ў пуле":"Найдено в пуле"}: <b>{state.editorialMap.inventory.quotes}</b> {be?"цытат":"цитат"} · <b>{state.editorialMap.inventory.headlines}</b> {be?"загалоўкаў":"заголовков"} · <b>{state.editorialMap.inventory.experts}</b> {be?"экспертных каментарыяў":"экспертных комментариев"}</div>
+      <div className="w-review-inventory">{be?"Знойдзена ў пуле":"Найдено в пуле"}: <b>{state.editorialMap.inventory.quotes}</b> {be?"цытат":"цитат"} · <b>{state.items.filter(item=>item.title.trim().length>0).length}</b> {be?"загалоўкаў публікацый":"заголовков публикаций"} ({be?"асобна выдзелена ў Evidence":"отдельно выделено в Evidence"}: {state.items.reduce((n,item)=>n+(item.evidenceData?.records?.filter(record=>record.kind==="headline").length||0),0)}) · <b>{state.editorialMap.inventory.experts}</b> {be?"экспертных каментарыяў":"экспертных комментариев"}</div>
       <div className="w-review-density">
         <label><span>{be?"Цытаты":"Цитаты"}</span><select value={state.density.quotes} onChange={(e)=>setState({...state,density:{...state.density,quotes:e.target.value as WDensity},reviewText:"",reviewVariants:{},activeReviewRoute:undefined,factCheck:null,factCheckContract:0})}>{densityOptions}</select></label>
         <label><span>{be?"Загалоўкі":"Заголовки"}</span><select value={state.density.headlines} onChange={(e)=>setState({...state,density:{...state.density,headlines:e.target.value as WDensity},reviewText:"",reviewVariants:{},activeReviewRoute:undefined,factCheck:null,factCheckContract:0})}>{densityOptions}</select></label>
