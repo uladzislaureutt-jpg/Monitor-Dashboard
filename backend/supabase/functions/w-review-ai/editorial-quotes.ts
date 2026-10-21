@@ -17,7 +17,7 @@ export function editorialQuoteInventory(cards:string[]):EditorialQuote[]{
     for(const line of card.split(/\r?\n/)){
       // Only E## [quote/P###] entries. A SOURCE excerpt from a fact record
       // is evidence of the fact, not authorization to manufacture a quotation.
-      const match=line.match(/^(E\d{2}) \[quote\/[A-Z0-9]+\] [\s\S]*? \| SOURCE: «[^»]*» \| ORIGINAL: «([^»]+)» \| RU: «([^»]+)» \| SPEAKER: (.*)$/);
+      const match=line.match(/^(E\d{2}) \[quote\/[A-Z0-9]+\] [\s\S]*? \| ORIGINAL: «(.+?)» \| RU: «(.+?)» \| SPEAKER: (.*)$/);
       if(!match)continue;
       const original=clean(match[2]),quoteRu=clean(match[3]);
       if(original.length<12||quoteRu.length<18||quoteRu.length>450)continue;
