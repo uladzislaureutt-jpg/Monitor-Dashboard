@@ -4,6 +4,7 @@ mod importer;
 mod models;
 mod report;
 mod sync;
+mod transcription_coverage;
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -219,11 +220,26 @@ fn call_supabase_edge(
     serde_json::from_str(&text).map_err(|e| format!("EDGE_JSON: {e}; body={text}"))
 }
 
+// FFmpeg's silencedetect is a FREE, local acoustic check, not speech recognition.
+// Failed diagnostics are nonfatal: never suppress warnings without acoustic evidence.
+fn detect_acoustic_silence(audio: &std::path::Path, ffmpeg: &std::path::Path, duration: f64)
+    -> Option<Vec<transcription_coverage::SilenceSpan>> {
+    let output=Command::new(ffmpeg)
+        .args(["-hide_banner","-loglevel","info","-nostdin","-i"])
+        .arg(audio).args(["-af","silencedetect=noise=-38dB:d=0.6","-f","null","-"])
+        .output().ok()?;
+    if !output.status.success(){return None;}
+    Some(transcription_coverage::parse_silence(&String::from_utf8_lossy(&output.stderr),duration))
+}
+
 fn transcribe_audio_chunks(audio: &std::path::Path, app: &AppHandle, base_url: &str, anon_key: &str, access_token: &str) -> Result<(String, String, f64, String, Vec<TikTokTranscriptSegment>, Vec<String>), String> {
     let ffmpeg = app.path().resolve("binaries/ffmpeg.exe", tauri::path::BaseDirectory::Resource).map_err(|e|e.to_string())?;
     let size = std::fs::metadata(audio).map_err(|e|e.to_string())?.len();
     let duration_estimate = (size as f64 * 8.0 / 32000.0).max(1.0);
     let count = (duration_estimate / 45.0).ceil().max(1.0) as usize;
+    // Acoustic verification is run ONCE over the already-compressed MP3.
+    // This introduces no Whisper calls or paid services.
+    let silent_intervals=detect_acoustic_silence(audio,&ffmpeg,duration_estimate);
     if count > 240 { return Err("Запись слишком длинная для одного запуска.".to_string()); }
     let client=reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(150)).build().map_err(|e|e.to_string())?;
     let endpoint=format!("{}/functions/v1/media-transcribe",base_url.trim().trim_end_matches('/'));
@@ -233,6 +249,10 @@ fn transcribe_audio_chunks(audio: &std::path::Path, app: &AppHandle, base_url: &
     let mut language=String::new();
     let mut model=String::new();
     let mut duration=0.0_f64;
+    // The Groq rate limit covers many requests per minute. Once a 429 was
+    // observed while transcribing this video, route the remaining chunks to
+    // existing CF Whisper fallback rather than repeatedly hammering Groq.
+    let mut groq_rate_limited=false;
     for index in 0..count {
         // Three seconds of context on BOTH sides of each 45-second segment.
         // Select the transcript only from the segment's OWN 45-second interval.
@@ -257,6 +277,7 @@ fn transcribe_audio_chunks(audio: &std::path::Path, app: &AppHandle, base_url: &
         }
         let form=reqwest::blocking::multipart::Form::new()
             .text("app_version",env!("CARGO_PKG_VERSION").to_string())
+            .text("skip_groq",groq_rate_limited.to_string())
             .part("file",reqwest::blocking::multipart::Part::bytes(bytes).file_name("audio.mp3"));
         let response=client.post(&endpoint).header("apikey",anon_key.trim()).bearer_auth(access_token.trim())
             .multipart(form).send().map_err(|e|format!("TRANSCRIBE_NETWORK (часть {}): {e}",index+1))?;
@@ -264,6 +285,11 @@ fn transcribe_audio_chunks(audio: &std::path::Path, app: &AppHandle, base_url: &
         let raw=response.text().map_err(|e|e.to_string())?;
         if !status.is_success(){return Err(format!("TRANSCRIBE_{} (часть {}): {}",status.as_u16(),index+1,raw.chars().take(300).collect::<String>()));}
         let payload:serde_json::Value=serde_json::from_str(&raw).map_err(|e|e.to_string())?;
+        if payload.get("groq_rate_limited").and_then(|v|v.as_bool()).unwrap_or(false)&&!groq_rate_limited {
+            groq_rate_limited=true;
+            warnings.push("Groq достиг лимита запросов 429. Остальные фрагменты направлены резервному Whisper; повторные запросы к Groq отключены до следующего ролика.".to_string());
+        }
+        let timing_status=payload.get("timing_status").and_then(|v|v.as_str()).unwrap_or("legacy");
         let chunk_duration=payload.get("duration").and_then(|v|v.as_f64()).unwrap_or(length).min(length);
         let chunk_end=offset+chunk_duration;
         duration=duration.max(chunk_end);
@@ -288,14 +314,19 @@ fn transcribe_audio_chunks(audio: &std::path::Path, app: &AppHandle, base_url: &
         let mut previous_end=boundary;
         for segment in &own_segments {
             if segment.start-previous_end>4.0 && segment.start<boundary+43.0 {
-                warnings.push(format!("Возможный пропуск речи: {:.0}–{:.0} с. Проверьте по видео.",previous_end,segment.start));
+                if let Some(note)=transcription_coverage::coverage_warning(
+                    previous_end,segment.start,silent_intervals.as_deref()) {
+                    warnings.push(note);
+                }
             }
             previous_end=previous_end.max(segment.end);
         }
         if own_segments.is_empty(){
             // Do not silently use a complete chunk transcript when segment timings
             // cannot establish its ownership or coverage.
-            warnings.push(format!("Участок {:.0}–{:.0} с: нет проверяемых временных сегментов.",boundary,boundary+45.0));
+            warnings.push(format!(
+                "Участок {:.0}–{:.0} с: нет пригодных временных меток Whisper ({}); полный текст фрагмента сохранён, но точный охват речи неизвестен.",
+                boundary,boundary+45.0,timing_status));
             let fallback=payload.get("text").and_then(|v|v.as_str()).unwrap_or("").trim();
             if fallback.is_empty(){return Err(format!("Whisper не распознал участок {:.0}–{:.0} с.",boundary,boundary+45.0));}
             parts.push(fallback.to_string());
