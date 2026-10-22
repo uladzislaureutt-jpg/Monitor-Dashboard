@@ -140,7 +140,12 @@ export function mergeCloudPayload<T>(local:CloudWorkspaces<T>,remote:CloudWorksp
     values.push(result.value);
   }
   const profile=ls.styleProfile||rs.styleProfile||"";
-  const contract=ls.styleContract||rs.styleContract||0;
+  const owner=ls.styleProfile?ls:rs;
+  // A previously built style is valid only if the merged set of author
+  // texts is unchanged. Do not silently mark a stale profile as ready.
+  const ownerTexts=Array.isArray(owner.samples)?owner.samples.map((x:any)=>String(x.text||"")).sort():[];
+  const mergedTexts=samples.map((x:any)=>String(x.text||"")).sort();
+  const contract=equal(ownerTexts,mergedTexts)?Number(owner.styleContract||0):0;
   const slots=values.map(v=>({...v,samples,styleProfile:profile,styleContract:contract}));
   const names=remote.names.map((n,i)=>n.startsWith("Тема ")&&localNames[i]?localNames[i]:n);
   return {value:{names,slots}};
