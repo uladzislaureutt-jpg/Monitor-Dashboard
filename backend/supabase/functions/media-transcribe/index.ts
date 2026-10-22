@@ -50,6 +50,9 @@ Deno.serve(async (req: Request) => {
   try { form = await req.formData(); } catch { return json({ error: "invalid_multipart" }, 400); }
 
   const file = form.get("file");
+  // The desktop client carries a Groq 429 circuit only for the CURRENT video.
+  // Fallback works as before, but later fragments do not repeatedly hit RPM.
+  const skipGroq = String(form.get("skip_groq")||"") === "true";
   const appVersion = String(form.get("app_version") || "0.0.0");
   if (!(file instanceof File)) return json({ error: "file_required" }, 400);
 
@@ -77,10 +80,12 @@ Deno.serve(async (req: Request) => {
   ];
   const deadline=Date.now()+137000;
   let lastError="transcription_not_configured";
+  let groqRateLimited=false;
   // Desktop already sends short, overlapping MP3 excerpts (usually 45 seconds).
   // Do not convert long original videos inside Supabase. Preserve time segments
   // so its midpoint-based de-duplication across fragments remains functional.
   for(const route of routes){
+    if(route.name==="groq_whisper"&&skipGroq)continue;
     if(!route.key||(route.name!=="groq_whisper"&&(!route.id||
        (route.name==="cloudflare_whisper_backup"&&route.id===routes[1].id))))continue;
     // A Cloudflare request needs base64 audio; avoid expansion of 22MB multipart.
@@ -115,14 +120,28 @@ Deno.serve(async (req: Request) => {
       const payload=route.name==="groq_whisper"?result:(result.result||result);
       const transcript=String(payload?.text||"").trim();
       if(response.ok&&result?.success!==false&&transcript){
-        const segments=Array.isArray(payload?.segments)?payload.segments.slice(0,500).map((s:any)=>({
-          start:Number(s?.start||0),end:Number(s?.end||0),text:String(s?.text||"").trim()
-        })).filter((s:{start:number;end:number;text:string})=>s.text&&Number.isFinite(s.start)&&Number.isFinite(s.end)&&s.end>=s.start):[];
-        const language=String(payload?.language||payload?.transcription_info?.language||"");
+        const rawSegments=Array.isArray(payload?.segments)?payload.segments.slice(0,500):[];
         const duration=Number(payload?.duration||payload?.transcription_info?.duration||0);
-        console.info("media_transcribe_route "+JSON.stringify({route:route.name,bytes:file.size,segments:segments.length}));
-        return json({text:transcript,language,duration,segments,model:route.model,provider:route.name,bytes:file.size});
+        // Cloudflare/Groq use seconds, but occasionally supply no or unusable
+        // segment metadata. Never pretend that missing timing means missing text.
+        const segments=rawSegments.map((s:any)=>({
+          start:Number(s?.start),end:Number(s?.end),text:String(s?.text||"").trim()
+        })).filter((s:{start:number;end:number;text:string})=>
+          Boolean(s.text)&&Number.isFinite(s.start)&&Number.isFinite(s.end)&&
+          s.start>=0&&s.end>=s.start&&
+          (!Number.isFinite(duration)||duration<=0||s.end<=duration+3));
+        const timingStatus=segments.length>0?"valid":rawSegments.length>0?"invalid":"missing";
+        const language=String(payload?.language||payload?.transcription_info?.language||"");
+        console.info("media_transcribe_route "+JSON.stringify({
+          route:route.name,bytes:file.size,segments:segments.length,
+          raw_segments:rawSegments.length,timing_status:timingStatus,
+          skipped_groq:skipGroq,groq_limited:groqRateLimited
+        }));
+        return json({text:transcript,language,duration,segments,model:route.model,
+          provider:route.name,bytes:file.size,timing_status:timingStatus,
+          raw_segment_count:rawSegments.length,groq_rate_limited:groqRateLimited});
       }
+      if(route.name==="groq_whisper"&&response.status===429)groqRateLimited=true;
       lastError=response.ok?"transcription_invalid_output":route.name+"_http_"+response.status;
       console.warn("media_transcribe_provider_failure "+JSON.stringify({route:route.name,status:response.status,reason:lastError}));
     }catch(e){
@@ -130,5 +149,5 @@ Deno.serve(async (req: Request) => {
       console.warn("media_transcribe_provider_failure "+JSON.stringify({route:route.name,reason:lastError,kind:e instanceof Error?e.name:"unknown"}));
     }
   }
-  return json({error:"transcription_providers_unavailable",detail:lastError},503);
+  return json({error:"transcription_providers_unavailable",detail:lastError,groq_rate_limited:groqRateLimited},503);
 });
