@@ -211,6 +211,8 @@ export function WReviewView({ section = "review", onCloseStyle, userId }: { sect
   const [compressionMode, setCompressionMode] = useState<CompressionMode>("standard");
   const [analysisText, setAnalysisText] = useState("");
   const [queueTargets, setQueueTargets] = useState<Record<string,string>>({});
+  const [cloudPreview,setCloudPreview]=useState<CloudWorkspaces<WState>|null>(null);
+  const [cloudBrowserOpen,setCloudBrowserOpen]=useState(false);
   const [usage, setUsage] = useState<WUsage>({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
 
   // Local checkpoint always happens first. Network sync is a later, optional
@@ -692,6 +694,42 @@ export function WReviewView({ section = "review", onCloseStyle, userId }: { sect
   }
 
   const densityOptions = <><option value="minimum">{be ? "мінімум" : "минимум"}</option><option value="moderate">{be ? "умерана" : "умеренно"}</option><option value="many">{be ? "многа" : "много"}</option><option value="all">{be ? "усе знойдзеныя" : "все найденные"}</option></>;
+  async function browseCloud(){
+    try{
+      const row=await fetchCloud<WState>(userId);
+      setCloudPreview(row?.payload||null);
+      setCloudBrowserOpen(true);
+      setError("");
+    }catch(reason){setError("Не удалось открыть облачную библиотеку: "+String(reason));}
+  }
+  function importCloudItem(item:WItem){
+    if(busy)return;
+    if(state.items.some(x=>x.id===item.id||
+      (item.url&&x.url&&item.url===x.url))){
+      setMessage("Эта публикация уже присутствует в текущем пуле.");return;
+    }
+    if(state.items.length>=HARD_MAX_ITEMS){
+      setError("В пуле 30 материалов. Сначала освободите место для облачной публикации.");return;
+    }
+    const safe={...item,id:id("cloud")};
+    // Keep the previous written review and source Evidence. An existing trend
+    // map becomes stale, but must not be destroyed by simply browsing/importing.
+    setState(current=>({...current,items:[...current.items,safe],mapContract:0}));
+    setMessage("Публикация «"+safe.title+"» перенесена из облака с готовой Evidence. "+
+      "Имеющиеся обзор и карта тенденций сохранены; перед новой генерацией пересчитайте тенденции.");
+  }
+  function importCloudSample(sample:WSample){
+    if(busy)return;
+    if(state.samples.some(x=>x.id===sample.id||x.text===sample.text)){
+      setMessage("Этот образец уже имеется в авторском стиле.");return;
+    }
+    if(state.samples.length>=MAX_SAMPLES){
+      setError("Уже загружено пять образцов. Чтобы добавить другой, сначала выберите ненужный.");return;
+    }
+    setState(current=>({...current,samples:[...current.samples,{...sample,id:id("sample")}],
+      styleContract:0}));
+    setMessage("Образец «"+sample.name+"» перенесён. Исходный текст сохранён; обновите профиль авторского стиля.");
+  }
   const cloudLine=<div role="status" aria-live="polite"
     style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",fontSize:12,
       border:"1px solid var(--border,#dedede)",borderRadius:9,padding:"7px 11px",margin:"8px 0"}}>
@@ -699,12 +737,37 @@ export function WReviewView({ section = "review", onCloseStyle, userId }: { sect
       {be?"Воблака W-Review":"Облако W-Review"}: {cloudStatus.detail}</span>
     <button type="button" className="secondary-button" disabled={busy!==""||syncingRef.current}
       onClick={()=>void syncNow()}>{be?"Сінхранізаваць":"Синхронизировать"}</button>
+    <button type="button" className="secondary-button" onClick={()=>void browseCloud()}>
+      {be?"Паглядзець у воблаку":"Посмотреть в облаке"}</button>
   </div>;
+  const cloudBrowser=cloudBrowserOpen&&<section className="panel" style={{padding:12,margin:"6px 0 12px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",gap:10}}>
+      <b>{be?"Воблачная бібліятэка гэтай ўліковай запісы":"Облачная библиотека этой учётной записи"}</b>
+      <button className="ghost-button" onClick={()=>setCloudBrowserOpen(false)}>×</button>
+    </div>
+    {!cloudPreview?<p>В облаке пока нет сохранённых рабочих материалов.</p>:<>
+      {cloudPreview.slots.map((slot,index)=><div key={index} style={{marginTop:8}}>
+        <b>{cloudPreview.names[index]||"Тема "+(index+1)} ({slot.items.length})</b>
+        {slot.items.map(item=><div key={item.id} style={{display:"flex",alignItems:"center",gap:8,margin:"4px 0"}}>
+          <span style={{flex:1}}>{item.source}: {item.title}</span>
+          <button className="secondary-button" disabled={busy!==""} onClick={()=>importCloudItem(item)}>
+            {be?"Дадаць у бягучы пул":"Добавить в текущий пул"}</button>
+        </div>)}
+      </div>)}
+      <p><b>Авторские образцы ({cloudPreview.slots[0]?.samples?.length||0}):</b></p>
+      {(cloudPreview.slots[0]?.samples||[]).map(sample=><div key={sample.id}
+        style={{display:"flex",gap:8,alignItems:"center",margin:"4px 0"}}>
+        <span style={{flex:1}}>{sample.name}</span>
+        <button className="secondary-button" disabled={busy!==""} onClick={()=>importCloudSample(sample)}>
+          {be?"Узяць узор":"Добавить образец"}</button>
+      </div>)}
+    </>}
+  </section>;
   if (section === "style") {
     return <div className="view-stack w-review w-review-style-page">
       <section className="view-heading"><div><div className="eyebrow dark">W-REVIEW</div><h2>{be ? "Аўтарскі стыль" : "Авторский стиль"}</h2><p>{be ? "Дадайце да 5 узораў DOCX/TXT і стварыце профіль, які будзе выкарыстоўвацца ў наступных аглядах." : "Добавьте до 5 образцов DOCX/TXT и создайте профиль, который будет использоваться в следующих обзорах."}</p></div><div className="w-review-style-heading-actions"><span className={`badge ${styleReady?"ready":""}`}>{styleReady?"✓":state.samples.length+"/"+MAX_SAMPLES}</span><button className="ghost-button w-review-close-button" onClick={onCloseStyle} aria-label={be?"Закрыць аўтарскі стыль":"Закрыть авторский стиль"} title={be?"Закрыць":"Закрыть"}>×</button></div></section>
       {message && <div className="notice success">{message}</div>}{error && <div className="notice error">{error}</div>}
-      {cloudLine}
+      {cloudLine}{cloudBrowser}
       <section className="panel w-review-style"><div className="panel-head"><div><h3>{be?"Узоры і профіль":"Образцы и профиль"}</h3><p>{be?"Профіль можна выкарыстоўваць для многіх аглядаў без пераліку." : "Профиль можно использовать для многих обзоров без пересчёта."}</p></div></div>
         <div className="w-review-controls"><button className="secondary-button" disabled={busy!==""||state.samples.length>=MAX_SAMPLES} onClick={importSamples}>{busy==="sample"?"…":be?"Дадаць DOCX/TXT":"Добавить DOCX/TXT"}</button><button className="primary-button" disabled={busy!==""||!state.samples.length} onClick={buildStyleProfile}>{busy==="style"?"…":styleReady?(be?"Абнавіць профіль":"Обновить профиль"):(be?"Стварыць профіль стылю":"Создать профиль стиля")}</button></div>
         {state.samples.length>0&&<div className="w-review-samples">{state.samples.map((sample)=><div key={sample.id}><span>{sample.name}</span><button className="ghost-button small-button" onClick={()=>setState((current)=>({...current,samples:current.samples.filter((item)=>item.id!==sample.id),styleContract:0}))}>×</button></div>)}</div>}
@@ -729,7 +792,7 @@ export function WReviewView({ section = "review", onCloseStyle, userId }: { sect
         : (be?"Прааналізаваць пул":"Проанализировать пул");
 
   return <div className="view-stack w-review">
-    {cloudLine}
+    {cloudLine}{cloudBrowser}
     <section className="view-heading"><div><div className="eyebrow dark">W-REVIEW</div><h2>{be ? "Папярэдні агляд" : "Предварительный обзор"}</h2><p>{be ? "Збярыце матэрыялы, задайце тэму і атрымаеце абагульнены погляд на медыяполе." : "Соберите материалы, задайте тему и получите обобщённый взгляд на медиаполе."}</p></div><div className="w-review-metrics"><b>{state.items.length}/{MAX_ITEMS}</b><span>~{estimateTokens(totalChars).toLocaleString()} input tokens</span></div></section>
     <div role="tablist" aria-label={be?"Тэмы W-Review":"Темы W-Review"} style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:12}}>
       {workspaces.names.map((name,index)=><div key={index} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 8px",borderRadius:8,border:index===activeSlot?"2px solid var(--accent, #b91c1c)":"1px solid #8885",maxWidth:260}}>
