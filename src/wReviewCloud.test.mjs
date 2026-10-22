@@ -35,9 +35,21 @@ test("second PC with empty pool downloads the populated canonical state",()=>{
  const r=mergeCloudPayload(home,office);
  assert.deepEqual(r.value,office);
 });
-test("preexisting different slot topics cannot overwrite each other",()=>{
+test("different complete topics on home/office Tema 1 move into vacant slot without discarding either pool",()=>{
  const home=slots([[0,[item("home")],"Тема А"]]);
  const office=slots([[0,[item("office")],"Тема Б"]]);
+ home.slots[0].editorialMap={version:3,trends:[{id:"T1"}]};
+ const r=mergeCloudPayload(home,office);
+ assert.ok(r.value,r.reason);
+ assert.equal(r.value.slots[0].topic,"Тема Б");
+ assert.equal(r.value.slots[1].topic,"Тема А");
+ assert.equal(r.value.slots[0].items[0].id,"office");
+ assert.equal(r.value.slots[1].items[0].id,"home");
+ assert.equal(r.value.slots[1].editorialMap.version,3);
+});
+test("different topics cannot overwrite when all slots occupied",()=>{
+ const home=slots([[0,[item("h0")],"А"],[1,[item("h1")],"Б"],[2,[item("h2")],"В"]]);
+ const office=slots([[0,[item("o0")],"Г"],[1,[item("o1")],"Д"],[2,[item("o2")],"Е"]]);
  const r=mergeCloudPayload(home,office);
  assert.equal(r.value,null);
  assert.match(r.reason,/разные темы/);
