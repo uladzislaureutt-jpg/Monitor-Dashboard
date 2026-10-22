@@ -101,20 +101,38 @@ export function mergeCloudPayload<T>(local:CloudWorkspaces<T>,remote:CloudWorksp
   if(!Array.isArray(local?.slots)||!Array.isArray(remote?.slots)||
      local.slots.length!==3||remote.slots.length!==3)
     return {value:null,reason:"Несовместимый формат облачных рабочих тем."};
-  const ls=own(local.slots[0]),rs=own(remote.slots[0]);
+  // A home machine and an office machine often both use "Тема 1" for
+  // DIFFERENT subjects. Preserve both completed drafts and their Evidence
+  // by relocating one complete subject to a jointly vacant slot. Never
+  // silently reassign when all three slots are occupied.
+  const localSlots=[...local.slots] as any[];
+  const localNames=[...local.names];
+  for(let i=0;i<3;i++){
+    const lhs=localSlots[i],rhs=remote.slots[i] as any;
+    if(!isNonemptyWorkspace(lhs)||!isNonemptyWorkspace(rhs)||
+       !lhs.topic||!rhs.topic||lhs.topic===rhs.topic)continue;
+    const free=[0,1,2].find(j=>j!==i&&!isNonemptyWorkspace(localSlots[j])&&
+      !isNonemptyWorkspace(remote.slots[j]));
+    if(free===undefined)continue;
+    localSlots[free]=lhs;
+    localNames[free]=localNames[i];
+    localSlots[i]=rhs;
+    localNames[i]=remote.names[i];
+  }
+  const ls=own(localSlots[0]),rs=own(remote.slots[0]); 
   const samples=mergeSamples(ls.samples,rs.samples);
   if(!samples)return {value:null,reason:"В профилях устройств более пяти образцов или разные редакции одного образца."};
   if(ls.styleProfile&&rs.styleProfile&&ls.styleProfile!==rs.styleProfile)
     return {value:null,reason:"На устройствах разные построенные профили авторского стиля."};
   const values:any[]=[];
   for(let i=0;i<3;i++){
-    const result=mergeWorkspace(local.slots[i],remote.slots[i]);
+    const result=mergeWorkspace(localSlots[i],remote.slots[i]);
     if(!result.value)return {value:null,reason:"Тема "+(i+1)+": "+result.reason};
     values.push(result.value);
   }
   const profile=ls.styleProfile||rs.styleProfile||"";
   const contract=ls.styleContract||rs.styleContract||0;
   const slots=values.map(v=>({...v,samples,styleProfile:profile,styleContract:contract}));
-  const names=remote.names.map((n,i)=>n.startsWith("Тема ")&&local.names[i]?local.names[i]:n);
+  const names=remote.names.map((n,i)=>n.startsWith("Тема ")&&localNames[i]?localNames[i]:n);
   return {value:{names,slots}};
 }
