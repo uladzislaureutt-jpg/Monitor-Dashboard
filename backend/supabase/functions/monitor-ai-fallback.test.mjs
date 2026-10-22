@@ -12,7 +12,7 @@ const response=(data,status=200)=>new Response(JSON.stringify(data),{status,head
 for(const name of names){
  test(name+" parses as valid TypeScript and keeps authenticated operator access",()=>{
   const src=read(name);
-  const tree=ts.createSourceFile(name+".ts",src,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);
+  const tree=ts.createSourceFile(name+".ts",src,ts.ScriptTarget?.Latest??99,true,ts.ScriptKind?.TS??3);
   assert.deepEqual(tree.parseDiagnostics.map(d=>ts.flattenDiagnosticMessageText(d.messageText," ")),[]);
   assert.match(src,/auth\.getUser\(\)/);
   assert.match(src,/monitor_profiles/);
@@ -22,7 +22,7 @@ for(const name of names){
 }
 function install(name,fetcher,envValues={}){
  const src=read(name).replace(/^import .*;\s*$/gm,"");
- const js=ts.transpileModule(src,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.None}}).outputText;
+ const js=ts.transpileModule(src,{compilerOptions:{target:ts.ScriptTarget?.ES2022??9,module:ts.ModuleKind?.None??0}}).outputText;
  let handler;
  const profile={select(){return this},eq(){return this},maybeSingle:async()=>({data:{status:"active",minimum_allowed_version:"0.0.0",latest_version:"0.0.0",update_mode:"normal"},error:null})};
  const createClient=()=>({auth:{getUser:async()=>({data:{user:{id:"u1"}},error:null})},from:()=>profile});
