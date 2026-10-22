@@ -142,7 +142,8 @@ function emptyWorkspace(): WState {
   return {...EMPTY,items:[],samples:[],density:{...EMPTY.density},selectedTrendIds:[],sectionTitles:[],boldPhrases:[]};
 }
 function loadWorkspaceStore(userId:string): WWorkspaceStore {
-  const legacy = loadState();
+  const owner=localStorage.getItem(LEGACY_OWNER_KEY);
+  const legacy=!owner||owner===userId?loadState():emptyWorkspace();
   const initial: WWorkspaceStore = {
     activeSlot:0, names:["Тема 1","Тема 2","Тема 3"],
     slots:[legacy, {...emptyWorkspace(),samples:legacy.samples,styleProfile:legacy.styleProfile,styleContract:legacy.styleContract},
@@ -445,8 +446,9 @@ export function WReviewView({ section = "review", onCloseStyle, userId }: { sect
       const updated=invalidateMap({...checkpointStore.slots[activeSlot],
         items:[...next],lastReanalysis:{status,processed:ready,
           total:next.length,verifiedRecords}});
-      checkpointStore=writeEvidenceCheckpoint(WORKSPACES_KEY,checkpointStore,
+      checkpointStore=writeEvidenceCheckpoint(accountKey(userId),checkpointStore,
         activeSlot,updated,localStorage);
+      latestRef.current=checkpointStore;
       setWorkspaces(checkpointStore);
       return ready;
     };
@@ -690,10 +692,19 @@ export function WReviewView({ section = "review", onCloseStyle, userId }: { sect
   }
 
   const densityOptions = <><option value="minimum">{be ? "мінімум" : "минимум"}</option><option value="moderate">{be ? "умерана" : "умеренно"}</option><option value="many">{be ? "многа" : "много"}</option><option value="all">{be ? "усе знойдзеныя" : "все найденные"}</option></>;
+  const cloudLine=<div role="status" aria-live="polite"
+    style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",fontSize:12,
+      border:"1px solid var(--border,#dedede)",borderRadius:9,padding:"7px 11px",margin:"8px 0"}}>
+    <span>{cloudStatus.kind==="saved"?"✓ ":cloudStatus.kind==="conflict"?"⚠ ":cloudStatus.kind==="offline"?"○ ":"↻ "}
+      {be?"Воблака W-Review":"Облако W-Review"}: {cloudStatus.detail}</span>
+    <button type="button" className="secondary-button" disabled={busy!==""||syncingRef.current}
+      onClick={()=>void syncNow()}>{be?"Сінхранізаваць":"Синхронизировать"}</button>
+  </div>;
   if (section === "style") {
     return <div className="view-stack w-review w-review-style-page">
       <section className="view-heading"><div><div className="eyebrow dark">W-REVIEW</div><h2>{be ? "Аўтарскі стыль" : "Авторский стиль"}</h2><p>{be ? "Дадайце да 5 узораў DOCX/TXT і стварыце профіль, які будзе выкарыстоўвацца ў наступных аглядах." : "Добавьте до 5 образцов DOCX/TXT и создайте профиль, который будет использоваться в следующих обзорах."}</p></div><div className="w-review-style-heading-actions"><span className={`badge ${styleReady?"ready":""}`}>{styleReady?"✓":state.samples.length+"/"+MAX_SAMPLES}</span><button className="ghost-button w-review-close-button" onClick={onCloseStyle} aria-label={be?"Закрыць аўтарскі стыль":"Закрыть авторский стиль"} title={be?"Закрыць":"Закрыть"}>×</button></div></section>
       {message && <div className="notice success">{message}</div>}{error && <div className="notice error">{error}</div>}
+      {cloudLine}
       <section className="panel w-review-style"><div className="panel-head"><div><h3>{be?"Узоры і профіль":"Образцы и профиль"}</h3><p>{be?"Профіль можна выкарыстоўваць для многіх аглядаў без пераліку." : "Профиль можно использовать для многих обзоров без пересчёта."}</p></div></div>
         <div className="w-review-controls"><button className="secondary-button" disabled={busy!==""||state.samples.length>=MAX_SAMPLES} onClick={importSamples}>{busy==="sample"?"…":be?"Дадаць DOCX/TXT":"Добавить DOCX/TXT"}</button><button className="primary-button" disabled={busy!==""||!state.samples.length} onClick={buildStyleProfile}>{busy==="style"?"…":styleReady?(be?"Абнавіць профіль":"Обновить профиль"):(be?"Стварыць профіль стылю":"Создать профиль стиля")}</button></div>
         {state.samples.length>0&&<div className="w-review-samples">{state.samples.map((sample)=><div key={sample.id}><span>{sample.name}</span><button className="ghost-button small-button" onClick={()=>setState((current)=>({...current,samples:current.samples.filter((item)=>item.id!==sample.id),styleContract:0}))}>×</button></div>)}</div>}
