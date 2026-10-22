@@ -119,7 +119,7 @@ export function mergeCloudPayload<T>(local:CloudWorkspaces<T>,remote:CloudWorksp
     localSlots[i]=rhs;
     localNames[i]=remote.names[i];
   }
-  const ls=own(localSlots[0]),rs=own(remote.slots[0]); 
+  const ls=own(local.slots[0]),rs=own(remote.slots[0]);
   const samples=mergeSamples(ls.samples,rs.samples);
   if(!samples)return {value:null,reason:"В профилях устройств более пяти образцов или разные редакции одного образца."};
   if(ls.styleProfile&&rs.styleProfile&&ls.styleProfile!==rs.styleProfile)
