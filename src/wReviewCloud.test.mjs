@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
-import {mergeCloudPayload,fingerprint,CLOUD_LIMIT_BYTES,isNonemptyWorkspace} from "./wReviewCloud.ts";
+import {mergeCloudPayload,fingerprint,CLOUD_LIMIT_BYTES,isNonemptyWorkspace} from "./wReviewCloudCore.ts";
 const item=(id,text="text")=>({id,title:"Статья "+id,source:"CNN",region:"США",
   url:"https://example.org/"+id,sourceText:text,editorialText:text,
   evidence:"P01:E01",evidenceData:{records:[],version:2},evidenceContract:6});
