@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { desktopApi } from "../api";
 import { MONITOR_BOOKMARKLET, parseBrowserCapture } from "../browserImport";
@@ -10,6 +10,7 @@ import { writeEvidenceCheckpoint } from "../wReviewEvidenceCheckpoint";
 import { isTechnicalReviewQueue, pendingEditorialAssignments, availableEditorialTargets, assignQueuedPublication } from "../wReviewEditorialDistribution";
 import { isEvidencePrepared, pendingEvidenceEntries } from "../wReviewEvidenceProgress";
 import { resolvePoolMarkersForExport, canonicalWReviewSourceName } from "../wReviewSourceLabels";
+import {fetchCloud, fingerprint, syncCloudOnce, type SyncBaseline, type CloudWorkspaces} from "../wReviewCloud";
 
 const W_EVIDENCE_CONTRACT_VERSION = 6; // Preserve verified evidence and do not reanalyse articles.
 const W_MAP_CONTRACT_VERSION = 8; // Recalculate only the editorial dossier.
@@ -123,18 +124,42 @@ function loadState(): WState {
 
 type WWorkspaceStore = { activeSlot: number; names: string[]; slots: WState[] };
 const WORKSPACES_KEY = "monitor-w-review-workspaces-v1";
+const LEGACY_OWNER_KEY=WORKSPACES_KEY+":claimed-by";
+const accountKey=(userId:string)=>WORKSPACES_KEY+":account:"+userId;
+const syncBaseKey=(userId:string)=>WORKSPACES_KEY+":cloud-baseline:"+userId;
+function readSyncBaseline(userId:string):SyncBaseline|null{
+  try{
+    const raw=JSON.parse(localStorage.getItem(syncBaseKey(userId))||"null");
+    return Number.isInteger(raw?.revision)&&typeof raw?.fingerprint==="string"?raw:null;
+  }catch{return null;}
+}
+function hasLegacyWorkspaces():boolean{
+  const text=localStorage.getItem(WORKSPACES_KEY);
+  return Boolean(text && text!=="null");
+}
+
 function emptyWorkspace(): WState {
   return {...EMPTY,items:[],samples:[],density:{...EMPTY.density},selectedTrendIds:[],sectionTitles:[],boldPhrases:[]};
 }
-function loadWorkspaceStore(): WWorkspaceStore {
-  const legacy = loadState();
+function loadWorkspaceStore(userId:string): WWorkspaceStore {
+  const owner=localStorage.getItem(LEGACY_OWNER_KEY);
+  const legacy=!owner||owner===userId?loadState():emptyWorkspace();
   const initial: WWorkspaceStore = {
     activeSlot:0, names:["Тема 1","Тема 2","Тема 3"],
     slots:[legacy, {...emptyWorkspace(),samples:legacy.samples,styleProfile:legacy.styleProfile,styleContract:legacy.styleContract},
       {...emptyWorkspace(),samples:legacy.samples,styleProfile:legacy.styleProfile,styleContract:legacy.styleContract}]
   };
   try {
-    const saved = JSON.parse(localStorage.getItem(WORKSPACES_KEY)||"null");
+    const scoped=accountKey(userId);
+    const owner=localStorage.getItem(LEGACY_OWNER_KEY);
+    // Claim pre-cloud local content only ONCE, for the currently signed-in
+    // account. Another account on the same PC never inherits the old pool.
+    if(!localStorage.getItem(scoped)&&(!owner||owner===userId)&&hasLegacyWorkspaces()){
+      const legacy=localStorage.getItem(WORKSPACES_KEY)!;
+      localStorage.setItem(scoped,legacy);
+      localStorage.setItem(LEGACY_OWNER_KEY,userId);
+    }
+    const saved = JSON.parse(localStorage.getItem(scoped)||"null");
     if (!saved || !Array.isArray(saved.slots) || saved.slots.length!==3) return initial;
     const slots = saved.slots.map((slot:any)=>({
       ...emptyWorkspace(), ...slot,
@@ -157,10 +182,10 @@ function loadWorkspaceStore(): WWorkspaceStore {
   }catch{return initial;}
 }
 
-export function WReviewView({ section = "review", onCloseStyle }: { section?: "review" | "style"; onCloseStyle?: () => void }) {
+export function WReviewView({ section = "review", onCloseStyle, userId }: { section?: "review" | "style"; onCloseStyle?: () => void; userId:string }) {
   const { locale } = useI18n();
   const be = locale === "be";
-  const [workspaces, setWorkspaces] = useState<WWorkspaceStore>(loadWorkspaceStore);
+  const [workspaces, setWorkspaces] = useState<WWorkspaceStore>(()=>loadWorkspaceStore(userId));
   const activeSlot = workspaces.activeSlot;
   const state = workspaces.slots[activeSlot];
   function setState(next: WState | ((current: WState) => WState)) {
@@ -186,9 +211,63 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   const [compressionMode, setCompressionMode] = useState<CompressionMode>("standard");
   const [analysisText, setAnalysisText] = useState("");
   const [queueTargets, setQueueTargets] = useState<Record<string,string>>({});
+  const [cloudPreview,setCloudPreview]=useState<CloudWorkspaces<WState>|null>(null);
+  const [cloudBrowserOpen,setCloudBrowserOpen]=useState(false);
   const [usage, setUsage] = useState<WUsage>({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
 
-  useEffect(() => { localStorage.setItem(WORKSPACES_KEY, JSON.stringify(workspaces)); }, [workspaces]);
+  // Local checkpoint always happens first. Network sync is a later, optional
+  // operation and cannot erase an accepted local Evidence batch.
+  const latestRef=useRef(workspaces);
+  latestRef.current=workspaces;
+  const baselineRef=useRef<SyncBaseline|null>(readSyncBaseline(userId));
+  const syncingRef=useRef(false);
+  const [cloudStatus,setCloudStatus]=useState<{kind:"connecting"|"saved"|"offline"|"conflict";detail:string}>({
+    kind:"connecting",detail:"Соединение с облачным хранилищем…"
+  });
+  useEffect(()=>{localStorage.setItem(accountKey(userId),JSON.stringify(workspaces));},[workspaces,userId]);
+  const syncNow=useCallback(async()=>{
+    if(syncingRef.current||busy==="analyze"||busy==="trends"||busy==="synthesize_gemini"||busy==="synthesize_cloudflare")return;
+    syncingRef.current=true;
+    const before=latestRef.current;
+    const payload:CloudWorkspaces<WState>={names:before.names,slots:before.slots};
+    const originalFingerprint=fingerprint(payload);
+    try{
+      const outcome=await syncCloudOnce(userId,payload,baselineRef.current);
+      if(outcome.kind==="conflict"){
+        setCloudStatus({kind:"conflict",detail:outcome.detail||"На двух компьютерах обнаружены несовместимые изменения."});
+        return;
+      }
+      baselineRef.current=outcome.baseline;
+      localStorage.setItem(syncBaseKey(userId),JSON.stringify(outcome.baseline));
+      if(outcome.kind==="downloaded"||outcome.kind==="merged"){
+        const latest=latestRef.current;
+        const latestPayload={names:latest.names,slots:latest.slots};
+        if(fingerprint(latestPayload)===originalFingerprint){
+          const next={...latest,names:outcome.payload.names,slots:outcome.payload.slots};
+          latestRef.current=next;
+          setWorkspaces(next);
+        }
+      }
+      setCloudStatus({kind:"saved",
+        detail:outcome.kind==="merged"?"Материалы двух компьютеров объединены; Evidence сохранены.":
+          outcome.kind==="downloaded"?"Облачные материалы и стиль загружены.":
+          "Пулы, Evidence и авторский стиль синхронизированы."});
+    }catch(error){
+      // Offline and network failures preserve the complete on-disk snapshot;
+      // the next run will compare revisions instead of blind overwrite.
+      setCloudStatus({kind:"offline",detail:"Локальные данные сохранены; облако недоступно: "+String(error).slice(0,155)});
+    }finally{syncingRef.current=false;}
+  },[userId,busy]);
+  useEffect(()=>{
+    const bootstrap=window.setTimeout(()=>void syncNow(),900);
+    const periodic=window.setInterval(()=>void syncNow(),30000);
+    return()=>{window.clearTimeout(bootstrap);window.clearInterval(periodic);};
+  },[syncNow]);
+  useEffect(()=>{
+    const handle=window.setTimeout(()=>void syncNow(),4000);
+    return()=>window.clearTimeout(handle);
+  },[workspaces,syncNow]);
+
   useEffect(() => { if (activeId && !state.items.some((item) => item.id === activeId)) setActiveId(state.items[0]?.id ?? null); }, [state.items, activeId]);
 
   function switchWorkspace(index:number) {
@@ -369,8 +448,9 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
       const updated=invalidateMap({...checkpointStore.slots[activeSlot],
         items:[...next],lastReanalysis:{status,processed:ready,
           total:next.length,verifiedRecords}});
-      checkpointStore=writeEvidenceCheckpoint(WORKSPACES_KEY,checkpointStore,
+      checkpointStore=writeEvidenceCheckpoint(accountKey(userId),checkpointStore,
         activeSlot,updated,localStorage);
+      latestRef.current=checkpointStore;
       setWorkspaces(checkpointStore);
       return ready;
     };
@@ -614,10 +694,109 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   }
 
   const densityOptions = <><option value="minimum">{be ? "мінімум" : "минимум"}</option><option value="moderate">{be ? "умерана" : "умеренно"}</option><option value="many">{be ? "многа" : "много"}</option><option value="all">{be ? "усе знойдзеныя" : "все найденные"}</option></>;
+  async function browseCloud(){
+    try{
+      const row=await fetchCloud<WState>(userId);
+      setCloudPreview(row?.payload||null);
+      setCloudBrowserOpen(true);
+      setError("");
+    }catch(reason){setError("Не удалось открыть облачную библиотеку: "+String(reason));}
+  }
+  function importCloudItem(item:WItem){
+    if(busy)return;
+    if(state.items.some(x=>x.id===item.id||
+      (item.url&&x.url&&item.url===x.url))){
+      setMessage("Эта публикация уже присутствует в текущем пуле.");return;
+    }
+    if(state.items.length>=HARD_MAX_ITEMS){
+      setError("В пуле 30 материалов. Сначала освободите место для облачной публикации.");return;
+    }
+    const safe={...item};
+    // Keep the previous written review and source Evidence. An existing trend
+    // map becomes stale, but must not be destroyed by simply browsing/importing.
+    setState(current=>({...current,items:[...current.items,safe],mapContract:0}));
+    setMessage("Публикация «"+safe.title+"» перенесена из облака с готовой Evidence. "+
+      "Имеющиеся обзор и карта тенденций сохранены; перед новой генерацией пересчитайте тенденции.");
+  }
+  function importCloudSample(sample:WSample){
+    if(busy)return;
+    if(state.samples.some(x=>x.id===sample.id||x.text===sample.text)){
+      setMessage("Этот образец уже имеется в авторском стиле.");return;
+    }
+    if(state.samples.length>=MAX_SAMPLES){
+      setError("Уже загружено пять образцов. Чтобы добавить другой, сначала выберите ненужный.");return;
+    }
+    setState(current=>({...current,samples:[...current.samples,{...sample}],
+      styleContract:0}));
+    setMessage("Образец «"+sample.name+"» перенесён. Исходный текст сохранён; обновите профиль авторского стиля.");
+  }
+  function useCloudStyle(){
+    const from=cloudPreview?.slots[0];if(!from||busy)return;
+    const previous={samples:state.samples,styleProfile:state.styleProfile,
+      styleContract:state.styleContract};
+    try{localStorage.setItem(accountKey(userId)+":style-backup",
+      JSON.stringify(previous));}catch{
+      setError("Не удалось сохранить резервную копию местного авторского стиля.");return;
+    }
+    setState(current=>({...current,samples:from.samples||[],
+      styleProfile:from.styleProfile||"",styleContract:from.styleContract||0}));
+    setMessage("Облачный авторский стиль применён ко всем рабочим темам. "+
+      "Предыдущий стиль сохранён локально и может быть восстановлен.");
+  }
+  function restoreLocalStyle(){
+    try{
+      const data=JSON.parse(localStorage.getItem(accountKey(userId)+":style-backup")||"null");
+      if(!data||!Array.isArray(data.samples))throw Error("Нет сохранённой резервной копии.");
+      setState(current=>({...current,samples:data.samples,
+        styleProfile:String(data.styleProfile||""),styleContract:Number(data.styleContract||0)}));
+      setMessage("Прежний авторский стиль восстановлен из локальной копии.");
+    }catch(error){setError(String(error));}
+  }
+  const cloudLine=<div role="status" aria-live="polite"
+    style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",fontSize:12,
+      border:"1px solid var(--border,#dedede)",borderRadius:9,padding:"7px 11px",margin:"8px 0"}}>
+    <span>{cloudStatus.kind==="saved"?"✓ ":cloudStatus.kind==="conflict"?"⚠ ":cloudStatus.kind==="offline"?"○ ":"↻ "}
+      {be?"Воблака W-Review":"Облако W-Review"}: {cloudStatus.detail}</span>
+    <button type="button" className="secondary-button" disabled={busy!==""||syncingRef.current}
+      onClick={()=>void syncNow()}>{be?"Сінхранізаваць":"Синхронизировать"}</button>
+    <button type="button" className="secondary-button" onClick={()=>void browseCloud()}>
+      {be?"Паглядзець у воблаку":"Посмотреть в облаке"}</button>
+  </div>;
+  const cloudBrowser=cloudBrowserOpen&&<section className="panel" style={{padding:12,margin:"6px 0 12px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",gap:10}}>
+      <b>{be?"Воблачная бібліятэка гэтай ўліковай запісы":"Облачная библиотека этой учётной записи"}</b>
+      <button className="ghost-button" onClick={()=>setCloudBrowserOpen(false)}>×</button>
+    </div>
+    {!cloudPreview?<p>В облаке пока нет сохранённых рабочих материалов.</p>:<>
+      {cloudPreview.slots.map((slot,index)=><div key={index} style={{marginTop:8}}>
+        <b>{cloudPreview.names[index]||"Тема "+(index+1)} ({slot.items.length})</b>
+        {slot.items.map(item=><div key={item.id} style={{display:"flex",alignItems:"center",gap:8,margin:"4px 0"}}>
+          <span style={{flex:1}}>{item.source}: {item.title}</span>
+          <button className="secondary-button" disabled={busy!==""} onClick={()=>importCloudItem(item)}>
+            {be?"Дадаць у бягучы пул":"Добавить в текущий пул"}</button>
+        </div>)}
+      </div>)}
+      <p><b>Авторские образцы ({cloudPreview.slots[0]?.samples?.length||0}):</b>
+        <button type="button" className="secondary-button" style={{marginLeft:8}}
+          disabled={busy!==""||!cloudPreview.slots[0]?.styleProfile}
+          onClick={useCloudStyle}>Использовать облачный профиль стиля</button>
+        {Boolean(localStorage.getItem(accountKey(userId)+":style-backup"))&&
+          <button type="button" className="secondary-button" style={{marginLeft:8}}
+            disabled={busy!==""} onClick={restoreLocalStyle}>Вернуть прежний стиль</button>}
+      </p>
+      {(cloudPreview.slots[0]?.samples||[]).map(sample=><div key={sample.id}
+        style={{display:"flex",gap:8,alignItems:"center",margin:"4px 0"}}>
+        <span style={{flex:1}}>{sample.name}</span>
+        <button className="secondary-button" disabled={busy!==""} onClick={()=>importCloudSample(sample)}>
+          {be?"Узяць узор":"Добавить образец"}</button>
+      </div>)}
+    </>}
+  </section>;
   if (section === "style") {
     return <div className="view-stack w-review w-review-style-page">
       <section className="view-heading"><div><div className="eyebrow dark">W-REVIEW</div><h2>{be ? "Аўтарскі стыль" : "Авторский стиль"}</h2><p>{be ? "Дадайце да 5 узораў DOCX/TXT і стварыце профіль, які будзе выкарыстоўвацца ў наступных аглядах." : "Добавьте до 5 образцов DOCX/TXT и создайте профиль, который будет использоваться в следующих обзорах."}</p></div><div className="w-review-style-heading-actions"><span className={`badge ${styleReady?"ready":""}`}>{styleReady?"✓":state.samples.length+"/"+MAX_SAMPLES}</span><button className="ghost-button w-review-close-button" onClick={onCloseStyle} aria-label={be?"Закрыць аўтарскі стыль":"Закрыть авторский стиль"} title={be?"Закрыць":"Закрыть"}>×</button></div></section>
       {message && <div className="notice success">{message}</div>}{error && <div className="notice error">{error}</div>}
+      {cloudLine}{cloudBrowser}
       <section className="panel w-review-style"><div className="panel-head"><div><h3>{be?"Узоры і профіль":"Образцы и профиль"}</h3><p>{be?"Профіль можна выкарыстоўваць для многіх аглядаў без пераліку." : "Профиль можно использовать для многих обзоров без пересчёта."}</p></div></div>
         <div className="w-review-controls"><button className="secondary-button" disabled={busy!==""||state.samples.length>=MAX_SAMPLES} onClick={importSamples}>{busy==="sample"?"…":be?"Дадаць DOCX/TXT":"Добавить DOCX/TXT"}</button><button className="primary-button" disabled={busy!==""||!state.samples.length} onClick={buildStyleProfile}>{busy==="style"?"…":styleReady?(be?"Абнавіць профіль":"Обновить профиль"):(be?"Стварыць профіль стылю":"Создать профиль стиля")}</button></div>
         {state.samples.length>0&&<div className="w-review-samples">{state.samples.map((sample)=><div key={sample.id}><span>{sample.name}</span><button className="ghost-button small-button" onClick={()=>setState((current)=>({...current,samples:current.samples.filter((item)=>item.id!==sample.id),styleContract:0}))}>×</button></div>)}</div>}
@@ -642,6 +821,7 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
         : (be?"Прааналізаваць пул":"Проанализировать пул");
 
   return <div className="view-stack w-review">
+    {cloudLine}{cloudBrowser}
     <section className="view-heading"><div><div className="eyebrow dark">W-REVIEW</div><h2>{be ? "Папярэдні агляд" : "Предварительный обзор"}</h2><p>{be ? "Збярыце матэрыялы, задайце тэму і атрымаеце абагульнены погляд на медыяполе." : "Соберите материалы, задайте тему и получите обобщённый взгляд на медиаполе."}</p></div><div className="w-review-metrics"><b>{state.items.length}/{MAX_ITEMS}</b><span>~{estimateTokens(totalChars).toLocaleString()} input tokens</span></div></section>
     <div role="tablist" aria-label={be?"Тэмы W-Review":"Темы W-Review"} style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:12}}>
       {workspaces.names.map((name,index)=><div key={index} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 8px",borderRadius:8,border:index===activeSlot?"2px solid var(--accent, #b91c1c)":"1px solid #8885",maxWidth:260}}>
