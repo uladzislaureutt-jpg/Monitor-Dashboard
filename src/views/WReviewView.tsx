@@ -726,7 +726,7 @@ export function WReviewView({ section = "review", onCloseStyle, userId }: { sect
     if(state.samples.length>=MAX_SAMPLES){
       setError("Уже загружено пять образцов. Чтобы добавить другой, сначала выберите ненужный.");return;
     }
-    setState(current=>({...current,samples:[...current.samples,{...sample,id:id("sample")}],
+    setState(current=>({...current,samples:[...current.samples,{...sample}],
       styleContract:0}));
     setMessage("Образец «"+sample.name+"» перенесён. Исходный текст сохранён; обновите профиль авторского стиля.");
   }
