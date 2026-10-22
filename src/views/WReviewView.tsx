@@ -711,7 +711,7 @@ export function WReviewView({ section = "review", onCloseStyle, userId }: { sect
     if(state.items.length>=HARD_MAX_ITEMS){
       setError("В пуле 30 материалов. Сначала освободите место для облачной публикации.");return;
     }
-    const safe={...item,id:id("cloud")};
+    const safe={...item};
     // Keep the previous written review and source Evidence. An existing trend
     // map becomes stale, but must not be destroyed by simply browsing/importing.
     setState(current=>({...current,items:[...current.items,safe],mapContract:0}));
