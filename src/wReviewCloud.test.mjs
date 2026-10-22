@@ -62,8 +62,8 @@ test("different edits to the same Evidence article block rather than overwriting
  assert.match(r.reason,/по-разному/);
 });
 test("five local and five remote samples never cause silent truncation",()=>{
- const home=slots([],Array.from({length:5},(_,i)=>({id:"h"+i,name:"Образец "+i,text:"авторский текст"})));
- const office=slots([],Array.from({length:5},(_,i)=>({id:"o"+i,name:"Образец "+i,text:"другой текст"})));
+ const home=slots([],Array.from({length:5},(_,i)=>({id:"h"+i,name:"Образец "+i,text:"авторский текст "+i})));
+ const office=slots([],Array.from({length:5},(_,i)=>({id:"o"+i,name:"Образец "+i,text:"другой текст "+i})));
  const r=mergeCloudPayload(home,office);
  assert.equal(r.value,null);
  assert.match(r.reason,/более пяти/);
