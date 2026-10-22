@@ -19,8 +19,16 @@ export const CLOUD_LIMIT_BYTES=4_800_000;
 const MAX_ITEMS=30;
 const MAX_SAMPLES=5;
 
+function canonical(value:any):string{
+  if(value===null||typeof value!=="object")return JSON.stringify(value)??"null";
+  if(Array.isArray(value))return "["+value.map(v=>canonical(v)).join(",")+"]";
+  return "{"+Object.keys(value).filter(k=>value[k]!==undefined).sort()
+    .map(k=>JSON.stringify(k)+":"+canonical(value[k])).join(",")+"}";
+}
 export function fingerprint(value:unknown):string{
-  const str=JSON.stringify(value);
+  // Postgres jsonb may reorder object keys. Compare canonical content, not
+  // incidental JS serialization order.
+  const str=canonical(value);
   let h1=2166136261,h2=2166136261;
   for(let i=0;i<str.length;i++){
     const code=str.charCodeAt(i);
@@ -29,7 +37,7 @@ export function fingerprint(value:unknown):string{
   }
   return [str.length,h1>>>0,h2>>>0].join(":");
 }
-const equal=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b);
+const equal=(a:unknown,b:unknown)=>canonical(a)===canonical(b);
 const own=(v:unknown)=>v&&typeof v==="object"&&!Array.isArray(v)?v as Record<string,unknown>:{};
 const articleCount=(s:any)=>Array.isArray(s?.items)?s.items.length:0;
 export function isNonemptyWorkspace(s:any):boolean{
