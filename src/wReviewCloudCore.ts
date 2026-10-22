@@ -42,9 +42,18 @@ export function isNonemptyWorkspace(s:any):boolean{
 function mergeSamples(local:any,remote:any){
   const both=[...(Array.isArray(local)?local:[]),...(Array.isArray(remote)?remote:[])];
   const seen=new Map<string,any>();
+  const usedTexts=new Set<string>();
+  const byId=new Map<string,string>();
   for(const x of both){
-    const key=String(x?.id||"")+"::"+String(x?.name||"");
-    if(seen.has(key)&&!equal(seen.get(key),x))return null;
+    const key=String(x?.id||"");
+    const source=String(x?.text||"").trim();
+    if(byId.has(key)&&byId.get(key)!==source)return null;
+    byId.set(key,source);
+    // The same author document may have been imported separately on each
+    // computer with different locally generated IDs. Its text is identical,
+    // so it still counts as ONE distinct style sample.
+    if(usedTexts.has(source))continue;
+    usedTexts.add(source);
     seen.set(key,x);
   }
   if(seen.size>MAX_SAMPLES)return null;
