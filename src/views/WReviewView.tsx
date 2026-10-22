@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { desktopApi } from "../api";
 import { MONITOR_BOOKMARKLET, parseBrowserCapture } from "../browserImport";
@@ -10,6 +10,7 @@ import { writeEvidenceCheckpoint } from "../wReviewEvidenceCheckpoint";
 import { isTechnicalReviewQueue, pendingEditorialAssignments, availableEditorialTargets, assignQueuedPublication } from "../wReviewEditorialDistribution";
 import { isEvidencePrepared, pendingEvidenceEntries } from "../wReviewEvidenceProgress";
 import { resolvePoolMarkersForExport, canonicalWReviewSourceName } from "../wReviewSourceLabels";
+import {fetchCloud, fingerprint, syncCloudOnce, type SyncBaseline, type CloudWorkspaces} from "../wReviewCloud";
 
 const W_EVIDENCE_CONTRACT_VERSION = 6; // Preserve verified evidence and do not reanalyse articles.
 const W_MAP_CONTRACT_VERSION = 8; // Recalculate only the editorial dossier.
@@ -123,10 +124,24 @@ function loadState(): WState {
 
 type WWorkspaceStore = { activeSlot: number; names: string[]; slots: WState[] };
 const WORKSPACES_KEY = "monitor-w-review-workspaces-v1";
+const LEGACY_OWNER_KEY=WORKSPACES_KEY+":claimed-by";
+const accountKey=(userId:string)=>WORKSPACES_KEY+":account:"+userId;
+const syncBaseKey=(userId:string)=>WORKSPACES_KEY+":cloud-baseline:"+userId;
+function readSyncBaseline(userId:string):SyncBaseline|null{
+  try{
+    const raw=JSON.parse(localStorage.getItem(syncBaseKey(userId))||"null");
+    return Number.isInteger(raw?.revision)&&typeof raw?.fingerprint==="string"?raw:null;
+  }catch{return null;}
+}
+function hasLegacyWorkspaces():boolean{
+  const text=localStorage.getItem(WORKSPACES_KEY);
+  return Boolean(text && text!=="null");
+}
+
 function emptyWorkspace(): WState {
   return {...EMPTY,items:[],samples:[],density:{...EMPTY.density},selectedTrendIds:[],sectionTitles:[],boldPhrases:[]};
 }
-function loadWorkspaceStore(): WWorkspaceStore {
+function loadWorkspaceStore(userId:string): WWorkspaceStore {
   const legacy = loadState();
   const initial: WWorkspaceStore = {
     activeSlot:0, names:["Тема 1","Тема 2","Тема 3"],
@@ -134,7 +149,16 @@ function loadWorkspaceStore(): WWorkspaceStore {
       {...emptyWorkspace(),samples:legacy.samples,styleProfile:legacy.styleProfile,styleContract:legacy.styleContract}]
   };
   try {
-    const saved = JSON.parse(localStorage.getItem(WORKSPACES_KEY)||"null");
+    const scoped=accountKey(userId);
+    const owner=localStorage.getItem(LEGACY_OWNER_KEY);
+    // Claim pre-cloud local content only ONCE, for the currently signed-in
+    // account. Another account on the same PC never inherits the old pool.
+    if(!localStorage.getItem(scoped)&&(!owner||owner===userId)&&hasLegacyWorkspaces()){
+      const legacy=localStorage.getItem(WORKSPACES_KEY)!;
+      localStorage.setItem(scoped,legacy);
+      localStorage.setItem(LEGACY_OWNER_KEY,userId);
+    }
+    const saved = JSON.parse(localStorage.getItem(scoped)||"null");
     if (!saved || !Array.isArray(saved.slots) || saved.slots.length!==3) return initial;
     const slots = saved.slots.map((slot:any)=>({
       ...emptyWorkspace(), ...slot,
@@ -157,10 +181,10 @@ function loadWorkspaceStore(): WWorkspaceStore {
   }catch{return initial;}
 }
 
-export function WReviewView({ section = "review", onCloseStyle }: { section?: "review" | "style"; onCloseStyle?: () => void }) {
+export function WReviewView({ section = "review", onCloseStyle, userId }: { section?: "review" | "style"; onCloseStyle?: () => void; userId:string }) {
   const { locale } = useI18n();
   const be = locale === "be";
-  const [workspaces, setWorkspaces] = useState<WWorkspaceStore>(loadWorkspaceStore);
+  const [workspaces, setWorkspaces] = useState<WWorkspaceStore>(()=>loadWorkspaceStore(userId));
   const activeSlot = workspaces.activeSlot;
   const state = workspaces.slots[activeSlot];
   function setState(next: WState | ((current: WState) => WState)) {
@@ -188,7 +212,59 @@ export function WReviewView({ section = "review", onCloseStyle }: { section?: "r
   const [queueTargets, setQueueTargets] = useState<Record<string,string>>({});
   const [usage, setUsage] = useState<WUsage>({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
 
-  useEffect(() => { localStorage.setItem(WORKSPACES_KEY, JSON.stringify(workspaces)); }, [workspaces]);
+  // Local checkpoint always happens first. Network sync is a later, optional
+  // operation and cannot erase an accepted local Evidence batch.
+  const latestRef=useRef(workspaces);
+  latestRef.current=workspaces;
+  const baselineRef=useRef<SyncBaseline|null>(readSyncBaseline(userId));
+  const syncingRef=useRef(false);
+  const [cloudStatus,setCloudStatus]=useState<{kind:"connecting"|"saved"|"offline"|"conflict";detail:string}>({
+    kind:"connecting",detail:"Соединение с облачным хранилищем…"
+  });
+  useEffect(()=>{localStorage.setItem(accountKey(userId),JSON.stringify(workspaces));},[workspaces,userId]);
+  const syncNow=useCallback(async()=>{
+    if(syncingRef.current||busy==="analyze"||busy==="trends"||busy==="synthesize_gemini"||busy==="synthesize_cloudflare")return;
+    syncingRef.current=true;
+    const before=latestRef.current;
+    const payload:CloudWorkspaces<WState>={names:before.names,slots:before.slots};
+    const originalFingerprint=fingerprint(payload);
+    try{
+      const outcome=await syncCloudOnce(userId,payload,baselineRef.current);
+      if(outcome.kind==="conflict"){
+        setCloudStatus({kind:"conflict",detail:outcome.detail||"На двух компьютерах обнаружены несовместимые изменения."});
+        return;
+      }
+      baselineRef.current=outcome.baseline;
+      localStorage.setItem(syncBaseKey(userId),JSON.stringify(outcome.baseline));
+      if(outcome.kind==="downloaded"||outcome.kind==="merged"){
+        const latest=latestRef.current;
+        const latestPayload={names:latest.names,slots:latest.slots};
+        if(fingerprint(latestPayload)===originalFingerprint){
+          const next={...latest,names:outcome.payload.names,slots:outcome.payload.slots};
+          latestRef.current=next;
+          setWorkspaces(next);
+        }
+      }
+      setCloudStatus({kind:"saved",
+        detail:outcome.kind==="merged"?"Материалы двух компьютеров объединены; Evidence сохранены.":
+          outcome.kind==="downloaded"?"Облачные материалы и стиль загружены.":
+          "Пулы, Evidence и авторский стиль синхронизированы."});
+    }catch(error){
+      // Offline and network failures preserve the complete on-disk snapshot;
+      // the next run will compare revisions instead of blind overwrite.
+      setCloudStatus({kind:"offline",detail:"Локальные данные сохранены; облако недоступно: "+String(error).slice(0,155)});
+    }finally{syncingRef.current=false;}
+  },[userId,busy]);
+  useEffect(()=>{
+    const bootstrap=window.setTimeout(()=>void syncNow(),900);
+    const periodic=window.setInterval(()=>void syncNow(),30000);
+    return()=>{window.clearTimeout(bootstrap);window.clearInterval(periodic);};
+  },[syncNow]);
+  useEffect(()=>{
+    const handle=window.setTimeout(()=>void syncNow(),4000);
+    return()=>window.clearTimeout(handle);
+  },[workspaces,syncNow]);
+
   useEffect(() => { if (activeId && !state.items.some((item) => item.id === activeId)) setActiveId(state.items[0]?.id ?? null); }, [state.items, activeId]);
 
   function switchWorkspace(index:number) {
