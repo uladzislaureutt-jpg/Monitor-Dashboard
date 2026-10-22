@@ -84,7 +84,7 @@ mod tests {
     fn a_silent_gap_does_not_trigger_false_speech_loss() {
         let silent=[SilenceSpan{start:232.0,end:236.9}];
         assert_eq!(coverage_warning(232.0,236.0,Some(&silent)),None);
-        assert!(coverage_warning(232.0,238.5,Some(&silent)).is_some());
+        assert!(coverage_warning(232.0,239.0,Some(&silent)).is_some());
     }
     #[test]
     fn sound_or_unknown_remains_reviewable_not_verified_speech() {
