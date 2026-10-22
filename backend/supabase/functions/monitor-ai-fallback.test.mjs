@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import vm from "node:vm";
-import ts from "typescript";
+import {stripTypeScriptTypes} from "node:module";
 
 const base=new URL("./",import.meta.url);
 const names=["l-translate","transcription-edit","media-transcribe","transcription-image-ocr"];
@@ -12,8 +12,8 @@ const response=(data,status=200)=>new Response(JSON.stringify(data),{status,head
 for(const name of names){
  test(name+" parses as valid TypeScript and keeps authenticated operator access",()=>{
   const src=read(name);
-  const tree=ts.createSourceFile(name+".ts",src,ts.ScriptTarget?.Latest??99,true,ts.ScriptKind?.TS??3);
-  assert.deepEqual(tree.parseDiagnostics.map(d=>ts.flattenDiagnosticMessageText(d.messageText," ")),[]);
+  const stripped=stripTypeScriptTypes(src,{mode:"strip"}).replace(/^import .*;\s*$/gm,"");
+  assert.doesNotThrow(()=>new vm.Script(stripped,{filename:name+".ts"}));
   assert.match(src,/auth\.getUser\(\)/);
   assert.match(src,/monitor_profiles/);
   assert.match(src,/AbortSignal\.timeout/);
@@ -22,7 +22,7 @@ for(const name of names){
 }
 function install(name,fetcher,envValues={}){
  const src=read(name).replace(/^import .*;\s*$/gm,"");
- const js=ts.transpileModule(src,{compilerOptions:{target:ts.ScriptTarget?.ES2022??9,module:ts.ModuleKind?.None??0}}).outputText;
+ const js=stripTypeScriptTypes(src,{mode:"strip"});
  let handler;
  const profile={select(){return this},eq(){return this},maybeSingle:async()=>({data:{status:"active",minimum_allowed_version:"0.0.0",latest_version:"0.0.0",update_mode:"normal"},error:null})};
  const createClient=()=>({auth:{getUser:async()=>({data:{user:{id:"u1"}},error:null})},from:()=>profile});
