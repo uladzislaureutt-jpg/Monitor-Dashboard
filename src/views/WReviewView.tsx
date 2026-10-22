@@ -730,6 +730,28 @@ export function WReviewView({ section = "review", onCloseStyle, userId }: { sect
       styleContract:0}));
     setMessage("Образец «"+sample.name+"» перенесён. Исходный текст сохранён; обновите профиль авторского стиля.");
   }
+  function useCloudStyle(){
+    const from=cloudPreview?.slots[0];if(!from||busy)return;
+    const previous={samples:state.samples,styleProfile:state.styleProfile,
+      styleContract:state.styleContract};
+    try{localStorage.setItem(accountKey(userId)+":style-backup",
+      JSON.stringify(previous));}catch{
+      setError("Не удалось сохранить резервную копию местного авторского стиля.");return;
+    }
+    setState(current=>({...current,samples:from.samples||[],
+      styleProfile:from.styleProfile||"",styleContract:from.styleContract||0}));
+    setMessage("Облачный авторский стиль применён ко всем рабочим темам. "+
+      "Предыдущий стиль сохранён локально и может быть восстановлен.");
+  }
+  function restoreLocalStyle(){
+    try{
+      const data=JSON.parse(localStorage.getItem(accountKey(userId)+":style-backup")||"null");
+      if(!data||!Array.isArray(data.samples))throw Error("Нет сохранённой резервной копии.");
+      setState(current=>({...current,samples:data.samples,
+        styleProfile:String(data.styleProfile||""),styleContract:Number(data.styleContract||0)}));
+      setMessage("Прежний авторский стиль восстановлен из локальной копии.");
+    }catch(error){setError(String(error));}
+  }
   const cloudLine=<div role="status" aria-live="polite"
     style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",fontSize:12,
       border:"1px solid var(--border,#dedede)",borderRadius:9,padding:"7px 11px",margin:"8px 0"}}>
@@ -754,7 +776,14 @@ export function WReviewView({ section = "review", onCloseStyle, userId }: { sect
             {be?"Дадаць у бягучы пул":"Добавить в текущий пул"}</button>
         </div>)}
       </div>)}
-      <p><b>Авторские образцы ({cloudPreview.slots[0]?.samples?.length||0}):</b></p>
+      <p><b>Авторские образцы ({cloudPreview.slots[0]?.samples?.length||0}):</b>
+        <button type="button" className="secondary-button" style={{marginLeft:8}}
+          disabled={busy!==""||!cloudPreview.slots[0]?.styleProfile}
+          onClick={useCloudStyle}>Использовать облачный профиль стиля</button>
+        {Boolean(localStorage.getItem(accountKey(userId)+":style-backup"))&&
+          <button type="button" className="secondary-button" style={{marginLeft:8}}
+            disabled={busy!==""} onClick={restoreLocalStyle}>Вернуть прежний стиль</button>}
+      </p>
       {(cloudPreview.slots[0]?.samples||[]).map(sample=><div key={sample.id}
         style={{display:"flex",gap:8,alignItems:"center",margin:"4px 0"}}>
         <span style={{flex:1}}>{sample.name}</span>
