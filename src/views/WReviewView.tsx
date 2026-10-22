@@ -729,6 +729,7 @@ export function WReviewView({ section = "review", onCloseStyle, userId }: { sect
         : (be?"Прааналізаваць пул":"Проанализировать пул");
 
   return <div className="view-stack w-review">
+    {cloudLine}
     <section className="view-heading"><div><div className="eyebrow dark">W-REVIEW</div><h2>{be ? "Папярэдні агляд" : "Предварительный обзор"}</h2><p>{be ? "Збярыце матэрыялы, задайце тэму і атрымаеце абагульнены погляд на медыяполе." : "Соберите материалы, задайте тему и получите обобщённый взгляд на медиаполе."}</p></div><div className="w-review-metrics"><b>{state.items.length}/{MAX_ITEMS}</b><span>~{estimateTokens(totalChars).toLocaleString()} input tokens</span></div></section>
     <div role="tablist" aria-label={be?"Тэмы W-Review":"Темы W-Review"} style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:12}}>
       {workspaces.names.map((name,index)=><div key={index} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 8px",borderRadius:8,border:index===activeSlot?"2px solid var(--accent, #b91c1c)":"1px solid #8885",maxWidth:260}}>
