@@ -1,0 +1,39 @@
+name: Media transcription coverage and 429 fallback checks
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src-tauri/src/lib.rs'
+      - 'src-tauri/src/transcription_coverage.rs'
+      - 'backend/supabase/functions/media-transcribe/**'
+      - '.github/workflows/transcription-coverage.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src-tauri/src/lib.rs'
+      - 'src-tauri/src/transcription_coverage.rs'
+      - 'backend/supabase/functions/media-transcribe/**'
+      - '.github/workflows/transcription-coverage.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  transcription-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Test false Whisper gaps against measured silence
+        run: rustc --edition 2021 --test src-tauri/src/transcription_coverage.rs -o /tmp/monitor-coverage-tests && /tmp/monitor-coverage-tests
+      - name: Test Groq 429 circuit and Cloudflare timing fallbacks
+        run: node --test backend/supabase/functions/media-transcribe/transcription-fallback.test.mjs
+      - name: Type-check frontend
+        run: npm ci --ignore-scripts && npm run check
