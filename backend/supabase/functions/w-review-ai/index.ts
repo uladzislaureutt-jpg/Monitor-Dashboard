@@ -10,6 +10,7 @@ import { W_REVIEW_GEMINI_PRIMARY, W_REVIEW_GEMINI_FALLBACK, W_REVIEW_GEMINI_ROUT
 import { prepareEvidence, structuredGeminiRequest, preparationBudget } from "./preparation.ts";
 import { evidenceV2Instructions, evidenceV2Schema, makeEvidenceDocuments, renderEvidenceMaterials, verifyEvidenceCards, verifyEvidenceCardsIndividually, formatEvidenceCard, type EvidenceCard } from "./evidence-v2.ts";
 import { editorialQuoteInventory, editorialQuoteTarget, editorialQuoteBrief, editorialQuoteUsage } from "./editorial-quotes.ts";
+import { makeEditorialSourceAnchors } from "./editorial-source-anchors.ts";
 import { EDITORIAL_SYNTHESIS_CONTRACT_V2 } from "./editorial-synthesis-contract.ts";
 import { publicationHeadlineInventory, editorialHeadlineTarget, editorialHeadlineBrief, editorialHeadlineUsage } from "./editorial-headlines.ts";
 
@@ -966,6 +967,11 @@ ${styleProfile || "Живой сдержанный редакционный ст
     const publicationHeadlines=publicationHeadlineInventory(cards);
     const headlineTarget=editorialHeadlineTarget(publicationHeadlines.length,targetChars,headlineDensity);
     const headlineBrief=editorialHeadlineBrief(publicationHeadlines,headlineTarget);
+    // Live 24-Oct Serbia review: 6 verified quote candidates, 0 used.
+    // Associate candidate speech with selected dossier lines so it cannot
+    // disappear beneath a long evidence list after the quoted opening.
+    const editorialAnchors=makeEditorialSourceAnchors(
+      checkedDossier.dossier,selectedIds,quoteCandidates);
 
     const lengthMinimum=Math.round(targetChars*0.95);
     const lengthMaximum=Math.round(targetChars*1.05);
@@ -1014,7 +1020,7 @@ STYLE_ONLY (образцы авторской манеры, НЕ ИСТОЧНИ�
 ${styleOnlyText || "Дополнительные фрагменты недоступны. Следуй STYLE_PROFILE."}
 
 РЕЗУЛЬТАТ. Верни ОДИН JSON с массивом blocks и массивами section_titles, bold_phrases. Каждый blocks содержит block_id из единого плана и paragraphs — массив естественных абзацев готового обзора. Верни каждый блок ровно один раз в порядке плана: opening, выбранные line_*, ending. Это одно непрерывное авторское повествование, не отдельные статьи; границы блоков и их ID читателю не показываются. Объём и ориентиры абзацев бери только из единого плана. Короткие связки допустимы; общего минимума длины абзаца нет. Обязательны раскрытие всех выбранных сюжетов и общая длина. Не выдавай план вместо текста. section_titles:[] и bold_phrases:[] допустимы. Не вставляй Markdown ** или __. Без промежуточных замечаний.` },
-        { role: "user", content: `ЗАДАНИЕ ОПЕРАТОРА:\n${task}\n\nРЕДАКЦИОННОЕ ДОСЬЕ И РАСПРЕДЕЛЕНИЕ ОБЪЁМА:\n${trendText}\n\nЦИТАТЫ ДЛЯ ОСМЫСЛЕННОГО ИСПОЛЬЗОВАНИЯ:\n${quoteBrief}\n\nПОЛНЫЙ РЕЕСТР ЗАГОЛОВКОВ ДЛЯ РЕДАКЦИОННОГО СОПОСТАВЛЕНИЯ:\n${headlineBrief}\n\nИНСТРУКЦИЯ ДЛЯ ЭТАПА:\n${String(body?.stage_note || "").slice(0,500)}\n\nEVIDENCE CARDS:\n${evidenceText}\n\nФИНАЛЬНОЕ ЗАДАНИЕ: создай ОДИН непрерывный авторский аналитический обзор в массиве blocks. Внутренний ориентир модели — ${planningTargetChars} знаков с пробелами (плановый запас +17% относительно выбранных оператором ${targetChars} знаков для компенсации систематического недобора). Развивай содержание и распределяй объём по этому увеличенному плану; не сокращай заранее аналитические блоки до номинала оператора. Следуй единому плану блоков, ориентир суммарно ${paragraphTarget} естественных абзацев разной длины. Бюджет каждого блока включает атрибуцию и переходы; не заменяй развёрнутое раскрытие кратким упоминанием. Если фактологического материала достаточно, используй его для развития аргументации, а не сворачивай анализ раньше приближения к внутренней цели ${planningTargetChars} знаков. Каждый следующий развивает общую мысль, а не описывает следующее СМИ. После обработки всех тенденций заверши подтверждённым содержательным акцентом, не формальной сводкой. Не допускай ни одной непереведённой англоязычной цитаты (кроме официальных названий), расставляй источники только по образцу «... («CNN», «BBC News»).», не создавай собственных псевдоцитат и шаблонной итоговой концовки. Не используй Markdown, ненужные подзаголовки и списки источников.` }],
+        { role: "user", content: `ЗАДАНИЕ ОПЕРАТОРА:\n${task}\n\nРЕДАКЦИОННОЕ ДОСЬЕ И РАСПРЕДЕЛЕНИЕ ОБЪЁМА:\n${trendText}\n\nЦИТАТЫ ДЛЯ ОСМЫСЛЕННОГО ИСПОЛЬЗОВАНИЯ:\n${quoteBrief}\n\nПОЛНЫЙ РЕЕСТР ЗАГОЛОВКОВ ДЛЯ РЕДАКЦИОННОГО СОПОСТАВЛЕНИЯ:\n${headlineBrief}\n\nИНСТРУКЦИЯ ДЛЯ ЭТАПА:\n${String(body?.stage_note || "").slice(0,500)}\n\nEVIDENCE CARDS:\n${evidenceText}\n\nОПОРА ДЛЯ ОСНОВНОЙ ЧАСТИ ОБЗОРА (ПОСЛЕ ЗАЧИНА):\n${editorialAnchors.brief}\n\nФИНАЛЬНОЕ ЗАДАНИЕ: создай ОДИН непрерывный авторский аналитический обзор в массиве blocks. Внутренний ориентир модели — ${planningTargetChars} знаков с пробелами (плановый запас +17% относительно выбранных оператором ${targetChars} знаков для компенсации систематического недобора). Развивай содержание и распределяй объём по этому увеличенному плану; не сокращай заранее аналитические блоки до номинала оператора. Следуй единому плану блоков, ориентир суммарно ${paragraphTarget} естественных абзацев разной длины. Бюджет каждого блока включает атрибуцию и переходы; не заменяй развёрнутое раскрытие кратким упоминанием. Если фактологического материала достаточно, используй его для развития аргументации, а не сворачивай анализ раньше приближения к внутренней цели ${planningTargetChars} знаков. Каждый следующий развивает общую мысль, а не описывает следующее СМИ. После обработки всех тенденций заверши подтверждённым содержательным акцентом, не формальной сводкой. Не допускай ни одной непереведённой англоязычной цитаты (кроме официальных названий), расставляй источники только по образцу «... («CNN», «BBC News»).», не создавай собственных псевдоцитат и шаблонной итоговой концовки. Не используй Markdown, ненужные подзаголовки и списки источников.` }],
       response_format: {type:"json_schema",json_schema:{name:"w_review_blocks_v1",strict:true,
         schema:synthesisResponseSchema(synthesisDossier.blocks)}},
     };
@@ -1102,6 +1108,7 @@ ${styleOnlyText || "Дополнительные фрагменты недост
       required_branches:synthesisDossier.requiredBranches,
       target_chars:targetChars,model_target_chars:planningTargetChars,evidence_chars:evidenceText.length,
       verified_quote_candidates:quoteCandidates.length,quote_target:quoteTarget,
+      source_anchored_quote_candidates:editorialAnchors.anchoredQuotes,
       publication_headlines:publicationHeadlines.length,headline_target:headlineTarget,
       style_chars:styleProfile.length,dossier_chars:trendText.length,
       output_tokens:synthesisOutputTokenBudget,quota_reserved:Boolean(reservationId)
@@ -1192,6 +1199,9 @@ ${styleOnlyText || "Дополнительные фрагменты недост
     if(quoteCandidates.length===0 && publicationHeadlines.length===0){
       preflightWarnings.push("В Evidence не найдено дословных цитат или оригинальных заголовков: цитатный зачин без дополнительных источников невозможен.");
     }
+    if(quoteCandidates.length>=2 && quoteOutcome.used===0){
+      preflightWarnings.push("В Evidence есть проверенные прямые цитаты, но обзор ни одной не использовал дословно. Проверьте абзацы после зачина: текст мог превратиться в пересказ без характерных высказываний.");
+    }
     if(publicationHeadlines.length && !openingVerifiedHeadlines){
       preflightWarnings.push("Зачин не содержит дословного заголовка из реестра публикаций. Если в источниках есть подходящая формулировка, проверьте первый абзац; автоматическая псевдоцитата не добавляется.");
     }
@@ -1209,6 +1219,7 @@ ${styleOnlyText || "Дополнительные фрагменты недост
       reasoning_tokens:result.ok?result.reasoning_tokens||0:0,
       style_chars:styleProfile.length,style_excerpt_chars:styleOnlyText.length,evidence_chars:evidenceText.length,
       verified_quote_candidates:quoteCandidates.length,quote_target:quoteTarget,
+      source_anchored_quote_candidates:editorialAnchors.anchoredQuotes,
       publication_headlines:publicationHeadlines.length,headline_target:headlineTarget,
       directly_quoted_entries_used:quoteOutcome.used,quoted_sources:quoteOutcome.sources,
       headlines_available:headlineOutcome.titlesAvailable,headlines_directly_quoted:headlineOutcome.quotedTitles,
