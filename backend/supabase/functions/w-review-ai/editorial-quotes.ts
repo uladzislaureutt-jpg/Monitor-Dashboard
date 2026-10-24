@@ -66,7 +66,13 @@ export function editorialQuoteUsage(reviewText:string,candidates:EditorialQuote[
 }{
   const compact=(s:string)=>clean(s).toLocaleLowerCase("ru-RU");
   const haystack=compact(reviewText);
-  const used=candidates.filter(q=>haystack.includes("«"+compact(q.quoteRu)+"»"));
+  // Allow editorially appropriate shortened quotes when they are EXACT
+  // contiguous substrings of a verified Russian quotation. Do not count
+  // quoted media names, a summary or a rephrased expert statement.
+  const quotedSpans=[...haystack.matchAll(/«([^«»]{24,450})»/gu)]
+    .map(m=>compact(m[1])).filter(t=>t.split(/\s+/u).length>=4);
+  const used=candidates.filter(q=>haystack.includes("«"+compact(q.quoteRu)+"»")||
+    quotedSpans.some(span=>compact(q.quoteRu).includes(span)));
   return {available:candidates.length,used:used.length,usedIds:used.map(q=>q.id),
     sources:new Set(used.map(q=>q.source)).size};
 }
