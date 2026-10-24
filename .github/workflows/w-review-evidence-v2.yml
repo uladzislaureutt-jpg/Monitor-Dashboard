@@ -64,6 +64,8 @@ jobs:
         run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/editorial-synthesis-contract.test.mjs
       - name: Verify exact-quote inventories and one-pass author-style diagnostics
         run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/editorial-quotes.test.mjs
+      - name: Verify source-anchored main-body quotations and safe counterpositions
+        run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/editorial-source-anchors.test.mjs
       - name: Verify all publisher headlines are available independently of tagged Evidence
         run: node --experimental-strip-types --test backend/supabase/functions/w-review-ai/editorial-headlines.test.mjs
       - name: Verify technical publication reallocation is evidence-safe
