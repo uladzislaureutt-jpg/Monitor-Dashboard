@@ -61,7 +61,7 @@ test("a dossier with zero contrary refs must NOT fabricate opposing speech",()=>
 });
 test("exact shortened source quotes count, paraphrases and media names do not",()=>{
  const q=[candidates[0]];
- const shortened="эксперт объясняет причины серьёзного политического конфликта";
+ const shortened="собеседник объясняет причины серьёзного политического конфликта";
  const actual="«"+shortened+"», – пояснил политолог («BBC»).";
  assert.equal(editorialQuoteUsage(actual,q).used,1);
  assert.equal(editorialQuoteUsage("Политолог отметил серьёзность кризиса («BBC»).",q).used,0);
