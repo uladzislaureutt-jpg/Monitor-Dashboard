@@ -59,3 +59,28 @@ test("editor retains source caption independently of transcription and refreshes
   assert.equal(reloaded[url].description, "Вода на улице. #вилейка");
   assert.equal(Object.keys(normalizeSourceContext({ "https://evil.example/": context })).length, 0);
 });
+
+
+import { removeReviewVideo, clearReviewVideos, selectedVideoCount } from "../src/networkReviewSelection.ts";
+
+test("editor can remove legacy video 1 while retaining other selected clips", () => {
+  const old = [
+    "https://www.tiktok.com/@old/video/7702043649848184085",
+    "https://www.tiktok.com/@new/video/7702059935407836448",
+    "https://www.tiktok.com/@another/video/7702037883107937559",
+    "",
+  ];
+  const remaining = removeReviewVideo(old, 0);
+  assert.deepEqual(remaining, [old[1], old[2]]);
+  assert.equal(selectedVideoCount(remaining), 2);
+  assert.deepEqual(removeReviewVideo(remaining, 1), [old[1]]);
+  assert.deepEqual(removeReviewVideo([old[0]], 0), [""]);
+});
+
+test("clearing a review resets membership without deleting video metadata", () => {
+  const metadata = { title: "Original caption", transcript: "Previously transcribed text" };
+  const empty = clearReviewVideos();
+  assert.deepEqual(empty, [""]);
+  assert.equal(selectedVideoCount(empty), 0);
+  assert.deepEqual(metadata, { title: "Original caption", transcript: "Previously transcribed text" });
+});
