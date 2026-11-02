@@ -76,7 +76,11 @@ fn read_networks_jsonl(path: String) -> Result<String, String> {
     let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Некорректный ZIP: {e}"))?;
     let mut matching = None;
     for index in 0..archive.len() {
-        let name = archive.by_index(index).map_err(|e| e.to_string())?.name().to_string();
+        let name = archive.by_index(index)
+            .map_err(|e| e.to_string())?
+            .name()
+            .map_err(|e| format!("Некорректное имя элемента ZIP: {e}"))?
+            .to_string();
         if name.rsplit('/').next() == Some("networks_cards.jsonl") {
             if matching.is_some() { return Err("В архиве несколько networks_cards.jsonl. Уточните файл.".to_string()); }
             matching = Some(index);
