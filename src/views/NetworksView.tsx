@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { desktopApi } from "../api";
+import { ensureWorkroomSession, loadWorkroomConfig, loadWorkroomSession } from "../workroom";
 import { useI18n } from "../i18n";
 import { TrendColumns, TrendLine } from "../components/Charts";
 import { TranscriptionView } from "./TranscriptionView";
@@ -77,6 +78,8 @@ export function NetworksView() {
   const [archivePage, setArchivePage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
+  const [transcribingBatch, setTranscribingBatch] = useState(false);
+  const [batchRevision, setBatchRevision] = useState(0);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
@@ -157,6 +160,52 @@ export function NetworksView() {
         : `Импортировано: ${next.length} карточек. В локальном архиве уникальных видео: ${merged.length}.`);
     } catch (reason) { setError(String(reason)); }
     finally { setImporting(false); }
+  }
+
+  async function transcribeSelected() {
+    const urls = [...new Set(slots.map((url) => url.trim()).filter(Boolean))];
+    if (!urls.length) return;
+    if (urls.some((url) => !isTikTokVideoUrl(url))) {
+      setError(be ? "Праверце спасылкі: патрабуюцца прамыя відэа TikTok." : "Проверьте ссылки: нужны прямые видео TikTok.");
+      return;
+    }
+    setTranscribingBatch(true); setError(""); setNotice("");
+    const errors: string[] = [];
+    let completed = 0;
+    let skipped = 0;
+    try {
+      const config = loadWorkroomConfig();
+      const session = await ensureWorkroomSession(config, loadWorkroomSession());
+      for (const url of urls) {
+        const key = `monitor-networks-transcription:${url}`;
+        let saved: Record<string, unknown> = {};
+        try {
+          const raw = localStorage.getItem(key);
+          if (raw) saved = JSON.parse(raw) as Record<string, unknown>;
+        } catch { /* start fresh if a local draft is corrupt */ }
+        if (typeof saved.rawText === "string" && saved.rawText.trim()) { skipped++; continue; }
+        try {
+          const transcript = await desktopApi.transcribeTikTok(url, config.url, config.anonKey, session.accessToken);
+          localStorage.setItem(key, JSON.stringify({
+            ...saved, url: transcript.url || url, title: transcript.title || "TikTok",
+            rawText: transcript.text, editorialText: transcript.text,
+            language: transcript.language, duration: transcript.duration,
+            comments: Array.isArray(saved.comments) ? saved.comments : [],
+            manualComments: Array.isArray(saved.manualComments) ? saved.manualComments : ["", "", "", "", ""],
+            imageText: typeof saved.imageText === "string" ? saved.imageText : "", commentMode: saved.commentMode || "popular",
+          }));
+          completed++;
+        } catch (reason) {
+          errors.push(`${url}: ${String(reason)}`);
+        }
+      }
+      setNotice(be
+        ? `Гатова новых транскрыпцый: ${completed}. Раней апрацаваны: ${skipped}.`
+        : `Готово новых транскрипций: ${completed}. Уже обработаны ранее: ${skipped}.`);
+      if (errors.length) setError((be ? "Не атрымалася апрацаваць: " : "Не удалось обработать: ") + errors.join("\n"));
+      setBatchRevision((current) => current + 1);
+    } catch (reason) { setError(String(reason)); }
+    finally { setTranscribingBatch(false); }
   }
 
   function showArchive(category: NetworkCategory | "ALL" = "ALL") {
@@ -266,10 +315,11 @@ export function NetworksView() {
             onClick={() => { setSlots((old) => [...old, ""]); setActiveSlot(slots.length); }}
             title={be ? "Дадаць відэа" : "Добавить видео"}>+ {be ? "Відэа" : "Видео"} {slots.length + 1}</button>}
         </div>
+        <div className="network-batch-actions"><button className="primary-button small-button" disabled={transcribingBatch || !slots.some((url) => !!url.trim())} onClick={() => void transcribeSelected()}>{transcribingBatch ? (be ? "Транскрыпцыя…" : "Транскрипция…") : be ? "Транскрыбаваць выбраныя відэа" : "Транскрибировать выбранные видео"}</button><span>{be ? "Па чарзе, без паўторнай апрацоўкі гатовых тэкстаў." : "Последовательно, без повторной обработки готовых текстов."}</span></div>
         {activeUrl && !isTikTokVideoUrl(activeUrl) && <div className="notice error">{be ? "Патрэбна прамая спасылка на відэа TikTok." : "Нужна прямая ссылка на видео TikTok."}</div>}
       </section>
       {activeUrl && isTikTokVideoUrl(activeUrl) ?
-        <TranscriptionView key={activeUrl} initialUrl={activeUrl}
+        <TranscriptionView key={`${activeUrl}:${batchRevision}`} initialUrl={activeUrl}
           storageKey={`monitor-networks-transcription:${activeUrl}`} embedded />
         : <section className="panel network-empty">
           <p>{be ? "Абярыце відэа для транскрыпцыі. Ніжэй з'явяцца зыходны тэкст, тэкст для экспарту, надпісы на відэа, каментарыі і DOCX." : "Выберите видео для транскрипции. Здесь появятся исходный текст, текст для экспорта, надписи на видео, комментарии и DOCX."}</p>
