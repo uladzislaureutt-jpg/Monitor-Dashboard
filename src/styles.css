@@ -1241,3 +1241,46 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 .admin-notebook-images img{display:block;max-width:100%;max-height:270px;object-fit:contain;margin:auto;border-radius:6px}
 .admin-notebook-images button{justify-self:end}
 @media(max-width:850px){.admin-notebook-layout{grid-template-columns:1fr}.admin-notebook-list{max-height:210px}}
+
+
+/* Monitor / Networks: a deliberately simpler dashboard than SEP and L. */
+.networks-view{max-width:1450px}
+.network-top-switch{display:flex;align-items:flex-start;gap:8px;flex-shrink:0}
+.network-top-switch button{min-width:96px}
+.network-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.network-tabs{display:flex;align-items:center;flex-wrap:wrap;gap:4px;padding:4px;border:1px solid var(--line);border-radius:10px;background:#f7f6f2}
+.network-tabs button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:10px;font-weight:650;padding:8px 12px;border-radius:7px;cursor:pointer;white-space:nowrap}
+.network-tabs button.active{background:#fff;color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.09)}
+.network-chart-controls{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.network-overview{display:flex;flex-direction:column;gap:16px}
+.network-groups{display:flex;flex-direction:column;gap:16px}
+.network-card-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:12px}
+.network-clip{display:flex;gap:11px;padding:15px;border:1px solid var(--line);border-radius:12px;background:#fff;min-width:0}
+.network-clip-pick{flex:none;padding-top:3px}
+.network-clip-pick input{width:17px;height:17px;accent-color:#a52c2c;cursor:pointer}
+.network-clip-body{min-width:0;flex:1}
+.network-clip-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:10px;margin-bottom:8px}
+.network-clip-body strong{font-size:13px;line-height:1.45;display:block;color:var(--ink);overflow-wrap:anywhere}
+.network-clip-body p{color:var(--ink);font-size:11px;line-height:1.5;overflow-wrap:anywhere;white-space:pre-wrap;margin:8px 0}
+.network-clip-bottom{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:12px}
+.network-clip-bottom span{font-size:9px;color:var(--muted);overflow-wrap:anywhere}
+.network-clip-bottom .link-button{font-size:10px;text-align:left}
+.network-archive-controls{display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,270px);gap:10px;margin-bottom:16px}
+.network-archive-controls input,.network-archive-controls select,.network-video-slot input{width:100%;min-width:0}
+.network-pagination{display:flex;justify-content:center;align-items:center;gap:14px;margin-top:15px}
+.network-pagination span{color:var(--muted);font-size:11px}
+.network-video-slots{display:flex;flex-direction:column;gap:8px}
+.network-video-slot{display:grid;grid-template-columns:92px minmax(0,1fr) 30px;gap:8px;align-items:center}
+.network-video-slot button{white-space:nowrap}
+.network-add-slot{align-self:flex-start}
+.network-empty{text-align:center;color:var(--muted);padding:30px}
+.network-empty p{font-size:12px;line-height:1.6}
+.network-transcription-select{margin-top:7px}
+.network-transcription-select+.transcription-view{max-width:none}
+@media(max-width:740px){
+  .network-top-switch{width:100%}
+  .network-chart-controls{align-items:flex-start}
+  .network-archive-controls{grid-template-columns:1fr}
+  .network-video-slot{grid-template-columns:80px minmax(0,1fr) 26px}
+  .network-card-list{grid-template-columns:1fr}
+}
