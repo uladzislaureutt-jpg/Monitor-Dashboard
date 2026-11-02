@@ -1291,3 +1291,28 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 .network-sync-controls{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px}
 .network-sync-status{color:var(--muted);font-size:10px}
 @media(max-width:750px){.network-sync-controls{justify-content:flex-start}}
+
+
+/* Networks / TikTok: editorial workflow, stable two-column card preview */
+.network-clip{align-self:stretch;min-height:190px}
+.network-clip-body{display:flex;flex-direction:column}
+.network-clip-title{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;overflow:hidden;max-height:4.4em}
+.network-clip-excerpt{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;overflow:hidden;max-height:4.4em}
+.network-clip-bottom{margin-top:auto;padding-top:12px}
+.network-clip-controls{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:12px;flex-wrap:wrap}
+.network-flag{border:1px solid var(--line);border-radius:7px;padding:7px 12px;background:#fff;color:#a3a3a3;cursor:pointer;font-size:19px;line-height:1}
+.network-flag.active{color:#b91c1c;background:#fff1f1;border-color:#f0a5a5}
+.network-delete{color:#9d2727}
+.network-editor-workspace{display:flex;flex-direction:column;gap:18px}
+.network-editor-video{border:1px solid var(--line);border-radius:16px;background:var(--paper,#fff);overflow:hidden}
+.network-editor-video>summary{list-style-position:inside;padding:18px 20px;cursor:pointer;font-weight:800;color:var(--ink)}
+.network-editor-video>summary span{display:inline-block;font-size:11px;font-weight:400;color:var(--muted);margin-left:10px;max-width:75%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
+.network-editor-video[open]>summary{border-bottom:1px solid var(--line)}
+.network-editor-video-content{padding:16px;display:flex;flex-direction:column;gap:14px}
+.network-editor-video-content>.transcription-view{max-width:none}
+.network-editor-url{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center}
+.network-editor-url input{width:100%;min-width:0}
+.network-editor-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.network-editor-actions span{font-size:10px;color:var(--muted)}
+.network-total-export{margin-bottom:30px}
+@media(max-width:760px){.network-editor-url{grid-template-columns:1fr}.network-editor-video-content{padding:10px}}

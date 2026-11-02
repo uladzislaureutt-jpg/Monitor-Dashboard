@@ -4,9 +4,10 @@ import { desktopApi } from "../api";
 import { ensureWorkroomSession, loadWorkroomConfig, loadWorkroomSession } from "../workroom";
 import { useI18n } from "../i18n";
 import { TrendColumns, TrendLine } from "../components/Charts";
-import { TranscriptionView } from "./TranscriptionView";
+import { NetworkEditorView } from "./NetworkEditorView";
 import {
   cardTimestamp, effectiveCategory, importNetworkCards, isTikTokVideoUrl,
+  includedInOperatorOverview, normalizeNetworkModeration, type NetworkModeration,
   mergeNetworkCards, NETWORK_GROUPS, networkCategoryName, networkTrend,
   publishedTimestamp, type NetworkCard, type NetworkCategory,
 } from "../networks";
@@ -14,7 +15,8 @@ import {
 const CARDS_STORAGE_KEY = "networks.tiktok.cards.v1";
 const SLOTS_STORAGE_KEY = "monitor-networks-tiktok-video-slots-v1";
 const SYNC_RUNS_KEY = "networks.tiktok.completed-runs.v1";
-type NetworkPage = "home" | "archive";
+const MODERATION_KEY = "networks.tiktok.moderation.v1";
+type NetworkPage = "home" | "archive" | "editor";
 type NetworkPlatform = "tiktok" | "threads";
 type TrendKind = "bars" | "line";
 
@@ -35,8 +37,12 @@ function displayDate(raw: string | null | undefined, locale: string): string {
   });
 }
 
-function ClipCard({ item, be, checked, onToggle }: {
-  item: NetworkCard; be: boolean; checked: boolean; onToggle: (item: NetworkCard) => void;
+function ClipCard({ item, be, checked, flagged, onToggle, onFlag, onDelete, onAdd }: {
+  item: NetworkCard; be: boolean; checked: boolean; flagged: boolean;
+  onToggle: (item: NetworkCard) => void;
+  onFlag: (item: NetworkCard) => void;
+  onDelete: (item: NetworkCard) => void;
+  onAdd: (item: NetworkCard) => void;
 }) {
   const date = item.publication.published_at;
   const shortText = item.text_excerpt || item.transcript_excerpt || "";
@@ -51,13 +57,22 @@ function ClipCard({ item, be, checked, onToggle }: {
         {item.queue === "date_unknown" && <span>{be ? "Патрабуе праверкі даты" : "Требует проверки даты"}</span>}
         {item.review_status === "operator_confirmed" && <span>{be ? "Пацверджана аператарам" : "Подтверждено оператором"}</span>}
       </div>
-      <strong>{item.title || (be ? "Відэа без загалоўка" : "Видео без заголовка")}</strong>
-      {shortText && <p>{shortText.slice(0, 440)}{shortText.length > 440 ? "…" : ""}</p>}
+      <strong className="network-clip-title">{item.title || (be ? "Відэа без загалоўка" : "Видео без заголовка")}</strong>
+      {shortText && <p className="network-clip-excerpt">{shortText.slice(0, 320)}{shortText.length > 320 ? "…" : ""}</p>}
       <div className="network-clip-bottom">
         <button className="link-button" onClick={() => void desktopApi.openUrl(item.source_url)}>
           {be ? "Адкрыць відэа ў TikTok ↗" : "Открыть видео в TikTok ↗"}
         </button>
         <span>{item.item_id}</span>
+      </div>
+      <div className="network-clip-controls">
+        <button className="secondary-button small-button" onClick={() => onAdd(item)}
+          disabled={checked}>{checked ? (be ? "У аглядзе" : "В обзоре") : be ? "У агляд" : "В обзор"}</button>
+        <button className={flagged ? "network-flag active" : "network-flag"} onClick={() => onFlag(item)}
+          title={be ? "Чырвоны сцяжок: пазначыць / зняць" : "Красный флажок: поставить / снять"}
+          aria-label={be ? "Чырвоны сцяжок" : "Красный флажок"} aria-pressed={flagged}>⚑</button>
+        <button className="ghost-button small-button network-delete" onClick={() => onDelete(item)}
+          title={be ? "Выдаліць ролік з Monitor" : "Удалить ролик из Monitor"}>{be ? "Выдаліць" : "Удалить"}</button>
       </div>
     </div>
   </article>;
@@ -85,6 +100,8 @@ export function NetworksView() {
   const syncLock = useRef(false);
   const [transcribingBatch, setTranscribingBatch] = useState(false);
   const [batchRevision, setBatchRevision] = useState(0);
+  const [moderation, setModeration] = useState<NetworkModeration>({ flagged: [], deleted: [] });
+  const moderationRef = useRef<NetworkModeration>({ flagged: [], deleted: [] });
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
@@ -155,24 +172,57 @@ export function NetworksView() {
     return () => window.clearInterval(interval);
   }, [loading, syncNetwork]);
 
+  useEffect(() => {
+    let cancelled = false;
+    desktopApi.getSetting(MODERATION_KEY).then((value) => {
+      if (cancelled) return;
+      const parsed = normalizeNetworkModeration(value ? JSON.parse(value) : null);
+      moderationRef.current = parsed; setModeration(parsed);
+    }).catch((reason) => { if (!cancelled) setError(String(reason)); });
+    return () => { cancelled = true; };
+  }, []);
+
+  async function updateModeration(next: NetworkModeration) {
+    try {
+      await desktopApi.setSetting(MODERATION_KEY, JSON.stringify(next));
+      moderationRef.current = next; setModeration(next);
+    } catch (reason) { setError(String(reason)); }
+  }
+  function toggleFlag(item: NetworkCard) {
+    const flagged = new Set(moderationRef.current.flagged);
+    if (flagged.has(item.item_id)) flagged.delete(item.item_id); else flagged.add(item.item_id);
+    void updateModeration({ ...moderationRef.current, flagged: [...flagged] });
+  }
+  function removeClip(item: NetworkCard) {
+    const approved = window.confirm(be
+      ? "Выдаліць гэты ролік з аглядаў і архіва Monitor? Ён больш не будзе з'яўляцца пры сінхранізацыі."
+      : "Удалить этот ролик из обзоров и архива Monitor? При следующей синхронизации он не появится снова.");
+    if (!approved) return;
+    const deleted = new Set(moderationRef.current.deleted);
+    deleted.add(item.item_id);
+    void updateModeration({ ...moderationRef.current, deleted: [...deleted] });
+    setSlots((old) => old.map((url) => url === item.source_url ? "" : url));
+  }
+
   useEffect(() => { localStorage.setItem(SLOTS_STORAGE_KEY, JSON.stringify(slots)); }, [slots]);
 
   const now = Date.now();
-  const trend = useMemo(() => networkTrend(cards, period, now), [cards, period]);
-  const inPeriod = useMemo(() => cards.filter((item) => {
+  const visible = useMemo(() => cards.filter((item) => includedInOperatorOverview(item) && !moderation.deleted.includes(item.item_id)), [cards, moderation.deleted]);
+  const trend = useMemo(() => networkTrend(visible, period, now), [visible, period]);
+  const inPeriod = useMemo(() => visible.filter((item) => {
     if (period === null) return true;
     const date = publishedTimestamp(item) || cardTimestamp(item);
     return date > 0 && date >= now - period * 86_400_000 && date <= now + 86_400_000;
-  }), [cards, period]);
+  }), [visible, period]);
   const recent = useMemo(() => inPeriod.filter((item) =>
     item.queue !== "archive" && effectiveCategory(item) !== "REJECT" && item.queue !== "date_unknown" && publishedTimestamp(item) > 0
   ), [inPeriod]);
-  const archive = useMemo(() => cards.filter((item) => {
+  const archive = useMemo(() => visible.filter((item) => {
     if (archiveCategory !== "ALL" && effectiveCategory(item) !== archiveCategory) return false;
     const query = archiveQuery.trim().toLocaleLowerCase();
     return !query || [item.title, item.text_excerpt, item.transcript_excerpt, item.source_url, item.item_id]
       .some((value) => String(value || "").toLocaleLowerCase().includes(query));
-  }), [cards, archiveCategory, archiveQuery]);
+  }), [visible, archiveCategory, archiveQuery]);
   const activeUrl = slots[activeSlot] || "";
   const selectedUrls = new Set(slots.filter(Boolean));
 
@@ -273,7 +323,8 @@ export function NetworksView() {
   }
 
   const renderCard = (item: NetworkCard) => <ClipCard key={item.item_id} item={item} be={be}
-    checked={selectedUrls.has(item.source_url)} onToggle={toggleClip} />;
+    checked={selectedUrls.has(item.source_url)} flagged={moderation.flagged.includes(item.item_id)}
+    onToggle={toggleClip} onAdd={toggleClip} onFlag={toggleFlag} onDelete={removeClip} />;
 
   return <div className="view-stack networks-view">
     <section className="view-heading">
@@ -294,6 +345,7 @@ export function NetworksView() {
         <div className="network-tabs" role="tablist" aria-label={be ? "Рэжым прагляду" : "Режим просмотра"}>
           <button className={page === "home" ? "active" : ""} onClick={() => setPage("home")}>{be ? "Агляд" : "Обзор"}</button>
           <button className={page === "archive" ? "active" : ""} onClick={() => showArchive()}>{be ? "Архіў" : "Архив"}</button>
+          <button className={page === "editor" ? "active" : ""} onClick={() => setPage("editor")}>{be ? "Рэдактар агляду" : "Редактор обзора"} ({slots.filter(Boolean).length})</button>
         </div>
         <div className="network-sync-controls">
           <span className="network-sync-status">{syncing ? (be ? "Сінхранізацыя…" : "Синхронизация…") : syncState || (be ? "Аўтасінхранізацыя: кожныя 30 хвілін" : "Автосинхронизация: каждые 30 минут")}</span>
@@ -366,30 +418,9 @@ export function NetworksView() {
           <button className="secondary-button small-button" disabled={(archivePage + 1) * 40 >= archive.length} onClick={() => setArchivePage((p) => p + 1)}>{be ? "Далей" : "Далее"}</button>
         </div>}
       </section>}
-      <section className="panel network-transcription-select">
-        <div className="panel-head"><div><h3>{be ? "Апрацоўка выбраных відэа" : "Обработка выбранных видео"}</h3>
-          <p>{be ? "Адзначце ролікі вышэй. Да пяці незалежных транскрыпцый; кожны тэкст і каментарыі захоўваюцца асобна." : "Отметьте ролики выше. До пяти независимых транскрипций; текст и комментарии каждого видео сохраняются отдельно."}</p></div></div>
-        <div className="network-video-slots">
-          {slots.map((url, index) => <div className="network-video-slot" key={index}>
-            <button className={activeSlot === index ? "primary-button small-button" : "secondary-button small-button"}
-              onClick={() => setActiveSlot(index)}>{be ? "Відэа" : "Видео"} {index + 1}</button>
-            <input value={url} onChange={(event) => setSlot(index, event.target.value)}
-              placeholder="https://www.tiktok.com/@.../video/..." aria-label={`Видео ${index + 1} URL`} />
-            {url && <button className="ghost-button small-button" title={be ? "Ачысціць слот" : "Очистить слот"} onClick={() => setSlot(index, "")}>×</button>}
-          </div>)}
-          {slots.length < 5 && <button className="secondary-button small-button network-add-slot"
-            onClick={() => { setSlots((old) => [...old, ""]); setActiveSlot(slots.length); }}
-            title={be ? "Дадаць відэа" : "Добавить видео"}>+ {be ? "Відэа" : "Видео"} {slots.length + 1}</button>}
-        </div>
-        <div className="network-batch-actions"><button className="primary-button small-button" disabled={transcribingBatch || !slots.some((url) => !!url.trim())} onClick={() => void transcribeSelected()}>{transcribingBatch ? (be ? "Транскрыпцыя…" : "Транскрипция…") : be ? "Транскрыбаваць выбраныя відэа" : "Транскрибировать выбранные видео"}</button><span>{be ? "Па чарзе, без паўторнай апрацоўкі гатовых тэкстаў." : "Последовательно, без повторной обработки готовых текстов."}</span></div>
-        {activeUrl && !isTikTokVideoUrl(activeUrl) && <div className="notice error">{be ? "Патрэбна прамая спасылка на відэа TikTok." : "Нужна прямая ссылка на видео TikTok."}</div>}
-      </section>
-      {activeUrl && isTikTokVideoUrl(activeUrl) ?
-        <TranscriptionView key={`${activeUrl}:${batchRevision}`} initialUrl={activeUrl}
-          storageKey={`monitor-networks-transcription:${activeUrl}`} embedded />
-        : <section className="panel network-empty">
-          <p>{be ? "Абярыце відэа для транскрыпцыі. Ніжэй з'явяцца зыходны тэкст, тэкст для экспарту, надпісы на відэа, каментарыі і DOCX." : "Выберите видео для транскрипции. Здесь появятся исходный текст, текст для экспорта, надписи на видео, комментарии и DOCX."}</p>
-        </section>}
+      {page === "editor" && <NetworkEditorView slots={slots} setSlots={setSlots}
+        onRemove={() => {}} transcribeSelected={() => void transcribeSelected()}
+        batchBusy={transcribingBatch} batchRevision={batchRevision} />}
     </>}
   </div>;
 }

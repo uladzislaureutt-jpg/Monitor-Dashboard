@@ -22,6 +22,11 @@ export type NetworkCard = {
   needs_media?: boolean;
   is_original_appeal_verified?: boolean;
   already_reported?: boolean;
+  included_in_current_overview?: boolean;
+  report_suppressed?: boolean;
+  operator_lane?: string;
+  review_displayed?: boolean;
+  operator_reported_run?: number;
   [key: string]: unknown;
 };
 
@@ -116,12 +121,31 @@ export function networkCategoryName(category: NetworkCategory, be: boolean): str
   return labels[category][be ? 1 : 0];
 }
 
+/** Match the final operator report, NOT discovery output or pre-AI candidates. */
+export function includedInOperatorOverview(card: NetworkCard): boolean {
+  if (card.report_suppressed === true || card.included_in_current_overview === false) return false;
+  if (card.publication?.eligible_for_daily !== true || publishedTimestamp(card) <= 0) return false;
+  if (effectiveCategory(card) === "REJECT") return false;
+  return card.operator_lane === "candidate"
+    || (card.operator_lane === "review" && card.review_displayed === true);
+}
+
+export type NetworkModeration = { flagged: string[]; deleted: string[] };
+export const EMPTY_NETWORK_MODERATION: NetworkModeration = { flagged: [], deleted: [] };
+export function normalizeNetworkModeration(raw: unknown): NetworkModeration {
+  if (!raw || typeof raw !== "object") return { ...EMPTY_NETWORK_MODERATION };
+  const m = raw as Partial<NetworkModeration>;
+  const clean = (value: unknown) => Array.isArray(value)
+    ? [...new Set(value.filter((item): item is string => typeof item === "string" && /^tiktok:\d+$/.test(item)))].slice(0, 20000) : [];
+  return { flagged: clean(m.flagged), deleted: clean(m.deleted) };
+}
+
 export function networkTrend(cards: NetworkCard[], days: number | null, now = Date.now()): Array<{ label: string; count: number }> {
   const counts = new Map<string, number>();
   const min = days === null ? -Infinity : now - days * 86_400_000;
   const max = now + 86_400_000;
   for (const card of cards) {
-    if (card.queue === "archive" || effectiveCategory(card) === "REJECT") continue;
+    if (!includedInOperatorOverview(card)) continue;
     const time = publishedTimestamp(card);
     if (time <= 0 || time < min || time > max) continue;
     const day = new Date(time).toISOString().slice(0, 10);

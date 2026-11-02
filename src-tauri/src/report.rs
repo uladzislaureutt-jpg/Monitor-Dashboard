@@ -494,6 +494,85 @@ pub fn export_tiktok_transcript_docx(path: &Path, text: &str, comments: &[String
     Ok(())
 }
 
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TikTokMultiTranscript {
+    pub url: String,
+    pub text: String,
+    pub image_text: String,
+    pub comments: Vec<String>,
+}
+
+/// The multi-video export deliberately keeps texts and comments grouped by video.
+/// The legacy single-video export and its template remain unchanged.
+pub fn export_tiktok_multi_docx(path: &Path, items: &[TikTokMultiTranscript]) -> Result<(), String> {
+    if items.is_empty() || items.len() > 5 {
+        return Err("Можно экспортировать от 1 до 5 видео.".to_string());
+    }
+    if path.extension().and_then(|v| v.to_str()).map(|v|v.eq_ignore_ascii_case("docx")) != Some(true) {
+        return Err("Укажите файл .docx".to_string());
+    }
+    let mut body = String::new();
+    body.push_str(&paragraph_transcription_blank());
+    let mut unique = std::collections::HashSet::new();
+    for (index, item) in items.iter().enumerate() {
+        let url = reqwest::Url::parse(&item.url).map_err(|_| "Неверный URL TikTok".to_string())?;
+        let hostname = url.host_str().unwrap_or("");
+        if url.scheme() != "https" || !["www.tiktok.com","tiktok.com"].contains(&hostname)
+            || !url.path().contains("/video/") || !unique.insert(item.url.clone()) {
+            return Err("Неверная или повторная ссылка на видео.".to_string());
+        }
+        if item.text.chars().count() > 40_000 || item.image_text.chars().count() > 10_000 || item.comments.len() > 30 {
+            return Err("Превышен лимит текста или комментариев.".to_string());
+        }
+        let header = format!("Видео {}", index + 1);
+        body.push_str(&paragraph_transcription(&run(&header, true, false, 32, None, false)));
+        body.push_str(&paragraph_transcription(&run(&item.url, false, false, 28, None, false)));
+        let text = sanitize_transcription_text(&strip_tiktok_symbols(&item.text));
+        if !text.trim().is_empty() {
+            body.push_str(&paragraph_transcription(&run("Текст для экспорта", true, false, 28, None, false)));
+            body.push_str(&paragraph_transcription(&transcription_runs(text.trim(), &[])));
+        }
+        if !item.image_text.trim().is_empty() {
+            body.push_str(&paragraph_transcription(&run("Текст на видео", true, false, 28, None, false)));
+            body.push_str(&paragraph_transcription(&transcription_runs(item.image_text.trim(), &[])));
+        }
+        let comments = item.comments.iter()
+            .map(|v| clean_tiktok_comment(v).trim().to_string())
+            .filter(|v| !v.is_empty()).take(30).collect::<Vec<_>>();
+        if !comments.is_empty() {
+            body.push_str(&paragraph_transcription(&run("Комментарии", true, false, 28, None, false)));
+            for comment in comments {
+                body.push_str(&paragraph_transcription(&transcription_runs(&format!("«{}»", comment), &[])));
+            }
+        }
+        body.push_str(&paragraph_transcription_blank());
+    }
+    body.push_str("<w:sectPr><w:pgSz w:w=\"11906\" w:h=\"16838\"/><w:pgMar w:left=\"1276\" w:right=\"707\" w:top=\"1135\" w:bottom=\"851\"/></w:sectPr>");
+    let document = format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body>{body}</w:body></w:document>");
+    let styles = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><w:styles xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii=\"Times New Roman\" w:hAnsi=\"Times New Roman\"/><w:sz w:val=\"28\"/></w:rPr></w:rPrDefault></w:docDefaults></w:styles>";
+    let root_rels = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/></Relationships>";
+    let doc_rels = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/></Relationships>";
+    let types = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/><Override PartName=\"/word/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml\"/></Types>";
+    if let Some(parent) = path.parent() { fs::create_dir_all(parent).map_err(|e| e.to_string())?; }
+    let file = File::create(path).map_err(|e| e.to_string())?;
+    let mut zip = ZipWriter::new(file);
+    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    for (name, content) in [
+        ("[Content_Types].xml", types.to_string()),
+        ("_rels/.rels", root_rels.to_string()),
+        ("word/document.xml", document),
+        ("word/styles.xml", styles.to_string()),
+        ("word/_rels/document.xml.rels", doc_rels.to_string()),
+    ] {
+        zip.start_file(name, options).map_err(|e|e.to_string())?;
+        zip.write_all(content.as_bytes()).map_err(|e|e.to_string())?;
+    }
+    zip.finish().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 fn decode_word_xml(value: &str) -> String {
     value
         .replace("&lt;", "<")

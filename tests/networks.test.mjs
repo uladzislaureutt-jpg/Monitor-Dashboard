@@ -9,6 +9,7 @@ function card(id, category = "P2", date = "2026-11-02T05:00:00Z") {
     source_url: "https://www.tiktok.com/@person/video/" + id,
     category, queue: date ? "candidate" : "date_unknown",
     publication: { published_at: date, date_status: date ? "verified_original" : "unknown", eligible_for_daily: !!date },
+    operator_lane: "candidate", included_in_current_overview: true, review_displayed: true,
     generated_at: now, title: "Жалоба", text_excerpt: "Не работает отопление",
   };
 }
@@ -39,4 +40,8 @@ test("trend uses publication date, excludes undated and rejected", () => {
   const rejected = { ...card("7699429238109113655", "REJECT"), queue: "archive" };
   const result = networkTrend([a, b, unknown, rejected], 1, Date.parse("2026-11-02T08:00:00Z"));
   assert.equal(result.reduce((total, p) => total + p.count, 0), 2);
+  const deferred = { ...card("7699429238109113656", "REVIEW"), operator_lane: "review", review_displayed: false };
+  const repeated = { ...card("7699429238109113657"), report_suppressed: true };
+  const withNoise = networkTrend([a, b, unknown, rejected, deferred, repeated], 1, Date.parse("2026-11-02T08:00:00Z"));
+  assert.equal(withNoise.reduce((total, p) => total + p.count, 0), 2);
 });
