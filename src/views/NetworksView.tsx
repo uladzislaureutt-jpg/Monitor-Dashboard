@@ -103,7 +103,7 @@ export function NetworksView() {
     return date > 0 && date >= now - period * 86_400_000 && date <= now + 86_400_000;
   }), [cards, period]);
   const recent = useMemo(() => inPeriod.filter((item) =>
-    item.queue !== "archive" && effectiveCategory(item) !== "REJECT" && item.queue !== "date_unknown"
+    item.queue !== "archive" && effectiveCategory(item) !== "REJECT" && item.queue !== "date_unknown" && publishedTimestamp(item) > 0
   ), [inPeriod]);
   const archive = useMemo(() => cards.filter((item) => {
     if (archiveCategory !== "ALL" && effectiveCategory(item) !== archiveCategory) return false;
