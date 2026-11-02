@@ -28,6 +28,7 @@ export const desktopApi = {
   runs: () => invoke<RunSummary[]>("list_runs", { monitorKey: activeMonitorKey }),
   importBundle: (path: string) =>
     invoke<ImportResult>("import_dashboard_bundle", { path }),
+  readNetworksJsonl: (path: string) => invoke<string>("read_networks_jsonl", { path }),
   dashboard: (periodDays: number | null) =>
     invoke<DashboardOverview>("get_dashboard_overview", {
       monitorKey: activeMonitorKey,
