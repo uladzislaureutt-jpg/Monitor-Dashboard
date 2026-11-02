@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { desktopApi } from "../api";
 import { ensureWorkroomSession, loadWorkroomConfig, loadWorkroomSession } from "../workroom";
@@ -13,6 +13,7 @@ import {
 
 const CARDS_STORAGE_KEY = "networks.tiktok.cards.v1";
 const SLOTS_STORAGE_KEY = "monitor-networks-tiktok-video-slots-v1";
+const SYNC_RUNS_KEY = "networks.tiktok.completed-runs.v1";
 type NetworkPage = "home" | "archive";
 type NetworkPlatform = "tiktok" | "threads";
 type TrendKind = "bars" | "line";
@@ -78,6 +79,10 @@ export function NetworksView() {
   const [archivePage, setArchivePage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncState, setSyncState] = useState("");
+  const cardsRef = useRef<NetworkCard[]>([]);
+  const syncLock = useRef(false);
   const [transcribingBatch, setTranscribingBatch] = useState(false);
   const [batchRevision, setBatchRevision] = useState(0);
   const [notice, setNotice] = useState("");
@@ -89,12 +94,66 @@ export function NetworksView() {
       if (cancelled || !data) return;
       const parsed: unknown = JSON.parse(data);
       if (!Array.isArray(parsed)) throw new Error("Invalid stored networks cards");
-      setCards(mergeNetworkCards([], parsed as NetworkCard[]));
+      const initial = mergeNetworkCards([], parsed as NetworkCard[]);
+      cardsRef.current = initial;
+      setCards(initial);
     }).catch((reason) => {
       if (!cancelled) setError(be ? "Памылка чытання лакальнага архіва: " + reason : "Ошибка чтения локального архива: " + reason);
     }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
+
+  const syncNetwork = useCallback(async (silent = false) => {
+    if (syncLock.current) return;
+    syncLock.current = true;
+    setSyncing(true);
+    if (!silent) { setError(""); setSyncState(""); }
+    let imported = 0;
+    const failures: string[] = [];
+    try {
+      const config = loadWorkroomConfig();
+      const session = await ensureWorkroomSession(config, loadWorkroomSession());
+      const previous = await desktopApi.getSetting(SYNC_RUNS_KEY);
+      const parsed: unknown = previous ? JSON.parse(previous) : [];
+      const known = Array.isArray(parsed)
+        ? parsed.filter((n): n is number => Number.isSafeInteger(n) && n > 0).slice(-3000) : [];
+      const done = new Set(known);
+      const answer = await desktopApi.syncTikTokBundles(config.url, config.anonKey, session.accessToken, known);
+      failures.push(...answer.errors);
+      for (const bundle of answer.bundles) {
+        if (done.has(bundle.runNumber)) continue;
+        try {
+          const incoming = bundle.cardsJsonl.trim() ? importNetworkCards(bundle.cardsJsonl) : [];
+          const merged = mergeNetworkCards(cardsRef.current, incoming);
+          // Write content BEFORE the receipt. If interrupted, a retry is safely idempotent.
+          await desktopApi.setSetting(CARDS_STORAGE_KEY, JSON.stringify(merged));
+          done.add(bundle.runNumber);
+          await desktopApi.setSetting(SYNC_RUNS_KEY, JSON.stringify([...done].sort((a, b) => a - b).slice(-3000)));
+          cardsRef.current = merged;
+          setCards(merged);
+          imported += 1;
+        } catch (reason) {
+          failures.push(`#${bundle.runNumber}: ${String(reason)}`);
+        }
+      }
+      setSyncState((be ? "Апошняя праверка: " : "Последняя проверка: ") +
+        new Date().toLocaleTimeString(be ? "be-BY" : "ru-RU", { hour: "2-digit", minute: "2-digit" }) +
+        (answer.latestRemoteRun == null ? "" : ` · GitHub #${answer.latestRemoteRun}`));
+      if (imported && !silent) setNotice(be
+        ? `Сінхранізавана запускаў: ${imported}. Ролікаў у архіве: ${cardsRef.current.length}.`
+        : `Синхронизировано запусков: ${imported}. Роликов в архиве: ${cardsRef.current.length}.`);
+      if (failures.length) setError(failures.join("\n"));
+    } catch (reason) {
+      setError((be ? "Сінхранізацыя TikTok: " : "Синхронизация TikTok: ") + String(reason));
+    } finally { syncLock.current = false; setSyncing(false); }
+  }, [be]);
+
+  useEffect(() => {
+    if (loading) return;
+    void syncNetwork(true);
+    const interval = window.setInterval(() => void syncNetwork(true), 30 * 60 * 1000);
+    return () => window.clearInterval(interval);
+  }, [loading, syncNetwork]);
 
   useEffect(() => { localStorage.setItem(SLOTS_STORAGE_KEY, JSON.stringify(slots)); }, [slots]);
 
@@ -147,13 +206,14 @@ export function NetworksView() {
     const path = await open({ multiple: false, directory: false,
       title: be ? "Імпарт TikTok networks.v1" : "Импорт TikTok networks.v1",
       filters: [{ name: "Networks JSONL / ZIP", extensions: ["jsonl", "zip"] }] });
-    if (!path || Array.isArray(path)) return;
+    if (!path || Array.isArray(path) || syncLock.current) return;
     setImporting(true); setNotice(""); setError("");
     try {
       const source = await desktopApi.readNetworksJsonl(path);
       const next = importNetworkCards(source);
-      const merged = mergeNetworkCards(cards, next);
+      const merged = mergeNetworkCards(cardsRef.current, next);
       await desktopApi.setSetting(CARDS_STORAGE_KEY, JSON.stringify(merged));
+      cardsRef.current = merged;
       setCards(merged);
       setNotice(be
         ? `Імпартавана: ${next.length} картак. У лакальным архіве ўнікальных відэа: ${merged.length}.`
@@ -235,9 +295,15 @@ export function NetworksView() {
           <button className={page === "home" ? "active" : ""} onClick={() => setPage("home")}>{be ? "Агляд" : "Обзор"}</button>
           <button className={page === "archive" ? "active" : ""} onClick={() => showArchive()}>{be ? "Архіў" : "Архив"}</button>
         </div>
-        <button className="secondary-button small-button" disabled={importing} onClick={() => void importFile()}>
-          {importing ? "…" : be ? "Імпарт вынікаў TikTok" : "Импорт результатов TikTok"}
-        </button>
+        <div className="network-sync-controls">
+          <span className="network-sync-status">{syncing ? (be ? "Сінхранізацыя…" : "Синхронизация…") : syncState || (be ? "Аўтасінхранізацыя: кожныя 30 хвілін" : "Автосинхронизация: каждые 30 минут")}</span>
+          <button className="primary-button small-button" disabled={syncing || importing} onClick={() => void syncNetwork(false)}>
+            {be ? "Сінхранізаваць" : "Синхронизировать"}
+          </button>
+          <button className="secondary-button small-button" disabled={importing || syncing} onClick={() => void importFile()}>
+            {importing ? "…" : be ? "Імпарт ZIP / JSONL" : "Импорт ZIP / JSONL"}
+          </button>
+        </div>
       </div>
       {notice && <div className="notice success">{notice}</div>}
       {error && <div className="notice error">{error}</div>}

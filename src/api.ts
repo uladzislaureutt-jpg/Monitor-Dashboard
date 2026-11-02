@@ -29,6 +29,11 @@ export const desktopApi = {
   importBundle: (path: string) =>
     invoke<ImportResult>("import_dashboard_bundle", { path }),
   readNetworksJsonl: (path: string) => invoke<string>("read_networks_jsonl", { path }),
+  syncTikTokBundles: (baseUrl: string, anonKey: string, accessToken: string, knownRuns: number[]) =>
+    invoke<{ bundles: Array<{ runNumber: number; cardsJsonl: string }>; latestRemoteRun: number | null;
+      checkedArtifacts: number; alreadyPresent: number; errors: string[] }>(
+      "sync_tiktok_network_bundles", { baseUrl, anonKey, accessToken, knownRuns }),
+
   dashboard: (periodDays: number | null) =>
     invoke<DashboardOverview>("get_dashboard_overview", {
       monitorKey: activeMonitorKey,

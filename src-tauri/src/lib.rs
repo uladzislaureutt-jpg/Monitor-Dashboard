@@ -2,6 +2,7 @@ mod db;
 mod fulltext;
 mod importer;
 mod models;
+mod networks_sync;
 mod report;
 mod sync;
 mod transcription_coverage;
@@ -580,6 +581,13 @@ fn export_tiktok_transcript_docx(
 }
 
 #[tauri::command]
+fn sync_tiktok_network_bundles(
+    base_url: String, anon_key: String, access_token: String, known_runs: Vec<i64>,
+) -> Result<networks_sync::TikTokSyncResponse, String> {
+    networks_sync::fetch(base_url, anon_key, access_token, known_runs)
+}
+
+#[tauri::command]
 fn sync_server_artifacts(
     base_url: String,
     anon_key: String,
@@ -677,6 +685,7 @@ pub fn run() {
             extract_w_review_sample,
             export_tiktok_transcript_docx,
             sync_server_artifacts,
+            sync_tiktok_network_bundles,
             replace_moderation_snapshot,
             get_app_setting,
             set_app_setting,

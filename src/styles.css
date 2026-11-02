@@ -1287,3 +1287,7 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 
 .network-batch-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px}
 .network-batch-actions span{color:var(--muted);font-size:10px}
+
+.network-sync-controls{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px}
+.network-sync-status{color:var(--muted);font-size:10px}
+@media(max-width:750px){.network-sync-controls{justify-content:flex-start}}
