@@ -45,3 +45,17 @@ test("trend uses publication date, excludes undated and rejected", () => {
   const withNoise = networkTrend([a, b, unknown, rejected, deferred, repeated], 1, Date.parse("2026-11-02T08:00:00Z"));
   assert.equal(withNoise.reduce((total, p) => total + p.count, 0), 2);
 });
+
+import { contextFromCard, normalizeSourceContext, rememberSourceContext } from "../src/networkEditorMetadata.ts";
+
+test("editor retains source caption independently of transcription and refreshes", () => {
+  const url = "https://www.tiktok.com/@person/video/7699429238109113652";
+  const context = contextFromCard({ title: "Жалоба в Вилейке", text_excerpt: "Вода на улице. #вилейка", transcript_excerpt: "Не распознано" });
+  assert.equal(context.description, "Вода на улице. #вилейка");
+  const remembered = rememberSourceContext({}, url, context);
+  assert.equal(rememberSourceContext(remembered, url, { title: "New AI title", description: "AI transcript" }), remembered);
+  const reloaded = normalizeSourceContext(JSON.parse(JSON.stringify(remembered)));
+  assert.equal(reloaded[url].title, "Жалоба в Вилейке");
+  assert.equal(reloaded[url].description, "Вода на улице. #вилейка");
+  assert.equal(Object.keys(normalizeSourceContext({ "https://evil.example/": context })).length, 0);
+});
