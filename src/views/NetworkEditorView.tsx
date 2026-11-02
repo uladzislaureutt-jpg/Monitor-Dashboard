@@ -3,6 +3,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { desktopApi } from "../api";
 import { useI18n } from "../i18n";
 import { isTikTokVideoUrl } from "../networks";
+import type { TikTokSourceContextMap } from "../networkEditorMetadata";
 import { TranscriptionView } from "./TranscriptionView";
 
 export type NetworkEditorItem = {
@@ -30,10 +31,11 @@ export function collectEditorItems(urls: string[]): NetworkEditorItem[] {
 }
 
 export function NetworkEditorView({
-  slots, setSlots, onRemove, transcribeSelected, batchBusy, batchRevision,
+  slots, setSlots, sourceContext, onRemove, transcribeSelected, batchBusy, batchRevision,
 }: {
   slots: string[];
   setSlots: (next: string[]) => void;
+  sourceContext: TikTokSourceContextMap;
   onRemove: (url: string) => void;
   transcribeSelected: () => void;
   batchBusy: boolean;
@@ -87,19 +89,32 @@ export function NetworkEditorView({
         <span>{be ? "Гатовыя транскрыпцыі не апрацоўваюцца паўторна." : "Готовые транскрипции не обрабатываются повторно."}</span>
       </div>
     </section>
-    {slots.map((url, index) => <details className="network-editor-video" key={index} open={index === 0}>
-      <summary>{be ? "Відэа" : "Видео"} {index + 1} {url && <span>{url.replace("https://www.tiktok.com/", "")}</span>}</summary>
+    {slots.map((url, index) => {
+      const context = sourceContext[url];
+      const title = context?.title?.trim() || "";
+      const description = context?.description?.trim() || "";
+      return <details className="network-editor-video" key={index} open={index === 0}>
+      <summary>{be ? "Відэа" : "Видео"} {index + 1}
+        <span title={title || url}>{title || (url ? url.replace("https://www.tiktok.com/", "") : (be ? "Новае відэа" : "Новое видео"))}</span>
+      </summary>
       <div className="network-editor-video-content">
         <div className="network-editor-url">
           <input value={url} onChange={(event) => update(index, event.target.value)}
             placeholder="https://www.tiktok.com/@.../video/..." aria-label={`Видео ${index + 1} URL`} />
           <button className="ghost-button small-button" onClick={() => remove(index)}>{be ? "Прыбраць з агляду" : "Убрать из обзора"}</button>
         </div>
+        {(title || description) && <section className="network-editor-source-context" aria-label={be ? "Апісанне роліка" : "Описание ролика"}>
+          <div className="network-editor-source-label">{be ? "Арыгінальнае апісанне роліка" : "Оригинальное описание ролика"}</div>
+          {title && <h4>{title}</h4>}
+          {description && description !== title && <p>{description}</p>}
+          <small>{be ? "Захавана з карткі пры даданні ў агляд; не змяняецца транскрыпцыяй." : "Сохранено из карточки при добавлении в обзор; транскрипция не заменяет описание."}</small>
+        </section>}
         {url && isTikTokVideoUrl(url) ? <TranscriptionView key={`${url}:${batchRevision}`}
           initialUrl={url} storageKey={stateKey(url)} embedded hideExport /> :
           <section className="panel network-empty"><p>{be ? "Устаўце прамую спасылку на ролік." : "Вставьте прямую ссылку на ролик."}</p></section>}
       </div>
-    </details>)}
+    </details>;
+    })}
     {slots.length < 5 && <button className="secondary-button network-add-slot" onClick={() => setSlots([...slots, ""])}>
       + {be ? "Дадаць відэа" : "Добавить видео"} {slots.length + 1}
     </button>}
