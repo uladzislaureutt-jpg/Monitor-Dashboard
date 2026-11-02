@@ -66,7 +66,7 @@ function commentId(index: number) {
   return `comment:${Date.now()}:${index}:${Math.random().toString(36).slice(2, 7)}`;
 }
 
-export function TranscriptionView({ initialUrl = "", storageKey = STORAGE_KEY, embedded = false }: { initialUrl?: string; storageKey?: string; embedded?: boolean } = {}) {
+export function TranscriptionView({ initialUrl = "", storageKey = STORAGE_KEY, embedded = false, hideExport = false }: { initialUrl?: string; storageKey?: string; embedded?: boolean; hideExport?: boolean } = {}) {
   const { locale } = useI18n();
   const be = locale === "be";
   const [state, setState] = useState<TranscriptionState>(() => loadState(storageKey, initialUrl));
@@ -256,7 +256,7 @@ export function TranscriptionView({ initialUrl = "", storageKey = STORAGE_KEY, e
     {coverageWarnings.length>0 && <div className="notice error"><b>{be?"Увага: магчымыя пропускі пры распазнаванні":"Внимание: возможные пропуски распознавания"}</b><ul>{coverageWarnings.slice(0,12).map((item,i)=><li key={i}>{item}</li>)}</ul></div>}
 
     <section className="panel transcription-source">
-      <div className="panel-head"><div><h3>{be ? "1. Відэа" : "1. Видео"}</h3><p>{videoSource === "telegram" ? (be ? "Устаўце спасылку на публічную публікацыю Telegram." : "Вставьте ссылку на публичную публикацию Telegram.") : (be ? "Устаўце публічную спасылку TikTok." : "Вставьте публичную ссылку TikTok.")}</p></div><button className="ghost-button small-button" disabled={busy!==""} onClick={clearAll}>{be ? "Ачысціць" : "Очистить"}</button></div>
+      <div className="panel-head"><div><h3>{embedded ? (be ? "Відэа" : "Видео") : (be ? "1. Відэа" : "1. Видео")}</h3><p>{videoSource === "telegram" ? (be ? "Устаўце спасылку на публічную публікацыю Telegram." : "Вставьте ссылку на публичную публикацию Telegram.") : (be ? "Устаўце публічную спасылку TikTok." : "Вставьте публичную ссылку TikTok.")}</p></div><button className="ghost-button small-button" disabled={busy!==""} onClick={clearAll}>{be ? "Ачысціць" : "Очистить"}</button></div>
       {!embedded && <div className="transcription-inline-actions"><button className={videoSource==="tiktok"?"primary-button small-button":"ghost-button small-button"} onClick={()=>setVideoSource("tiktok")}>TikTok</button><button className={videoSource==="telegram"?"primary-button small-button":"ghost-button small-button"} onClick={()=>setVideoSource("telegram")}>Telegram</button></div>}
       <div className="transcription-url-row">
         <input value={inputUrl} readOnly={embedded} onChange={(e) => setInputUrl(e.target.value)} placeholder={videoSource==="telegram"?"https://t.me/channel/12345":"https://www.tiktok.com/@…/video/…"} />
@@ -266,7 +266,7 @@ export function TranscriptionView({ initialUrl = "", storageKey = STORAGE_KEY, e
     </section>
 
     <section className="panel transcription-text">
-      <div className="panel-head"><div><h3>{be ? "2. Тэкст" : "2. Текст"}</h3><p>{be ? "Арыгінал застаецца без змен, рэдагуецца толькі тэкст для экспарту." : "Исходный текст сохраняется, редактируется только версия для экспорта."}</p></div></div>
+      <div className="panel-head"><div><h3>{embedded ? (be ? "Тэкст" : "Текст") : (be ? "2. Тэкст" : "2. Текст")}</h3><p>{be ? "Арыгінал застаецца без змен, рэдагуецца толькі тэкст для экспарту." : "Исходный текст сохраняется, редактируется только версия для экспорта."}</p></div></div>
       <div className="transcription-text-columns">
         <div className="transcription-text-pane">
           <div className="panel-head"><b>{be ? "Зыходная транскрыпцыя" : "Исходная транскрипция"}</b></div>
@@ -306,7 +306,7 @@ export function TranscriptionView({ initialUrl = "", storageKey = STORAGE_KEY, e
     </section>
 
     <section className="panel transcription-comments">
-      <div className="panel-head"><div><h3>{be ? "3. Каментарыі" : "3. Комментарии"}</h3><p>{be ? "Да 25 агульных і 5 асобных каментарыяў — разам да 30." : "До 25 комментариев из общего списка и 5 отдельных — всего до 30."}</p></div><span className="badge">{state.comments.length+state.manualComments.filter((text)=>text.trim()).length}/30</span></div>
+      <div className="panel-head"><div><h3>{embedded ? (be ? "Каментарыі" : "Комментарии") : (be ? "3. Каментарыі" : "3. Комментарии")}</h3><p>{be ? "Да 25 агульных і 5 асобных каментарыяў — разам да 30." : "До 25 комментариев из общего списка и 5 отдельных — всего до 30."}</p></div><span className="badge">{state.comments.length+state.manualComments.filter((text)=>text.trim()).length}/30</span></div>
       <div className="transcription-comment-tools">
         <button className="secondary-button" disabled={!state.url&&!inputUrl.trim()} onClick={openTikTok}>{be?"Адкрыць TikTok":"Открыть TikTok"}</button>
         <button className="primary-button" disabled={busy!==""} onClick={pasteComments}>{busy==="comments"?"…":be?"Уставіць каментарыі":"Вставить комментарии"}</button>
@@ -333,8 +333,8 @@ export function TranscriptionView({ initialUrl = "", storageKey = STORAGE_KEY, e
       </div>
     </section>
 
-    <section className="panel transcription-export">
+    {!hideExport && <section className="panel transcription-export">
       <div className="panel-head"><div><h3>{be ? "4. Экспарт" : "4. Экспорт"}</h3><p>{be ? "Экспарт адрэдагаванага тэксту і каментарыяў у Word." : "Экспорт отредактированного текста и комментариев в Word."}</p></div><button className="primary-button" disabled={busy!==""||(!state.editorialText.trim()&&!state.comments.some((item)=>item.text.trim())&&!state.manualComments.some((item)=>item.trim()))} onClick={exportDocx}>{busy==="export"?"…":"DOCX"}</button></div>
-    </section>
+    </section>}
   </div>;
 }
