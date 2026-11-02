@@ -136,7 +136,7 @@ export function normalizeNetworkModeration(raw: unknown): NetworkModeration {
   if (!raw || typeof raw !== "object") return { ...EMPTY_NETWORK_MODERATION };
   const m = raw as Partial<NetworkModeration>;
   const clean = (value: unknown) => Array.isArray(value)
-    ? [...new Set(value.filter((item): item is string => typeof item === "string" && /^tiktok:\\d+$/.test(item)))].slice(0, 20000) : [];
+    ? [...new Set(value.filter((item): item is string => typeof item === "string" && /^tiktok:\d+$/.test(item)))].slice(0, 20000) : [];
   return { flagged: clean(m.flagged), deleted: clean(m.deleted) };
 }
 
