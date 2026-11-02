@@ -36,12 +36,12 @@ const EMPTY: TranscriptionState = {
   commentMode: "popular",
 };
 
-function loadState(): TranscriptionState {
+function loadState(storageKey = STORAGE_KEY, initialUrl = ""): TranscriptionState {
   try {
-    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null") as Partial<TranscriptionState> | null;
-    if (!raw) return EMPTY;
+    const raw = JSON.parse(localStorage.getItem(storageKey) || "null") as Partial<TranscriptionState> | null;
+    if (!raw) return { ...EMPTY, url: initialUrl, manualComments: [...EMPTY.manualComments] };
     return {
-      url: String(raw.url || ""),
+      url: String(raw.url || initialUrl),
       title: String(raw.title || ""),
       rawText: String(raw.rawText || ""),
       editorialText: String(raw.editorialText || ""),
@@ -66,11 +66,11 @@ function commentId(index: number) {
   return `comment:${Date.now()}:${index}:${Math.random().toString(36).slice(2, 7)}`;
 }
 
-export function TranscriptionView() {
+export function TranscriptionView({ initialUrl = "", storageKey = STORAGE_KEY, embedded = false }: { initialUrl?: string; storageKey?: string; embedded?: boolean } = {}) {
   const { locale } = useI18n();
   const be = locale === "be";
-  const [state, setState] = useState<TranscriptionState>(loadState);
-  const [inputUrl, setInputUrl] = useState(state.url);
+  const [state, setState] = useState<TranscriptionState>(() => loadState(storageKey, initialUrl));
+  const [inputUrl, setInputUrl] = useState(state.url || initialUrl);
   const [videoSource, setVideoSource] = useState<"tiktok"|"telegram">(state.url.includes("t.me/") ? "telegram" : "tiktok");
   const [busy, setBusy] = useState("");
   const [exactMode, setExactMode] = useState<CompressionMode>("light");
@@ -79,7 +79,7 @@ export function TranscriptionView() {
   const [error, setError] = useState("");
   const [coverageWarnings, setCoverageWarnings] = useState<string[]>([]);
 
-  useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }, [state]);
+  useEffect(() => { localStorage.setItem(storageKey, JSON.stringify(state)); }, [state, storageKey]);
 
   async function transcribe() {
     const url = inputUrl.trim();
@@ -246,10 +246,10 @@ export function TranscriptionView() {
   const duration = state.duration > 0 ? `${Math.round(state.duration)} с` : "—";
 
   return <div className="view-stack transcription-view">
-    <section className="view-heading">
+    {!embedded && <section className="view-heading">
       <div><div className="eyebrow dark">TRANSCRIPTION</div><h2>{be ? "Транскрыпцыя відэа" : "Транскрипция видео"}</h2><p>{be ? "Відэа → тэкст → каментарыі → рэдагаванне → DOCX." : "Видео → текст → комментарии → редактирование → DOCX."}</p></div>
       <div className="transcription-meta"><b>{state.title || "TikTok"}</b><span>{state.language || "—"} · {duration}</span></div>
-    </section>
+    </section>}
 
     {message && <div className="notice success">{message}</div>}
     {error && <div className="notice error">{error}</div>}
@@ -257,7 +257,7 @@ export function TranscriptionView() {
 
     <section className="panel transcription-source">
       <div className="panel-head"><div><h3>{be ? "1. Відэа" : "1. Видео"}</h3><p>{videoSource === "telegram" ? (be ? "Устаўце спасылку на публічную публікацыю Telegram." : "Вставьте ссылку на публичную публикацию Telegram.") : (be ? "Устаўце публічную спасылку TikTok." : "Вставьте публичную ссылку TikTok.")}</p></div><button className="ghost-button small-button" disabled={busy!==""} onClick={clearAll}>{be ? "Ачысціць" : "Очистить"}</button></div>
-      <div className="transcription-inline-actions"><button className={videoSource==="tiktok"?"primary-button small-button":"ghost-button small-button"} onClick={()=>setVideoSource("tiktok")}>TikTok</button><button className={videoSource==="telegram"?"primary-button small-button":"ghost-button small-button"} onClick={()=>setVideoSource("telegram")}>Telegram</button></div>
+      {!embedded && <div className="transcription-inline-actions"><button className={videoSource==="tiktok"?"primary-button small-button":"ghost-button small-button"} onClick={()=>setVideoSource("tiktok")}>TikTok</button><button className={videoSource==="telegram"?"primary-button small-button":"ghost-button small-button"} onClick={()=>setVideoSource("telegram")}>Telegram</button></div>}
       <div className="transcription-url-row">
         <input value={inputUrl} onChange={(e) => setInputUrl(e.target.value)} placeholder={videoSource==="telegram"?"https://t.me/channel/12345":"https://www.tiktok.com/@…/video/…"} />
         <button className="primary-button" disabled={busy!==""||!inputUrl.trim()} onClick={transcribe}>{busy==="transcribe"?"…":be?"Транскрыбаваць":"Транскрибировать"}</button>
