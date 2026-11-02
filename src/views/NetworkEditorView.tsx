@@ -3,6 +3,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { desktopApi } from "../api";
 import { useI18n } from "../i18n";
 import { isTikTokVideoUrl } from "../networks";
+import { clearReviewVideos, removeReviewVideo, selectedVideoCount } from "../networkReviewSelection";
 import type { TikTokSourceContextMap } from "../networkEditorMetadata";
 import { TranscriptionView } from "./TranscriptionView";
 
@@ -52,9 +53,20 @@ export function NetworkEditorView({
   }
   function remove(index: number) {
     const url = slots[index];
-    const next = slots.filter((_, i) => i !== index);
-    setSlots(next.length ? next : [""]);
+    setSlots(removeReviewVideo(slots, index));
+    setMessage(""); setError("");
     if (url) onRemove(url);
+  }
+
+  function clearAll() {
+    if (!selectedVideoCount(slots)) return;
+    const approved = window.confirm(be
+      ? "Ачысціць увесь праект агляду TikTok? Усе відэа будуць прыбраны з рэдактара. Архіў, апісанні і захаваныя транскрыпцыі не выдаляюцца."
+      : "Очистить весь проект обзора TikTok? Все видео будут убраны из редактора. Архив, описания и сохранённые транскрипции не удаляются.");
+    if (!approved) return;
+    setSlots(clearReviewVideos());
+    setError("");
+    setMessage(be ? "Праект агляду ачышчаны." : "Проект обзора очищен.");
   }
   async function exportCombined() {
     setError(""); setMessage("");
@@ -84,24 +96,40 @@ export function NetworkEditorView({
         <p>{be ? "Адно відэа – адзін поўны блок: спасылка, транскрыпцыя, рэдагаванне, надпісы на відэа і каментарыі. Не больш за пяць." : "Одно видео — один полный блок: ссылка, транскрипция, редактирование, текст на видео и комментарии. Не более пяти."}</p>
       </div></div>
       <div className="network-editor-actions">
-        <button className="secondary-button small-button" disabled={batchBusy || !slots.some(Boolean)}
+        <button className="secondary-button small-button" disabled={batchBusy || !selectedVideoCount(slots)}
           onClick={transcribeSelected}>{batchBusy ? "…" : be ? "Транскрыбаваць усе" : "Транскрибировать все"}</button>
         <span>{be ? "Гатовыя транскрыпцыі не апрацоўваюцца паўторна." : "Готовые транскрипции не обрабатываются повторно."}</span>
+        <button className="secondary-button small-button network-editor-clear-all"
+          disabled={batchBusy || exporting || !selectedVideoCount(slots)}
+          onClick={clearAll}>{be ? "Ачысціць увесь агляд" : "Очистить весь обзор"} ({selectedVideoCount(slots)})</button>
       </div>
     </section>
+    {message && <div className="notice success">{message}</div>}
+    {error && <div className="notice error">{error}</div>}
     {slots.map((url, index) => {
       const context = sourceContext[url];
       const title = context?.title?.trim() || "";
       const description = context?.description?.trim() || "";
       return <details className="network-editor-video" key={index} open={index === 0}>
-      <summary>{be ? "Відэа" : "Видео"} {index + 1}
-        <span title={title || url}>{title || (url ? url.replace("https://www.tiktok.com/", "") : (be ? "Новае відэа" : "Новое видео"))}</span>
+      <summary>
+        <span className="network-editor-heading">
+          <strong>{be ? "Відэа" : "Видео"} {index + 1}</strong>
+          <span className="network-editor-summary-title" title={title || url}>
+            {title || (url ? url.replace("https://www.tiktok.com/", "") : (be ? "Новае відэа" : "Новое видео"))}
+          </span>
+          <button className="secondary-button small-button network-editor-remove"
+            type="button" disabled={batchBusy || exporting}
+            title={be ? "Прыбраць толькі гэта відэа з праекта агляду" : "Убрать только это видео из проекта обзора"}
+            onClick={(event) => { event.preventDefault(); event.stopPropagation(); remove(index); }}>
+            {be ? "Прыбраць" : "Убрать"}
+          </button>
+        </span>
       </summary>
       <div className="network-editor-video-content">
         <div className="network-editor-url">
           <input value={url} onChange={(event) => update(index, event.target.value)}
             placeholder="https://www.tiktok.com/@.../video/..." aria-label={`Видео ${index + 1} URL`} />
-          <button className="ghost-button small-button" onClick={() => remove(index)}>{be ? "Прыбраць з агляду" : "Убрать из обзора"}</button>
+          <button className="ghost-button small-button" disabled={batchBusy || exporting} onClick={() => remove(index)}>{be ? "Прыбраць з агляду" : "Убрать из обзора"}</button>
         </div>
         {(title || description) && <section className="network-editor-source-context" aria-label={be ? "Апісанне роліка" : "Описание ролика"}>
           <div className="network-editor-source-label">{be ? "Арыгінальнае апісанне роліка" : "Оригинальное описание ролика"}</div>
@@ -125,8 +153,6 @@ export function NetworkEditorView({
       </div><button className="primary-button" disabled={exporting || !slots.some(Boolean)} onClick={() => void exportCombined()}>
         {exporting ? "…" : be ? "Экспартаваць DOCX" : "Экспортировать DOCX"}
       </button></div>
-      {message && <div className="notice success">{message}</div>}
-      {error && <div className="notice error">{error}</div>}
     </section>
   </div>;
 }
