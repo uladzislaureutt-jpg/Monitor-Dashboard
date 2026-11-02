@@ -175,14 +175,13 @@ mod tests {
         });
         let inner_cursor = Cursor::new(Vec::new());
         let mut w = zip::ZipWriter::new(inner_cursor);
-        let opts = zip::write::SimpleFileOptions::default();
-        w.start_file("monitor_bundle_manifest.json", opts).unwrap();
+        w.start_file("monitor_bundle_manifest.json", zip::write::SimpleFileOptions::default()).unwrap();
         w.write_all(manifest.to_string().as_bytes()).unwrap();
-        w.start_file("networks_cards.jsonl", opts).unwrap();
+        w.start_file("networks_cards.jsonl", zip::write::SimpleFileOptions::default()).unwrap();
         w.write_all(cards).unwrap();
         let inner = w.finish().unwrap().into_inner();
         let mut outer = zip::ZipWriter::new(Cursor::new(Vec::new()));
-        outer.start_file(format!("dashboard-bundle-tiktok-{run}.zip"), opts).unwrap();
+        outer.start_file(format!("dashboard-bundle-tiktok-{run}.zip"), zip::write::SimpleFileOptions::default()).unwrap();
         outer.write_all(&inner).unwrap();
         outer.finish().unwrap().into_inner()
     }
