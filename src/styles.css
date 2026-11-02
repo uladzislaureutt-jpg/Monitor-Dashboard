@@ -1325,3 +1325,26 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 .network-editor-source-context p{font-size:12px;line-height:1.6;white-space:pre-wrap;margin:0 0 9px;color:var(--ink)}
 .network-editor-source-context small{font-size:10px;color:var(--muted)}
 .network-editor-video>summary span{font-weight:600}
+
+
+/* Keep individual review removal visible even when a long TikTok caption overflows. */
+.network-editor-video>summary { max-width:100%; overflow:hidden; }
+.network-editor-video>summary .network-editor-heading{
+  display:inline-flex; align-items:center; vertical-align:middle; gap:10px;
+  width:calc(100% - 24px); max-width:calc(100% - 24px); min-width:0;
+  margin-left:4px; font-weight:normal;
+}
+.network-editor-heading>strong{white-space:nowrap; flex:0 0 auto; font-size:15px; color:var(--ink)}
+.network-editor-video>summary .network-editor-summary-title{
+  min-width:0; max-width:none; flex:1 1 0; white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis; margin-left:0; font-size:11px; font-weight:500;
+}
+.network-editor-video>summary .network-editor-remove{flex:0 0 auto; margin-left:auto; font-size:11px; color:#9d2727}
+.network-editor-actions .network-editor-clear-all{margin-left:auto; color:#9d2727; white-space:nowrap}
+.network-editor-url{min-width:0}
+.network-editor-url input{min-width:0}
+@media(max-width:700px){
+  .network-editor-actions .network-editor-clear-all{margin-left:0}
+  .network-editor-heading>strong{font-size:12px}
+  .network-editor-video>summary .network-editor-heading{gap:6px; max-width:calc(100% - 18px)}
+}
