@@ -6,6 +6,7 @@ mod report;
 mod sync;
 mod transcription_coverage;
 
+use std::io::Read;
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -53,6 +54,42 @@ fn get_database_stats(state: State<'_, AppState>, monitor_key: String) -> Result
 #[tauri::command]
 fn list_runs(state: State<'_, AppState>, monitor_key: String) -> Result<Vec<RunSummary>, String> {
     db::list_runs(&state.db_path, &monitor_key)
+}
+
+
+/** Import the public metadata-only networks.v1 export without invoking scrapers. */
+#[tauri::command]
+fn read_networks_jsonl(path: String) -> Result<String, String> {
+    const LIMIT: u64 = 22 * 1024 * 1024;
+    let path = PathBuf::from(path);
+    let ext = path.extension().and_then(|v| v.to_str()).unwrap_or("").to_ascii_lowercase();
+    let metadata = std::fs::metadata(&path).map_err(|e| format!("Файл недоступен: {e}"))?;
+    if !metadata.is_file() || metadata.len() == 0 || metadata.len() > 80 * 1024 * 1024 {
+        return Err("Некорректный или слишком большой файл Networks.".to_string());
+    }
+    if ext == "jsonl" {
+        if metadata.len() > LIMIT { return Err("JSONL превышает лимит 22 МБ.".to_string()); }
+        return std::fs::read_to_string(&path).map_err(|e| format!("Не удалось прочитать JSONL: {e}"));
+    }
+    if ext != "zip" { return Err("Выберите networks_cards.jsonl или ZIP-артефакт.".to_string()); }
+    let file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Некорректный ZIP: {e}"))?;
+    let mut matching = None;
+    for index in 0..archive.len() {
+        let name = archive.by_index(index).map_err(|e| e.to_string())?.name().to_string();
+        if name.rsplit('/').next() == Some("networks_cards.jsonl") {
+            if matching.is_some() { return Err("В архиве несколько networks_cards.jsonl. Уточните файл.".to_string()); }
+            matching = Some(index);
+        }
+    }
+    let index = matching.ok_or_else(|| "ZIP не содержит networks_cards.jsonl.".to_string())?;
+    let mut source = archive.by_index(index).map_err(|e| e.to_string())?;
+    if source.size() > LIMIT { return Err("Содержимое JSONL превышает лимит 22 МБ.".to_string()); }
+    let mut text = String::new();
+    source.take(LIMIT + 1).read_to_string(&mut text)
+        .map_err(|e| format!("Не удалось прочитать JSONL из ZIP: {e}"))?;
+    if text.len() as u64 > LIMIT { return Err("Содержимое архива превышает лимит 22 МБ.".to_string()); }
+    Ok(text)
 }
 
 #[tauri::command]
@@ -615,6 +652,7 @@ pub fn run() {
             get_database_stats,
             list_runs,
             import_dashboard_bundle,
+            read_networks_jsonl,
             get_dashboard_overview,
             list_publications,
             list_topic_bucket_publications,
