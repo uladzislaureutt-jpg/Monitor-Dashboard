@@ -5,6 +5,7 @@ import { ensureWorkroomSession, loadWorkroomConfig, loadWorkroomSession } from "
 import { useI18n } from "../i18n";
 import { TrendColumns, TrendLine } from "../components/Charts";
 import { NetworkEditorView } from "./NetworkEditorView";
+import { contextFromCard, normalizeSourceContext, rememberSourceContext, type TikTokSourceContextMap } from "../networkEditorMetadata";
 import {
   cardTimestamp, effectiveCategory, importNetworkCards, isTikTokVideoUrl,
   includedInOperatorOverview, normalizeNetworkModeration, type NetworkModeration,
@@ -16,9 +17,15 @@ const CARDS_STORAGE_KEY = "networks.tiktok.cards.v1";
 const SLOTS_STORAGE_KEY = "monitor-networks-tiktok-video-slots-v1";
 const SYNC_RUNS_KEY = "networks.tiktok.completed-runs.v1";
 const MODERATION_KEY = "networks.tiktok.moderation.v1";
-type NetworkPage = "home" | "archive" | "editor";
-type NetworkPlatform = "tiktok" | "threads";
+const EDITOR_CONTEXT_KEY = "monitor-networks-editor-source-context-v1";
+export type NetworkPage = "home" | "archive" | "editor";
+export type NetworkPlatform = "tiktok" | "threads";
 type TrendKind = "bars" | "line";
+
+function initialContext(): TikTokSourceContextMap {
+  try { return normalizeSourceContext(JSON.parse(localStorage.getItem(EDITOR_CONTEXT_KEY) || "null")); }
+  catch { return {}; }
+}
 
 function initialSlots(): string[] {
   try {
@@ -79,15 +86,19 @@ function ClipCard({ item, be, checked, flagged, onToggle, onFlag, onDelete, onAd
 }
 
 /** The social networks never alter the active SEP/L database or its sync route. */
-export function NetworksView() {
+export function NetworksView({ page, onPageChange, platform, onPlatformChange }: {
+  page: NetworkPage; onPageChange: (page: NetworkPage) => void;
+  platform: NetworkPlatform; onPlatformChange: (platform: NetworkPlatform) => void;
+}) {
   const { locale } = useI18n();
   const be = locale === "be";
-  const [platform, setPlatform] = useState<NetworkPlatform>("tiktok");
-  const [page, setPage] = useState<NetworkPage>("home");
+  const setPage = onPageChange;
+  const setPlatform = onPlatformChange;
   const [cards, setCards] = useState<NetworkCard[]>([]);
   const [period, setPeriod] = useState<number | null>(30);
   const [trendKind, setTrendKind] = useState<TrendKind>("bars");
   const [slots, setSlots] = useState<string[]>(initialSlots);
+  const [sourceContext, setSourceContext] = useState<TikTokSourceContextMap>(initialContext);
   const [activeSlot, setActiveSlot] = useState(0);
   const [archiveQuery, setArchiveQuery] = useState("");
   const [archiveCategory, setArchiveCategory] = useState<NetworkCategory | "ALL">("ALL");
@@ -205,6 +216,21 @@ export function NetworksView() {
   }
 
   useEffect(() => { localStorage.setItem(SLOTS_STORAGE_KEY, JSON.stringify(slots)); }, [slots]);
+  useEffect(() => { localStorage.setItem(EDITOR_CONTEXT_KEY, JSON.stringify(sourceContext)); }, [sourceContext]);
+  // Migration: previously selected videos had a URL but no descriptive snapshot.
+  // Recover their original captions from the already imported local Networks cards.
+  useEffect(() => {
+    if (!cards.length) return;
+    setSourceContext((existing) => {
+      let next = existing;
+      for (const url of slots.filter(Boolean)) {
+        if (next[url]) continue;
+        const source = cards.find((item) => item.source_url === url);
+        if (source) next = rememberSourceContext(next, url, contextFromCard(source));
+      }
+      return next;
+    });
+  }, [cards, slots]);
 
   const now = Date.now();
   const visible = useMemo(() => cards.filter((item) => includedInOperatorOverview(item) && !moderation.deleted.includes(item.item_id)), [cards, moderation.deleted]);
@@ -232,6 +258,7 @@ export function NetworksView() {
 
   function toggleClip(item: NetworkCard) {
     setError("");
+    setSourceContext((current) => rememberSourceContext(current, item.source_url, contextFromCard(item)));
     const current = [...slots];
     if (current.includes(item.source_url)) {
       setSlots(current.map((url) => url === item.source_url ? "" : url));
@@ -342,11 +369,7 @@ export function NetworksView() {
       <p>{be ? "Раздзел зарэзерваваны. Даныя Threads пакуль не імпартуюцца. Да яго вернемся асобным этапам." : "Раздел подготовлен для следующего этапа. Данные Threads пока не импортируются."}</p>
     </section> : <>
       <div className="network-toolbar">
-        <div className="network-tabs" role="tablist" aria-label={be ? "Рэжым прагляду" : "Режим просмотра"}>
-          <button className={page === "home" ? "active" : ""} onClick={() => setPage("home")}>{be ? "Агляд" : "Обзор"}</button>
-          <button className={page === "archive" ? "active" : ""} onClick={() => showArchive()}>{be ? "Архіў" : "Архив"}</button>
-          <button className={page === "editor" ? "active" : ""} onClick={() => setPage("editor")}>{be ? "Рэдактар агляду" : "Редактор обзора"} ({slots.filter(Boolean).length})</button>
-        </div>
+
         <div className="network-sync-controls">
           <span className="network-sync-status">{syncing ? (be ? "Сінхранізацыя…" : "Синхронизация…") : syncState || (be ? "Аўтасінхранізацыя: кожныя 30 хвілін" : "Автосинхронизация: каждые 30 минут")}</span>
           <button className="primary-button small-button" disabled={syncing || importing} onClick={() => void syncNetwork(false)}>
@@ -418,7 +441,7 @@ export function NetworksView() {
           <button className="secondary-button small-button" disabled={(archivePage + 1) * 40 >= archive.length} onClick={() => setArchivePage((p) => p + 1)}>{be ? "Далей" : "Далее"}</button>
         </div>}
       </section>}
-      {page === "editor" && <NetworkEditorView slots={slots} setSlots={setSlots}
+      {page === "editor" && <NetworkEditorView slots={slots} setSlots={setSlots} sourceContext={sourceContext}
         onRemove={() => {}} transcribeSelected={() => void transcribeSelected()}
         batchBusy={transcribingBatch} batchRevision={batchRevision} />}
     </>}

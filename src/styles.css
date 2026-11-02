@@ -1288,7 +1288,7 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 .network-batch-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px}
 .network-batch-actions span{color:var(--muted);font-size:10px}
 
-.network-sync-controls{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px}
+.network-sync-controls{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-left:auto}
 .network-sync-status{color:var(--muted);font-size:10px}
 @media(max-width:750px){.network-sync-controls{justify-content:flex-start}}
 
@@ -1316,3 +1316,12 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 .network-editor-actions span{font-size:10px;color:var(--muted)}
 .network-total-export{margin-bottom:30px}
 @media(max-width:760px){.network-editor-url{grid-template-columns:1fr}.network-editor-video-content{padding:10px}}
+
+
+/* Networks editor: preserve and display original video description separately from transcripts. */
+.network-editor-source-context{padding:15px 18px;background:var(--surface-secondary,#f7f6f3);border:1px solid var(--line);border-radius:12px;overflow-wrap:anywhere}
+.network-editor-source-label{font-size:11px;font-weight:700;color:var(--muted);margin-bottom:8px}
+.network-editor-source-context h4{font-size:14px;line-height:1.45;margin:0 0 8px;color:var(--ink);white-space:pre-wrap}
+.network-editor-source-context p{font-size:12px;line-height:1.6;white-space:pre-wrap;margin:0 0 9px;color:var(--ink)}
+.network-editor-source-context small{font-size:10px;color:var(--muted)}
+.network-editor-video>summary span{font-weight:600}
