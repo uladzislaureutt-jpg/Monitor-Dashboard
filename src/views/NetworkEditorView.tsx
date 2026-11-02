@@ -87,7 +87,7 @@ export function NetworkEditorView({
         <span>{be ? "Гатовыя транскрыпцыі не апрацоўваюцца паўторна." : "Готовые транскрипции не обрабатываются повторно."}</span>
       </div>
     </section>
-    {slots.map((url, index) => <details className="network-editor-video" key={index} open={undefined}>
+    {slots.map((url, index) => <details className="network-editor-video" key={index} open={index === 0}>
       <summary>{be ? "Відэа" : "Видео"} {index + 1} {url && <span>{url.replace("https://www.tiktok.com/", "")}</span>}</summary>
       <div className="network-editor-video-content">
         <div className="network-editor-url">
