@@ -120,17 +120,24 @@ export function NetworksView() {
 
   function toggleClip(item: NetworkCard) {
     setError("");
-    setSlots((current) => {
-      if (current.includes(item.source_url)) return current.map((url) => url === item.source_url ? "" : url);
-      const empty = current.findIndex((url) => !url.trim());
-      if (empty >= 0) { setActiveSlot(empty); return current.map((url, i) => i === empty ? item.source_url : url); }
-      if (current.length >= 5) {
-        setError(be ? "Можна выбраць не больш за 5 відэа за раз." : "Можно выбрать не более 5 видео за раз.");
-        return current;
-      }
-      setActiveSlot(current.length);
-      return [...current, item.source_url];
-    });
+    const current = [...slots];
+    if (current.includes(item.source_url)) {
+      setSlots(current.map((url) => url === item.source_url ? "" : url));
+      return;
+    }
+    const empty = current.findIndex((url) => !url.trim());
+    if (empty >= 0) {
+      current[empty] = item.source_url;
+      setSlots(current);
+      setActiveSlot(empty);
+      return;
+    }
+    if (current.length >= 5) {
+      setError(be ? "Можна выбраць не больш за 5 відэа за раз." : "Можно выбрать не более 5 видео за раз.");
+      return;
+    }
+    setSlots([...current, item.source_url]);
+    setActiveSlot(current.length);
   }
 
   async function importFile() {
