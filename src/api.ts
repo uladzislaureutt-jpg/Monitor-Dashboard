@@ -88,6 +88,8 @@ export const desktopApi = {
     invoke<void>("export_report_docx", { path, date, items, monitorKey }),
   exportWReview: (path: string, text: string, sourceNames: string[], sectionTitles: string[], boldPhrases: string[], sourceLinks: {name:string;url:string}[]) => invoke<void>("export_w_review_docx", { path, text, sourceNames, sectionTitles, boldPhrases, sourceLinks }),
   extractWReviewSample: (path: string) => invoke<string>("extract_w_review_sample", { path }),
+  exportTikTokMultiTranscript: (path: string, items: Array<{ url: string; text: string; imageText: string; comments: string[] }>) =>
+    invoke<void>("export_tiktok_multi_docx", { path, items }),
   exportTikTokTranscript: (path: string, text: string, comments: string[], accents: string[]) =>
     invoke<void>("export_tiktok_transcript_docx", { path, text, comments, accents }),
   syncServer: (baseUrl: string, anonKey: string, accessToken: string) =>
