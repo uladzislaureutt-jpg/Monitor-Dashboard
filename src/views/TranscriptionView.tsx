@@ -214,8 +214,8 @@ export function TranscriptionView({ initialUrl = "", storageKey = STORAGE_KEY, e
   }
 
   function clearAll() {
-    setState(EMPTY);
-    setInputUrl("");
+    setState({ ...EMPTY, url: embedded ? initialUrl : "", manualComments: [...EMPTY.manualComments] });
+    setInputUrl(embedded ? initialUrl : "");
     setAiRuns(0);
     setCoverageWarnings([]);
     setMessage("");
