@@ -1284,3 +1284,6 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
   .network-video-slot{grid-template-columns:80px minmax(0,1fr) 26px}
   .network-card-list{grid-template-columns:1fr}
 }
+
+.network-batch-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px}
+.network-batch-actions span{color:var(--muted);font-size:10px}
