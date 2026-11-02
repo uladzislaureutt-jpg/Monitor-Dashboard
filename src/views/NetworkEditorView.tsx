@@ -110,19 +110,15 @@ export function NetworkEditorView({
       const context = sourceContext[url];
       const title = context?.title?.trim() || "";
       const description = context?.description?.trim() || "";
-      return <details className="network-editor-video" key={index} open={index === 0}>
+      return <div className="network-editor-card-shell" key={url || `empty-${index}`}>
+        <details className="network-editor-video" open={index === 0}>
       <summary>
         <span className="network-editor-heading">
           <strong>{be ? "Відэа" : "Видео"} {index + 1}</strong>
           <span className="network-editor-summary-title" title={title || url}>
             {title || (url ? url.replace("https://www.tiktok.com/", "") : (be ? "Новае відэа" : "Новое видео"))}
           </span>
-          <button className="secondary-button small-button network-editor-remove"
-            type="button" disabled={batchBusy || exporting}
-            title={be ? "Прыбраць толькі гэта відэа з праекта агляду" : "Убрать только это видео из проекта обзора"}
-            onClick={(event) => { event.preventDefault(); event.stopPropagation(); remove(index); }}>
-            {be ? "Прыбраць" : "Убрать"}
-          </button>
+
         </span>
       </summary>
       <div className="network-editor-video-content">
@@ -141,7 +137,15 @@ export function NetworkEditorView({
           initialUrl={url} storageKey={stateKey(url)} embedded hideExport /> :
           <section className="panel network-empty"><p>{be ? "Устаўце прамую спасылку на ролік." : "Вставьте прямую ссылку на ролик."}</p></section>}
       </div>
-    </details>;
+        </details>
+        <button className="secondary-button small-button network-editor-remove-fixed"
+          type="button" disabled={batchBusy || exporting}
+          title={be ? "Прыбраць гэта відэа толькі з агляду" : "Убрать это видео только из обзора"}
+          aria-label={(be ? "Прыбраць відэа " : "Убрать видео ") + (index + 1)}
+          onClick={() => remove(index)}>
+          {be ? "Прыбраць" : "Убрать"}
+        </button>
+      </div>;
     })}
     {slots.length < 5 && <button className="secondary-button network-add-slot" onClick={() => setSlots([...slots, ""])}>
       + {be ? "Дадаць відэа" : "Добавить видео"} {slots.length + 1}

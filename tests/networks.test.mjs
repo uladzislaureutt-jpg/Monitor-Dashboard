@@ -84,3 +84,18 @@ test("clearing a review resets membership without deleting video metadata", () =
   assert.equal(selectedVideoCount(empty), 0);
   assert.deepEqual(metadata, { title: "Original caption", transcript: "Previously transcribed text" });
 });
+
+
+import { readFileSync } from "node:fs";
+
+test("TikTok review editor has bounded grid and independently visible remove button", () => {
+  const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+  const editor = readFileSync(new URL("../src/views/NetworkEditorView.tsx", import.meta.url), "utf8");
+  assert.match(css, /\.networks-view\s*\{[^}]*grid-template-columns:minmax\(0,1fr\)/s);
+  assert.match(css, /\.network-editor-card-shell\s*\{[^}]*width:100%;min-width:0;max-width:100%/s);
+  assert.match(css, /@container \(max-width:850px\)/);
+  assert.match(editor, /network-editor-remove-fixed/);
+  const closingDetails = editor.indexOf("</details>");
+  const standaloneButton = editor.indexOf('className="secondary-button small-button network-editor-remove-fixed"');
+  assert.ok(standaloneButton > closingDetails, "Remove must stay outside collapsed details");
+});
