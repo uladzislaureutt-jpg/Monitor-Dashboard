@@ -129,7 +129,7 @@ export function networkCategoryName(category: NetworkCategory, be: boolean): str
 
 /** Match the final operator report, NOT discovery output or pre-AI candidates. */
 export function includedInOperatorOverview(card: NetworkCard): boolean {
-  if (card.report_suppressed === true || card.included_in_current_overview === false) return false;
+  if (card.report_suppressed === true || card.included_in_current_overview !== true) return false;
   if (card.publication?.eligible_for_daily !== true || publishedTimestamp(card) <= 0) return false;
   if (effectiveCategory(card) === "REJECT") return false;
   return card.operator_lane === "candidate"
