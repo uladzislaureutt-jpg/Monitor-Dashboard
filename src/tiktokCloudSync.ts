@@ -5,8 +5,8 @@
  */
 import { ensureWorkroomSession, loadWorkroomConfig, loadWorkroomSession } from "./workroom";
 import { includedInOperatorOverview, type NetworkCard, type NetworkModeration } from "./networks";
+import { cloudModerationToLocal, type CloudModerationRow } from "./tiktokCloudCore";
 
-type CloudModerationRow = { item_id: string; flagged: boolean; deleted: boolean };
 type CloudCardRow = { item_id: string; card: NetworkCard };
 const PAGE_SIZE = 500;
 const PUSH_SIZE = 100;
@@ -52,13 +52,6 @@ async function pagedRead<T>(table: string, columns: string): Promise<T[]> {
     if (rows.length < PAGE_SIZE) return all;
   }
   throw new Error("TIKTOK_CLOUD_ARCHIVE_LIMIT");
-}
-
-export function cloudModerationToLocal(rows: CloudModerationRow[]): NetworkModeration {
-  return {
-    flagged: rows.filter((row) => row.flagged && !row.deleted).map((row) => row.item_id),
-    deleted: rows.filter((row) => row.deleted).map((row) => row.item_id),
-  };
 }
 
 export async function downloadTikTokCloud(): Promise<{
