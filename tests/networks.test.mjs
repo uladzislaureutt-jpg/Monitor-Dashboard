@@ -147,3 +147,32 @@ test("photo and frame miniatures are strictly whitelisted and travel on operator
   assert.equal(safeTikTokPreview("https://evil.invalid/preview.jpg"), null);
   assert.equal(importNetworkCards(JSON.stringify({ ...video, preview_image_url: "data:image/svg+xml;base64,abc" }))[0].preview_image_url, null);
 });
+
+test("late TikTok preview enriches an already reviewed card without losing editorial status", () => {
+  const id = "7704323319918497042";
+  const original = { ...card(id),
+    title: "Operator-reviewed title", generated_at: "2026-11-06T16:00:00Z",
+    review_status: "operator_confirmed",
+    review: { decision: "confirmed", category_override: "P1", revision: 5 } };
+  const image = { ...card(id),
+    title: "Stale discovery title", generated_at: "2026-11-03T08:00:00Z",
+    preview_image_url: "https://p16.tiktokcdn.com/cover.jpg" };
+  const merged = mergeNetworkCards([original], [image]);
+  assert.equal(merged[0].title, "Operator-reviewed title");
+  assert.equal(merged[0].review.revision, 5);
+  assert.equal(merged[0].preview_image_url, image.preview_image_url);
+  assert.equal(mergeNetworkCards(merged, [original])[0].preview_image_url, image.preview_image_url);
+});
+
+test("review editor remembers and restores real TikTok poster with original title", () => {
+  const caption = contextFromCard({ title: "Дорога в Борисове", text_excerpt: "Нужен ремонт",
+    preview_image_url: "https://p16.tiktokcdn.com/cover.jpg" });
+  const url = "https://www.tiktok.com/@person/photo/7704323319918497042";
+  const old = rememberSourceContext({}, url, { title: caption.title, description: caption.description });
+  const enriched = rememberSourceContext(old, url, caption);
+  assert.equal(enriched[url].title, "Дорога в Борисове");
+  assert.equal(enriched[url].preview_image_url, caption.preview_image_url);
+  assert.equal(normalizeSourceContext(enriched)[url].preview_image_url, caption.preview_image_url);
+  assert.equal(rememberSourceContext(enriched, url, { title: "AI title", description: "AI caption",
+    preview_image_url: "https://p16.tiktokcdn.com/another.jpg" }), enriched);
+});
