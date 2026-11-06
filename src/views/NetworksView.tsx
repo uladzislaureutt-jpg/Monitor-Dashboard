@@ -4,6 +4,7 @@ import { desktopApi } from "../api";
 import { ensureWorkroomSession, loadWorkroomConfig, loadWorkroomSession } from "../workroom";
 import { useI18n } from "../i18n";
 import { TrendColumns, TrendLine } from "../components/Charts";
+import { tikTokPreviewUrl } from "../tiktokPreview";
 import { NetworkEditorView } from "./NetworkEditorView";
 import { applyTikTokCloudModeration, downloadTikTokCloud, migrateTikTokLocalModeration, uploadTikTokFinalCards } from "../tiktokCloudSync";
 import { contextFromCard, normalizeSourceContext, rememberSourceContext, type TikTokSourceContextMap } from "../networkEditorMetadata";
@@ -46,6 +47,22 @@ function displayDate(raw: string | null | undefined, locale: string): string {
   });
 }
 
+function ClipThumbnail({ item, be }: { item: NetworkCard; be: boolean }) {
+  const url = tikTokPreviewUrl(item);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { setFailed(false); }, [url]);
+  if (!url || failed) return null;
+  return <img
+    className="network-clip-thumbnail"
+    src={url}
+    loading="lazy"
+    decoding="async"
+    referrerPolicy="no-referrer"
+    alt={(be ? "Мініяцюра TikTok: " : "Миниатюра TikTok: ") + (item.title || item.item_id).slice(0, 100)}
+    onError={() => setFailed(true)}
+  />;
+}
+
 function ClipCard({ item, be, checked, flagged, onToggle, onFlag, onDelete, onAdd }: {
   item: NetworkCard; be: boolean; checked: boolean; flagged: boolean;
   onToggle: (item: NetworkCard) => void;
@@ -60,6 +77,7 @@ function ClipCard({ item, be, checked, flagged, onToggle, onFlag, onDelete, onAd
       <input type="checkbox" checked={checked} onChange={() => onToggle(item)}
         aria-label={(be ? "Выбраць відэа " : "Выбрать видео ") + (item.title || item.item_id)} />
     </label>
+    <ClipThumbnail item={item} be={be} />
     <div className="network-clip-body">
       <div className="network-clip-top">
         <span>{displayDate(date, be ? "be" : "ru")}</span>
