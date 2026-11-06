@@ -1,5 +1,5 @@
 /** Pure Networks v1 compatibility layer. Does not touch SEP/L documents. */
-import { withTikTokPreview, tikTokPreviewUrl } from "./tiktokPreview";
+import { withTikTokPreview } from "./tiktokPreview";
 export type NetworkCategory = "P1" | "P2" | "P3" | "G" | "S" | "REVIEW" | "REJECT";
 export type NetworkQueue = "candidate" | "needs_review" | "date_unknown" | "archive";
 export type NetworkCard = {
@@ -77,7 +77,8 @@ export function importNetworkCards(text: string): NetworkCard[] {
       reasons: Array.isArray(card.reasons) ? card.reasons.filter((v): v is string => typeof v === "string").slice(0, 15) : [],
     });
     const previous = cards.get(card.item_id);
-    if (!previous || String(safeCard.generated_at || "") >= String(previous.generated_at || "")) cards.set(card.item_id, safeCard);
+    if (!previous || String(safeCard.generated_at || "") >= String(previous.generated_at || ""))
+      cards.set(card.item_id, withTikTokPreview(safeCard, previous));
   }
   return [...cards.values()];
 }
