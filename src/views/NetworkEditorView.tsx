@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { desktopApi } from "../api";
 import { useI18n } from "../i18n";
-import { isTikTokVideoUrl } from "../networks";
+import { isTikTokVideoUrl, safeTikTokPreview } from "../networks";
 import { clearReviewVideos, removeReviewVideo, selectedVideoCount } from "../networkReviewSelection";
 import type { TikTokSourceContextMap } from "../networkEditorMetadata";
 import { TranscriptionView } from "./TranscriptionView";
@@ -120,7 +120,7 @@ export function NetworkEditorView({
       const context = sourceContext[url];
       const title = context?.title?.trim() || "";
       const description = context?.description?.trim() || "";
-      const preview = context?.preview_image_url || "";
+      const preview = safeTikTokPreview(context?.preview_image_url) || "";
       return <div className="network-editor-card-shell" key={url || `empty-${index}`}>
         <details className="network-editor-video" open={index === 0}>
       <summary>
