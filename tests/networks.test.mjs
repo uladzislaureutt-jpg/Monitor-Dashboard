@@ -101,7 +101,7 @@ test("TikTok review editor has bounded grid and independently visible remove but
 });
 
 
-import { cloudModerationToLocal } from "../src/tiktokCloudSync.ts";
+import { cloudModerationToLocal } from "../src/tiktokCloudCore.ts";
 
 test("cloud state converges shared red flags and deletion tombstones", () => {
   const rows = [
