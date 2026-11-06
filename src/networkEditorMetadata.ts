@@ -1,4 +1,4 @@
-import { safeTikTokPreview, type NetworkCard } from "./networks";
+import type { NetworkCard } from "./networks";
 
 /** Frozen discovery context, distinct from the editable transcription. */
 export type TikTokSourceContext = { title: string; description: string; preview_image_url?: string };
@@ -8,7 +8,7 @@ export function contextFromCard(card: Pick<NetworkCard, "title" | "text_excerpt"
   return {
     title: String(card.title || "").trim().slice(0, 1200),
     description: String(card.text_excerpt || card.transcript_excerpt || "").trim().slice(0, 5000),
-    ...(safeTikTokPreview(card.preview_image_url) ? { preview_image_url: safeTikTokPreview(card.preview_image_url)! } : {}),
+    ...(typeof card.preview_image_url === "string" && card.preview_image_url.length <= 40000 ? { preview_image_url: card.preview_image_url } : {}),
   };
 }
 
@@ -22,7 +22,7 @@ export function normalizeSourceContext(raw: unknown): TikTokSourceContextMap {
     result[key] = {
       title: typeof candidate.title === "string" ? candidate.title.slice(0, 1200) : "",
       description: typeof candidate.description === "string" ? candidate.description.slice(0, 5000) : "",
-      ...(safeTikTokPreview(candidate.preview_image_url) ? { preview_image_url: safeTikTokPreview(candidate.preview_image_url)! } : {}),
+      ...(typeof candidate.preview_image_url === "string" && candidate.preview_image_url.length <= 40000 ? { preview_image_url: candidate.preview_image_url } : {}),
     };
   }
   return result;
