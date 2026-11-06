@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { desktopApi } from "../api";
 import { useI18n } from "../i18n";
@@ -6,6 +6,16 @@ import { isTikTokVideoUrl } from "../networks";
 import { clearReviewVideos, removeReviewVideo, selectedVideoCount } from "../networkReviewSelection";
 import type { TikTokSourceContextMap } from "../networkEditorMetadata";
 import { TranscriptionView } from "./TranscriptionView";
+
+function EditorThumbnail({ src, title, be }: { src: string; title: string; be: boolean }) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => { setBroken(false); }, [src]);
+  if (!src || broken) return null;
+  return <img className="network-editor-source-image" src={src} loading="lazy"
+    decoding="async" referrerPolicy="no-referrer"
+    alt={(be ? "Вокладка TikTok: " : "Обложка TikTok: ") + title.slice(0, 80)}
+    onError={() => setBroken(true)} />;
+}
 
 export type NetworkEditorItem = {
   url: string; text: string; imageText: string; comments: string[];
@@ -110,6 +120,7 @@ export function NetworkEditorView({
       const context = sourceContext[url];
       const title = context?.title?.trim() || "";
       const description = context?.description?.trim() || "";
+      const preview = context?.preview_image_url || "";
       return <div className="network-editor-card-shell" key={url || `empty-${index}`}>
         <details className="network-editor-video" open={index === 0}>
       <summary>
@@ -127,11 +138,16 @@ export function NetworkEditorView({
             placeholder="https://www.tiktok.com/@.../video/..." aria-label={`Видео ${index + 1} URL`} />
           <button className="ghost-button small-button" disabled={batchBusy || exporting} onClick={() => remove(index)}>{be ? "Прыбраць з агляду" : "Убрать из обзора"}</button>
         </div>
-        {(title || description) && <section className="network-editor-source-context" aria-label={be ? "Апісанне роліка" : "Описание ролика"}>
+        {(title || description || preview) && <section className="network-editor-source-context" aria-label={be ? "Апісанне роліка" : "Описание ролика"}>
           <div className="network-editor-source-label">{be ? "Арыгінальнае апісанне роліка" : "Оригинальное описание ролика"}</div>
-          {title && <h4>{title}</h4>}
-          {description && description !== title && <p>{description}</p>}
-          <small>{be ? "Захавана з карткі пры даданні ў агляд; не змяняецца транскрыпцыяй." : "Сохранено из карточки при добавлении в обзор; транскрипция не заменяет описание."}</small>
+          <div className="network-editor-source-row">
+            {preview && <EditorThumbnail src={preview} title={title || url} be={be} />}
+            <div className="network-editor-source-text">
+              {title && <h4>{title}</h4>}
+              {description && description !== title && <p>{description}</p>}
+              <small>{be ? "Захавана з карткі пры даданні ў агляд; не змяняецца транскрыпцыяй." : "Сохранено из карточки при добавлении в обзор; транскрипция не заменяет описание."}</small>
+            </div>
+          </div>
         </section>}
         {url && isTikTokVideoUrl(url) ? <TranscriptionView key={`${url}:${batchRevision}`}
           initialUrl={url} storageKey={stateKey(url)} embedded hideExport /> :
