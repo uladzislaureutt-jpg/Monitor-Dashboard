@@ -80,7 +80,13 @@ export function mergeNetworkCards(existing: NetworkCard[], incoming: NetworkCard
   const merged = new Map<string, NetworkCard>(existing.map((card) => [card.item_id, card]));
   for (const next of incoming) {
     const previous = merged.get(next.item_id);
-    if (previous && String(previous.generated_at || "") > String(next.generated_at || "")) continue;
+    // An older pre-semantic candidate must never hide an approved final
+    // operator-report card received from the shared server.
+    const incomingFinal = includedInOperatorOverview(next);
+    const previousFinal = previous ? includedInOperatorOverview(previous) : false;
+    if (previous && previousFinal && !incomingFinal) continue;
+    if (previous && previousFinal === incomingFinal
+      && String(previous.generated_at || "") > String(next.generated_at || "")) continue;
     // An operator decision must not be overwritten by a later automatic classification.
     if (previous?.review?.decision && previous.review.decision !== "unreviewed") {
       merged.set(next.item_id, {
@@ -123,7 +129,7 @@ export function networkCategoryName(category: NetworkCategory, be: boolean): str
 
 /** Match the final operator report, NOT discovery output or pre-AI candidates. */
 export function includedInOperatorOverview(card: NetworkCard): boolean {
-  if (card.report_suppressed === true || card.included_in_current_overview === false) return false;
+  if (card.report_suppressed === true || card.included_in_current_overview !== true) return false;
   if (card.publication?.eligible_for_daily !== true || publishedTimestamp(card) <= 0) return false;
   if (effectiveCategory(card) === "REJECT") return false;
   return card.operator_lane === "candidate"

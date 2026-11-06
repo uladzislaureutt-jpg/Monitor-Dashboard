@@ -5,6 +5,7 @@ import { ensureWorkroomSession, loadWorkroomConfig, loadWorkroomSession } from "
 import { useI18n } from "../i18n";
 import { TrendColumns, TrendLine } from "../components/Charts";
 import { NetworkEditorView } from "./NetworkEditorView";
+import { applyTikTokCloudModeration, downloadTikTokCloud, migrateTikTokLocalModeration, uploadTikTokFinalCards } from "../tiktokCloudSync";
 import { contextFromCard, normalizeSourceContext, rememberSourceContext, type TikTokSourceContextMap } from "../networkEditorMetadata";
 import {
   cardTimestamp, effectiveCategory, importNetworkCards, isTikTokVideoUrl,
@@ -17,6 +18,7 @@ const CARDS_STORAGE_KEY = "networks.tiktok.cards.v1";
 const SLOTS_STORAGE_KEY = "monitor-networks-tiktok-video-slots-v1";
 const SYNC_RUNS_KEY = "networks.tiktok.completed-runs.v1";
 const MODERATION_KEY = "networks.tiktok.moderation.v1";
+const CLOUD_MIGRATED_KEY = "networks.tiktok.cloud-moderation-migrated.v1";
 const EDITOR_CONTEXT_KEY = "monitor-networks-editor-source-context-v1";
 export type NetworkPage = "home" | "archive" | "editor";
 export type NetworkPlatform = "tiktok" | "threads";
@@ -106,6 +108,12 @@ export function NetworksView({ page, onPageChange, platform, onPlatformChange }:
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [cloudSyncing, setCloudSyncing] = useState(false);
+  const [cloudState, setCloudState] = useState("");
+  const cloudLock = useRef(false);
+  const [moderationLoaded, setModerationLoaded] = useState(false);
+  const moderationBusyRef = useRef(false);
+  const [moderationBusy, setModerationBusy] = useState(false);
   const [syncState, setSyncState] = useState("");
   const cardsRef = useRef<NetworkCard[]>([]);
   const syncLock = useRef(false);
@@ -130,6 +138,49 @@ export function NetworksView({ page, onPageChange, platform, onPlatformChange }:
     }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
+
+
+  /** Reconcile both computers against the same server data and tombstones. */
+  const syncCloud = useCallback(async (silent = false) => {
+    if (cloudLock.current) return;
+    cloudLock.current = true;
+    setCloudSyncing(true);
+    try {
+      // Each old installation publishes its historic deletions exactly once.
+      // The SQL migration only unions deletions and flags; it cannot restore deletions.
+      if (localStorage.getItem(CLOUD_MIGRATED_KEY) !== "1") {
+        await migrateTikTokLocalModeration(moderationRef.current);
+        localStorage.setItem(CLOUD_MIGRATED_KEY, "1");
+      }
+      await uploadTikTokFinalCards(cardsRef.current);
+      const remote = await downloadTikTokCloud();
+      const merged = mergeNetworkCards(cardsRef.current, remote.cards);
+      await desktopApi.setSetting(CARDS_STORAGE_KEY, JSON.stringify(merged));
+      cardsRef.current = merged;
+      setCards(merged);
+      await desktopApi.setSetting(MODERATION_KEY, JSON.stringify(remote.moderation));
+      moderationRef.current = remote.moderation;
+      setModeration(remote.moderation);
+      const deleted = new Set(remote.moderation.deleted);
+      const deletedUrls = new Set(merged.filter((card) => deleted.has(card.item_id)).map((card) => card.source_url));
+      if (deletedUrls.size) setSlots((old) => {
+        const remaining = old.filter((url) => url && !deletedUrls.has(url));
+        return remaining.length ? remaining : [""];
+      });
+      setCloudState(be
+        ? `Агульнае воблака: ${remote.cards.length} відэа · выключана: ${remote.moderation.deleted.length}`
+        : `Общее облако: ${remote.cards.length} видео · исключено: ${remote.moderation.deleted.length}`);
+      if (!silent) setNotice(be
+        ? `Сетка: воблачная сінхранізацыя завершана. Картак: ${remote.cards.length}.`
+        : `Сети: облачная синхронизация выполнена. Карточек: ${remote.cards.length}.`);
+    } catch (reason) {
+      setError((be ? "Сінхранізацыя воблака: " : "Синхронизация облака: ") + String(reason));
+      setCloudState(be ? "Воблака недаступнае — паказаны лакальныя даныя" : "Облако недоступно — показаны локальные данные");
+    } finally {
+      cloudLock.current = false;
+      setCloudSyncing(false);
+    }
+  }, [be]);
 
   const syncNetwork = useCallback(async (silent = false) => {
     if (syncLock.current) return;
@@ -173,15 +224,17 @@ export function NetworksView({ page, onPageChange, platform, onPlatformChange }:
       if (failures.length) setError(failures.join("\n"));
     } catch (reason) {
       setError((be ? "Сінхранізацыя TikTok: " : "Синхронизация TikTok: ") + String(reason));
-    } finally { syncLock.current = false; setSyncing(false); }
-  }, [be]);
+    } finally { await syncCloud(silent); syncLock.current = false; setSyncing(false); }
+  }, [be, syncCloud]);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || !moderationLoaded) return;
     void syncNetwork(true);
-    const interval = window.setInterval(() => void syncNetwork(true), 30 * 60 * 1000);
-    return () => window.clearInterval(interval);
-  }, [loading, syncNetwork]);
+    const artifactsInterval = window.setInterval(() => void syncNetwork(true), 30 * 60 * 1000);
+    // Moderation and cloud archive convergence are much faster than GitHub artifact polling.
+    const cloudInterval = window.setInterval(() => void syncCloud(true), 2 * 60 * 1000);
+    return () => { window.clearInterval(artifactsInterval); window.clearInterval(cloudInterval); };
+  }, [loading, moderationLoaded, syncNetwork, syncCloud]);
 
   useEffect(() => {
     let cancelled = false;
@@ -189,30 +242,45 @@ export function NetworksView({ page, onPageChange, platform, onPlatformChange }:
       if (cancelled) return;
       const parsed = normalizeNetworkModeration(value ? JSON.parse(value) : null);
       moderationRef.current = parsed; setModeration(parsed);
-    }).catch((reason) => { if (!cancelled) setError(String(reason)); });
+    }).catch((reason) => { if (!cancelled) setError(String(reason)); })
+      .finally(() => { if (!cancelled) setModerationLoaded(true); });
     return () => { cancelled = true; };
   }, []);
 
-  async function updateModeration(next: NetworkModeration) {
+  async function updateModerationCloud(item: NetworkCard, change: { flagged?: boolean; delete?: boolean }) {
+    if (moderationBusyRef.current) return;
+    moderationBusyRef.current = true;
+    setModerationBusy(true);
     try {
+      const result = await applyTikTokCloudModeration(item.item_id, change);
+      const old = moderationRef.current;
+      const flagged = new Set(old.flagged), deleted = new Set(old.deleted);
+      if (result.deleted) deleted.add(item.item_id);
+      if (result.flagged && !result.deleted) flagged.add(item.item_id);
+      else flagged.delete(item.item_id);
+      const next: NetworkModeration = { flagged: [...flagged], deleted: [...deleted] };
       await desktopApi.setSetting(MODERATION_KEY, JSON.stringify(next));
-      moderationRef.current = next; setModeration(next);
-    } catch (reason) { setError(String(reason)); }
+      moderationRef.current = next;
+      setModeration(next);
+      if (result.deleted) setSlots((existing) => {
+        const rest = existing.filter((url) => url && url !== item.source_url);
+        return rest.length ? rest : [""];
+      });
+    } catch (reason) {
+      setError((be ? "Не атрымалася захаваць на ўсіх прыладах: " : "Не удалось сохранить на всех устройствах: ") + String(reason));
+    } finally {
+      moderationBusyRef.current = false; setModerationBusy(false);
+    }
   }
   function toggleFlag(item: NetworkCard) {
-    const flagged = new Set(moderationRef.current.flagged);
-    if (flagged.has(item.item_id)) flagged.delete(item.item_id); else flagged.add(item.item_id);
-    void updateModeration({ ...moderationRef.current, flagged: [...flagged] });
+    void updateModerationCloud(item, { flagged: !moderationRef.current.flagged.includes(item.item_id) });
   }
   function removeClip(item: NetworkCard) {
     const approved = window.confirm(be
-      ? "Выдаліць гэты ролік з аглядаў і архіва Monitor? Ён больш не будзе з'яўляцца пры сінхранізацыі."
-      : "Удалить этот ролик из обзоров и архива Monitor? При следующей синхронизации он не появится снова.");
+      ? "Выдаліць ролік з аглядаў і архіва на ўсіх прыладах? Захаваныя транскрыпцыі не выдаляюцца."
+      : "Удалить ролик из обзоров и архива на всех устройствах? Сохранённые транскрипции не удаляются.");
     if (!approved) return;
-    const deleted = new Set(moderationRef.current.deleted);
-    deleted.add(item.item_id);
-    void updateModeration({ ...moderationRef.current, deleted: [...deleted] });
-    setSlots((old) => old.map((url) => url === item.source_url ? "" : url));
+    void updateModerationCloud(item, { delete: true });
   }
 
   useEffect(() => { localStorage.setItem(SLOTS_STORAGE_KEY, JSON.stringify(slots)); }, [slots]);
@@ -371,8 +439,8 @@ export function NetworksView({ page, onPageChange, platform, onPlatformChange }:
       <div className="network-toolbar">
 
         <div className="network-sync-controls">
-          <span className="network-sync-status">{syncing ? (be ? "Сінхранізацыя…" : "Синхронизация…") : syncState || (be ? "Аўтасінхранізацыя: кожныя 30 хвілін" : "Автосинхронизация: каждые 30 минут")}</span>
-          <button className="primary-button small-button" disabled={syncing || importing} onClick={() => void syncNetwork(false)}>
+          <span className="network-sync-status">{syncing || cloudSyncing ? (be ? "Сінхранізацыя…" : "Синхронизация…") : cloudState || syncState || (be ? "Сінхранізацыя: архіў кожныя 30 хв., воблака кожныя 2 хв." : "Синхронизация: архив каждые 30 мин., облако каждые 2 мин.")}</span>
+          <button className="primary-button small-button" disabled={syncing || importing || cloudSyncing || moderationBusy} onClick={() => void syncNetwork(false)}>
             {be ? "Сінхранізаваць" : "Синхронизировать"}
           </button>
           <button className="secondary-button small-button" disabled={importing || syncing} onClick={() => void importFile()}>
