@@ -190,3 +190,23 @@ test("embedded thumbnail is normalized once and duplicate base64 aliases are dro
   assert.equal(rows[0].preview_image_url, encoded);
   assert.equal(rows[0].thumbnail_data_url, undefined);
 });
+
+
+test("editor remembers optional thumbnail with original caption and does not replace it with AI", () => {
+  const source = { title: "Дорога в Борисове", text_excerpt: "Вода и ямы на улице",
+    thumbnail_url: "https://p16.tiktokcdn.com/cover.jpeg" };
+  const result = contextFromCard(source);
+  assert.equal(result.preview_image_url, source.thumbnail_url);
+  const url = "https://www.tiktok.com/@person/video/7699429238109113652";
+  const old = rememberSourceContext({}, url, {
+    title: result.title, description: result.description
+  });
+  const enriched = rememberSourceContext(old, url, result);
+  assert.equal(enriched[url].description, "Вода и ямы на улице");
+  assert.equal(enriched[url].preview_image_url, source.thumbnail_url);
+  assert.equal(rememberSourceContext(enriched, url, {
+    title: "AI replacement", description: "AI replacement",
+    preview_image_url: "https://another.example/cover.jpg",
+  }), enriched);
+  assert.equal(normalizeSourceContext(enriched)[url].preview_image_url, source.thumbnail_url);
+});
