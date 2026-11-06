@@ -131,3 +131,62 @@ test("cloud approved final operator card overrides newer local preliminary candi
   const afterStale = mergeNetworkCards(merged, [local]);
   assert.equal(afterStale[0].included_in_current_overview, true);
 });
+
+import { safeTikTokPreviewUrl, tikTokPreviewUrl } from "../src/tiktokPreview.ts";
+
+test("TikTok thumbnail accepts HTTPS/CDN and small embedded image, not unsafe inputs", () => {
+  const cdn = "https://p16-sign-va.tiktokcdn.com/tos-alisg-p-0037/poster.jpeg?token=x";
+  assert.equal(safeTikTokPreviewUrl(cdn), cdn);
+  assert.equal(tikTokPreviewUrl({ thumbnail_url: cdn }), cdn);
+  assert.equal(tikTokPreviewUrl({ preview_image: { url: cdn } }), cdn);
+  const inline = "data:image/jpeg;base64," + "aGVsbG8=";
+  assert.equal(safeTikTokPreviewUrl(inline), inline);
+  for (const bad of [
+    "http://p16.tiktokcdn.com/cover.jpg", "javascript:alert(1)",
+    "https://127.0.0.1/image.jpg", "https://internal.local/image.jpg",
+    "https://example.org/a.svg", "data:image/svg+xml;base64,PHN2Zz4=",
+    "data:image/jpeg;base64," + "a".repeat(26000),
+  ]) {
+    assert.equal(safeTikTokPreviewUrl(bad), null, bad.slice(0, 70));
+  }
+  assert.equal(tikTokPreviewUrl({ thumbnail_url: "https://example.org/a.svg" }), null);
+});
+
+test("TikTok JSONL poster/image URL is canonicalized and older text-only cards remain valid", () => {
+  const old = importNetworkCards(JSON.stringify(card("7699429238109113652")) + "\\n");
+  assert.equal(tikTokPreviewUrl(old[0]), null);
+  const photo = { ...card("7699429238109113653"),
+    source_url: "https://www.tiktok.com/@person/photo/7699429238109113653",
+    content_type: "photo", thumbnail_url: "https://cdn.example.org/pic.jpg" };
+  assert.equal(isTikTokVideoUrl(photo.source_url), true);
+  const rows = importNetworkCards(JSON.stringify(photo) + "\\n");
+  assert.equal(rows[0].preview_image_url, "https://cdn.example.org/pic.jpg");
+  assert.equal(rows[0].content_type, "photo");
+});
+
+test("late image adds to an existing approved card without changing editorial decisions", () => {
+  const existing = {
+    ...card("7699429238109113652"),
+    generated_at: "2026-11-05T17:00:00Z",
+    title: "Checked by editor",
+    review: { decision: "confirmed", category_override: "P1", revision: 3 },
+    review_status: "operator_confirmed",
+  };
+  const late = { ...card("7699429238109113652"),
+    generated_at: "2026-11-02T01:00:00Z",
+    title: "Old discovery text",
+    thumbnail_url: "https://cdn.example.org/late.jpg" };
+  const result = mergeNetworkCards([existing], [late]);
+  assert.equal(result[0].title, "Checked by editor");
+  assert.equal(result[0].review.revision, 3);
+  assert.equal(result[0].preview_image_url, late.thumbnail_url);
+  assert.equal(mergeNetworkCards(result, [existing])[0].preview_image_url, late.thumbnail_url);
+});
+
+test("embedded thumbnail is normalized once and duplicate base64 aliases are dropped", () => {
+  const encoded = "data:image/webp;base64," + "aGVsbG8=";
+  const rows = importNetworkCards(JSON.stringify({ ...card("7699429238109113652"),
+    thumbnail_data_url: encoded }) + "\\n");
+  assert.equal(rows[0].preview_image_url, encoded);
+  assert.equal(rows[0].thumbnail_data_url, undefined);
+});
