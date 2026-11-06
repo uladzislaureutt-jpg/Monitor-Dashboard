@@ -102,16 +102,25 @@ export function importNetworkCards(text: string): NetworkCard[] {
 
 export function mergeNetworkCards(existing: NetworkCard[], incoming: NetworkCard[]): NetworkCard[] {
   const merged = new Map<string, NetworkCard>(existing.map((card) => [card.item_id, card]));
-  for (const next of incoming) {
-    const previous = merged.get(next.item_id);
-    // An older pre-semantic candidate must never hide an approved final
-    // operator-report card received from the shared server.
+  for (const input of incoming) {
+    const previous = merged.get(input.item_id);
+    const existingPreview = safeTikTokPreview(previous?.preview_image_url);
+    const incomingPreview = safeTikTokPreview(input.preview_image_url);
+    const next = { ...input, preview_image_url: incomingPreview || existingPreview };
+    // Preview-only enrichment must survive even when this device already has
+    // a newer operator record. Never roll back that operator verdict.
+    const preservePrevious = () => {
+      if (previous && !existingPreview && incomingPreview)
+        merged.set(previous.item_id, { ...previous, preview_image_url: incomingPreview });
+    };
     const incomingFinal = includedInOperatorOverview(next);
     const previousFinal = previous ? includedInOperatorOverview(previous) : false;
-    if (previous && previousFinal && !incomingFinal) continue;
+    if (previous && previousFinal && !incomingFinal) { preservePrevious(); continue; }
     if (previous && previousFinal === incomingFinal
-      && String(previous.generated_at || "") > String(next.generated_at || "")) continue;
-    // An operator decision must not be overwritten by a later automatic classification.
+      && String(previous.generated_at || "") > String(next.generated_at || "")) {
+      preservePrevious();
+      continue;
+    }
     if (previous?.review?.decision && previous.review.decision !== "unreviewed") {
       merged.set(next.item_id, {
         ...next, review: previous.review, review_status: previous.review_status,
