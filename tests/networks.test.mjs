@@ -153,13 +153,13 @@ test("TikTok thumbnail accepts HTTPS/CDN and small embedded image, not unsafe in
 });
 
 test("TikTok JSONL poster/image URL is canonicalized and older text-only cards remain valid", () => {
-  const old = importNetworkCards(JSON.stringify(card("7699429238109113652")) + "\\n");
+  const old = importNetworkCards(JSON.stringify(card("7699429238109113652")) + "\n");
   assert.equal(tikTokPreviewUrl(old[0]), null);
   const photo = { ...card("7699429238109113653"),
     source_url: "https://www.tiktok.com/@person/photo/7699429238109113653",
     content_type: "photo", thumbnail_url: "https://cdn.example.org/pic.jpg" };
   assert.equal(isTikTokVideoUrl(photo.source_url), true);
-  const rows = importNetworkCards(JSON.stringify(photo) + "\\n");
+  const rows = importNetworkCards(JSON.stringify(photo) + "\n");
   assert.equal(rows[0].preview_image_url, "https://cdn.example.org/pic.jpg");
   assert.equal(rows[0].content_type, "photo");
 });
@@ -186,7 +186,7 @@ test("late image adds to an existing approved card without changing editorial de
 test("embedded thumbnail is normalized once and duplicate base64 aliases are dropped", () => {
   const encoded = "data:image/webp;base64," + "aGVsbG8=";
   const rows = importNetworkCards(JSON.stringify({ ...card("7699429238109113652"),
-    thumbnail_data_url: encoded }) + "\\n");
+    thumbnail_data_url: encoded }) + "\n");
   assert.equal(rows[0].preview_image_url, encoded);
   assert.equal(rows[0].thumbnail_data_url, undefined);
 });
