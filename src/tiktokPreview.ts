@@ -18,7 +18,7 @@ export type PreviewFields = {
 };
 
 const MAX_URL_CHARS = 4096;
-const MAX_INLINE_CHARS = 28000; // ~20 KiB image compressed at the source
+const MAX_INLINE_CHARS = 20000; // ~14 KiB JPEG/WebP thumbnail after base64 encoding
 const INLINE_IMAGE = /^data:image\/(?:jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/i;
 
 function safeHost(host: string): boolean {
@@ -77,6 +77,13 @@ export function tikTokPreviewUrl(raw: PreviewFields | null | undefined): string 
 /** Canonicalize once; this field survives GitHub JSONL and cloud JSONB sync. */
 export function withTikTokPreview<T extends PreviewFields>(card: T, fallback?: PreviewFields): T {
   const safe = tikTokPreviewUrl(card) || tikTokPreviewUrl(fallback);
-  if (!safe) return card;
-  return { ...card, preview_image_url: safe };
+  const cleaned = { ...card } as Record<string, unknown>;
+  // Avoid persisting duplicate or oversized raw base64 fields into Supabase JSONB.
+  delete cleaned.thumbnail_data_url;
+  delete cleaned.preview_image_data_url;
+  if (objectFields(cleaned.preview_image)?.data_url) delete cleaned.preview_image;
+  if (objectFields(cleaned.thumbnail)?.data_url) delete cleaned.thumbnail;
+  if (safe) cleaned.preview_image_url = safe;
+  else delete cleaned.preview_image_url;
+  return cleaned as T;
 }
