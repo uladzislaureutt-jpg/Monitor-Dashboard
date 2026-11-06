@@ -1256,6 +1256,8 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 .network-groups{display:flex;flex-direction:column;gap:16px}
 .network-card-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:12px}
 .network-clip{display:flex;gap:11px;padding:15px;border:1px solid var(--line);border-radius:12px;background:#fff;min-width:0}
+.network-clip-preview{width:92px;height:92px;flex:0 0 92px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:#f4f4f4}
+@media(max-width:650px){.network-clip-preview{width:66px;height:66px;flex-basis:66px}}
 .network-clip-pick{flex:none;padding-top:3px}
 .network-clip-pick input{width:17px;height:17px;accent-color:#a52c2c;cursor:pointer}
 .network-clip-body{min-width:0;flex:1}

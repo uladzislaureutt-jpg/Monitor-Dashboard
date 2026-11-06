@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { importNetworkCards, mergeNetworkCards, networkTrend, isTikTokVideoUrl, effectiveCategory } from "../src/networks.ts";
+import { importNetworkCards, mergeNetworkCards, networkTrend, isTikTokVideoUrl, safeTikTokPreview, effectiveCategory } from "../src/networks.ts";
 
 const now = "2026-11-02T07:00:00Z";
 function card(id, category = "P2", date = "2026-11-02T05:00:00Z") {
@@ -130,4 +130,20 @@ test("cloud approved final operator card overrides newer local preliminary candi
   // A stale candidate subsequently imported from a different PC cannot revert it.
   const afterStale = mergeNetworkCards(merged, [local]);
   assert.equal(afterStale[0].included_in_current_overview, true);
+});
+
+test("photo and frame miniatures are strictly whitelisted and travel on operator cards", () => {
+  const id = "7704323319918497042";
+  const photo = { ...card(id), source_url: "https://www.tiktok.com/@person/photo/" + id,
+    preview_image_url: "https://p16.tiktokcdn.com/preview.jpg" };
+  const imported = importNetworkCards(JSON.stringify(photo))[0];
+  assert.equal(imported.preview_image_url, photo.preview_image_url);
+  const video = { ...card("7704371693594135815"),
+    preview_image_url: "data:image/jpeg;base64,/9j/2w==" };
+  assert.equal(importNetworkCards(JSON.stringify(video))[0].preview_image_url, video.preview_image_url);
+  assert.equal(safeTikTokPreview("javascript:alert(1)"), null);
+  assert.equal(safeTikTokPreview("data:image/svg+xml;base64,PHN2Zz4="), null);
+  assert.equal(safeTikTokPreview("https://tiktokcdn.com.evil.example/frame.jpg"), null);
+  assert.equal(safeTikTokPreview("https://evil.invalid/preview.jpg"), null);
+  assert.equal(importNetworkCards(JSON.stringify({ ...video, preview_image_url: "data:image/svg+xml;base64,abc" }))[0].preview_image_url, null);
 });

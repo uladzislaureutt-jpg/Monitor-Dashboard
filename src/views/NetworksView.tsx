@@ -10,7 +10,7 @@ import { contextFromCard, normalizeSourceContext, rememberSourceContext, type Ti
 import {
   cardTimestamp, effectiveCategory, importNetworkCards, isTikTokVideoUrl,
   includedInOperatorOverview, normalizeNetworkModeration, type NetworkModeration,
-  mergeNetworkCards, NETWORK_GROUPS, networkCategoryName, networkTrend,
+  mergeNetworkCards, NETWORK_GROUPS, networkCategoryName, networkTrend, safeTikTokPreview,
   publishedTimestamp, type NetworkCard, type NetworkCategory,
 } from "../networks";
 
@@ -54,12 +54,16 @@ function ClipCard({ item, be, checked, flagged, onToggle, onFlag, onDelete, onAd
   onAdd: (item: NetworkCard) => void;
 }) {
   const date = item.publication.published_at;
+  const preview = safeTikTokPreview(item.preview_image_url);
   const shortText = item.text_excerpt || item.transcript_excerpt || "";
   return <article className="network-clip">
     <label className="network-clip-pick">
       <input type="checkbox" checked={checked} onChange={() => onToggle(item)}
         aria-label={(be ? "Выбраць відэа " : "Выбрать видео ") + (item.title || item.item_id)} />
     </label>
+    {preview && <img className="network-clip-preview" src={preview} alt={be ? "Мініяцюра TikTok" : "Миниатюра TikTok"}
+      loading="lazy" decoding="async" referrerPolicy="no-referrer"
+      onError={(event) => { event.currentTarget.style.display = "none"; }} />}
     <div className="network-clip-body">
       <div className="network-clip-top">
         <span>{displayDate(date, be ? "be" : "ru")}</span>
