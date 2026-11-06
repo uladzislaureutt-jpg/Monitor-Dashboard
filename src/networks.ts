@@ -1,4 +1,5 @@
 /** Pure Networks v1 compatibility layer. Does not touch SEP/L documents. */
+import { withTikTokPreview, tikTokPreviewUrl } from "./tiktokPreview";
 export type NetworkCategory = "P1" | "P2" | "P3" | "G" | "S" | "REVIEW" | "REJECT";
 export type NetworkQueue = "candidate" | "needs_review" | "date_unknown" | "archive";
 export type NetworkCard = {
@@ -11,6 +12,11 @@ export type NetworkCard = {
   title: string;
   text_excerpt: string;
   transcript_excerpt?: string;
+  preview_image_url?: string | null;
+  thumbnail_url?: string | null;
+  thumbnail_data_url?: string | null;
+  cover_url?: string | null;
+  content_type?: "video" | "photo";
   publication: { published_at?: string | null; date_status?: string; eligible_for_daily?: boolean };
   discovered_at?: string | null;
   generated_at?: string | null;
@@ -38,7 +44,7 @@ export function isTikTokVideoUrl(raw: string): boolean {
   try {
     const url = new URL(raw);
     return url.protocol === "https:" && (url.hostname === "tiktok.com" || url.hostname === "www.tiktok.com")
-      && /^\/@[^/]+\/video\/\d+\/?$/.test(url.pathname);
+      && /^\/@[^/]+\/(?:video|photo)\/\d+\/?$/.test(url.pathname);
   } catch { return false; }
 }
 
@@ -52,7 +58,7 @@ export function importNetworkCards(text: string): NetworkCard[] {
     try { item = JSON.parse(line); } catch { throw new Error(`Некорректный JSON в строке ${index + 1}.`); }
     if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error(`Некорректная карточка: строка ${index + 1}.`);
     const card = item as NetworkCard;
-    const match = typeof card.source_url === "string" ? card.source_url.match(/\/video\/(\d+)/) : null;
+    const match = typeof card.source_url === "string" ? card.source_url.match(/\/(?:video|photo)\/(\d+)/) : null;
     if (card.schema_version !== "networks.v1" || card.platform !== "tiktok"
       || !isTikTokVideoUrl(card.source_url) || !match || card.item_id !== `tiktok:${match[1]}`
       || !VALID_CATEGORIES.has(card.category) || !VALID_QUEUES.has(card.queue)
@@ -62,14 +68,14 @@ export function importNetworkCards(text: string): NetworkCard[] {
     if (card.queue === "date_unknown" && card.publication.published_at) {
       throw new Error(`Противоречивая дата в строке ${index + 1}. Импорт отменён.`);
     }
-    const safeCard: NetworkCard = {
+    const safeCard: NetworkCard = withTikTokPreview({
       ...card,
       title: String(card.title || "").slice(0, 1200),
       text_excerpt: String(card.text_excerpt || "").slice(0, 2500),
       transcript_excerpt: String(card.transcript_excerpt || "").slice(0, 5000),
       evidence: Array.isArray(card.evidence) ? card.evidence.slice(0, 15) : [],
       reasons: Array.isArray(card.reasons) ? card.reasons.filter((v): v is string => typeof v === "string").slice(0, 15) : [],
-    };
+    });
     const previous = cards.get(card.item_id);
     if (!previous || String(safeCard.generated_at || "") >= String(previous.generated_at || "")) cards.set(card.item_id, safeCard);
   }
@@ -77,17 +83,26 @@ export function importNetworkCards(text: string): NetworkCard[] {
 }
 
 export function mergeNetworkCards(existing: NetworkCard[], incoming: NetworkCard[]): NetworkCard[] {
-  const merged = new Map<string, NetworkCard>(existing.map((card) => [card.item_id, card]));
-  for (const next of incoming) {
-    const previous = merged.get(next.item_id);
-    // An older pre-semantic candidate must never hide an approved final
-    // operator-report card received from the shared server.
+  const merged = new Map<string, NetworkCard>(
+    existing.map((card) => [card.item_id, withTikTokPreview(card)]),
+  );
+  for (const input of incoming) {
+    const previous = merged.get(input.item_id);
+    const next = withTikTokPreview(input, previous);
+    // A new thumbnail is an enrichment, not a new editorial decision.
+    // Keep it even when an old source has a newer generated_at timestamp.
+    const preserveOlder = () => {
+      if (previous) merged.set(input.item_id, withTikTokPreview(previous, next));
+    };
     const incomingFinal = includedInOperatorOverview(next);
     const previousFinal = previous ? includedInOperatorOverview(previous) : false;
-    if (previous && previousFinal && !incomingFinal) continue;
+    if (previous && previousFinal && !incomingFinal) { preserveOlder(); continue; }
     if (previous && previousFinal === incomingFinal
-      && String(previous.generated_at || "") > String(next.generated_at || "")) continue;
-    // An operator decision must not be overwritten by a later automatic classification.
+      && String(previous.generated_at || "") > String(next.generated_at || "")) {
+      preserveOlder();
+      continue;
+    }
+    // Preserve confirmed editorial classification while adding the image.
     if (previous?.review?.decision && previous.review.decision !== "unreviewed") {
       merged.set(next.item_id, {
         ...next, review: previous.review, review_status: previous.review_status,
