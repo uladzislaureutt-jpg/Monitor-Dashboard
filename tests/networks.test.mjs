@@ -99,3 +99,35 @@ test("TikTok review editor has bounded grid and independently visible remove but
   const standaloneButton = editor.indexOf('className="secondary-button small-button network-editor-remove-fixed"');
   assert.ok(standaloneButton > closingDetails, "Remove must stay outside collapsed details");
 });
+
+
+import { cloudModerationToLocal } from "../src/tiktokCloudSync.ts";
+
+test("cloud state converges shared red flags and deletion tombstones", () => {
+  const rows = [
+    { item_id: "tiktok:7702043649848184085", flagged: true, deleted: false },
+    { item_id: "tiktok:7702059935407836448", flagged: true, deleted: true },
+    { item_id: "tiktok:7702037883107937559", flagged: false, deleted: false },
+  ];
+  const onA = cloudModerationToLocal(rows);
+  const onB = cloudModerationToLocal(JSON.parse(JSON.stringify(rows)));
+  assert.deepEqual(onA, onB);
+  assert.deepEqual(onA.flagged, ["tiktok:7702043649848184085"]);
+  assert.deepEqual(onA.deleted, ["tiktok:7702059935407836448"]);
+});
+
+test("cloud approved final operator card overrides newer local preliminary candidate", () => {
+  const local = { ...card("7699429238109113652"),
+    operator_lane: undefined, included_in_current_overview: undefined,
+    generated_at: "2026-11-04T10:00:00Z" };
+  const final = { ...card("7699429238109113652"),
+    operator_lane: "candidate", included_in_current_overview: true,
+    generated_at: "2026-11-02T10:00:00Z" };
+  const merged = mergeNetworkCards([local], [final]);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].included_in_current_overview, true);
+  assert.equal(merged[0].operator_lane, "candidate");
+  // A stale candidate subsequently imported from a different PC cannot revert it.
+  const afterStale = mergeNetworkCards(merged, [local]);
+  assert.equal(afterStale[0].included_in_current_overview, true);
+});
