@@ -1494,3 +1494,15 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 @media(max-width:650px){
   .network-clip-thumbnail{flex-basis:68px;width:68px;height:104px;border-radius:8px}
 }
+
+
+.network-editor-source-row{display:flex;align-items:flex-start;gap:14px;min-width:0;max-width:100%}
+.network-editor-source-image{
+  display:block;flex:0 0 94px;width:94px;height:148px;max-width:94px;
+  border-radius:10px;border:1px solid var(--line);object-fit:cover;
+}
+.network-editor-source-text{flex:1;min-width:0;overflow-wrap:anywhere}
+@media(max-width:640px){
+  .network-editor-source-row{gap:9px}
+  .network-editor-source-image{flex-basis:68px;width:68px;max-width:68px;height:106px}
+}
