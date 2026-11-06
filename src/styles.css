@@ -1473,3 +1473,24 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
     grid-column:2;display:flex;flex-direction:row;justify-content:flex-end;
   }
 }
+
+
+/* TikTok covers / extracted frames are optional; text-only cards remain intact. */
+.network-clip-thumbnail{
+  display:block;
+  flex:0 0 88px;
+  width:88px;
+  height:138px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  object-fit:cover;
+  object-position:center;
+  align-self:flex-start;
+  background:#f2f1ed;
+}
+.network-clip:has(.network-clip-thumbnail) .network-clip-body{
+  min-width:0;
+}
+@media(max-width:650px){
+  .network-clip-thumbnail{flex-basis:68px;width:68px;height:104px;border-radius:8px}
+}
