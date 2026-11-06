@@ -6,6 +6,7 @@ export type NetworkCard = {
   platform: "tiktok";
   item_id: string;
   source_url: string;
+  preview_image_url?: string | null;
   category: NetworkCategory;
   queue: NetworkQueue;
   title: string;
@@ -42,6 +43,28 @@ export function isTikTokVideoUrl(raw: string): boolean {
   } catch { return false; }
 }
 
+/** Never render arbitrary imported URLs, data SVGs or oversized embedded media. */
+export function safeTikTokPreview(raw: unknown): string | null {
+  if (typeof raw !== "string" || raw.length > 40000) return null;
+  if (/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(raw)) return raw;
+  try {
+    const u = new URL(raw);
+    const host = u.hostname.toLowerCase().replace(/\.$/, "");
+    if (u.protocol !== "https:" || u.username || u.password || raw.length > 1800) return null;
+    if (["tiktokcdn.com", "tiktokcdn-us.com", "tiktokv.com"].some(
+      (root) => host === root || host.endsWith("." + root))) return raw;
+  } catch { /* Reject malformed images. */ }
+  return null;
+}
+
+export function isTikTokPostUrl(raw: string): boolean {
+  try {
+    const u = new URL(raw);
+    return u.protocol === "https:" && (u.hostname === "tiktok.com" || u.hostname === "www.tiktok.com")
+      && /^\/@[^/]+\/(?:video|photo)\/\d+\/?$/.test(u.pathname);
+  } catch { return false; }
+}
+
 export function importNetworkCards(text: string): NetworkCard[] {
   if (text.length > 22_000_000) throw new Error("Файл networks_cards.jsonl слишком большой (более 22 МБ).");
   const lines = text.split(/\r?\n/).filter((line) => line.trim());
@@ -52,9 +75,9 @@ export function importNetworkCards(text: string): NetworkCard[] {
     try { item = JSON.parse(line); } catch { throw new Error(`Некорректный JSON в строке ${index + 1}.`); }
     if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error(`Некорректная карточка: строка ${index + 1}.`);
     const card = item as NetworkCard;
-    const match = typeof card.source_url === "string" ? card.source_url.match(/\/video\/(\d+)/) : null;
+    const match = typeof card.source_url === "string" ? card.source_url.match(/\/(?:video|photo)\/(\d+)/) : null;
     if (card.schema_version !== "networks.v1" || card.platform !== "tiktok"
-      || !isTikTokVideoUrl(card.source_url) || !match || card.item_id !== `tiktok:${match[1]}`
+      || !isTikTokPostUrl(card.source_url) || !match || card.item_id !== `tiktok:${match[1]}`
       || !VALID_CATEGORIES.has(card.category) || !VALID_QUEUES.has(card.queue)
       || !card.publication || typeof card.publication !== "object") {
       throw new Error(`Несовместимая карточка networks.v1, строка ${index + 1}. Импорт отменён.`);
@@ -64,6 +87,7 @@ export function importNetworkCards(text: string): NetworkCard[] {
     }
     const safeCard: NetworkCard = {
       ...card,
+      preview_image_url: safeTikTokPreview(card.preview_image_url),
       title: String(card.title || "").slice(0, 1200),
       text_excerpt: String(card.text_excerpt || "").slice(0, 2500),
       transcript_excerpt: String(card.transcript_excerpt || "").slice(0, 5000),
