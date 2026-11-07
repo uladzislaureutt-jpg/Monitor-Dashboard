@@ -9,7 +9,8 @@ import { applyTikTokCloudModeration, downloadTikTokCloud, migrateTikTokLocalMode
 import { contextFromCard, normalizeSourceContext, rememberSourceContext, type TikTokSourceContextMap } from "../networkEditorMetadata";
 import {
   cardTimestamp, effectiveCategory, importNetworkCards, isTikTokVideoUrl,
-  includedInOperatorOverview, normalizeNetworkModeration, type NetworkModeration,
+  includedInOperatorOverview, isNetworkOperatorReview, isNetworkOperatorVisible,
+  reviewTriageLabel, normalizeNetworkModeration, type NetworkModeration,
   mergeNetworkCards, NETWORK_GROUPS, networkCategoryName, networkTrend, safeTikTokPreview,
   publishedTimestamp, type NetworkCard, type NetworkCategory,
 } from "../networks";
@@ -20,7 +21,7 @@ const SYNC_RUNS_KEY = "networks.tiktok.completed-runs.v1";
 const MODERATION_KEY = "networks.tiktok.moderation.v1";
 const CLOUD_MIGRATED_KEY = "networks.tiktok.cloud-moderation-migrated.v1";
 const EDITOR_CONTEXT_KEY = "monitor-networks-editor-source-context-v1";
-export type NetworkPage = "home" | "archive" | "editor";
+export type NetworkPage = "home" | "archive" | "editor" | "review";
 export type NetworkPlatform = "tiktok" | "threads";
 type TrendKind = "bars" | "line";
 
@@ -67,11 +68,24 @@ function ClipCard({ item, be, checked, flagged, onToggle, onFlag, onDelete, onAd
     <div className="network-clip-body">
       <div className="network-clip-top">
         <span>{displayDate(date, be ? "be" : "ru")}</span>
+        {isNetworkOperatorReview(item) && <span className="network-review-status">
+          {item.operator_review_lane === "gemini_veto"
+            ? (be ? "Gemini: прапанавана, фільтры адхілілі" : "Gemini: предложено, фильтры отклонили")
+            : (be ? "Чарга ручной праверкі" : "Очередь ручной проверки")}
+        </span>}
         {item.queue === "date_unknown" && <span>{be ? "Патрабуе праверкі даты" : "Требует проверки даты"}</span>}
         {item.review_status === "operator_confirmed" && <span>{be ? "Пацверджана аператарам" : "Подтверждено оператором"}</span>}
       </div>
       <strong className="network-clip-title">{item.title || (be ? "Відэа без загалоўка" : "Видео без заголовка")}</strong>
       {shortText && <p className="network-clip-excerpt">{shortText.slice(0, 320)}{shortText.length > 320 ? "…" : ""}</p>}
+      {isNetworkOperatorReview(item) && <div className="network-review-reasons">
+        <strong>{item.operator_review_lane === "gemini_veto"
+          ? `Gemini: ${item.operator_review_model_proposed || "?"} → ${item.category}`
+          : reviewTriageLabel(item, be)}</strong>
+        <p>{String(item.operator_review_gate_reason || item.operator_review_triage_reason
+          || item.operator_review_proof_gaps || "").slice(0, 420)}</p>
+        <small>{be ? "Не з'яўляецца пацверджанай публікацыяй" : "Не является подтверждённой публикацией"}</small>
+      </div>}
       <div className="network-clip-bottom">
         <button className="link-button" onClick={() => void desktopApi.openUrl(item.source_url)}>
           {be ? "Адкрыць відэа ў TikTok ↗" : "Открыть видео в TikTok ↗"}
@@ -109,6 +123,9 @@ export function NetworksView({ page, onPageChange, platform, onPlatformChange }:
   const [archiveQuery, setArchiveQuery] = useState("");
   const [archiveCategory, setArchiveCategory] = useState<NetworkCategory | "ALL">("ALL");
   const [archivePage, setArchivePage] = useState(0);
+  const [reviewFilter, setReviewFilter] = useState("ALL");
+  const [reviewSearch, setReviewSearch] = useState("");
+  const [reviewPage, setReviewPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -305,13 +322,32 @@ export function NetworksView({ page, onPageChange, platform, onPlatformChange }:
   }, [cards, slots]);
 
   const now = Date.now();
-  const visible = useMemo(() => cards.filter((item) => includedInOperatorOverview(item) && !moderation.deleted.includes(item.item_id)), [cards, moderation.deleted]);
-  const trend = useMemo(() => networkTrend(visible, period, now), [visible, period]);
-  const inPeriod = useMemo(() => visible.filter((item) => {
+  const visible = useMemo(() => cards.filter((item) => isNetworkOperatorVisible(item) && !moderation.deleted.includes(item.item_id)), [cards, moderation.deleted]);
+  const mainCards = useMemo(() => visible.filter(includedInOperatorOverview), [visible]);
+  const reviewCards = useMemo(() => visible.filter(isNetworkOperatorReview), [visible]);
+  const reviewGemini = useMemo(() => reviewCards.filter((item) => item.operator_review_lane === "gemini_veto"), [reviewCards]);
+  const reviewTriage = useMemo(() => reviewCards.filter((item) => item.operator_review_lane === "triage"), [reviewCards]);
+  const reviewFiltered = useMemo(() => {
+    const normalized = reviewSearch.trim().toLocaleLowerCase();
+    return reviewCards.filter((item) => {
+      if (reviewFilter !== "ALL" && reviewFilter !== item.operator_review_lane
+        && reviewFilter !== item.operator_review_triage_lane) return false;
+      return !normalized || [item.title,item.source_url,item.text_excerpt,item.operator_review_gate_reason,
+        item.operator_review_triage_reason,item.operator_review_proof_gaps]
+        .some((value) => String(value || "").toLocaleLowerCase().includes(normalized));
+    }).sort((a,b) => {
+      const priority = (item: NetworkCard) => item.operator_review_lane === "gemini_veto" ? 0 : 1;
+      return priority(a)-priority(b) || (b.operator_review_score || 0)-(a.operator_review_score || 0)
+        || (b.operator_review_seen_run || 0)-(a.operator_review_seen_run || 0)
+        || a.item_id.localeCompare(b.item_id);
+    });
+  }, [reviewCards,reviewFilter,reviewSearch]);
+  const trend = useMemo(() => networkTrend(mainCards, period, now), [mainCards, period]);
+  const inPeriod = useMemo(() => mainCards.filter((item) => {
     if (period === null) return true;
     const date = publishedTimestamp(item) || cardTimestamp(item);
     return date > 0 && date >= now - period * 86_400_000 && date <= now + 86_400_000;
-  }), [visible, period]);
+  }), [mainCards, period]);
   const recent = useMemo(() => inPeriod.filter((item) =>
     item.queue !== "archive" && effectiveCategory(item) !== "REJECT" && item.queue !== "date_unknown" && publishedTimestamp(item) > 0
   ), [inPeriod]);
@@ -493,6 +529,36 @@ export function NetworksView({ page, onPageChange, platform, onPlatformChange }:
           </section>}
         </section>
       </div>}
+      {page === "review" && <section className="panel network-archive">
+        <div className="panel-head"><div>
+          <h3>{be ? "Чарга праверкі TikTok" : "Очередь проверки TikTok"}</h3>
+          <p>{be ? "Дадатковыя матэрыялы з операторскіх аўдытаў. Не ўключаны ў асноўны агляд, не падлічваюцца ў дынаміцы і патрабуюць праверкі першакрыніцы, даты і геаграфіі."
+            : "Дополнительные материалы из операторских аудитов. Не включены в основной обзор, не учитываются в диаграмме и требуют проверки первоисточника, даты и географии."}</p>
+        </div></div>
+        <div className="network-review-counts">
+          <span>{be ? "Gemini, адхілена фільтрамі" : "Gemini, заблокировано фильтрами"}: <b>{reviewGemini.length}</b></span>
+          <span>{be ? "Бліжэйшая чарга" : "Ближайшая очередь"}: <b>{reviewTriage.length}</b></span>
+        </div>
+        <div className="network-archive-controls">
+          <input value={reviewSearch} onChange={(event) => { setReviewSearch(event.target.value); setReviewPage(0); }}
+            placeholder={be ? "Пошук па чарзе…" : "Поиск по очереди…"} aria-label={be ? "Пошук" : "Поиск"} />
+          <select value={reviewFilter} onChange={(event) => { setReviewFilter(event.target.value); setReviewPage(0); }}>
+            <option value="ALL">{be ? "Усе матэрыялы" : "Все материалы"}</option>
+            <option value="gemini_veto">{be ? "Gemini: знята фільтрамі" : "Gemini: отклонено фильтрами"}</option>
+            <option value="triage">{be ? "Бліжэйшая чарга" : "Ближайшая очередь"}</option>
+            {["possible_false_reject","firsthand_audio_review","high_engagement_media","near_review",
+              "candidate","pending_media","weak_review"].map((lane) =>
+                <option key={lane} value={lane}>{reviewTriageLabel({ operator_review_triage_lane: lane } as NetworkCard, be)}</option>)}
+          </select>
+        </div>
+        <div className="network-card-list">{reviewFiltered.slice(reviewPage*40,(reviewPage+1)*40).map(renderCard)}</div>
+        {!reviewFiltered.length && <div className="report-empty">{be ? "Матэрыялы гэтай чаргі пакуль не загружаны." : "Материалы этой очереди пока не загружены."}</div>}
+        {reviewFiltered.length > 40 && <div className="network-pagination">
+          <button className="secondary-button small-button" disabled={reviewPage===0} onClick={() => setReviewPage(p=>p-1)}>{be ? "Назад" : "Назад"}</button>
+          <span>{reviewPage+1} / {Math.ceil(reviewFiltered.length/40)}</span>
+          <button className="secondary-button small-button" disabled={(reviewPage+1)*40>=reviewFiltered.length} onClick={() => setReviewPage(p=>p+1)}>{be ? "Далей" : "Далее"}</button>
+        </div>}
+      </section>}
       {page === "archive" && <section className="panel network-archive">
         <div className="panel-head"><div><h3>{be ? "Архіў відэа TikTok" : "Архив видео TikTok"}</h3>
           <p>{be ? "Усе імпартаваныя ролікі, ад новых да старых; асобна захоўваюцца недатаваныя і выключаныя." : "Все импортированные ролики, сначала новые; сохраняются также недатированные и исключённые."}</p></div></div>
