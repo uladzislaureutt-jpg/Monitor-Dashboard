@@ -17,7 +17,8 @@ import {
 
 const CARDS_STORAGE_KEY = "networks.tiktok.cards.v1";
 const SLOTS_STORAGE_KEY = "monitor-networks-tiktok-video-slots-v1";
-const SYNC_RUNS_KEY = "networks.tiktok.completed-runs.v1";
+const SYNC_RUNS_KEY = "networks.tiktok.completed-runs.v2";
+const LEGACY_SYNC_RUNS_KEY = "networks.tiktok.completed-runs.v1";
 const MODERATION_KEY = "networks.tiktok.moderation.v1";
 const CLOUD_MIGRATED_KEY = "networks.tiktok.cloud-moderation-migrated.v1";
 const EDITOR_CONTEXT_KEY = "monitor-networks-editor-source-context-v1";
@@ -214,9 +215,15 @@ export function NetworksView({ page, onPageChange, platform, onPlatformChange }:
       const config = loadWorkroomConfig();
       const session = await ensureWorkroomSession(config, loadWorkroomSession());
       const previous = await desktopApi.getSetting(SYNC_RUNS_KEY);
-      const parsed: unknown = previous ? JSON.parse(previous) : [];
-      const known = Array.isArray(parsed)
+      const legacy = previous == null ? await desktopApi.getSetting(LEGACY_SYNC_RUNS_KEY) : null;
+      const parsed: unknown = previous ? JSON.parse(previous) : legacy ? JSON.parse(legacy) : [];
+      const entries = Array.isArray(parsed)
         ? parsed.filter((n): n is number => Number.isSafeInteger(n) && n > 0).slice(-3000) : [];
+      // Upgrade old receipt format: explicitly refresh the last four runs,
+      // including repaired run #33. They were marked imported before the
+      // operator audit lanes were available in GitHub bundles.
+      const obsolete = new Set(previous == null ? [...entries].sort((a,b)=>b-a).slice(0,4) : []);
+      const known = entries.filter((id) => !obsolete.has(id));
       const done = new Set(known);
       const answer = await desktopApi.syncTikTokBundles(config.url, config.anonKey, session.accessToken, known);
       failures.push(...answer.errors);
