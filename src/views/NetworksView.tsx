@@ -551,9 +551,27 @@ export function NetworksView({ page, onPageChange, platform, onPlatformChange }:
                 <option key={lane} value={lane}>{reviewTriageLabel({ operator_review_triage_lane: lane } as NetworkCard, be)}</option>)}
           </select>
         </div>
-        <div className="network-card-list">{reviewFiltered.slice(reviewPage*40,(reviewPage+1)*40).map(renderCard)}</div>
-        {!reviewFiltered.length && <div className="report-empty">{be ? "Матэрыялы гэтай чаргі пакуль не загружаны." : "Материалы этой очереди пока не загружены."}</div>}
-        {reviewFiltered.length > 40 && <div className="network-pagination">
+        {reviewFilter === "ALL" && !reviewSearch.trim() ? <div className="network-review-sections">
+          {[
+            { lane: "gemini_veto", items: reviewGemini,
+              title: be ? "Gemini: ухвалена ІІ, адхілена праверкамі" : "Одобрено ИИ, отклонено последующими проверками",
+              note: be ? "Кандыдаты толькі для праверкі аператарам; мадэль не даказвае арыгінальнасць скаргі." : "Только на рассмотрение оператору: положительный ответ модели ещё не доказывает оригинальность жалобы." },
+            { lane: "triage", items: reviewTriage,
+              title: be ? "Бліжэйшая чарга і магчымыя памылковыя REJECT" : "Ближайшая очередь и возможные ложные REJECT",
+              note: be ? "Недастатковыя доказы, чаканне медыя і праверка памылковых адхіленняў." : "Недостаточные доказательства, ожидание медиапроверки и контроль возможных ошибочных отказов." },
+          ].map((section) => <section className="network-review-section" key={section.lane}>
+            <div className="panel-head"><div><h3>{section.title} ({section.items.length})</h3><p>{section.note}</p></div>
+              {section.items.length>8 && <button className="secondary-button small-button" onClick={() => { setReviewFilter(section.lane); setReviewPage(0); }}>
+                {be ? "Паказаць усе" : "Показать все"}</button>}
+            </div>
+            <div className="network-card-list">{section.items.slice(0,8).map(renderCard)}</div>
+            {!section.items.length && <div className="report-empty">{be ? "Чарга пакуль пустая." : "Пока нет материалов этой очереди."}</div>}
+          </section>)}
+        </div> : <>
+          <div className="network-card-list">{reviewFiltered.slice(reviewPage*40,(reviewPage+1)*40).map(renderCard)}</div>
+          {!reviewFiltered.length && <div className="report-empty">{be ? "Матэрыялы гэтай чаргі пакуль не загружаны." : "Материалы этой очереди пока не загружены."}</div>}
+        </>}
+        {(reviewFilter !== "ALL" || reviewSearch.trim()) && reviewFiltered.length > 40 && <div className="network-pagination">
           <button className="secondary-button small-button" disabled={reviewPage===0} onClick={() => setReviewPage(p=>p-1)}>{be ? "Назад" : "Назад"}</button>
           <span>{reviewPage+1} / {Math.ceil(reviewFiltered.length/40)}</span>
           <button className="secondary-button small-button" disabled={(reviewPage+1)*40>=reviewFiltered.length} onClick={() => setReviewPage(p=>p+1)}>{be ? "Далей" : "Далее"}</button>
