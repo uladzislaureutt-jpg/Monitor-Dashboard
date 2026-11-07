@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { importNetworkCards, mergeNetworkCards, networkTrend, isTikTokVideoUrl, safeTikTokPreview, effectiveCategory } from "../src/networks.ts";
+import { importNetworkCards, mergeNetworkCards, networkTrend, isTikTokVideoUrl, safeTikTokPreview, effectiveCategory, includedInOperatorOverview, isNetworkOperatorReview, isNetworkOperatorVisible } from "../src/networks.ts";
 
 const now = "2026-11-02T07:00:00Z";
 function card(id, category = "P2", date = "2026-11-02T05:00:00Z") {
@@ -175,4 +175,52 @@ test("review editor remembers and restores real TikTok poster with original titl
   assert.equal(normalizeSourceContext(enriched)[url].preview_image_url, caption.preview_image_url);
   assert.equal(rememberSourceContext(enriched, url, { title: "AI title", description: "AI caption",
     preview_image_url: "https://p16.tiktokcdn.com/another.jpg" }), enriched);
+});
+
+
+test("review lanes display undated blocked-positive and near-reject only to operator", () => {
+  const veto = { ...card("7699429238109113901","REJECT",null),
+    queue: "archive", operator_review_lane: "gemini_veto",
+    operator_review_seen_run: 33, operator_review_model_proposed:"P2",
+    included_in_current_overview:false, report_suppressed:true };
+  const triage = { ...card("7699429238109113902","REJECT",null),
+    queue:"archive", operator_review_lane:"triage",
+    operator_review_seen_run:33, operator_review_triage_lane:"possible_false_reject",
+    included_in_current_overview:false, report_suppressed:true };
+  const main=card("7699429238109113903");
+  const unrelated={...card("7699429238109113904","REJECT",null),
+    operator_review_lane:undefined, included_in_current_overview:false,report_suppressed:true};
+  const cards=importNetworkCards([veto,triage,main,unrelated].map(c=>JSON.stringify(c)).join("\n")+"\n");
+  assert.equal(cards.length,4);
+  assert.equal(cards.filter(isNetworkOperatorVisible).length,3);
+  assert.equal(cards.filter(isNetworkOperatorReview).length,2);
+  assert.equal(cards.filter(includedInOperatorOverview).length,1);
+  assert.equal(networkTrend(cards,1,Date.parse("2026-11-02T08:00:00Z")).reduce((n,p)=>n+p.count,0),1);
+  assert.equal(isNetworkOperatorReview({ ...veto, operator_review_seen_run:undefined }),false);
+});
+
+test("final main wins over subsequent rejected review, in both merge orders", () => {
+  const main = card("7699429238109113910");
+  const extra = {...main,category:"REJECT",queue:"archive",
+    operator_review_lane:"triage",operator_review_seen_run:34,
+    included_in_current_overview:false,report_suppressed:true,
+    publication:{published_at:null,date_status:"unknown",eligible_for_daily:false},
+    generated_at:"2026-11-07T10:00:00Z"};
+  let result=mergeNetworkCards([main],[extra]);
+  assert.equal(result[0].category,"P2");
+  assert.equal(result[0].included_in_current_overview,true);
+  result=mergeNetworkCards([extra],[main]);
+  assert.equal(result[0].category,"P2");
+  assert.equal(result[0].included_in_current_overview,true);
+});
+
+test("old operator near-miss run cannot overwrite newer triage result", () => {
+  const newer={...card("7699429238109113920","REJECT",null),
+    queue:"archive",operator_review_lane:"triage",operator_review_seen_run:34,
+    operator_review_triage_lane:"firsthand_audio_review",
+    included_in_current_overview:false,report_suppressed:true,
+    generated_at:"2026-11-07T10:00:00Z"};
+  const older={...newer,operator_review_seen_run:33,operator_review_triage_lane:"weak_review",
+    generated_at:"2026-11-06T10:00:00Z"};
+  assert.equal(mergeNetworkCards([newer],[older])[0].operator_review_triage_lane,"firsthand_audio_review");
 });
