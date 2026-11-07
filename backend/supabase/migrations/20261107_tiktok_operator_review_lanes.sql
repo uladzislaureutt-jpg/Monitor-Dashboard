@@ -16,7 +16,7 @@ begin
       or v->>'platform' <> 'tiktok'
       or coalesce(v->>'item_id','') !~ '^tiktok:[0-9]{10,25}$'
       or coalesce(v->>'source_url','') !~ '^https://(www\.)?tiktok\.com/@[^/]+/(video|photo)/[0-9]{10,25}/?$'
-      or substring(v->>'item_id' from 8) <> substring(v->>'source_url' from '/([0-9]{10,25})/?
+      or substring(v->>'item_id' from 8) <> substring(v->>'source_url' from '/([0-9]{10,25})/?')
       or octet_length(v::text)>65000
       or coalesce(v->>'category','') not in ('P1','P2','P3','G','S','REVIEW','REJECT')
       or not (
