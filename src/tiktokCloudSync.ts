@@ -4,7 +4,7 @@
  * Transcription drafts remain intentionally device-local.
  */
 import { ensureWorkroomSession, loadWorkroomConfig, loadWorkroomSession } from "./workroom";
-import { includedInOperatorOverview, type NetworkCard, type NetworkModeration } from "./networks";
+import { isNetworkOperatorVisible, type NetworkCard, type NetworkModeration } from "./networks";
 import { cloudModerationToLocal, type CloudModerationRow } from "./tiktokCloudCore";
 
 type CloudCardRow = { item_id: string; card: NetworkCard };
@@ -63,15 +63,15 @@ export async function downloadTikTokCloud(): Promise<{
     pagedRead<CloudModerationRow>("tiktok_network_moderation", "item_id,flagged,deleted"),
   ]);
   const cards = cardRows.map((row) => row.card);
-  if (cards.some((card) => !card || card.platform !== "tiktok" || !includedInOperatorOverview(card))) {
+  if (cards.some((card) => !card || card.platform !== "tiktok" || !isNetworkOperatorVisible(card))) {
     throw new Error("TIKTOK_CLOUD_INVALID_CARDS");
   }
   return { cards, moderation: cloudModerationToLocal(moderationRows) };
 }
 
-/** Only send final-report cards, never the pre-semantic 300-item discovery pool. */
+/** Send operator-visible main + specifically audited review lanes, never raw discovery. */
 export async function uploadTikTokFinalCards(cards: NetworkCard[]): Promise<number> {
-  const approved = cards.filter(includedInOperatorOverview);
+  const approved = cards.filter(isNetworkOperatorVisible);
   let sent = 0;
   for (let i = 0; i < approved.length; i += PUSH_SIZE) {
     const batch = approved.slice(i, i + PUSH_SIZE);
