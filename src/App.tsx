@@ -380,6 +380,10 @@ export default function App() {
           onClick={() => { setNetworksPlatform("tiktok"); setNetworksPage("home"); }}>
           <span className="nav-icon">◉</span><span>{locale === "be" ? "Агляд TikTok" : "Обзор TikTok"}</span>
         </button>
+        <button className={`nav-item ${networksPlatform === "tiktok" && networksPage === "review" ? "active" : ""}`}
+          onClick={() => { setNetworksPlatform("tiktok"); setNetworksPage("review"); }}>
+          <span className="nav-icon">◇</span><span>{locale === "be" ? "Чарга праверкі" : "Очередь проверки"}</span>
+        </button>
         <button className={`nav-item ${networksPlatform === "tiktok" && networksPage === "archive" ? "active" : ""}`}
           onClick={() => { setNetworksPlatform("tiktok"); setNetworksPage("archive"); }}>
           <span className="nav-icon">▤</span><span>{locale === "be" ? "Архіў" : "Архив"}</span>
