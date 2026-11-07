@@ -1,6 +1,7 @@
 /** Pure Networks v1 compatibility layer. Does not touch SEP/L documents. */
 export type NetworkCategory = "P1" | "P2" | "P3" | "G" | "S" | "REVIEW" | "REJECT";
 export type NetworkQueue = "candidate" | "needs_review" | "date_unknown" | "archive";
+export type NetworkReviewLane = "main" | "gemini_veto" | "triage";
 export type NetworkCard = {
   schema_version: "networks.v1";
   platform: "tiktok";
@@ -28,6 +29,17 @@ export type NetworkCard = {
   operator_lane?: string;
   review_displayed?: boolean;
   operator_reported_run?: number;
+  operator_review_lane?: NetworkReviewLane;
+  operator_review_seen_run?: number;
+  operator_review_model_proposed?: string;
+  operator_review_gate_reason?: string;
+  operator_review_stage?: string;
+  operator_review_action?: string;
+  operator_review_proof_gaps?: string;
+  operator_review_source_category?: string;
+  operator_review_triage_lane?: string;
+  operator_review_score?: number;
+  operator_review_triage_reason?: string;
   [key: string]: unknown;
 };
 
@@ -115,6 +127,11 @@ export function mergeNetworkCards(existing: NetworkCard[], incoming: NetworkCard
     };
     const incomingFinal = includedInOperatorOverview(next);
     const previousFinal = previous ? includedInOperatorOverview(previous) : false;
+    if (previous && isNetworkOperatorReview(previous) && isNetworkOperatorReview(next)
+        && (previous.operator_review_seen_run || 0) > (next.operator_review_seen_run || 0)) {
+      preservePrevious();
+      continue;
+    }
     if (previous && previousFinal && !incomingFinal) { preservePrevious(); continue; }
     if (previous && previousFinal === incomingFinal
       && String(previous.generated_at || "") > String(next.generated_at || "")) {
@@ -167,6 +184,33 @@ export function includedInOperatorOverview(card: NetworkCard): boolean {
   if (effectiveCategory(card) === "REJECT") return false;
   return card.operator_lane === "candidate"
     || (card.operator_lane === "review" && card.review_displayed === true);
+}
+
+/** Review visibility is not publication approval; never reuse it for charts. */
+export function isNetworkOperatorReview(card: NetworkCard): boolean {
+  return (card.operator_review_lane === "gemini_veto" || card.operator_review_lane === "triage")
+    && card.included_in_current_overview === false
+    && card.report_suppressed === true
+    && card.already_reported !== true
+    && Number.isSafeInteger(card.operator_review_seen_run)
+    && (card.operator_review_seen_run || 0) > 0;
+}
+export function isNetworkOperatorVisible(card: NetworkCard): boolean {
+  return includedInOperatorOverview(card) || isNetworkOperatorReview(card);
+}
+export const REVIEW_TRIAGE_LABELS: Record<string, [string, string]> = {
+  possible_false_reject: ["Возможные ложные REJECT", "Магчымыя памылковыя REJECT"],
+  firsthand_audio_review: ["Первичные обращения по аудио", "Першасныя звароты па аўдыя"],
+  high_engagement_media: ["Ролики с высоким охватом", "Ролікі з вялікім ахопам"],
+  near_review: ["Близкие к отбору", "Блізкія да адбору"],
+  candidate: ["Дополнительные кандидаты", "Дадатковыя кандыдаты"],
+  pending_media: ["Ожидают проверки речи и изображения", "Чакаюць праверкі маўлення і выявы"],
+  weak_review: ["Недостаточные доказательства", "Недастатковыя доказы"],
+  gemini_positive_veto: ["Предложения Gemini под проверкой", "Прапановы Gemini на праверцы"],
+};
+export function reviewTriageLabel(card: NetworkCard, be: boolean): string {
+  return REVIEW_TRIAGE_LABELS[card.operator_review_triage_lane || ""]?.[be ? 1 : 0]
+    || (be ? "Іншыя матэрыялы для праверкі" : "Другие материалы для проверки");
 }
 
 export type NetworkModeration = { flagged: string[]; deleted: string[] };
