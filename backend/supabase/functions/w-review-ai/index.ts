@@ -8,6 +8,7 @@ import { reconcileDossierDraft } from "./dossier-reconciliation.ts";
 import { normalizeReviewSourceLabels, poolSourceNames, inspectStyleOnlyCopy, canonicalWReviewSourceName } from "./review-output-guard.ts";
 import { W_REVIEW_GEMINI_PRIMARY, W_REVIEW_GEMINI_FALLBACK, W_REVIEW_GEMINI_ROUTES, wGeminiGenerationConfig, wGeminiPromptJsonConfig, W_GEMINI_JSON_ONLY_SUFFIX, parseModelJsonObject, wGeminiStructuredConfig, type GeminiJsonMode } from "./gemini-routing.ts";
 import { prepareEvidence, structuredGeminiRequest, preparationBudget } from "./preparation.ts";
+import { distinctGeminiCredentials, makeGeminiKeyFailover } from "./gemini-key-failover.ts";
 import { evidenceV2Instructions, evidenceV2Schema, makeEvidenceDocuments, renderEvidenceMaterials, verifyEvidenceCards, verifyEvidenceCardsIndividually, formatEvidenceCard, type EvidenceCard } from "./evidence-v2.ts";
 import { editorialQuoteInventory, editorialQuoteTarget, editorialQuoteBrief, editorialQuoteUsage } from "./editorial-quotes.ts";
 import { makeEditorialSourceAnchors } from "./editorial-source-anchors.ts";
@@ -160,7 +161,7 @@ function reportGeminiFailure(stage:string,model:string,diagnostic:ProviderDiagno
   console.warn("w_review_provider_failure "+JSON.stringify({provider:"gemini",stage,model:providerField(model),...diagnostic}));
 }
 
-async function callGemini(apiKey: string, model: string, prompt: string, schema: unknown, _temperature = 0.1, stage = "unknown", timeoutMs=0, options?:{maxOutputTokens?:number;thinkingLevel?:"minimal"|"low"|"medium"|"high";promptJsonOnly?:boolean;jsonMode?:GeminiJsonMode}): Promise<AiResult> {
+async function callGeminiOnce(apiKey: string, model: string, prompt: string, schema: unknown, _temperature = 0.1, stage = "unknown", timeoutMs=0, options?:{maxOutputTokens?:number;thinkingLevel?:"minimal"|"low"|"medium"|"high";promptJsonOnly?:boolean;jsonMode?:GeminiJsonMode}): Promise<AiResult> {
   try {
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: "POST",
@@ -210,6 +211,29 @@ async function callGemini(apiKey: string, model: string, prompt: string, schema:
     return {ok:false,status:502,retryAfter:null,detail:"gemini_network_error",diagnostic};
   }
 }
+const routeGeminiKeys=makeGeminiKeyFailover();
+// This wrapper covers Evidence, dossier/trends, synthesis and secondary
+// Gemini operations without changing their model/provider fallback policy.
+// A second key helps only if its Google quota project has independent limits.
+async function callGemini(apiKey: string, model: string, prompt: string, schema: unknown, temperature = 0.1, stage = "unknown", timeoutMs=0, options?:{maxOutputTokens?:number;thinkingLevel?:"minimal"|"low"|"medium"|"high";promptJsonOnly?:boolean;jsonMode?:GeminiJsonMode}): Promise<AiResult> {
+  const credentials=distinctGeminiCredentials([
+    {name:"selected",key:apiKey},
+    {name:"GOOGLE_GEMINI_API_KEY",key:Deno.env.get("GOOGLE_GEMINI_API_KEY")||""},
+    {name:"GOOGLE_API_KEY",key:Deno.env.get("GOOGLE_API_KEY")||""},
+    {name:"W_REVIEW_GEMINI_SECONDARY_API_KEY",key:Deno.env.get("W_REVIEW_GEMINI_SECONDARY_API_KEY")||""}
+  ]);
+  const started=Date.now();
+  return routeGeminiKeys(
+    credentials,
+    credential=>callGeminiOnce(credential.key,model,prompt,schema,temperature,stage,
+      timeoutMs>0?Math.max(1,timeoutMs-(Date.now()-started)):0,options),
+    ():AiFailure=>({ok:false,status:429,retryAfter:"60",detail:"gemini_all_credentials_cooling_down"}),
+    {budgetMs:timeoutMs,onFailover:name=>console.info("w_review_gemini_key_failover "+JSON.stringify({
+      stage,model:providerField(model),credential:name
+    }))}
+  );
+}
+
 function density(value: unknown) { return value === "minimum" || value === "many" || value === "all" ? value : "moderate"; }
 function normalizeAnchor(value: string) {
   return value.toLocaleLowerCase("ru-RU").replace(/[\s\u00a0]+/g, " ").trim();
@@ -291,7 +315,7 @@ Deno.serve(async (req: Request) => {
   }
 
   const groqApiKey = Deno.env.get("GROQ_W_REVIEW_API_KEY") || "";
-  const geminiApiKey = Deno.env.get("GEMINI_API_KEY") || Deno.env.get("GOOGLE_GEMINI_API_KEY") || Deno.env.get("GOOGLE_API_KEY") || "";
+  const geminiApiKey = Deno.env.get("GEMINI_API_KEY") || Deno.env.get("GOOGLE_GEMINI_API_KEY") || Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("W_REVIEW_GEMINI_SECONDARY_API_KEY") || "";
   // Ignore a stale GEMINI_W_REVIEW_MODEL pointing to a 3.6 endpoint.
   const geminiModel = W_REVIEW_GEMINI_PRIMARY;
 
