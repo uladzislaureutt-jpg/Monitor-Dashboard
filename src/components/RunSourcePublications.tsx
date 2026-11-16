@@ -17,7 +17,7 @@ export function RunSourcePublications({ run }: { run?: RunSummary }) {
     const id = runId;
     if (id === undefined) return;
     let revision = 0;
-    function reload() {
+    const reload = () => {
       const request = ++revision;
       setLoading(true);
       setError("");
@@ -28,7 +28,7 @@ export function RunSourcePublications({ run }: { run?: RunSummary }) {
       }).finally(() => {
         if (request === revision) setLoading(false);
       });
-    }
+    };
     reload();
     window.addEventListener("monitor:moderation-changed", reload);
     return () => {
