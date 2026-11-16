@@ -1,6 +1,7 @@
 /** Pure Networks v1 compatibility layer. Does not touch SEP/L documents. */
 export type NetworkCategory = "P1" | "P2" | "P3" | "G" | "S" | "REVIEW" | "REJECT";
 export type NetworkQueue = "candidate" | "needs_review" | "date_unknown" | "archive";
+export type TikTokSection = "appeals" | "complaints" | "review";
 export type NetworkReviewLane = "main" | "gemini_veto" | "triage";
 export type NetworkCard = {
   schema_version: "networks.v1";
@@ -29,6 +30,10 @@ export type NetworkCard = {
   operator_lane?: string;
   review_displayed?: boolean;
   operator_reported_run?: number;
+  operator_display_section?: TikTokSection;
+  operator_display_group?: string;
+  operator_review_rank?: number;
+  operator_review_reason?: string;
   operator_review_lane?: NetworkReviewLane;
   operator_review_seen_run?: number;
   operator_review_model_proposed?: string;
@@ -125,16 +130,19 @@ export function mergeNetworkCards(existing: NetworkCard[], incoming: NetworkCard
       if (previous && !existingPreview && incomingPreview)
         merged.set(previous.item_id, { ...previous, preview_image_url: incomingPreview });
     };
-    const incomingFinal = includedInOperatorOverview(next);
-    const previousFinal = previous ? includedInOperatorOverview(previous) : false;
-    if (previous && isNetworkOperatorReview(previous) && isNetworkOperatorReview(next)
-        && (previous.operator_review_seen_run || 0) > (next.operator_review_seen_run || 0)) {
-      preservePrevious();
-      continue;
-    }
+    const incomingSection = networkOperatorSection(next);
+    const previousSection = previous ? networkOperatorSection(previous) : null;
+    const incomingFinal = incomingSection != null && incomingSection !== "review";
+    const previousFinal = previousSection != null && previousSection !== "review";
     if (previous && previousFinal && !incomingFinal) { preservePrevious(); continue; }
-    if (previous && previousFinal === incomingFinal
-      && String(previous.generated_at || "") > String(next.generated_at || "")) {
+    if (previousSection === "review" && incomingSection === null) { preservePrevious(); continue; }
+    const previousRun = previous ? operatorRun(previous) : 0;
+    const nextRun = operatorRun(next);
+    if (previous && previousSection !== null && previousFinal === incomingFinal
+      && (previousRun > nextRun || (previousRun === nextRun &&
+        ((previous.operator_display_section && !next.operator_display_section)
+          || Boolean(previous.operator_display_section) === Boolean(next.operator_display_section)
+            && String(previous.generated_at || "") > String(next.generated_at || ""))))) {
       preservePrevious();
       continue;
     }
@@ -163,20 +171,6 @@ export function effectiveCategory(card: NetworkCard): NetworkCategory {
     ? card.review.category_override : card.category;
 }
 
-export const NETWORK_GROUPS: NetworkCategory[] = ["P1", "P2", "P3", "G", "S", "REVIEW"];
-export function networkCategoryName(category: NetworkCategory, be: boolean): string {
-  const labels: Record<NetworkCategory, [string, string]> = {
-    P1: ["Обращения к президенту Беларуси", "Звароты да прэзідэнта Беларусі"],
-    P2: ["Жалобы на местные проблемы и работу служб", "Скаргі на мясцовыя праблемы і працу службаў"],
-    P3: ["Обращения к республиканским ведомствам", "Звароты да рэспубліканскіх ведамстваў"],
-    G: ["Общественные проблемы", "Грамадскія праблемы"],
-    S: ["Вторичные сообщения о жалобах", "Другасныя паведамленні пра скаргі"],
-    REVIEW: ["Требуют проверки", "Патрабуюць праверкі"],
-    REJECT: ["Исключённые", "Выключаныя"],
-  };
-  return labels[category][be ? 1 : 0];
-}
-
 /** Match the final operator report, NOT discovery output or pre-AI candidates. */
 export function includedInOperatorOverview(card: NetworkCard): boolean {
   if (card.report_suppressed === true || card.included_in_current_overview !== true) return false;
@@ -198,19 +192,101 @@ export function isNetworkOperatorReview(card: NetworkCard): boolean {
 export function isNetworkOperatorVisible(card: NetworkCard): boolean {
   return includedInOperatorOverview(card) || isNetworkOperatorReview(card);
 }
-export const REVIEW_TRIAGE_LABELS: Record<string, [string, string]> = {
-  possible_false_reject: ["Возможные ложные REJECT", "Магчымыя памылковыя REJECT"],
-  firsthand_audio_review: ["Первичные обращения по аудио", "Першасныя звароты па аўдыя"],
-  high_engagement_media: ["Ролики с высоким охватом", "Ролікі з вялікім ахопам"],
-  near_review: ["Близкие к отбору", "Блізкія да адбору"],
-  candidate: ["Дополнительные кандидаты", "Дадатковыя кандыдаты"],
-  pending_media: ["Ожидают проверки речи и изображения", "Чакаюць праверкі маўлення і выявы"],
-  weak_review: ["Недостаточные доказательства", "Недастатковыя доказы"],
-  gemini_positive_veto: ["Предложения Gemini под проверкой", "Прапановы Gemini на праверцы"],
+export const TIKTOK_SECTIONS: TikTokSection[] = ["appeals", "complaints", "review"];
+const SECTION_LABELS: Record<TikTokSection, [string, string]> = {
+  appeals: ["Обращения", "Звароты"],
+  complaints: ["Жалобы на местные проблемы и работу служб", "Скаргі на мясцовыя праблемы і працу службаў"],
+  review: ["Требуют проверки", "Патрабуюць праверкі"],
 };
-export function reviewTriageLabel(card: NetworkCard, be: boolean): string {
-  return REVIEW_TRIAGE_LABELS[card.operator_review_triage_lane || ""]?.[be ? 1 : 0]
-    || (be ? "Іншыя матэрыялы для праверкі" : "Другие материалы для проверки");
+export function networkSectionName(section: TikTokSection, be: boolean): string {
+  return SECTION_LABELS[section][be ? 1 : 0];
+}
+
+export function networkOperatorSection(card: NetworkCard): TikTokSection | null {
+  if (isNetworkOperatorReview(card)) return "review";
+  if (!includedInOperatorOverview(card)) return null;
+  const category = effectiveCategory(card);
+  if (category === "REVIEW" || card.operator_display_section === "review") return "review";
+  if (category === "P1" || category === "P3") return "appeals";
+  return card.operator_display_section === "appeals" && category === card.category
+    ? "appeals" : "complaints";
+}
+
+export function operatorRun(card: NetworkCard): number {
+  const run = card.operator_reported_run ?? card.operator_review_seen_run ?? 0;
+  return Number.isSafeInteger(run) && run > 0 ? run : 0;
+}
+
+export function latestOperatorRuns(cards: NetworkCard[], receipts: number[]): number[] {
+  return [...new Set([...receipts, ...cards.filter(isNetworkOperatorVisible).map(operatorRun)])]
+    .filter((run) => Number.isSafeInteger(run) && run > 0).sort((a, b) => b - a).slice(0, 2);
+}
+
+export function sortOperatorArchive(a: NetworkCard, b: NetworkCard): number {
+  return publishedTimestamp(b) - publishedTimestamp(a)
+    || operatorRun(b) - operatorRun(a) || a.item_id.localeCompare(b.item_id);
+}
+
+const REVIEW_LIMIT = 10;
+const LEGACY_REVIEW_WEIGHT: Record<string, number> = {
+  possible_false_reject: 8, presidential_media_priority: 7, firsthand_audio_review: 7,
+  gemini_positive_veto: 5, near_review: 5, candidate: 4, visual_context_review: 2,
+  hashtag_local_media_lead: 2, high_engagement_media: 1,
+};
+
+export function compareOperatorReview(a: NetworkCard, b: NetworkCard): number {
+  const rank = (item: NetworkCard) => item.operator_review_rank || Number.MAX_SAFE_INTEGER;
+  const score = (item: NetworkCard) => item.operator_review_lane === "main"
+    ? 12 + (Number(item.review_score) || 0)
+    : (item.operator_review_score || 0) + (LEGACY_REVIEW_WEIGHT[item.operator_review_triage_lane || ""] || 0);
+  return rank(a) - rank(b) || score(b) - score(a) || sortOperatorArchive(a, b);
+}
+
+/** Retain the producer's shortlist and reduce pre-v3 archives to a bounded review sample. */
+export function selectOperatorArchive(cards: NetworkCard[]): NetworkCard[] {
+  const selected: NetworkCard[] = [];
+  const reviewByRun = new Map<number, NetworkCard[]>();
+  for (const card of cards) {
+    const section = networkOperatorSection(card);
+    if (!section) continue;
+    if (section !== "review") {
+      selected.push(card);
+      continue;
+    }
+    const run = operatorRun(card);
+    const group = card.operator_review_triage_lane || "";
+    if (card.operator_display_section !== "review"
+      && (card.geography_evidence as { status?: string } | undefined)?.status === "foreign_only") continue;
+    if (card.operator_display_section !== "review" && card.operator_review_lane !== "main"
+      && card.operator_review_lane !== "gemini_veto" && !Object.hasOwn(LEGACY_REVIEW_WEIGHT, group)) continue;
+    const list = reviewByRun.get(run) || [];
+    list.push(card);
+    reviewByRun.set(run, list);
+  }
+  for (const reviews of reviewByRun.values()) {
+    const ranked = reviews.filter((card) => card.operator_display_section === "review");
+    selected.push(...(ranked.length ? ranked : reviews).sort(compareOperatorReview).slice(0, REVIEW_LIMIT));
+  }
+  return selected.sort(sortOperatorArchive);
+}
+
+export function operatorReviewLabel(card: NetworkCard, be: boolean): string {
+  if (card.operator_review_lane === "gemini_veto") {
+    return be ? "Gemini прапанаваў, фільтры панізілі ацэнку" : "Gemini предложил, фильтры понизили оценку";
+  }
+  switch (card.operator_review_reason || card.operator_review_triage_lane) {
+    case "possible_false_reject":
+      return be ? "Магчыма, адхілена памылкова" : "Возможный ошибочный отсев";
+    case "comment_review":
+      return be ? "У каментарах абмяркоўваюць скаргу" : "В комментариях обсуждают жалобу";
+    case "pending_media":
+    case "visual_context_review":
+    case "presidential_media_priority":
+    case "firsthand_audio_review":
+      return be ? "Праверыць маўленне ці выяву" : "Проверить речь или изображение";
+    default:
+      return be ? "Праверыць першакрыніцу" : "Проверить первоисточник";
+  }
 }
 
 export type NetworkModeration = { flagged: string[]; deleted: string[] };
@@ -228,7 +304,8 @@ export function networkTrend(cards: NetworkCard[], days: number | null, now = Da
   const min = days === null ? -Infinity : now - days * 86_400_000;
   const max = now + 86_400_000;
   for (const card of cards) {
-    if (!includedInOperatorOverview(card)) continue;
+    const section = networkOperatorSection(card);
+    if (!section || section === "review") continue;
     const time = publishedTimestamp(card);
     if (time <= 0 || time < min || time > max) continue;
     const day = new Date(time).toISOString().slice(0, 10);
