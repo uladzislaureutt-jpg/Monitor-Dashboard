@@ -4,7 +4,7 @@
  * Transcription drafts remain intentionally device-local.
  */
 import { ensureWorkroomSession, loadWorkroomConfig, loadWorkroomSession } from "./workroom";
-import { isNetworkOperatorVisible, type NetworkCard, type NetworkModeration } from "./networks";
+import { isNetworkOperatorVisible, selectOperatorArchive, type NetworkCard, type NetworkModeration } from "./networks";
 import { cloudModerationToLocal, type CloudModerationRow } from "./tiktokCloudCore";
 
 type CloudCardRow = { item_id: string; card: NetworkCard };
@@ -71,7 +71,7 @@ export async function downloadTikTokCloud(): Promise<{
 
 /** Send operator-visible main + specifically audited review lanes, never raw discovery. */
 export async function uploadTikTokFinalCards(cards: NetworkCard[]): Promise<number> {
-  const approved = cards.filter(isNetworkOperatorVisible);
+  const approved = selectOperatorArchive(cards);
   let sent = 0;
   for (let i = 0; i < approved.length; i += PUSH_SIZE) {
     const batch = approved.slice(i, i + PUSH_SIZE);

@@ -1253,7 +1253,6 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 .network-tabs button.active{background:#fff;color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.09)}
 .network-chart-controls{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
 .network-overview{display:flex;flex-direction:column;gap:16px}
-.network-groups{display:flex;flex-direction:column;gap:16px}
 .network-card-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:12px}
 .network-clip{display:flex;gap:11px;padding:15px;border:1px solid var(--line);border-radius:12px;background:#fff;min-width:0}
 .network-clip-preview{width:92px;height:92px;flex:0 0 92px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:#f4f4f4}
@@ -1267,8 +1266,8 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 .network-clip-bottom{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:12px}
 .network-clip-bottom span{font-size:9px;color:var(--muted);overflow-wrap:anywhere}
 .network-clip-bottom .link-button{font-size:10px;text-align:left}
-.network-archive-controls{display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,270px);gap:10px;margin-bottom:16px}
-.network-archive-controls input,.network-archive-controls select,.network-video-slot input{width:100%;min-width:0}
+.network-archive-controls{margin-bottom:16px}
+.network-archive-controls input,.network-video-slot input{width:100%;min-width:0}
 .network-pagination{display:flex;justify-content:center;align-items:center;gap:14px;margin-top:15px}
 .network-pagination span{color:var(--muted);font-size:11px}
 .network-video-slots{display:flex;flex-direction:column;gap:8px}
@@ -1282,7 +1281,6 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 @media(max-width:740px){
   .network-top-switch{width:100%}
   .network-chart-controls{align-items:flex-start}
-  .network-archive-controls{grid-template-columns:1fr}
   .network-video-slot{grid-template-columns:80px minmax(0,1fr) 26px}
   .network-card-list{grid-template-columns:1fr}
 }
@@ -1490,14 +1488,6 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 }
 
 
-/* Operator triage is separate from confirmed TikTok publication history. */
-.network-review-counts{display:flex;flex-wrap:wrap;gap:12px;margin:0 0 15px;font-size:12px;color:var(--muted)}
-.network-review-counts span{border:1px solid var(--line);border-radius:9px;padding:9px 12px}
-.network-review-counts b{color:var(--ink)}
-.network-review-sections{display:flex;flex-direction:column;gap:20px;min-width:0}
-.network-review-section{min-width:0;border-top:1px solid var(--line);padding-top:16px}
-.network-review-status{color:#9b4c25;font-weight:700}
-.network-review-reasons{border-top:1px solid var(--line);margin-top:8px;padding-top:9px}
-.network-review-reasons strong{font-size:11px;color:#8c4728}
-.network-review-reasons p{color:var(--muted);font-size:10px;margin:5px 0}
-.network-review-reasons small{color:#8c4728;font-size:9px}
+.network-run-label,.network-review-note{color:var(--muted);font-size:11px}
+.network-review-note{display:block;margin-top:6px}
+.network-trend>summary{cursor:pointer;font-weight:600}

@@ -8,11 +8,10 @@ import { NetworkEditorView } from "./NetworkEditorView";
 import { applyTikTokCloudModeration, downloadTikTokCloud, migrateTikTokLocalModeration, uploadTikTokFinalCards } from "../tiktokCloudSync";
 import { contextFromCard, normalizeSourceContext, rememberSourceContext, type TikTokSourceContextMap } from "../networkEditorMetadata";
 import {
-  cardTimestamp, effectiveCategory, importNetworkCards, isTikTokVideoUrl,
-  includedInOperatorOverview, isNetworkOperatorReview, isNetworkOperatorVisible,
-  reviewTriageLabel, normalizeNetworkModeration, type NetworkModeration,
-  mergeNetworkCards, NETWORK_GROUPS, networkCategoryName, networkTrend, safeTikTokPreview,
-  publishedTimestamp, type NetworkCard, type NetworkCategory,
+  compareOperatorReview, importNetworkCards, isTikTokVideoUrl, latestOperatorRuns, mergeNetworkCards,
+  networkOperatorSection, networkSectionName, networkTrend, normalizeNetworkModeration,
+  operatorReviewLabel, operatorRun, publishedTimestamp, safeTikTokPreview, selectOperatorArchive,
+  TIKTOK_SECTIONS, type NetworkCard, type NetworkModeration,
 } from "../networks";
 
 const CARDS_STORAGE_KEY = "networks.tiktok.cards.v1";
@@ -22,7 +21,7 @@ const LEGACY_SYNC_RUNS_KEY = "networks.tiktok.completed-runs.v1";
 const MODERATION_KEY = "networks.tiktok.moderation.v1";
 const CLOUD_MIGRATED_KEY = "networks.tiktok.cloud-moderation-migrated.v1";
 const EDITOR_CONTEXT_KEY = "monitor-networks-editor-source-context-v1";
-export type NetworkPage = "home" | "archive" | "editor" | "review";
+export type NetworkPage = "home" | "archive" | "editor";
 export type NetworkPlatform = "tiktok" | "threads";
 type TrendKind = "bars" | "line";
 
@@ -55,9 +54,11 @@ function ClipCard({ item, be, checked, flagged, onToggle, onFlag, onDelete, onAd
   onDelete: (item: NetworkCard) => void;
   onAdd: (item: NetworkCard) => void;
 }) {
-  const date = item.publication.published_at;
+  const date = publishedTimestamp(item) ? item.publication.published_at : null;
+  const run = operatorRun(item);
   const preview = safeTikTokPreview(item.preview_image_url);
-  const shortText = item.text_excerpt || item.transcript_excerpt || "";
+  const excerpt = item.text_excerpt === item.title ? item.transcript_excerpt : item.text_excerpt;
+  const shortText = excerpt || item.transcript_excerpt || "";
   return <article className="network-clip">
     <label className="network-clip-pick">
       <input type="checkbox" checked={checked} onChange={() => onToggle(item)}
@@ -69,24 +70,14 @@ function ClipCard({ item, be, checked, flagged, onToggle, onFlag, onDelete, onAd
     <div className="network-clip-body">
       <div className="network-clip-top">
         <span>{displayDate(date, be ? "be" : "ru")}</span>
-        {isNetworkOperatorReview(item) && <span className="network-review-status">
-          {item.operator_review_lane === "gemini_veto"
-            ? (be ? "Gemini: прапанавана, фільтры адхілілі" : "Gemini: предложено, фильтры отклонили")
-            : (be ? "Чарга ручной праверкі" : "Очередь ручной проверки")}
-        </span>}
-        {item.queue === "date_unknown" && <span>{be ? "Патрабуе праверкі даты" : "Требует проверки даты"}</span>}
+        {run > 0 && <span>#{run}</span>}
         {item.review_status === "operator_confirmed" && <span>{be ? "Пацверджана аператарам" : "Подтверждено оператором"}</span>}
       </div>
       <strong className="network-clip-title">{item.title || (be ? "Відэа без загалоўка" : "Видео без заголовка")}</strong>
       {shortText && <p className="network-clip-excerpt">{shortText.slice(0, 320)}{shortText.length > 320 ? "…" : ""}</p>}
-      {isNetworkOperatorReview(item) && <div className="network-review-reasons">
-        <strong>{item.operator_review_lane === "gemini_veto"
-          ? `Gemini: ${item.operator_review_model_proposed || "?"} → ${item.category}`
-          : reviewTriageLabel(item, be)}</strong>
-        <p>{String(item.operator_review_gate_reason || item.operator_review_triage_reason
-          || item.operator_review_proof_gaps || "").slice(0, 420)}</p>
-        <small>{be ? "Не з'яўляецца пацверджанай публікацыяй" : "Не является подтверждённой публикацией"}</small>
-      </div>}
+      {networkOperatorSection(item) === "review" && <small className="network-review-note">
+        {operatorReviewLabel(item, be)}
+      </small>}
       <div className="network-clip-bottom">
         <button className="link-button" onClick={() => void desktopApi.openUrl(item.source_url)}>
           {be ? "Адкрыць відэа ў TikTok ↗" : "Открыть видео в TikTok ↗"}
@@ -107,13 +98,12 @@ function ClipCard({ item, be, checked, flagged, onToggle, onFlag, onDelete, onAd
 }
 
 /** The social networks never alter the active SEP/L database or its sync route. */
-export function NetworksView({ page, onPageChange, platform, onPlatformChange }: {
-  page: NetworkPage; onPageChange: (page: NetworkPage) => void;
+export function NetworksView({ page, platform, onPlatformChange }: {
+  page: NetworkPage;
   platform: NetworkPlatform; onPlatformChange: (platform: NetworkPlatform) => void;
 }) {
   const { locale } = useI18n();
   const be = locale === "be";
-  const setPage = onPageChange;
   const setPlatform = onPlatformChange;
   const [cards, setCards] = useState<NetworkCard[]>([]);
   const [period, setPeriod] = useState<number | null>(30);
@@ -122,11 +112,8 @@ export function NetworksView({ page, onPageChange, platform, onPlatformChange }:
   const [sourceContext, setSourceContext] = useState<TikTokSourceContextMap>(initialContext);
   const [activeSlot, setActiveSlot] = useState(0);
   const [archiveQuery, setArchiveQuery] = useState("");
-  const [archiveCategory, setArchiveCategory] = useState<NetworkCategory | "ALL">("ALL");
   const [archivePage, setArchivePage] = useState(0);
-  const [reviewFilter, setReviewFilter] = useState("ALL");
-  const [reviewSearch, setReviewSearch] = useState("");
-  const [reviewPage, setReviewPage] = useState(0);
+  const [completedRuns, setCompletedRuns] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -162,8 +149,17 @@ export function NetworksView({ page, onPageChange, platform, onPlatformChange }:
   }, []);
 
 
+  useEffect(() => {
+    let cancelled = false;
+    desktopApi.getSetting(SYNC_RUNS_KEY).then((raw) => {
+      const runs: unknown = raw ? JSON.parse(raw) : [];
+      if (!cancelled && Array.isArray(runs)) setCompletedRuns(runs);
+    }).catch(() => { /* Existing cards still carry their report run. */ });
+    return () => { cancelled = true; };
+  }, []);
+
   /** Reconcile both computers against the same server data and tombstones. */
-  const syncCloud = useCallback(async (silent = false) => {
+  const syncCloud = useCallback(async () => {
     if (cloudLock.current) return;
     cloudLock.current = true;
     setCloudSyncing(true);
@@ -189,12 +185,7 @@ export function NetworksView({ page, onPageChange, platform, onPlatformChange }:
         const remaining = old.filter((url) => url && !deletedUrls.has(url));
         return remaining.length ? remaining : [""];
       });
-      setCloudState(be
-        ? `Агульнае воблака: ${remote.cards.length} відэа · выключана: ${remote.moderation.deleted.length}`
-        : `Общее облако: ${remote.cards.length} видео · исключено: ${remote.moderation.deleted.length}`);
-      if (!silent) setNotice(be
-        ? `Сетка: воблачная сінхранізацыя завершана. Картак: ${remote.cards.length}.`
-        : `Сети: облачная синхронизация выполнена. Карточек: ${remote.cards.length}.`);
+      setCloudState(be ? "Воблачная сінхранізацыя завершана" : "Облачная синхронизация завершена");
     } catch (reason) {
       setError((be ? "Сінхранізацыя воблака: " : "Синхронизация облака: ") + String(reason));
       setCloudState(be ? "Воблака недаступнае — паказаны лакальныя даныя" : "Облако недоступно — показаны локальные данные");
@@ -235,7 +226,9 @@ export function NetworksView({ page, onPageChange, platform, onPlatformChange }:
           // Write content BEFORE the receipt. If interrupted, a retry is safely idempotent.
           await desktopApi.setSetting(CARDS_STORAGE_KEY, JSON.stringify(merged));
           done.add(bundle.runNumber);
-          await desktopApi.setSetting(SYNC_RUNS_KEY, JSON.stringify([...done].sort((a, b) => a - b).slice(-3000)));
+          const receipts = [...done].sort((a, b) => a - b).slice(-3000);
+          await desktopApi.setSetting(SYNC_RUNS_KEY, JSON.stringify(receipts));
+          setCompletedRuns(receipts);
           cardsRef.current = merged;
           setCards(merged);
           imported += 1;
@@ -247,12 +240,12 @@ export function NetworksView({ page, onPageChange, platform, onPlatformChange }:
         new Date().toLocaleTimeString(be ? "be-BY" : "ru-RU", { hour: "2-digit", minute: "2-digit" }) +
         (answer.latestRemoteRun == null ? "" : ` · GitHub #${answer.latestRemoteRun}`));
       if (imported && !silent) setNotice(be
-        ? `Сінхранізавана запускаў: ${imported}. Ролікаў у архіве: ${cardsRef.current.length}.`
-        : `Синхронизировано запусков: ${imported}. Роликов в архиве: ${cardsRef.current.length}.`);
+        ? `Сінхранізавана запускаў: ${imported}.`
+        : `Синхронизировано запусков: ${imported}.`);
       if (failures.length) setError(failures.join("\n"));
     } catch (reason) {
       setError((be ? "Сінхранізацыя TikTok: " : "Синхронизация TikTok: ") + String(reason));
-    } finally { await syncCloud(silent); syncLock.current = false; setSyncing(false); }
+    } finally { await syncCloud(); syncLock.current = false; setSyncing(false); }
   }, [be, syncCloud]);
 
   useEffect(() => {
@@ -260,7 +253,7 @@ export function NetworksView({ page, onPageChange, platform, onPlatformChange }:
     void syncNetwork(true);
     const artifactsInterval = window.setInterval(() => void syncNetwork(true), 30 * 60 * 1000);
     // Moderation and cloud archive convergence are much faster than GitHub artifact polling.
-    const cloudInterval = window.setInterval(() => void syncCloud(true), 2 * 60 * 1000);
+    const cloudInterval = window.setInterval(() => void syncCloud(), 2 * 60 * 1000);
     return () => { window.clearInterval(artifactsInterval); window.clearInterval(cloudInterval); };
   }, [loading, moderationLoaded, syncNetwork, syncCloud]);
 
@@ -328,43 +321,20 @@ export function NetworksView({ page, onPageChange, platform, onPlatformChange }:
     });
   }, [cards, slots]);
 
-  const now = Date.now();
-  const visible = useMemo(() => cards.filter((item) => isNetworkOperatorVisible(item) && !moderation.deleted.includes(item.item_id)), [cards, moderation.deleted]);
-  const mainCards = useMemo(() => visible.filter(includedInOperatorOverview), [visible]);
-  const reviewCards = useMemo(() => visible.filter(isNetworkOperatorReview), [visible]);
-  const reviewGemini = useMemo(() => reviewCards.filter((item) => item.operator_review_lane === "gemini_veto"), [reviewCards]);
-  const reviewTriage = useMemo(() => reviewCards.filter((item) => item.operator_review_lane === "triage"), [reviewCards]);
-  const reviewFiltered = useMemo(() => {
-    const normalized = reviewSearch.trim().toLocaleLowerCase();
-    return reviewCards.filter((item) => {
-      if (reviewFilter !== "ALL" && reviewFilter !== item.operator_review_lane
-        && reviewFilter !== item.operator_review_triage_lane) return false;
-      return !normalized || [item.title,item.source_url,item.text_excerpt,item.operator_review_gate_reason,
-        item.operator_review_triage_reason,item.operator_review_proof_gaps]
-        .some((value) => String(value || "").toLocaleLowerCase().includes(normalized));
-    }).sort((a,b) => {
-      const priority = (item: NetworkCard) => item.operator_review_lane === "gemini_veto" ? 0 : 1;
-      return priority(a)-priority(b) || (b.operator_review_score || 0)-(a.operator_review_score || 0)
-        || (b.operator_review_seen_run || 0)-(a.operator_review_seen_run || 0)
-        || a.item_id.localeCompare(b.item_id);
-    });
-  }, [reviewCards,reviewFilter,reviewSearch]);
-  const trend = useMemo(() => networkTrend(mainCards, period, now), [mainCards, period]);
-  const inPeriod = useMemo(() => mainCards.filter((item) => {
-    if (period === null) return true;
-    const date = publishedTimestamp(item) || cardTimestamp(item);
-    return date > 0 && date >= now - period * 86_400_000 && date <= now + 86_400_000;
-  }), [mainCards, period]);
-  const recent = useMemo(() => inPeriod.filter((item) =>
-    item.queue !== "archive" && effectiveCategory(item) !== "REJECT" && item.queue !== "date_unknown" && publishedTimestamp(item) > 0
-  ), [inPeriod]);
-  const archive = useMemo(() => visible.filter((item) => {
-    if (archiveCategory !== "ALL" && effectiveCategory(item) !== archiveCategory) return false;
+  const visible = useMemo(() => {
+    const deleted = new Set(moderation.deleted);
+    return selectOperatorArchive(cards).filter((item) => !deleted.has(item.item_id));
+  }, [cards, moderation.deleted]);
+  const runs = useMemo(() => latestOperatorRuns(cards, completedRuns), [cards, completedRuns]);
+  const recent = useMemo(() => visible.filter((item) => runs.includes(operatorRun(item))), [visible, runs]);
+  const trend = useMemo(() => networkTrend(visible, period), [visible, period]);
+  const archive = useMemo(() => {
     const query = archiveQuery.trim().toLocaleLowerCase();
-    return !query || [item.title, item.text_excerpt, item.transcript_excerpt, item.source_url, item.item_id]
-      .some((value) => String(value || "").toLocaleLowerCase().includes(query));
-  }), [visible, archiveCategory, archiveQuery]);
-  const activeUrl = slots[activeSlot] || "";
+    return visible.filter((item) => !query || [
+      item.title, item.text_excerpt, item.transcript_excerpt, item.source_url, item.item_id,
+    ].some((value) => String(value || "").toLocaleLowerCase().includes(query)));
+  }, [visible, archiveQuery]);
+  const currentArchivePage = Math.min(archivePage, Math.max(0, Math.ceil(archive.length / 40) - 1));
   const selectedUrls = new Set(slots.filter(Boolean));
 
   function setSlot(index: number, url: string) {
@@ -460,10 +430,6 @@ export function NetworksView({ page, onPageChange, platform, onPlatformChange }:
     finally { setTranscribingBatch(false); }
   }
 
-  function showArchive(category: NetworkCategory | "ALL" = "ALL") {
-    setArchiveCategory(category); setArchivePage(0); setPage("archive");
-  }
-
   const renderCard = (item: NetworkCard) => <ClipCard key={item.item_id} item={item} be={be}
     checked={selectedUrls.has(item.source_url)} flagged={moderation.flagged.includes(item.item_id)}
     onToggle={toggleClip} onAdd={toggleClip} onFlag={toggleFlag} onDelete={removeClip} />;
@@ -499,9 +465,41 @@ export function NetworksView({ page, onPageChange, platform, onPlatformChange }:
       {error && <div className="notice error">{error}</div>}
       {loading && <div className="report-empty">{be ? "Чытаем лакальны архіў…" : "Загружаем локальный архив…"}</div>}
       {page === "home" && <div className="network-overview">
-        <section className="panel">
-          <div className="panel-head"><div><h3>{be ? "Дынаміка публікацый" : "Динамика публикаций"}</h3>
-            <p>{be ? "Унікальныя відэа з вядомай датай публікацыі; без тэматычнага падзелу." : "Уникальные видео с установленной датой публикации; без разделения по темам."}</p></div></div>
+        {runs.length > 0 && <small className="network-run-label">
+          {be ? "Запускі" : "Прогоны"} {runs.map((run) => `#${run}`).join(" · ")}
+        </small>}
+        {TIKTOK_SECTIONS.map((section) => {
+          const group = recent.filter((item) => networkOperatorSection(item) === section);
+          if (section === "review") {
+            group.sort((a, b) => operatorRun(b) - operatorRun(a) || compareOperatorReview(a, b));
+          }
+          return <section className="panel network-group" key={section}>
+            <div className="panel-head"><h3>{networkSectionName(section, be)}</h3></div>
+            {group.length > 0
+              ? <div className="network-card-list">{group.map(renderCard)}</div>
+              : !loading && <div className="report-empty">{be ? "Няма матэрыялаў." : "Нет материалов."}</div>}
+          </section>;
+        })}
+      </div>}
+      {page === "archive" && <div className="network-overview">
+        <section className="panel network-archive">
+          <div className="panel-head"><h3>{be ? "Архіў TikTok" : "Архив TikTok"}</h3></div>
+          <div className="network-archive-controls">
+            <input value={archiveQuery} onChange={(event) => { setArchiveQuery(event.target.value); setArchivePage(0); }}
+              placeholder={be ? "Пошук у архіве…" : "Поиск по архиву…"} aria-label={be ? "Пошук" : "Поиск"} />
+          </div>
+          <div className="network-card-list">{archive.slice(currentArchivePage * 40, (currentArchivePage + 1) * 40).map(renderCard)}</div>
+          {!loading && !archive.length && <div className="report-empty">{be ? "Карткі не знойдзены." : "Карточки не найдены."}</div>}
+          {archive.length > 40 && <div className="network-pagination">
+            <button className="secondary-button small-button" disabled={currentArchivePage === 0}
+              onClick={() => setArchivePage(currentArchivePage - 1)}>Назад</button>
+            <span>{currentArchivePage + 1} / {Math.ceil(archive.length / 40)}</span>
+            <button className="secondary-button small-button" disabled={(currentArchivePage + 1) * 40 >= archive.length}
+              onClick={() => setArchivePage(currentArchivePage + 1)}>{be ? "Далей" : "Далее"}</button>
+          </div>}
+        </section>
+        <details className="panel network-trend">
+          <summary>{be ? "Дынаміка публікацый" : "Динамика публикаций"}</summary>
           <div className="network-chart-controls">
             <div className="network-tabs" role="group" aria-label={be ? "Перыяд" : "Период"}>
               {([1, 7, 30, 365, null] as Array<number | null>).map((value) => <button key={String(value)}
@@ -515,95 +513,8 @@ export function NetworksView({ page, onPageChange, platform, onPlatformChange }:
             </div>
           </div>
           {trendKind === "bars" ? <TrendColumns data={trend} /> : <TrendLine data={trend} />}
-        </section>
-        <section className="network-groups">
-          {NETWORK_GROUPS.map((category) => {
-            const group = recent.filter((item) => effectiveCategory(item) === category);
-            if (!group.length) return null;
-            return <section className="panel network-group" key={category}>
-              <div className="panel-head"><div><h3>{networkCategoryName(category, be)}</h3>
-                <p>{be ? "Аўтаматычная ацэнка; адкрыйце арыгінал для праверкі." : "Предварительная оценка; проверьте оригинал ролика."}</p></div>
-                {group.length > 8 && <button className="ghost-button small-button" onClick={() => showArchive(category)}>
-                  {be ? "Усе ролікі" : "Все ролики"} ({group.length})
-                </button>}
-              </div>
-              <div className="network-card-list">{group.slice(0, 8).map(renderCard)}</div>
-            </section>;
-          })}
-          {!loading && recent.length === 0 && <section className="panel network-empty">
-            <p>{cards.length ? (be ? "За выбраны перыяд няма датаваных картак для асноўнай выдачы. Праверце архіў." : "За выбранный период нет датированных карточек для основной выдачи. Проверьте архив.")
-              : (be ? "Карткі пакуль не імпартаваны. Загрузіце networks_cards.jsonl або ZIP з вынікамі TikTok-Monitor." : "Карточки пока не импортированы. Загрузите networks_cards.jsonl или ZIP с результатами TikTok-Monitor.")}</p>
-          </section>}
-        </section>
+        </details>
       </div>}
-      {page === "review" && <section className="panel network-archive">
-        <div className="panel-head"><div>
-          <h3>{be ? "Чарга праверкі TikTok" : "Очередь проверки TikTok"}</h3>
-          <p>{be ? "Дадатковыя матэрыялы з операторскіх аўдытаў. Не ўключаны ў асноўны агляд, не падлічваюцца ў дынаміцы і патрабуюць праверкі першакрыніцы, даты і геаграфіі."
-            : "Дополнительные материалы из операторских аудитов. Не включены в основной обзор, не учитываются в диаграмме и требуют проверки первоисточника, даты и географии."}</p>
-        </div></div>
-        <div className="network-review-counts">
-          <span>{be ? "Gemini, адхілена фільтрамі" : "Gemini, заблокировано фильтрами"}: <b>{reviewGemini.length}</b></span>
-          <span>{be ? "Бліжэйшая чарга" : "Ближайшая очередь"}: <b>{reviewTriage.length}</b></span>
-        </div>
-        <div className="network-archive-controls">
-          <input value={reviewSearch} onChange={(event) => { setReviewSearch(event.target.value); setReviewPage(0); }}
-            placeholder={be ? "Пошук па чарзе…" : "Поиск по очереди…"} aria-label={be ? "Пошук" : "Поиск"} />
-          <select value={reviewFilter} onChange={(event) => { setReviewFilter(event.target.value); setReviewPage(0); }}>
-            <option value="ALL">{be ? "Усе матэрыялы" : "Все материалы"}</option>
-            <option value="gemini_veto">{be ? "Gemini: знята фільтрамі" : "Gemini: отклонено фильтрами"}</option>
-            <option value="triage">{be ? "Бліжэйшая чарга" : "Ближайшая очередь"}</option>
-            {["possible_false_reject","firsthand_audio_review","high_engagement_media","near_review",
-              "candidate","pending_media","weak_review"].map((lane) =>
-                <option key={lane} value={lane}>{reviewTriageLabel({ operator_review_triage_lane: lane } as NetworkCard, be)}</option>)}
-          </select>
-        </div>
-        {reviewFilter === "ALL" && !reviewSearch.trim() ? <div className="network-review-sections">
-          {[
-            { lane: "gemini_veto", items: reviewGemini,
-              title: be ? "Gemini: ухвалена ІІ, адхілена праверкамі" : "Одобрено ИИ, отклонено последующими проверками",
-              note: be ? "Кандыдаты толькі для праверкі аператарам; мадэль не даказвае арыгінальнасць скаргі." : "Только на рассмотрение оператору: положительный ответ модели ещё не доказывает оригинальность жалобы." },
-            { lane: "triage", items: reviewTriage,
-              title: be ? "Бліжэйшая чарга і магчымыя памылковыя REJECT" : "Ближайшая очередь и возможные ложные REJECT",
-              note: be ? "Недастатковыя доказы, чаканне медыя і праверка памылковых адхіленняў." : "Недостаточные доказательства, ожидание медиапроверки и контроль возможных ошибочных отказов." },
-          ].map((section) => <section className="network-review-section" key={section.lane}>
-            <div className="panel-head"><div><h3>{section.title} ({section.items.length})</h3><p>{section.note}</p></div>
-              {section.items.length>8 && <button className="secondary-button small-button" onClick={() => { setReviewFilter(section.lane); setReviewPage(0); }}>
-                {be ? "Паказаць усе" : "Показать все"}</button>}
-            </div>
-            <div className="network-card-list">{section.items.slice(0,8).map(renderCard)}</div>
-            {!section.items.length && <div className="report-empty">{be ? "Чарга пакуль пустая." : "Пока нет материалов этой очереди."}</div>}
-          </section>)}
-        </div> : <>
-          <div className="network-card-list">{reviewFiltered.slice(reviewPage*40,(reviewPage+1)*40).map(renderCard)}</div>
-          {!reviewFiltered.length && <div className="report-empty">{be ? "Матэрыялы гэтай чаргі пакуль не загружаны." : "Материалы этой очереди пока не загружены."}</div>}
-        </>}
-        {(reviewFilter !== "ALL" || reviewSearch.trim()) && reviewFiltered.length > 40 && <div className="network-pagination">
-          <button className="secondary-button small-button" disabled={reviewPage===0} onClick={() => setReviewPage(p=>p-1)}>{be ? "Назад" : "Назад"}</button>
-          <span>{reviewPage+1} / {Math.ceil(reviewFiltered.length/40)}</span>
-          <button className="secondary-button small-button" disabled={(reviewPage+1)*40>=reviewFiltered.length} onClick={() => setReviewPage(p=>p+1)}>{be ? "Далей" : "Далее"}</button>
-        </div>}
-      </section>}
-      {page === "archive" && <section className="panel network-archive">
-        <div className="panel-head"><div><h3>{be ? "Архіў відэа TikTok" : "Архив видео TikTok"}</h3>
-          <p>{be ? "Усе імпартаваныя ролікі, ад новых да старых; асобна захоўваюцца недатаваныя і выключаныя." : "Все импортированные ролики, сначала новые; сохраняются также недатированные и исключённые."}</p></div></div>
-        <div className="network-archive-controls">
-          <input value={archiveQuery} onChange={(event) => { setArchiveQuery(event.target.value); setArchivePage(0); }}
-            placeholder={be ? "Пошук у архіве…" : "Поиск по архиву…"} aria-label={be ? "Пошук" : "Поиск"} />
-          <select value={archiveCategory} onChange={(event) => { setArchiveCategory(event.target.value as NetworkCategory | "ALL"); setArchivePage(0); }}>
-            <option value="ALL">{be ? "Усе катэгорыі" : "Все категории"}</option>
-            {[...NETWORK_GROUPS, "REJECT" as NetworkCategory].map((category) =>
-              <option value={category} key={category}>{networkCategoryName(category, be)}</option>)}
-          </select>
-        </div>
-        <div className="network-card-list">{archive.slice(archivePage * 40, (archivePage + 1) * 40).map(renderCard)}</div>
-        {!archive.length && <div className="report-empty">{be ? "Карткі не знойдзены." : "Карточки не найдены."}</div>}
-        {archive.length > 40 && <div className="network-pagination">
-          <button className="secondary-button small-button" disabled={archivePage === 0} onClick={() => setArchivePage((p) => p - 1)}>{be ? "Назад" : "Назад"}</button>
-          <span>{archivePage + 1} / {Math.ceil(archive.length / 40)}</span>
-          <button className="secondary-button small-button" disabled={(archivePage + 1) * 40 >= archive.length} onClick={() => setArchivePage((p) => p + 1)}>{be ? "Далей" : "Далее"}</button>
-        </div>}
-      </section>}
       {page === "editor" && <NetworkEditorView slots={slots} setSlots={setSlots} sourceContext={sourceContext}
         onRemove={() => {}} transcribeSelected={() => void transcribeSelected()}
         batchBusy={transcribingBatch} batchRevision={batchRevision} />}

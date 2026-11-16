@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { importNetworkCards, mergeNetworkCards, networkTrend, isTikTokVideoUrl, safeTikTokPreview, effectiveCategory, includedInOperatorOverview, isNetworkOperatorReview, isNetworkOperatorVisible } from "../src/networks.ts";
+import { importNetworkCards, mergeNetworkCards, networkTrend, isTikTokVideoUrl, safeTikTokPreview, effectiveCategory, includedInOperatorOverview, isNetworkOperatorReview, isNetworkOperatorVisible,
+  networkOperatorSection, latestOperatorRuns, operatorRun, selectOperatorArchive } from "../src/networks.ts";
 
 const now = "2026-11-02T07:00:00Z";
 function card(id, category = "P2", date = "2026-11-02T05:00:00Z") {
@@ -223,4 +224,45 @@ test("old operator near-miss run cannot overwrite newer triage result", () => {
   const older={...newer,operator_review_seen_run:33,operator_review_triage_lane:"weak_review",
     generated_at:"2026-11-06T10:00:00Z"};
   assert.equal(mergeNetworkCards([newer],[older])[0].operator_review_triage_lane,"firsthand_audio_review");
+});
+
+
+test("operator archive caps old queues and follows the two completed runs, even an empty one", () => {
+  const confirmed = [
+    { ...card("7705000000000000001", "P1"), operator_reported_run: 41 },
+    { ...card("7705000000000000002", "P3"), operator_reported_run: 40 },
+    { ...card("7705000000000000003", "S"), operator_reported_run: 39 },
+  ];
+  const reviews = Array.from({ length: 14 }, (_, i) => ({
+    ...card(String(7705000000000000010n + BigInt(i)), "REVIEW", null),
+    included_in_current_overview: false, report_suppressed: true,
+    operator_review_lane: "triage", operator_review_seen_run: 41,
+    operator_review_triage_lane: "possible_false_reject", operator_review_score: i,
+  }));
+  const noise = { ...reviews[0], item_id: "tiktok:7705000000000000029",
+    operator_review_triage_lane: "pending_media", operator_review_score: 0 };
+  const older = { ...reviews[0], item_id: "tiktok:7705000000000000030", operator_review_seen_run: 40 };
+  const data = [...confirmed, ...reviews, noise, older];
+  const selected = selectOperatorArchive(data);
+  assert.deepEqual(confirmed.map(networkOperatorSection), ["appeals", "appeals", "complaints"]);
+  assert.equal(selected.filter((item) => networkOperatorSection(item) === "review" && operatorRun(item) === 41).length, 10);
+  assert.equal(selected.at(-1).item_id, older.item_id);
+  assert(!selected.includes(noise));
+  assert.deepEqual(latestOperatorRuns(data, [40, 42]), [42, 41]);
+});
+
+test("the precise producer shortlist takes precedence over stale triage in the same run", () => {
+  const review = { ...card("7705000000000000039", "REVIEW", null),
+    included_in_current_overview: false, report_suppressed: true,
+    operator_review_lane: "triage", operator_review_seen_run: 41,
+    operator_review_triage_lane: "possible_false_reject", operator_review_score: 20 };
+  const exact = { ...review, item_id: "tiktok:7705000000000000040",
+    operator_display_section: "review", operator_review_rank: 1 };
+  const confirmed = { ...card("7705000000000000041", "P2"),
+    operator_reported_run: 41, operator_display_section: "appeals" };
+  assert.deepEqual(selectOperatorArchive([review, exact, confirmed]), [confirmed, exact]);
+  assert.equal(networkOperatorSection(confirmed), "appeals");
+  assert.equal(networkTrend([confirmed, exact], null, Date.parse(now)).at(-1).count, 1);
+  assert.equal(mergeNetworkCards([exact], [{ ...exact, operator_display_section: undefined,
+    generated_at: "2026-11-17T01:00:00Z" }])[0].operator_display_section, "review");
 });
