@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { desktopApi } from "../api";
-import type { DashboardOverview, PeriodDays, PublicationSummary } from "../types";
+import type { DashboardOverview, PeriodDays, PublicationSummary, RunSummary } from "../types";
 import { useI18n } from "../i18n";
 import { PeriodSelector } from "../components/PeriodSelector";
 import { TopicTrendLines, TrendColumns, TrendLine } from "../components/Charts";
@@ -10,6 +10,7 @@ import { ResonancePanel } from "../components/ResonancePanel";
 import { PublicationCard } from "../components/PublicationCard";
 import { VisualStories } from "../components/VisualStories";
 import { localizeDataLabel } from "../dataLabels";
+import { RunSourcePublications } from "../components/RunSourcePublications";
 
 type TrendMode = "volume" | "line" | "topics" | "topics3d";
 type MonitorKey = "social_economic" | "lukashenko";
@@ -41,6 +42,7 @@ export function DashboardView({
   onPeriodChange,
   loading,
   onOpenArchive,
+  latestRun,
 }: {
   monitorKey: MonitorKey;
   data: DashboardOverview | null;
@@ -48,6 +50,7 @@ export function DashboardView({
   onPeriodChange: (value: PeriodDays) => void;
   loading: boolean;
   onOpenArchive: () => void;
+  latestRun?: RunSummary;
 }) {
   const { t, locale } = useI18n();
   const isLMonitor = monitorKey === "lukashenko";
@@ -138,9 +141,12 @@ export function DashboardView({
           </section>}
         </>}
       </article>
-{isLMonitor ? <>
+      {isLMonitor ? <>
         <ResonancePanel title={locale === "be" ? "Сюжэты" : "Сюжеты"} subtitle={locale === "be" ? "Асноўная публікацыя і спіс іншых крыніц, якія асвятлялі той жа сюжэт." : "Основная публикация и список других источников, освещавших тот же сюжет."} items={[]} stories={resonanceData?.stories ?? []} fallback={false} period={resonancePeriod} onPeriodChange={setResonancePeriod} />
-        <BreakdownPanel title={locale === "be" ? "Краіны паходжання крыніц" : "Страны происхождения источников"} subtitle={locale === "be" ? "Странавая прыналежнасць выданняў, якія апублікавалі матэрыялы. Схема паказвае маштаб кожнай краіны." : "Страновая принадлежность изданий, опубликовавших материалы. Схема показывает масштаб каждой страны."} data={geoData?.regionBreakdown ?? []} scheme="source_countries" initialMode="bars" controlsClassName="source-country-controls" period={geoPeriod} onPeriodChange={setGeoPeriod} />
+        <div className="l-monitor-country-column">
+          <BreakdownPanel title={locale === "be" ? "Краіны паходжання крыніц" : "Страны происхождения источников"} subtitle={locale === "be" ? "Странавая прыналежнасць выданняў, якія апублікавалі матэрыялы. Схема паказвае маштаб кожнай краіны." : "Страновая принадлежность изданий, опубликовавших материалы. Схема показывает масштаб каждой страны."} data={geoData?.regionBreakdown ?? []} scheme="source_countries" initialMode="bars" controlsClassName="source-country-controls" period={geoPeriod} onPeriodChange={setGeoPeriod} />
+          <RunSourcePublications key={latestRun?.id} run={latestRun} />
+        </div>
         <BreakdownPanel className="span-two" title={t("dashboard.sources")} subtitle={t("dashboard.sourcesHelp")} data={sourcesData?.sourceBreakdown ?? []} period={sourcesPeriod} onPeriodChange={setSourcesPeriod} sourceIcons />
       </> : <>
         <BreakdownPanel title={t("dashboard.topics")} subtitle={t("dashboard.topicsHelp")} data={topicsData?.categoryBreakdown ?? []} period={topicsPeriod} onPeriodChange={setTopicsPeriod} labelKind="category" />

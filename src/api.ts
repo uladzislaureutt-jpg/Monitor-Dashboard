@@ -7,6 +7,7 @@ import type {
   DashboardOverview,
   EditorialSource,
   ImportResult,
+  RunPublication,
   RunSummary,
   SourceSummary,
   SyncResult,
@@ -26,6 +27,8 @@ export const desktopApi = {
   activeMonitorKey: () => activeMonitorKey,
   stats: () => invoke<DatabaseStats>("get_database_stats", { monitorKey: activeMonitorKey }),
   runs: () => invoke<RunSummary[]>("list_runs", { monitorKey: activeMonitorKey }),
+  lMonitorRunPublications: (runId: number) =>
+    invoke<RunPublication[]>("list_l_monitor_run_publications", { runId }),
   importBundle: (path: string) =>
     invoke<ImportResult>("import_dashboard_bundle", { path }),
   readNetworksJsonl: (path: string) => invoke<string>("read_networks_jsonl", { path }),

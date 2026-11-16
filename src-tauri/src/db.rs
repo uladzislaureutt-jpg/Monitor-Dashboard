@@ -6,7 +6,7 @@ use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExten
 
 use crate::models::{
     ArchiveFacets, ArchivePage, CountPoint, DashboardOverview, DatabaseStats,
-    PublicationSummary, RunSummary, SourceSummary, StorySummary, TopicTrendPoint, SourceDiversitySummary, CoverageHealthSummary,
+    PublicationSummary, RunPublication, RunSummary, SourceSummary, StorySummary, TopicTrendPoint, SourceDiversitySummary, CoverageHealthSummary,
     ModerationFlagInput, ModerationExclusionInput, EditorialSource, EditorialEntity,
 };
 
@@ -150,7 +150,7 @@ pub fn list_runs(path: &Path, monitor_key: &str) -> Result<Vec<RunSummary>, Stri
             FROM runs r
             JOIN monitors m ON m.id = r.monitor_id
             WHERE m.monitor_key = ?1
-            ORDER BY COALESCE(r.started_at, r.imported_at) DESC, r.id DESC
+            ORDER BY COALESCE(datetime(r.started_at), datetime(r.imported_at)) DESC, r.id DESC
             "#,
         )
         .map_err(|e| format!("Не удалось подготовить список запусков: {e}"))?;
@@ -178,6 +178,36 @@ pub fn list_runs(path: &Path, monitor_key: &str) -> Result<Vec<RunSummary>, Stri
 
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Не удалось прочитать запуск: {e}"))
+}
+
+pub fn l_monitor_run_publications(path: &Path, run_id: i64) -> Result<Vec<RunPublication>, String> {
+    let conn = open_database(path)?;
+    let mut stmt = conn.prepare(r#"
+        SELECT mi.id, NULLIF(TRIM(s.canonical_name), ''), d.title, d.url
+        FROM run_items ri
+        JOIN runs r ON r.id = ri.run_id
+        JOIN monitors m ON m.id = r.monitor_id
+        JOIN monitor_items mi ON mi.id = ri.monitor_item_id AND mi.monitor_id = m.id
+        JOIN documents d ON d.id = mi.document_id
+        LEFT JOIN sources s ON s.id = d.source_id
+        WHERE ri.run_id = ?1 AND m.monitor_key = 'lukashenko'
+          AND COALESCE(r.dry_run, 0) = 0
+          AND NOT EXISTS (
+              SELECT 1 FROM moderation_exclusions mx
+              WHERE mx.monitor_key = m.monitor_key AND mx.document_uid = d.document_uid
+          )
+        ORDER BY datetime(d.published_at) DESC, mi.id DESC
+    "#).map_err(|e| format!("Не удалось подготовить публикации запуска: {e}"))?;
+    let rows = stmt.query_map(params![run_id], |row| {
+        Ok(RunPublication {
+            id: row.get(0)?,
+            source: row.get(1)?,
+            title: row.get(2)?,
+            url: row.get(3)?,
+        })
+    }).map_err(|e| format!("Не удалось прочитать публикации запуска: {e}"))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Не удалось собрать публикации запуска: {e}"))
 }
 
 pub fn existing_run(

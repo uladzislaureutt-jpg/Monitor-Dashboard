@@ -163,6 +163,14 @@ pub struct RunSummary {
 }
 
 #[derive(Debug, Serialize)]
+pub struct RunPublication {
+    pub id: i64,
+    pub source: Option<String>,
+    pub title: String,
+    pub url: String,
+}
+
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseStats {
     pub database_path: String,

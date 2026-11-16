@@ -67,7 +67,7 @@ function ClipCard({ item, be, checked, flagged, decision, moderationBusy, onTogg
       <input type="checkbox" checked={checked} onChange={() => onToggle(item)}
         aria-label={(be ? "Выбраць відэа " : "Выбрать видео ") + (item.title || item.item_id)} />
     </label>
-    {preview && <img className="network-clip-preview" src={preview} alt={be ? "Мініяцюра TikTok" : "Миниатюра TikTok"}
+    {preview && <img key={preview} className="network-clip-preview" src={preview} alt={be ? "Мініяцюра TikTok" : "Миниатюра TikTok"}
       loading="lazy" decoding="async" referrerPolicy="no-referrer"
       onError={(event) => { event.currentTarget.style.display = "none"; }} />}
     <div className="network-clip-body">
