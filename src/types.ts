@@ -259,6 +259,8 @@ export type WorkroomMessage = {
   kind: "note" | "announcement";
   authorId: string;
   authorName: string;
+  recipientId?: string;
+  readAt?: string | null;
   text: string;
   publicationTitle: string | null;
   publicationUrl: string | null;

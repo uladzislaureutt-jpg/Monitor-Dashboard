@@ -4,7 +4,7 @@
  * Transcription drafts remain intentionally device-local.
  */
 import { ensureWorkroomSession, loadWorkroomConfig, loadWorkroomSession } from "./workroom";
-import { isNetworkOperatorVisible, selectOperatorArchive, type NetworkCard, type NetworkModeration } from "./networks";
+import { isNetworkOperatorVisible, selectOperatorArchive, type NetworkCard, type NetworkModeration, type TikTokMoveSection } from "./networks";
 import { cloudModerationToLocal, type CloudModerationRow } from "./tiktokCloudCore";
 
 type CloudCardRow = { item_id: string; card: NetworkCard };
@@ -60,7 +60,7 @@ export async function downloadTikTokCloud(): Promise<{
 }> {
   const [cardRows, moderationRows] = await Promise.all([
     pagedRead<CloudCardRow>("tiktok_network_cards", "item_id,card"),
-    pagedRead<CloudModerationRow>("tiktok_network_moderation", "item_id,flagged,deleted"),
+    pagedRead<CloudModerationRow>("tiktok_network_moderation", "item_id,flagged,deleted,operator_section"),
   ]);
   const cards = cardRows.map((row) => row.card);
   if (cards.some((card) => !card || card.platform !== "tiktok" || !isNetworkOperatorVisible(card))) {
@@ -105,4 +105,14 @@ export async function applyTikTokCloudModeration(
     throw new Error("TIKTOK_CLOUD_MODERATION_INVALID_RESPONSE");
   }
   return row;
+}
+
+export async function moveTikTokReviewCard(itemId: string, section: TikTokMoveSection | null): Promise<void> {
+  const result = await request("rpc/tiktok_move_review_card", {
+    method: "POST",
+    body: JSON.stringify({ p_item_id: itemId, p_section: section }),
+  }) as { item_id?: string; operator_section?: string | null } | null;
+  if (result?.item_id !== itemId || result.operator_section !== section) {
+    throw new Error("TIKTOK_CLOUD_MOVE_INVALID_RESPONSE");
+  }
 }

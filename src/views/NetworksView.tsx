@@ -5,13 +5,13 @@ import { ensureWorkroomSession, loadWorkroomConfig, loadWorkroomSession } from "
 import { useI18n } from "../i18n";
 import { TrendColumns, TrendLine } from "../components/Charts";
 import { NetworkEditorView } from "./NetworkEditorView";
-import { applyTikTokCloudModeration, downloadTikTokCloud, migrateTikTokLocalModeration, uploadTikTokFinalCards } from "../tiktokCloudSync";
+import { applyTikTokCloudModeration, downloadTikTokCloud, migrateTikTokLocalModeration, moveTikTokReviewCard, uploadTikTokFinalCards } from "../tiktokCloudSync";
 import { contextFromCard, normalizeSourceContext, rememberSourceContext, type TikTokSourceContextMap } from "../networkEditorMetadata";
 import {
   compareOperatorReview, importNetworkCards, isTikTokVideoUrl, latestOperatorRuns, mergeNetworkCards,
   networkOperatorSection, networkSectionName, networkTrend, normalizeNetworkModeration,
   operatorReviewLabel, operatorRun, publishedTimestamp, safeTikTokPreview, selectOperatorArchive,
-  TIKTOK_SECTIONS, type NetworkCard, type NetworkModeration,
+  TIKTOK_SECTIONS, type NetworkCard, type NetworkModeration, type TikTokMoveSection,
 } from "../networks";
 
 const CARDS_STORAGE_KEY = "networks.tiktok.cards.v1";
@@ -47,13 +47,16 @@ function displayDate(raw: string | null | undefined, locale: string): string {
   });
 }
 
-function ClipCard({ item, be, checked, flagged, onToggle, onFlag, onDelete, onAdd }: {
+function ClipCard({ item, be, checked, flagged, decision, moderationBusy, onToggle, onFlag, onDelete, onAdd, onMove }: {
   item: NetworkCard; be: boolean; checked: boolean; flagged: boolean;
+  decision?: TikTokMoveSection; moderationBusy: boolean;
   onToggle: (item: NetworkCard) => void;
   onFlag: (item: NetworkCard) => void;
   onDelete: (item: NetworkCard) => void;
   onAdd: (item: NetworkCard) => void;
+  onMove: (item: NetworkCard, section: TikTokMoveSection | null) => void;
 }) {
+  const section = networkOperatorSection(item, decision);
   const date = publishedTimestamp(item) ? item.publication.published_at : null;
   const run = operatorRun(item);
   const preview = safeTikTokPreview(item.preview_image_url);
@@ -71,11 +74,11 @@ function ClipCard({ item, be, checked, flagged, onToggle, onFlag, onDelete, onAd
       <div className="network-clip-top">
         <span>{displayDate(date, be ? "be" : "ru")}</span>
         {run > 0 && <span>#{run}</span>}
-        {item.review_status === "operator_confirmed" && <span>{be ? "Пацверджана аператарам" : "Подтверждено оператором"}</span>}
+        {(decision || item.review_status === "operator_confirmed") && <span>{be ? "Пацверджана аператарам" : "Подтверждено оператором"}</span>}
       </div>
       <strong className="network-clip-title">{item.title || (be ? "Відэа без загалоўка" : "Видео без заголовка")}</strong>
       {shortText && <p className="network-clip-excerpt">{shortText.slice(0, 320)}{shortText.length > 320 ? "…" : ""}</p>}
-      {networkOperatorSection(item) === "review" && <small className="network-review-note">
+      {section === "review" && <small className="network-review-note">
         {operatorReviewLabel(item, be)}
       </small>}
       <div className="network-clip-bottom">
@@ -87,10 +90,18 @@ function ClipCard({ item, be, checked, flagged, onToggle, onFlag, onDelete, onAd
       <div className="network-clip-controls">
         <button className="secondary-button small-button" onClick={() => onAdd(item)}
           disabled={checked}>{checked ? (be ? "У аглядзе" : "В обзоре") : be ? "У агляд" : "В обзор"}</button>
-        <button className={flagged ? "network-flag active" : "network-flag"} onClick={() => onFlag(item)}
+        <button className={flagged ? "network-flag active" : "network-flag"} onClick={() => onFlag(item)} disabled={moderationBusy}
           title={be ? "Чырвоны сцяжок: пазначыць / зняць" : "Красный флажок: поставить / снять"}
           aria-label={be ? "Чырвоны сцяжок" : "Красный флажок"} aria-pressed={flagged}>⚑</button>
-        <button className="ghost-button small-button network-delete" onClick={() => onDelete(item)}
+        {section === "review" && <>
+          <button className="secondary-button small-button" disabled={moderationBusy}
+            onClick={() => onMove(item, "appeals")}>{be ? "У звароты" : "В обращения"}</button>
+          <button className="secondary-button small-button" disabled={moderationBusy}
+            onClick={() => onMove(item, "complaints")}>{be ? "У скаргі" : "В жалобы"}</button>
+        </>}
+        {decision && <button className="ghost-button small-button" disabled={moderationBusy}
+          onClick={() => onMove(item, null)}>{be ? "Адмяніць перанос" : "Отменить перенос"}</button>}
+        <button className="ghost-button small-button network-delete" disabled={moderationBusy} onClick={() => onDelete(item)}
           title={be ? "Выдаліць ролік з Monitor" : "Удалить ролик из Monitor"}>{be ? "Выдаліць" : "Удалить"}</button>
       </div>
     </div>
@@ -160,7 +171,7 @@ export function NetworksView({ page, platform, onPlatformChange }: {
 
   /** Reconcile both computers against the same server data and tombstones. */
   const syncCloud = useCallback(async () => {
-    if (cloudLock.current) return;
+    if (cloudLock.current || moderationBusyRef.current) return;
     cloudLock.current = true;
     setCloudSyncing(true);
     try {
@@ -269,7 +280,7 @@ export function NetworksView({ page, platform, onPlatformChange }: {
   }, []);
 
   async function updateModerationCloud(item: NetworkCard, change: { flagged?: boolean; delete?: boolean }) {
-    if (moderationBusyRef.current) return;
+    if (moderationBusyRef.current || cloudLock.current) return;
     moderationBusyRef.current = true;
     setModerationBusy(true);
     try {
@@ -279,7 +290,7 @@ export function NetworksView({ page, platform, onPlatformChange }: {
       if (result.deleted) deleted.add(item.item_id);
       if (result.flagged && !result.deleted) flagged.add(item.item_id);
       else flagged.delete(item.item_id);
-      const next: NetworkModeration = { flagged: [...flagged], deleted: [...deleted] };
+      const next: NetworkModeration = { ...old, flagged: [...flagged], deleted: [...deleted] };
       await desktopApi.setSetting(MODERATION_KEY, JSON.stringify(next));
       moderationRef.current = next;
       setModeration(next);
@@ -291,6 +302,28 @@ export function NetworksView({ page, platform, onPlatformChange }: {
       setError((be ? "Не атрымалася захаваць на ўсіх прыладах: " : "Не удалось сохранить на всех устройствах: ") + String(reason));
     } finally {
       moderationBusyRef.current = false; setModerationBusy(false);
+    }
+  }
+  async function moveClip(item: NetworkCard, section: TikTokMoveSection | null) {
+    if (moderationBusyRef.current || cloudLock.current) return;
+    moderationBusyRef.current = true;
+    setModerationBusy(true);
+    setError("");
+    try {
+      await uploadTikTokFinalCards([item]);
+      await moveTikTokReviewCard(item.item_id, section);
+      const sections = { ...moderationRef.current.sections };
+      if (section) sections[item.item_id] = section;
+      else delete sections[item.item_id];
+      const next = { ...moderationRef.current, sections };
+      moderationRef.current = next;
+      setModeration(next);
+      await desktopApi.setSetting(MODERATION_KEY, JSON.stringify(next));
+    } catch (reason) {
+      setError((be ? "Не атрымалася перанесці картку: " : "Не удалось перенести карточку: ") + String(reason));
+    } finally {
+      moderationBusyRef.current = false;
+      setModerationBusy(false);
     }
   }
   function toggleFlag(item: NetworkCard) {
@@ -327,7 +360,7 @@ export function NetworksView({ page, platform, onPlatformChange }: {
   }, [cards, moderation.deleted]);
   const runs = useMemo(() => latestOperatorRuns(cards, completedRuns), [cards, completedRuns]);
   const recent = useMemo(() => visible.filter((item) => runs.includes(operatorRun(item))), [visible, runs]);
-  const trend = useMemo(() => networkTrend(visible, period), [visible, period]);
+  const trend = useMemo(() => networkTrend(visible, period, Date.now(), moderation.sections), [visible, period, moderation.sections]);
   const archive = useMemo(() => {
     const query = archiveQuery.trim().toLocaleLowerCase();
     return visible.filter((item) => !query || [
@@ -432,7 +465,8 @@ export function NetworksView({ page, platform, onPlatformChange }: {
 
   const renderCard = (item: NetworkCard) => <ClipCard key={item.item_id} item={item} be={be}
     checked={selectedUrls.has(item.source_url)} flagged={moderation.flagged.includes(item.item_id)}
-    onToggle={toggleClip} onAdd={toggleClip} onFlag={toggleFlag} onDelete={removeClip} />;
+    decision={moderation.sections?.[item.item_id]} moderationBusy={moderationBusy || cloudSyncing}
+    onToggle={toggleClip} onAdd={toggleClip} onFlag={toggleFlag} onDelete={removeClip} onMove={moveClip} />;
 
   return <div className="view-stack networks-view">
     <section className="view-heading">
@@ -469,7 +503,7 @@ export function NetworksView({ page, platform, onPlatformChange }: {
           {be ? "Запускі" : "Прогоны"} {runs.map((run) => `#${run}`).join(" · ")}
         </small>}
         {TIKTOK_SECTIONS.map((section) => {
-          const group = recent.filter((item) => networkOperatorSection(item) === section);
+          const group = recent.filter((item) => networkOperatorSection(item, moderation.sections?.[item.item_id]) === section);
           if (section === "review") {
             group.sort((a, b) => operatorRun(b) - operatorRun(a) || compareOperatorReview(a, b));
           }

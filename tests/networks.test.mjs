@@ -244,7 +244,7 @@ test("operator archive caps old queues and follows the two completed runs, even 
   const older = { ...reviews[0], item_id: "tiktok:7705000000000000030", operator_review_seen_run: 40 };
   const data = [...confirmed, ...reviews, noise, older];
   const selected = selectOperatorArchive(data);
-  assert.deepEqual(confirmed.map(networkOperatorSection), ["appeals", "appeals", "complaints"]);
+  assert.deepEqual(confirmed.map((item) => networkOperatorSection(item)), ["appeals", "appeals", "complaints"]);
   assert.equal(selected.filter((item) => networkOperatorSection(item) === "review" && operatorRun(item) === 41).length, 10);
   assert.equal(selected.at(-1).item_id, older.item_id);
   assert(!selected.includes(noise));
@@ -265,4 +265,22 @@ test("the precise producer shortlist takes precedence over stale triage in the s
   assert.equal(networkTrend([confirmed, exact], null, Date.parse(now)).at(-1).count, 1);
   assert.equal(mergeNetworkCards([exact], [{ ...exact, operator_display_section: undefined,
     generated_at: "2026-11-17T01:00:00Z" }])[0].operator_display_section, "review");
+});
+
+test("operator moves a review card without changing its run, evidence or archive entry", () => {
+  const item = { ...card("7705100000000000001", "REJECT"),
+    operator_review_lane: "triage", operator_review_seen_run: 41,
+    operator_review_rank: 1, operator_display_section: "review",
+    included_in_current_overview: false, report_suppressed: true };
+  const decided = cloudModerationToLocal([{ item_id: item.item_id, flagged: true, deleted: false,
+    operator_section: "appeals" }]);
+  assert.equal(networkOperatorSection(item, decided.sections[item.item_id]), "appeals");
+  assert.equal(networkOperatorSection(item, "complaints"), "complaints");
+  assert.equal(networkOperatorSection(item), "review");
+  assert.equal(operatorRun(item), 41);
+  assert.equal(item.category, "REJECT");
+  assert.deepEqual(selectOperatorArchive([item]), [item]);
+  assert.equal(networkTrend([item], null, Date.parse(now), decided.sections).at(-1).count, 1);
+  assert.equal(cloudModerationToLocal([{ item_id: item.item_id, flagged: true, deleted: true,
+    operator_section: "appeals" }]).sections, undefined);
 });
