@@ -2,6 +2,7 @@
 export type NetworkCategory = "P1" | "P2" | "P3" | "G" | "S" | "REVIEW" | "REJECT";
 export type NetworkQueue = "candidate" | "needs_review" | "date_unknown" | "archive";
 export type TikTokSection = "appeals" | "complaints" | "review";
+export type TikTokMoveSection = Exclude<TikTokSection, "review">;
 export type NetworkReviewLane = "main" | "gemini_veto" | "triage";
 export type NetworkCard = {
   schema_version: "networks.v1";
@@ -202,7 +203,8 @@ export function networkSectionName(section: TikTokSection, be: boolean): string 
   return SECTION_LABELS[section][be ? 1 : 0];
 }
 
-export function networkOperatorSection(card: NetworkCard): TikTokSection | null {
+export function networkOperatorSection(card: NetworkCard, decision?: TikTokMoveSection): TikTokSection | null {
+  if ((decision === "appeals" || decision === "complaints") && isNetworkOperatorVisible(card)) return decision;
   if (isNetworkOperatorReview(card)) return "review";
   if (!includedInOperatorOverview(card)) return null;
   const category = effectiveCategory(card);
@@ -289,22 +291,24 @@ export function operatorReviewLabel(card: NetworkCard, be: boolean): string {
   }
 }
 
-export type NetworkModeration = { flagged: string[]; deleted: string[] };
+export type NetworkModeration = { flagged: string[]; deleted: string[]; sections?: Record<string, TikTokMoveSection> };
 export const EMPTY_NETWORK_MODERATION: NetworkModeration = { flagged: [], deleted: [] };
 export function normalizeNetworkModeration(raw: unknown): NetworkModeration {
   if (!raw || typeof raw !== "object") return { ...EMPTY_NETWORK_MODERATION };
   const m = raw as Partial<NetworkModeration>;
   const clean = (value: unknown) => Array.isArray(value)
     ? [...new Set(value.filter((item): item is string => typeof item === "string" && /^tiktok:\d+$/.test(item)))].slice(0, 20000) : [];
-  return { flagged: clean(m.flagged), deleted: clean(m.deleted) };
+  const sections = Object.fromEntries(Object.entries(m.sections ?? {}).filter(([id, section]) =>
+    /^tiktok:\d+$/.test(id) && (section === "appeals" || section === "complaints")));
+  return { flagged: clean(m.flagged), deleted: clean(m.deleted), sections };
 }
 
-export function networkTrend(cards: NetworkCard[], days: number | null, now = Date.now()): Array<{ label: string; count: number }> {
+export function networkTrend(cards: NetworkCard[], days: number | null, now = Date.now(), decisions?: NetworkModeration["sections"]): Array<{ label: string; count: number }> {
   const counts = new Map<string, number>();
   const min = days === null ? -Infinity : now - days * 86_400_000;
   const max = now + 86_400_000;
   for (const card of cards) {
-    const section = networkOperatorSection(card);
+    const section = networkOperatorSection(card, decisions?.[card.item_id]);
     if (!section || section === "review") continue;
     const time = publishedTimestamp(card);
     if (time <= 0 || time < min || time > max) continue;

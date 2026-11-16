@@ -34,12 +34,12 @@ function configScope(config: WorkroomConfig) {
   return `${normalizeBaseUrl(config.url)}::${config.roomKey.trim() || "sep-monitor"}`;
 }
 
-function cacheKey(config: WorkroomConfig) {
-  return `${CACHE_PREFIX}:${configScope(config)}`;
+function cacheKey(config: WorkroomConfig, userId: string) {
+  return `${CACHE_PREFIX}:${configScope(config)}:${userId}`;
 }
 
-function readKey(config: WorkroomConfig) {
-  return `${READ_PREFIX}:${configScope(config)}`;
+function readKey(config: WorkroomConfig, userId: string) {
+  return `${READ_PREFIX}:${configScope(config)}:${userId}`;
 }
 
 function parseJson<T>(raw: string | null): T | null {
@@ -120,20 +120,22 @@ export function clearWorkroomSession() {
   void persistentDelete(PERSIST_SESSION_KEY);
 }
 
-export function loadCachedMessages(config: WorkroomConfig): WorkroomMessage[] {
-  return parseJson<WorkroomMessage[]>(localStorage.getItem(cacheKey(config))) ?? [];
+export function loadCachedMessages(config: WorkroomConfig, userId?: string): WorkroomMessage[] {
+  return userId ? parseJson<WorkroomMessage[]>(localStorage.getItem(cacheKey(config, userId))) ?? [] : [];
 }
 
-function saveCachedMessages(config: WorkroomConfig, messages: WorkroomMessage[]) {
-  localStorage.setItem(cacheKey(config), JSON.stringify(messages.slice(0, 120)));
+function saveCachedMessages(config: WorkroomConfig, userId: string, messages: WorkroomMessage[]) {
+  localStorage.setItem(cacheKey(config, userId), JSON.stringify(messages.slice(0, 120)));
 }
 
-export function loadLastRead(config: WorkroomConfig): string {
-  return localStorage.getItem(readKey(config)) ?? "";
+export function loadLastRead(config: WorkroomConfig, userId: string): string {
+  return localStorage.getItem(readKey(config, userId)) ?? "";
 }
 
-export function markWorkroomRead(config: WorkroomConfig, at: string) {
-  localStorage.setItem(readKey(config), at);
+export function markWorkroomRead(config: WorkroomConfig, userId: string, at: string) {
+  if (Date.parse(at) > (Date.parse(loadLastRead(config, userId)) || 0)) {
+    localStorage.setItem(readKey(config, userId), at);
+  }
 }
 
 function assertConfigured(config: WorkroomConfig) {
@@ -159,6 +161,8 @@ function messageFromRow(row: Record<string, unknown>): WorkroomMessage {
     pinned: Boolean(row.pinned),
     createdAt: String(row.created_at ?? ""),
     updatedAt: String(row.updated_at ?? row.created_at ?? ""),
+    recipientId: row.recipient_id ? String(row.recipient_id) : undefined,
+    readAt: row.read_at ? String(row.read_at) : null,
   };
 }
 
@@ -331,17 +335,85 @@ export async function updateWorkroomProfileLocale(config: WorkroomConfig, sessio
   return active;
 }
 
-export async function listWorkroomMessages(config: WorkroomConfig, session: WorkroomSession) {
+export async function listWorkroomMessages(config: WorkroomConfig, session: WorkroomSession, signal?: AbortSignal) {
   const params = new URLSearchParams({
     select: "id,room_key,kind,author_id,author_name,text,publication_title,publication_url,pinned,created_at,updated_at",
     room_key: `eq.${config.roomKey}`,
-    order: "pinned.desc,created_at.desc",
+    order: "created_at.desc,id.desc",
     limit: "100",
   });
-  const { payload, session: active } = await apiRequest(config, session, `/rest/v1/workroom_messages?${params.toString()}`);
+  const { payload, session: active } = await apiRequest(config, session, `/rest/v1/workroom_messages?${params.toString()}`, { signal });
   const messages = (Array.isArray(payload) ? payload : []).map((row) => messageFromRow(row as Record<string, unknown>));
-  saveCachedMessages(config, messages);
+  saveCachedMessages(config, active.userId, messages);
   return { messages, session: active };
+}
+
+export type WorkroomContact = { id: string; name: string; canReceive: boolean };
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function listWorkroomContacts(config: WorkroomConfig, session: WorkroomSession, signal: AbortSignal) {
+  const { payload } = await apiRequest(config, session, "/rest/v1/rpc/workroom_list_contacts", {
+    method: "POST", body: JSON.stringify({ p_room_key: config.roomKey }), signal,
+  });
+  return (Array.isArray(payload) ? payload : []).map((row): WorkroomContact => ({
+    id: String(row.id), name: String(row.display_name), canReceive: row.can_receive === true,
+  }));
+}
+
+export async function listWorkroomUnread(config: WorkroomConfig, session: WorkroomSession, signal: AbortSignal) {
+  const { payload } = await apiRequest(config, session, "/rest/v1/rpc/workroom_unread_counts", {
+    method: "POST", body: JSON.stringify({
+      p_room_key: config.roomKey, p_public_since: loadLastRead(config, session.userId) || null,
+    }), signal,
+  });
+  const counts = { common: 0, contacts: {} as Record<string, number> };
+  for (const row of Array.isArray(payload) ? payload : []) {
+    const count = Number(row.unread_count) || 0;
+    if (row.author_id === null) counts.common = count;
+    else counts.contacts[String(row.author_id)] = count;
+  }
+  return counts;
+}
+
+export async function listWorkroomConversation(
+  config: WorkroomConfig, session: WorkroomSession, contact: string, signal: AbortSignal,
+) {
+  if (!UUID.test(contact) || !UUID.test(session.userId)) throw new Error("WORKROOM_CONTACT_INVALID");
+  const user = session.userId;
+  const params = new URLSearchParams({
+    select: "id,room_key,author_id,recipient_id,text,created_at,read_at",
+    room_key: `eq.${config.roomKey}`,
+    or: `(and(author_id.eq.${user},recipient_id.eq.${contact}),and(author_id.eq.${contact},recipient_id.eq.${user}))`,
+    order: "created_at.desc,id.desc", limit: "100",
+  });
+  const { payload } = await apiRequest(config, session, `/rest/v1/workroom_private_messages?${params}`, { signal });
+  return (Array.isArray(payload) ? payload : []).map((row) => messageFromRow(row));
+}
+
+export async function sendWorkroomPrivateMessage(
+  config: WorkroomConfig, session: WorkroomSession, recipientId: string, text: string,
+) {
+  if (!UUID.test(recipientId) || recipientId === session.userId) throw new Error("WORKROOM_CONTACT_INVALID");
+  return apiRequest(config, session, "/rest/v1/workroom_private_messages", {
+    method: "POST", headers: { Prefer: "return=minimal" },
+    body: JSON.stringify({ room_key: config.roomKey, recipient_id: recipientId, text: text.trim() }),
+  });
+}
+
+export async function markConversationRead(
+  config: WorkroomConfig, session: WorkroomSession, messages: WorkroomMessage[], signal: AbortSignal,
+) {
+  const newest = messages.find((item) => item.recipientId === session.userId);
+  if (!newest || !UUID.test(newest.authorId) || !Number.isFinite(Date.parse(newest.createdAt))) return;
+  const params = new URLSearchParams({
+    room_key: `eq.${config.roomKey}`, author_id: `eq.${newest.authorId}`,
+    recipient_id: `eq.${session.userId}`, read_at: "is.null",
+    created_at: `lte.${newest.createdAt}`,
+  });
+  await apiRequest(config, session, `/rest/v1/workroom_private_messages?${params}`, {
+    method: "PATCH", headers: { Prefer: "return=minimal" },
+    body: JSON.stringify({ read_at: new Date().toISOString() }), signal,
+  });
 }
 
 export async function createWorkroomMessage(

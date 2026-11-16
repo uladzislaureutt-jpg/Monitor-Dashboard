@@ -1491,3 +1491,10 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 .network-run-label,.network-review-note{color:var(--muted);font-size:11px}
 .network-review-note{display:block;margin-top:6px}
 .network-trend>summary{cursor:pointer;font-weight:600}
+
+.workroom-nav.has-unread { background: #a85524; border-color: #f2aa71; color: #fffaf3; }
+.workroom-nav.has-unread:hover, .workroom-nav.has-unread.active { background: #99471b; }
+.workroom-nav.has-unread .workroom-unread { background: #ffdfbc; box-shadow: none; font-size: 10px; }
+.workroom-conversation-picker { display: grid; gap: 5px; margin: 0 12px 10px; }
+.workroom-conversation-picker label, .workroom-compose > label { color: var(--ink); font-size: 11px; font-weight: 600; }
+.workroom-conversation-picker select { width: 100%; min-width: 0; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: #fffdfa; color: var(--ink); }
