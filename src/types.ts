@@ -17,6 +17,13 @@ export type RunSummary = {
   sourcesInCoverage: number;
 };
 
+export type RunPublication = {
+  id: number;
+  source: string | null;
+  title: string;
+  url: string;
+};
+
 export type DatabaseStats = {
   databasePath: string;
   databaseSizeBytes: number;

@@ -17,7 +17,7 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 
 use models::{
     ArchiveFacets, ArchivePage, DashboardOverview, DatabaseStats, EditorialSource, ImportResult, PublicationSummary, RunSummary,
-    SourceSummary, ModerationFlagInput, ModerationExclusionInput,
+    RunPublication, SourceSummary, ModerationFlagInput, ModerationExclusionInput,
 };
 
 #[derive(Clone)]
@@ -57,6 +57,13 @@ fn list_runs(state: State<'_, AppState>, monitor_key: String) -> Result<Vec<RunS
     db::list_runs(&state.db_path, &monitor_key)
 }
 
+#[tauri::command]
+fn list_l_monitor_run_publications(
+    state: State<'_, AppState>,
+    run_id: i64,
+) -> Result<Vec<RunPublication>, String> {
+    db::l_monitor_run_publications(&state.db_path, run_id)
+}
 
 /** Import the public metadata-only networks.v1 export without invoking scrapers. */
 #[tauri::command]
@@ -668,6 +675,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_database_stats,
             list_runs,
+            list_l_monitor_run_publications,
             import_dashboard_bundle,
             read_networks_jsonl,
             get_dashboard_overview,

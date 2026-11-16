@@ -89,6 +89,7 @@ export default function App() {
   const [networksPlatform, setNetworksPlatform] = useState<NetworkPlatform>("tiktok");
   const [stats, setStats] = useState<DatabaseStats | null>(null);
   const [runs, setRuns] = useState<RunSummary[]>([]);
+  const latestLMonitorRun = runs.find((run) => run.monitorKey === "lukashenko" && run.dryRun !== true);
   const [dashboard, setDashboard] = useState<DashboardOverview | null>(null);
   const [period, setPeriod] = useState<PeriodDays>(30);
   const [dashboardLoading, setDashboardLoading] = useState(false);
@@ -343,7 +344,7 @@ export default function App() {
         <p>{locale === "be" ? "Маніторынг часова недаступны для аператараў." : "Мониторинг временно недоступен для операторов."}</p>
       </section>
     ) : <>
-      {view === "dashboard" && <DashboardView key={monitorKey} monitorKey={monitorKey} data={dashboard} period={period} onPeriodChange={setPeriod} loading={dashboardLoading} onOpenArchive={() => navigate("archive")} />}
+      {view === "dashboard" && <DashboardView key={monitorKey} monitorKey={monitorKey} data={dashboard} period={period} onPeriodChange={setPeriod} loading={dashboardLoading} onOpenArchive={() => navigate("archive")} latestRun={latestLMonitorRun} />}
       {view === "archive" && <ArchiveView key={monitorKey} initialQuery={archiveSeed} />}
       {view === "report" && <ReportView key={monitorKey} />}
       {view === "analytics" && <AnalyticsView key={monitorKey} data={dashboard} period={period} onPeriodChange={setPeriod} />}
