@@ -123,6 +123,9 @@ Deno.test("date overlap does not admit an unrelated search result", async () => 
   const task = "Найди первые сообщения МЧС и белорусских СМИ о последствиях шквала 14 июля 2024 года в Гомельской области.";
   expect(matchesEvent("В Кыргызстане из-за дождя затопило рынок", "14 июля. По данным МЧС.", task, []), false);
   expect(matchesEvent("В Гомеле повалены сотни деревьев", "Последствия шквала устраняют коммунальные службы.", task, []), true);
+  expect(matchesEvent("Последствия ливня в Петербурге", "МЧС подсчитало упавшие деревья. Шторм ожидали и в Москве.",
+    "Шквал и ливень в Москве 20 июня 2024 года", []), false);
+  expect(matchesEvent("Последствия непогоды на Гомельщине", "Сводка от спасателей", task, []), true);
   expect(matchesEvent("Нутрициолог предупредила о вреде холодного кофе",
     "Надо учитывать состояние здоровья и не пить кофе слишком быстро. Другие новости: сильное землетрясение на Камчатке.",
     "Найди ранние сообщения о сильном землетрясении у Камчатки и предупреждении о возможном цунами", []), false);
@@ -149,4 +152,65 @@ Deno.test("a direct attribution can restore a previously checked candidate witho
     });
   expect(checked, [original, copy]);
   expect(result.entries.find((entry) => entry.url === copy)?.citations.map((edge) => edge.sourceId), [result.earliestId]);
+});
+
+Deno.test("search ranks a relevant regional authority and distinct sources above social duplicates", async () => {
+  const { rankSearch, compactQuery } = await import("./trace.ts");
+  const query = "Проследи публикации о ДТП в Браславе 13 ноября 2026 года. Найди первоисточник.";
+  expect(compactQuery(query), "ДТП в Браславе 13 ноября 2026 года");
+  const title = "ДТП в Браславе 13 ноября";
+  const content = [
+    {title, url:"https://www.instagram.com/p/a"},
+    {title, url:"https://vitbichi.by/news/article"},
+    {title, url:"https://www.vitbichi.by/news/another-copy"},
+    {title, url:"https://gai.gov.by/alerts/incident"},
+    {title, url:"https://t.me/vitebsk_gai/26470"},
+    {title, url:"https://www.vitbichi.by/news/article?utm_source=test"},
+  ];
+  expect(rankSearch(content, query, [], "by").map(({url})=>url), [
+    content[3].url, content[4].url, content[1].url, content[2].url, content[0].url,
+  ]);
+});
+
+Deno.test("an indexed Telegram feed only yields matching dated posts and never enters the timeline", async () => {
+  const { trace } = await import("./trace.ts");
+  const { readTelegramFeed, readTelegramPost } = await import("./core.ts");
+  const html = '<div class="tgme_widget_message" data-post="vitebsk_gai/202"><div class="tgme_widget_message_text">ДТП в Браславе. Происшествие на перекрестке.</div><time datetime="2026-11-13T09:46:35Z"></time></div>' +
+    '<div class="tgme_widget_message" data-post="vitebsk_gai/201"><div class="tgme_widget_message_text">Погода в Витебске.</div><time datetime="2026-11-13T08:00:00Z"></time></div>' +
+    '<div class="tgme_widget_message" data-post="vitebsk_gai/100"><div class="tgme_widget_message_text">ДТП в Браславе.</div><time datetime="2026-11-05T08:00:00Z"></time></div>' +
+    '<div class="tgme_widget_message" data-post="other_channel/77"><div class="tgme_widget_message_text">ДТП в Браславе.</div><time datetime="2026-11-13T08:00:00Z"></time></div>';
+  const feed = "https://t.me/s/vitebsk_gai?before=204";
+  const post = "https://t.me/vitebsk_gai/202";
+  const opened: string[] = [];
+  const result = await trace({ task:"ДТП в Браславе 13 ноября 2026 года", window:{from:"2026-11-13",through:"2026-11-13"},locale:"ru" },
+    async () => {}, {
+      tavily: async () => [{ url: feed }],
+      openArticle: async candidate => {
+        opened.push(candidate.url);
+        if (candidate.url === feed) return readTelegramFeed(html, feed, candidate);
+        if (candidate.url !== post) throw new Error("Unexpected feed post");
+        return readTelegramPost(html, post, candidate)!;
+      },
+      cloudflareConfigured: () => false,
+      eventModel: async () => null,
+      brightSearch: async () => ({hits:[], failures:0}),
+    });
+  expect(opened, [feed, post]);
+  expect(result.entries.map(({url})=>url), [post]);
+});
+
+Deno.test("the pinned HTTP reader de-chunks a fragmented response and handles a redirect", async () => {
+  const { readReply } = await import("./transport.ts");
+  const serve = (packets: string[]) => ({
+    read(buffer: Uint8Array) {
+      const packet = packets.shift();
+      return Promise.resolve(packet === undefined ? null : new TextEncoder().encodeInto(packet, buffer).written);
+    },
+  });
+  const progress: Parameters<typeof readReply>[1] = { phase: "headers" };
+  const page = await readReply(serve(["HTTP/1.1 200 OK\r\nContent-Type: text/",
+    "html; charset=utf-8\r\nTransfer-Encoding: chunked\r\n\r\n5\r\n<art", "i\r\n4\r\ncle>\r\n0\r\n\r\n"]), progress);
+  expect([page.html, progress.status, progress.phase], ["<article>", 200, "complete"]);
+  const redirect = await readReply(serve(["HTTP/1.1 302 Found\r\nLocation: /news/1\r\nContent-Length: 999\r\n\r\n"]), {phase:"headers"});
+  expect([redirect.status, redirect.headers.get("location"), redirect.html], [302, "/news/1", ""]);
 });

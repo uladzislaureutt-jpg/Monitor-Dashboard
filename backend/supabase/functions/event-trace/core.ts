@@ -1,3 +1,4 @@
+import type { TransportStatus } from "./transport.ts";
 import { load } from "npm:cheerio@1.0.0-rc.12";
 import ipaddr from "npm:ipaddr.js@2.2.0";
 import { Readability } from "npm:@mozilla/readability@0.6.0";
@@ -11,7 +12,7 @@ const attachment = /\.(?:jpg|jpeg|gif|webp|png|svg|mp[34]|zip|exe|pdf|css|js)$/i
 
 export type Window = { from: string | null; through: string | null };
 export type Candidate = { url: string; title?: string; excerpt?: string };
-type Link = { url: string; label: string; evidence?: string; kind: "citation" | "related" | "reference" };
+type Link = { url: string; label: string; evidence?: string; publishedHint?: string; kind: "citation" | "related" | "reference" };
 export type Page = {
   url: string; title: string; publisher: string; excerpt: string;
   published: string | null; updated: string | null;
@@ -24,6 +25,8 @@ export type Page = {
   originKind?: "official" | "media";
   country?: string;
   namedSources?: string[];
+  listing?: true;
+  transport?: TransportStatus;
 };
 export type TimelineEntry = Omit<Page, "links"> & {
   id: string; outsideWindow: boolean;
@@ -67,6 +70,12 @@ export function telegramPostKey(value: string): string | null {
   const url = new URL(value);
   if (url.hostname !== "t.me" && url.hostname !== "telegram.me") return null;
   return url.pathname.match(/^\/(?:s\/)?([A-Za-z0-9_]+\/[1-9]\d{0,10})\/?$/)?.[1]?.toLowerCase() ?? null;
+}
+
+export function telegramFeedKey(value: string): string | null {
+  const url = new URL(value);
+  if (url.hostname !== "t.me" && url.hostname !== "telegram.me") return null;
+  return url.pathname.match(/^\/s\/([A-Za-z0-9_]+)\/?$/)?.[1]?.toLowerCase() ?? null;
 }
 
 export function urlKey(value: string): string {
@@ -214,9 +223,28 @@ export function readTelegramPost(markup: string, sourceUrl: string, candidate: C
     ...(published ? { publicationEvidence: "Telegram · datetime" } : {}), ...classifications(sourceUrl) };
 }
 
-export function readPage(markup: string, fetchedUrl: string, candidate: Candidate): Page {
+export function readTelegramFeed(markup: string, sourceUrl: string, candidate: Candidate): Page {
+  const channel = telegramFeedKey(sourceUrl);
+  const page = { ...metadataPage(candidate), listing: true as const };
+  if (!channel) return page;
+  const $ = load(markup);
+  const posts = $(".tgme_widget_message[data-post]").slice(0, 30).toArray();
+  page.links = posts.flatMap((element): Link[] => {
+    const post = $(element);
+    const id = post.attr("data-post")?.toLowerCase();
+    if (!id || !id.startsWith(channel + "/")) return [];
+    const url = "https://t.me/" + id;
+    if (telegramPostKey(url) !== id) return [];
+    const evidence = plain(post.find(".tgme_widget_message_text").first().text(), 530);
+    const publishedHint = publicationDate(post.find("time[datetime]").first().attr("datetime"));
+    return evidence && publishedHint ? [{ url, label: evidence.slice(0, 155), evidence, publishedHint, kind: "related" }] : [];
+  });
+  return page;
+}
+
+export function readPage(markup: string, fetchedUrl: string, candidate: Candidate, readability = true): Page {
   if (redirectedToHome(candidate.url, fetchedUrl)) return metadataPage(candidate, "redirect_home");
-  const cleanMarkup = markup.replace(/<script\b(?![^>]*application\/ld\+json)[^>]*>[\s\S]*?<\/script\s*>|<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, "");
+  const cleanMarkup = markup.replace(/<script\b(?![^>]*application\/ld\+json)[^>]*>[\s\S]*?<\/script\s*>|<style\b[^>]*>[\s\S]*?<\/style\s*>|<svg\b[^>]*>[\s\S]*?<\/svg\s*>|<!--[\s\S]*?-->/gi, "").slice(0, 310_000);
   const $ = load(cleanMarkup);
   const meta = (name: string) => $(`meta[property="${name}"],meta[name="${name}"],meta[itemprop="${name}"]`).first().attr("content");
   let schema: Record<string, unknown> | null = null;
@@ -232,6 +260,9 @@ export function readPage(markup: string, fetchedUrl: string, candidate: Candidat
   const url = canon && new URL(canon).hostname.replace(/^www\./, "") === new URL(fetchedUrl).hostname.replace(/^www\./, "")
     ? canon : fetchedUrl;
   const title = plain(schema?.headline || meta("og:title") || $("h1").first().text() || $("title").first().text() || candidate.title);
+  if (/^(?:captcha|just a moment\.*|access denied|forbidden|checking your browser|robot check|проверка браузера|доступ запрещ[её]н|защита от роботов)$/iu.test(title)) {
+    return metadataPage(candidate, "unavailable");
+  }
   const site = schema?.publisher as { name?: unknown } | undefined;
   const publisher = plain(site?.name || meta("og:site_name"), 90) || new URL(url).hostname.replace(/^www\./, "");
   const article = $("article").first();
@@ -261,7 +292,7 @@ export function readPage(markup: string, fetchedUrl: string, candidate: Candidat
   const originalText = plain(paragraphs.join(" "), 2300);
   const lead = plain(meta("og:description") || meta("description") || candidate.excerpt);
   const paywall = schema?.isAccessibleForFree === false || schema?.isAccessibleForFree === "false" || gated.test(originalText);
-  const fallback = !paywall && originalText.length < 1300 ? articleText(cleanMarkup) : "";
+  const fallback = readability && !paywall && originalText.length < 1300 ? articleText(cleanMarkup) : "";
   const extracted = fallback.length >= Math.max(260, originalText.length + 120);
   const bodyText = extracted ? fallback : originalText;
   const access = paywall ? lead || bodyText ? "lead" : "metadata"

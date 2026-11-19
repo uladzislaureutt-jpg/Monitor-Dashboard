@@ -1,4 +1,4 @@
-import { MAX_PAGES, plain, publicArticleUrl, timeline, urlKey, type Candidate, type Page, type TraceResult, type Window } from "./core.ts";
+import { MAX_PAGES, plain, publicArticleUrl, telegramPostKey, timeline, urlKey, type Candidate, type Page, type TraceResult, type Window } from "./core.ts";
 import { brightSearch, cloudflareConfigured, eventModel, openArticle, tavily } from "./providers.ts";
 
 export type TraceInput = { task: string; window: Window; locale: "ru" | "be" };
@@ -24,14 +24,27 @@ function searchableWords(value: string) {
 
 function topicStems(value: string) {
   const words = searchableWords(value.replace(/\b\d{1,2}\s+\p{L}{3,12}\s+\d{4}\b/gu, ""));
-  return [...new Set(words.filter((word) => !queryFiller.has(word) && !word.startsWith("предупре")).map((word) => word.slice(0, 5)))];
+  return [...new Set(words.filter((word) => !queryFiller.has(word) && !word.startsWith("предупре")).map((word) =>
+    /^(?:шквал|непогод|ураган|гроз[аыеуо]|шторм)/u.test(word) ? "непогод" : word.slice(0, 5),
+  ))];
 }
 
+const locations = [
+  /москв|москва|маскв|moscow/iu, /камчатк|kamchatka/iu, /брасла[вў]|brasla[vu]/iu, /гомел|homel|gomel/iu,
+  /петербург|пецярбург|petersburg/iu, /минск|мінск|minsk/iu, /гродн|hrodna|grodno/iu,
+  /киев|київ|k[iy]iv/iu, /варшав|warszaw|warsaw/iu, /париж|paris/iu,
+];
+
 export function matchesEvent(title: string, excerpt: string, task: string, variants: string[]) {
+  const required = locations.filter(place => place.test(task));
+  const leadText = excerpt.slice(0, 550);
+  const namedInTitle = required.some(place => place.test(title));
+  if (required.length && !namedInTitle &&
+      (locations.some(place => place.test(title)) || !required.some(place => place.test(leadText)))) return false;
   const groups = [task, ...variants].map(topicStems).filter((terms) => terms.length >= 2);
   if (!groups.length) return true;
   const heading = new Set(topicStems(title));
-  const lead = new Set(topicStems(excerpt.slice(0, 550)));
+  const lead = new Set(topicStems(leadText));
   return groups.some((terms) => {
     const headings = terms.filter((word) => heading.has(word)).length;
     const leading = terms.filter((word) => lead.has(word)).length;
@@ -40,11 +53,57 @@ export function matchesEvent(title: string, excerpt: string, task: string, varia
   });
 }
 
+export function compactQuery(task: string) {
+  const prefix = /^(?:(?:восстанови|проследи|найди|проверь|отыщи)\s+)?(?:(?:ранние|первые)\s+)?(?:(?:публикации|сообщения|освещение|информацию|хронологию)\s+)?(?:(?:и\s+)?официальное предупреждение\s+)?(?:о\s+|об\s+)?/iu;
+  const first = task.split(/[!?;]|\.\s+(?=\p{Lu})/u)[0];
+  return plain(first.replace(prefix, "").replace(/^(?:find|trace|search for|check) (?:the )?/iu, ""), 240) || plain(task, 240);
+}
+
+function countryHint(task: string) {
+  const value = task.toLowerCase();
+  const by = /беларус|белорус|беларусь|мінск|минск|гомел|гомельш|браслав|браслаў|витебск|віцебск|гродно|гродна|магілеў|могил[её]в|belarus/iu.test(value);
+  const ru = /россий|россия|москв|камчатк|росгидромет|санкт.петербург|екатеринбург|russia|moscow/iu.test(value);
+  return by === ru ? null : by ? "by" : "ru";
+}
+
+const socialListing = /(?:^|\.)(?:instagram\.com|facebook\.com|threads\.com|vk\.com|vk\.ru|tiktok\.com|x\.com|youtube\.com|youtu\.be)$/i;
+
+export function rankSearch(candidates: Candidate[], topic: string, variants: string[], country: string | null) {
+  const scored = new Map<string, { row: Candidate; score: number; host: string }>();
+  for (const row of candidates) {
+    const url = publicArticleUrl(row.url);
+    if (!url) continue;
+    const key = urlKey(url);
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, "");
+    const title = row.title || "";
+    let score = matchesEvent(title, row.excerpt || "", topic, variants) && title ? 8 : 0;
+    if (country && host.endsWith("." + country)) score += 2;
+    if (/\.gov\.(?:by|ru)$|\.gouv\.fr$/.test(host)) score += 3;
+    if (telegramPostKey(url)) score += 4;
+    if (socialListing.test(host)) score -= 9;
+    if (parsed.pathname === "/" || /(?:^|\/)(?:tag|tags|topics|category)(?:\/|$)/i.test(parsed.pathname)) score -= 5;
+    const previous = scored.get(key);
+    if (!previous || score > previous.score) scored.set(key, { row, score, host });
+  }
+  const first: Candidate[] = [];
+  const extra: Candidate[] = [];
+  const counts = new Map<string, number>();
+  for (const item of [...scored.values()].sort((a, b) => b.score - a.score)) {
+    const count = counts.get(item.host) ?? 0;
+    if (count >= 1 || item.score < 0) extra.push(item.row);
+    else first.push(item.row);
+    counts.set(item.host, count + 1);
+  }
+  return [...first, ...extra];
+}
+
 export async function trace(input: TraceInput,
     checkpoint: (stage: TraceStage, result: TraceResult) => Promise<void>, adapters = providers) {
   const deadline = Date.now() + 80_000;
   const pages = new Map<string, Page>();
   const unmatched = new Map<string, Page>();
+  const discoveredPosts = new Map<string, InputCandidate>();
   const seen = new Set<string>();
   const resolved = new Map<string, string>();
   const warnings = new Set<string>();
@@ -55,16 +114,22 @@ export async function trace(input: TraceInput,
   let checked = 0;
   let topic = "";
   let variants: string[] = [];
+  let parseMillis = 0;
+  const parseBudget = {
+    allow: () => parseMillis < 1050,
+    allowReadability: () => parseMillis < 720,
+    record: (milliseconds: number) => { parseMillis += milliseconds; },
+  };
   type InputCandidate = Candidate & { linked?: boolean };
 
   function snapshot(): TraceResult & { summarySources: string[] } {
     return { ...timeline([...pages.values()], resolved, input.window), checked, search: { ...search },
       warnings: [...warnings], summary, summarySources, observations, checkedAt: new Date().toISOString() };
   }
-  async function searchTavily(query: string) {
+  async function searchTavily(query: string, window = input.window) {
     if (deadline - Date.now() < 4000) return [];
     search.tavily++;
-    try { return await adapters.tavily(query, input.window, deadline); }
+    try { return await adapters.tavily(query, window, deadline); }
     catch (error) {
       const code = error instanceof Error ? error.message : "";
       warnings.add(/^tavily_(not_configured|format|http_\d{3})$/.test(code) ? code : "tavily_unavailable");
@@ -96,27 +161,42 @@ export async function trace(input: TraceInput,
       seen.add(key);
       selected.push({ ...candidate, url });
     }
-    for (let start = 0; start < selected.length; start += 4) {
+    for (let start = 0; start < selected.length; start += 3) {
       if (deadline - Date.now() < 2500) { warnings.add("deadline"); break; }
-      const group = selected.slice(start, start + 4);
+      if (!parseBudget.allow()) { warnings.add("deadline"); break; }
+      const group = selected.slice(start, start + 3);
       await Promise.all(group.map(async (candidate) => {
         checked++;
-        const page = await adapters.openArticle(candidate, deadline);
+        const page = await adapters.openArticle(candidate, deadline, parseBudget);
         const requested = urlKey(candidate.url);
+        if (page.listing) {
+          for (const link of page.links) {
+            const day = link.publishedHint ? new Date(Date.parse(link.publishedHint) + 3 * 3600_000).toISOString().slice(0, 10) : "";
+            if (!day || (input.window.from && day < input.window.from) || (input.window.through && day > input.window.through)) continue;
+            if (matchesEvent(link.label, link.evidence || "", topic, variants)) {
+              discoveredPosts.set(urlKey(link.url), { url: link.url, title: link.label, excerpt: link.evidence });
+            }
+          }
+          return;
+        }
         if (candidate.linked || matchesEvent(page.title, page.excerpt, topic, variants)) remember(requested, page);
         else unmatched.set(requested, page);
       }));
     }
   }
   function follow(candidates: Page[]) {
-    return candidates.flatMap((page) => page.links
+    return [...candidates.flatMap((page) => page.links
       .filter((link) => link.kind !== "reference")
-      .map((link) => ({ url: link.url, title: link.label, linked: link.kind === "citation" })));
+      .map((link) => ({ url: link.url, title: link.label, linked: link.kind === "citation" }))), ...discoveredPosts.values()];
   }
   function confirmedOrigin() {
     const result = snapshot();
     return result.entries.some((entry) => result.citedSourceIds.includes(entry.id) && entry.published &&
       entry.access !== "metadata" && !entry.outsideWindow);
+  }
+  function coverage() {
+    return new Set(snapshot().entries.filter(entry => entry.access !== "metadata" && entry.published && !entry.outsideWindow)
+      .map(entry => new URL(entry.url).hostname.replace(/^www\./, ""))).size;
   }
   function interleave<T>(groups: T[][]): T[] {
     const rows: T[] = [];
@@ -130,6 +210,8 @@ export async function trace(input: TraceInput,
   const seedTitle = pages.values().next().value?.title || "";
   const base = cleanTask || seedTitle;
   topic = base;
+  const compact = compactQuery(base);
+  const statedDate = /\b\d{4}\b|\b\d{1,2}[./]\d{1,2}\b/u.test(compact);
   const initial = base ? searchTavily(base) : Promise.resolve([]);
   const planned = base ? await adapters.eventModel(
     "Prepare search strings only. Return JSON {queries:[string,string,string],country:string|null}. " +
@@ -137,11 +219,14 @@ export async function trace(input: TraceInput,
     "Use supplied facts only. Include known publisher names only if provided. Country is a two-letter lowercase code or null.",
     { task: base, window: input.window, operatorLanguage: input.locale }, deadline, 8500, 550,
   ) : null;
-  const country = typeof planned?.country === "string" && /^[a-z]{2}$/.test(planned.country) ? planned.country : null;
+  const country = typeof planned?.country === "string" && /^[a-z]{2}$/.test(planned.country)
+    ? planned.country : countryHint(base);
   variants = (Array.isArray(planned?.queries) ? planned.queries : []).map((query) => plain(query, 300)).filter(Boolean).slice(0, 3);
-  const queries = [...new Set([base, ...variants, base && `${base.slice(0, 250)} ${attributed[input.locale]}`].filter(Boolean))].slice(0, 4);
-  const matches = await Promise.all([initial, ...queries.slice(1).map(searchTavily)]);
-  await open(interleave(matches), 9);
+  const queries = [...new Set([compact, ...variants, base && `${compact.slice(0, 235)} ${attributed[input.locale]}`].filter(Boolean))]
+    .filter(query => query !== base || statedDate).slice(0, 3);
+  const matches = await Promise.all([initial, ...queries.map(query => searchTavily(query,
+    query === compact && statedDate ? { from: null, through: null } : input.window))]);
+  await open(rankSearch(interleave(matches), topic, variants, country), 8);
   await checkpoint("sources", snapshot());
 
   const beforeLinks = new Set(pages.keys());
@@ -157,21 +242,28 @@ export async function trace(input: TraceInput,
   if (fromDossiers.length) await open(fromDossiers, 3);
   await checkpoint("sources", snapshot());
 
-  if (!confirmedOrigin() && base && deadline - Date.now() > 13_000 && seen.size < MAX_PAGES) {
+  if ((!confirmedOrigin() || coverage() < 3) && base && deadline - Date.now() > 13_000 && seen.size < MAX_PAGES && parseBudget.allow()) {
     const named = [...pages.values()].flatMap((page) => page.namedSources ?? []).find(Boolean);
     const citationTitle = [...pages.values()].flatMap((page) => page.links.filter((link) => link.kind === "citation"))
       .find((link) => !resolved.has(urlKey(link.url)));
-    const focused = citationTitle ? `${base.slice(0, 145)} ${citationTitle.label} ${new URL(citationTitle.url).hostname}`
-      : named ? `${base.slice(0, 165)} ${named}`
+    const headline = [...pages.values()].find(page => page.access !== "metadata" && page.originKind === "media" &&
+      page.published && matchesEvent(page.title, page.excerpt, topic, variants))?.title;
+    const focused = confirmedOrigin() && headline && statedDate ? `${headline.slice(0, 170)} ${compact.match(/\b\d{4}\b/u)?.[0] || ""}`.trim()
+      : citationTitle ? `${compact.slice(0, 145)} ${citationTitle.label} ${new URL(citationTitle.url).hostname}`
+      : named ? `${compact.slice(0, 165)} ${named}`
       : variants[0] ? `${variants[0].slice(0, 225)} ${country === "fr" ? "communiqué officiel" : "official statement original publication"}`
-      : `${base.slice(0, 235)} ${attributed[input.locale]}`;
-    await open(await searchTavily(focused), 2);
+      : `${compact.slice(0, 235)} ${attributed[input.locale]}`;
+    const attempted = new Set([base, ...queries]);
+    const precise = attempted.has(focused) && compact
+      ? `${compact.slice(0, 215)} ${attributed[input.locale].split(" ").slice(1, 3).join(" ")}` : focused;
+    await open(rankSearch(await searchTavily(precise, confirmedOrigin() && headline && statedDate ? { from: null, through: null } : input.window),
+      topic, variants, country), 2);
     await open(follow([...pages.values()]), 2);
     if (!confirmedOrigin() && deadline - Date.now() > 14_000 && seen.size < MAX_PAGES) {
       await checkpoint("reserve", snapshot());
-      const reserve = await adapters.brightSearch([focused, queries.at(1) || base], country, input.window, deadline, () => { search.brightData++; });
+      const reserve = await adapters.brightSearch([precise, variants[0] || compact || base], country, input.window, deadline, () => { search.brightData++; });
       if (reserve.failures) warnings.add("bright_unavailable");
-      await open(reserve.hits, 3);
+      await open(rankSearch(reserve.hits, topic, variants, country), 3);
       await open(follow([...pages.values()]), 2);
     }
   }

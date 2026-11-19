@@ -1,6 +1,6 @@
-import { request as httpRequest, type IncomingHttpHeaders } from "node:http";
-import { request as httpsRequest } from "node:https";
-import { metadataPage, plain, publicAddress, publicArticleUrl, readPage, readTelegramPost, redirectedToHome, telegramPostKey, type Candidate, type Page, type Window } from "./core.ts";
+import { metadataPage, plain, publicArticleUrl, readPage, readTelegramFeed, readTelegramPost, redirectedToHome, telegramFeedKey, telegramPostKey, type Candidate, type Page, type Window } from "./core.ts";
+
+import { downloadHtml, type Progress } from "./transport.ts";
 
 const tavilyEndpoint = "https://api.tavily.com/search";
 const brightEndpoint = "https://mcp.brightdata.com/mcp";
@@ -126,72 +126,29 @@ export async function brightSearch(queries: string[], country: string | null, wi
 }
 
 
-async function resolvePublicAddress(host: string, signal: AbortSignal): Promise<string | null> {
-  let rejectAbort: (() => void) | undefined;
-  try {
-    const addresses = await Promise.race([
-      Promise.allSettled([Deno.resolveDns(host, "A"), Deno.resolveDns(host, "AAAA")]),
-      new Promise<never>((_, reject) => {
-        rejectAbort = () => reject(signal.reason);
-        if (signal.aborted) rejectAbort();
-        else signal.addEventListener("abort", rejectAbort, { once: true });
-      }),
-    ]);
-    const ips = addresses.flatMap((answer) => answer.status === "fulfilled" ? answer.value : []);
-    return ips.length && ips.every(publicAddress) ? ips[0] : null;
-  } catch { return null; }
-  finally { if (rejectAbort) signal.removeEventListener("abort", rejectAbort); }
-}
+type ParseBudget = { allow: () => boolean; allowReadability: () => boolean; record: (milliseconds: number) => void };
 
-function loadHtmlPage(url: URL, address: string, signal: AbortSignal):
-    Promise<{ status: number; headers: IncomingHttpHeaders; html: string }> {
-  const isTls = url.protocol === "https:";
-  return new Promise((resolve, reject) => {
-    // Connect to the validated address itself. Keep the original TLS name and HTTP Host.
-    const request = (isTls ? httpsRequest : httpRequest)({
-      hostname: address, port: isTls ? 443 : 80, path: url.pathname + url.search,
-      ...(isTls ? { servername: url.hostname } : {}),
-      agent: false, signal,
-      headers: { Host: url.host, Accept: "text/html,application/xhtml+xml",
-        "Accept-Encoding": "identity", "User-Agent": "Monitor-Event/1.0" },
-    }, (response) => {
-      const status = response.statusCode || 0;
-      const headers = response.headers;
-      if (status < 200 || status >= 300 || !/html/i.test(headers["content-type"] || "")) {
-        resolve({ status, headers, html: "" });
-        response.destroy();
-        return;
-      }
-      const decoder = new TextDecoder();
-      const parts: string[] = [];
-      let size = 0;
-      const done = () => resolve({ status, headers, html: parts.join("") + decoder.decode() });
-      response.on("data", (chunk: Uint8Array) => {
-        parts.push(decoder.decode(chunk.subarray(0, 600_000 - size), { stream: true }));
-        size += chunk.byteLength;
-        if (size >= 600_000) { done(); response.destroy(); }
-      });
-      response.on("end", done);
-      response.on("error", reject);
-    });
-    request.on("error", reject);
-    request.end();
-  });
-}
-
-export async function openArticle(candidate: Candidate, deadline: number): Promise<Page> {
+export async function openArticle(candidate: Candidate, deadline: number, budget?: ParseBudget): Promise<Page> {
+  const start = Date.now();
   const signal = deadlineSignal(deadline, 6500);
+  const progress: Progress = { phase: "dns" };
+  const result = (page: Page): Page => ({ ...page, transport: { ...progress, milliseconds: Date.now() - start } });
   const post = telegramPostKey(candidate.url);
   let bestPost: Page | null = null;
+  function parse<T>(operation: () => T): T | null {
+    if (budget && !budget.allow()) return null;
+    const began = performance.now();
+    try { return operation(); }
+    finally { budget?.record(performance.now() - began); }
+  }
   async function download(target: string) {
     let url = publicArticleUrl(target);
     for (let hop = 0; hop < 4 && url && !signal.aborted; hop++) {
       const current = new URL(url);
-      const address = await resolvePublicAddress(current.hostname, signal);
-      if (!address) return null;
-      const reply = await loadHtmlPage(current, address, signal);
+      const reply = await downloadHtml(current, signal, progress);
+      if (!reply) return null;
       if (reply.status >= 300 && reply.status < 400) {
-        url = publicArticleUrl(reply.headers.location, url);
+        url = publicArticleUrl(reply.headers.get("location"), url);
         continue;
       }
       return { url, html: reply.html };
@@ -205,18 +162,22 @@ export async function openArticle(candidate: Candidate, deadline: number): Promi
         if (signal.aborted) break;
         const page = await download(target);
         if (page?.html) {
-          const exact = readTelegramPost(page.html, candidate.url, candidate);
-          if (exact?.published) return exact;
+          const exact = parse(() => readTelegramPost(page.html, candidate.url, candidate));
+          if (exact?.published) return result(exact);
           if (exact) bestPost = exact;
         }
       }
-      return bestPost || metadataPage(candidate, signal.aborted ? "timeout" : "unavailable");
+      return result(bestPost || metadataPage(candidate, signal.aborted ? "timeout" : "unavailable"));
     }
     const page = await download(candidate.url);
-    if (page && redirectedToHome(candidate.url, page.url)) return metadataPage(candidate, "redirect_home");
-    if (page?.html) return readPage(page.html, page.url, candidate);
+    if (page && redirectedToHome(candidate.url, page.url)) return result(metadataPage(candidate, "redirect_home"));
+    if (page?.html) {
+      const article = parse(() => telegramFeedKey(candidate.url) ? readTelegramFeed(page.html, candidate.url, candidate)
+        : readPage(page.html, page.url, candidate, budget?.allowReadability()));
+      if (article) return result(article);
+    }
   } catch { /* Keep the search card and its original URL. */ }
-  return bestPost || metadataPage(candidate, signal.aborted ? "timeout" : "unavailable");
+  return result(bestPost || metadataPage(candidate, signal.aborted ? "timeout" : "unavailable"));
 }
 
 export function cloudflareConfigured(): boolean {

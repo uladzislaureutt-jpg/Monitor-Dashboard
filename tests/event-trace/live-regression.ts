@@ -21,6 +21,7 @@ const byCase: Record<string, Candidate[]> = {
 };
 const normalize = (text: string) => text.normalize("NFKC").toLowerCase().replace(/ё/g, "е").replace(/[\p{Pd}\u2212]/gu, "-");
 const excluded: Record<string, string[]> = {
+  "ru-moscow-storm": ["fontanka.ru/2024/06/20/73729244"],
   "ru-kamchatka-earthquake": ["svpressa.ru/health/news/426120"],
   "by-gomel-storm": ["zakon.kz/mir/6441461-v-kyrgyzstane-izza-dozhdya-i-selya-zatopilo-rynok-goroda-osh-i-neskolko-sel.html"],
 };
@@ -35,7 +36,7 @@ for (const item of [...cases, amber]) {
       const hits = test.anchors.filter((anchor) => text.includes(normalize(anchor))).length;
       return { id: test.id, source: test.url, published: page.published, evidence: page.publicationEvidence ?? null,
         dateMatches: test.date ? page.published?.slice(0, 10) === test.date : null,
-        issue: page.issue ?? null, access: page.access, extraction: page.extraction ?? null,
+        issue: page.issue ?? null, transport: page.transport ?? null, access: page.access, extraction: page.extraction ?? null,
         anchorHits: hits, verified: page.access !== "metadata" && hits >= 2,
         targets: page.links.filter(({ kind }) => kind === "citation").map(({ url }) => url) };
     }));
@@ -50,7 +51,7 @@ for (const item of [...cases, amber]) {
         const start = 7 * Math.min(calls++, 1);
         return byCase[item.id].slice(start, start + 7);
       },
-      openArticle: async (candidate, deadline) => { opened.push(candidate.url); return await openArticle(candidate, deadline); },
+      openArticle: async (candidate, deadline, budget) => { opened.push(candidate.url); return await openArticle(candidate, deadline, budget); },
       cloudflareConfigured: () => false,
       eventModel: async () => item.id === "amber-chair" ? { queries: ["Poland president Nawrocki Trump amber throne"] } : null,
       brightSearch: async () => ({ hits: [], failures: 0 }),
