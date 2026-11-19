@@ -12,7 +12,7 @@ const queryFiller = new Set(
   ("найди поиск отыщи проследи восстанови проверь сравни когда какой какие первый первые ранний ранние " +
    "публикация публикации публикаций сообщение сообщения сообщений официальный официальное официальные " +
    "предупреждение местный местных издания изданий агентств первоисточник распространение области область " +
-   "года годов утром сведения материал источник история истории освещение освещали пожалуйста " +
+   "года годов утром сведения материал источник история истории освещение освещали пожалуйста мчс " +
    "find trace search report reports reporting article articles original publication publications " +
    "first early earliest official statement warning sources source media news story").split(" "),
 );
@@ -22,7 +22,8 @@ function searchableWords(value: string) {
 }
 
 function topicStems(value: string) {
-  return [...new Set(searchableWords(value).filter((word) => !queryFiller.has(word)).map((word) => word.slice(0, 5)))];
+  const words = searchableWords(value.replace(/\b\d{1,2}\s+\p{L}{3,12}\s+\d{4}\b/gu, ""));
+  return [...new Set(words.filter((word) => !queryFiller.has(word)).map((word) => word.slice(0, 5)))];
 }
 
 export function matchesEvent(title: string, excerpt: string, task: string, variants: string[]) {
