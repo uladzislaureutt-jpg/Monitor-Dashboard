@@ -35,12 +35,17 @@ const locations = [
   /киев|київ|k[iy]iv/iu, /варшав|warszaw|warsaw/iu, /париж|paris/iu,
 ];
 
+function conflictsWithPlace(title: string, task: string) {
+  const required = locations.filter(place => place.test(task));
+  return required.length > 0 && !required.some(place => place.test(title)) && locations.some(place => place.test(title));
+}
+
 export function matchesEvent(title: string, excerpt: string, task: string, variants: string[]) {
   const required = locations.filter(place => place.test(task));
   const leadText = excerpt.slice(0, 550);
   const namedInTitle = required.some(place => place.test(title));
   if (required.length && !namedInTitle &&
-      (locations.some(place => place.test(title)) || !required.some(place => place.test(leadText)))) return false;
+      (conflictsWithPlace(title, task) || !required.some(place => place.test(leadText)))) return false;
   const groups = [task, ...variants].map(topicStems).filter((terms) => terms.length >= 2);
   if (!groups.length) return true;
   const heading = new Set(topicStems(title));
@@ -120,16 +125,16 @@ export async function trace(input: TraceInput,
     allowReadability: () => parseMillis < 720,
     record: (milliseconds: number) => { parseMillis += milliseconds; },
   };
-  type InputCandidate = Candidate & { linked?: boolean };
+  type InputCandidate = Candidate & { linked?: boolean; supplied?: boolean };
 
   function snapshot(): TraceResult & { summarySources: string[] } {
     return { ...timeline([...pages.values()], resolved, input.window), checked, search: { ...search },
       warnings: [...warnings], summary, summarySources, observations, checkedAt: new Date().toISOString() };
   }
-  async function searchTavily(query: string, window = input.window) {
+  async function searchTavily(query: string, window = input.window, domains?: string[]) {
     if (deadline - Date.now() < 4000) return [];
     search.tavily++;
-    try { return await adapters.tavily(query, window, deadline); }
+    try { return await adapters.tavily(query, window, deadline, domains); }
     catch (error) {
       const code = error instanceof Error ? error.message : "";
       warnings.add(/^tavily_(not_configured|format|http_\d{3})$/.test(code) ? code : "tavily_unavailable");
@@ -142,6 +147,10 @@ export async function trace(input: TraceInput,
     seen.add(key);
     const old = pages.get(key);
     if (!old || (old.access === "metadata" && page.access !== "metadata")) pages.set(key, page);
+  }
+  function insideWindow(published: string) {
+    const day = published.length === 10 ? published : new Date(Date.parse(published) + 3 * 3600_000).toISOString().slice(0, 10);
+    return (!input.window.from || day >= input.window.from) && (!input.window.through || day <= input.window.through);
   }
   async function open(candidates: InputCandidate[], max: number) {
     const selected: InputCandidate[] = [];
@@ -179,6 +188,8 @@ export async function trace(input: TraceInput,
           }
           return;
         }
+        if (!candidate.supplied && (conflictsWithPlace(page.title, topic) ||
+            (!candidate.linked && page.published && !insideWindow(page.published)))) return;
         if (candidate.linked || matchesEvent(page.title, page.excerpt, topic, variants)) remember(requested, page);
         else unmatched.set(requested, page);
       }));
@@ -206,7 +217,7 @@ export async function trace(input: TraceInput,
   const urls = (input.task.match(/https?:\/\/[^\s<>"«»]+/giu) ?? []).slice(0, 2)
     .map((raw) => publicArticleUrl(raw.replace(/[),.;!?]+$/u, ""))).filter((url): url is string => Boolean(url));
   const cleanTask = plain(input.task.replace(/https?:\/\/[^\s<>"«»]+/giu, ""), 380);
-  if (urls.length) await open(urls.map((url) => ({ url, linked: true })), 2);
+  if (urls.length) await open(urls.map((url) => ({ url, linked: true, supplied: true })), 2);
   const seedTitle = pages.values().next().value?.title || "";
   const base = cleanTask || seedTitle;
   topic = base;
@@ -222,7 +233,8 @@ export async function trace(input: TraceInput,
   const country = typeof planned?.country === "string" && /^[a-z]{2}$/.test(planned.country)
     ? planned.country : countryHint(base);
   variants = (Array.isArray(planned?.queries) ? planned.queries : []).map((query) => plain(query, 300)).filter(Boolean).slice(0, 3);
-  const queries = [...new Set([compact, ...variants, base && `${compact.slice(0, 235)} ${attributed[input.locale]}`].filter(Boolean))]
+  const alternative = statedDate || topicStems(compact).length >= 2 ? compact : "";
+  const queries = [...new Set([alternative, ...variants, base && `${compact.slice(0, 235)} ${attributed[input.locale]}`].filter(Boolean))]
     .filter(query => query !== base || statedDate).slice(0, 3);
   const matches = await Promise.all([initial, ...queries.map(query => searchTavily(query,
     query === compact && statedDate ? { from: null, through: null } : input.window))]);
@@ -256,7 +268,11 @@ export async function trace(input: TraceInput,
     const attempted = new Set([base, ...queries]);
     const precise = attempted.has(focused) && compact
       ? `${compact.slice(0, 215)} ${attributed[input.locale].split(" ").slice(1, 3).join(" ")}` : focused;
-    await open(rankSearch(await searchTavily(precise, confirmedOrigin() && headline && statedDate ? { from: null, through: null } : input.window),
+    const domains = !confirmedOrigin() && /мчс|гаи|росгидромет/iu.test(base)
+      ? country === "by" ? ["mchs.gov.by", "mvd.gov.by", "t.me"] : country === "ru" ? ["mchs.gov.ru", "meteorf.gov.ru", "t.me"] : undefined
+      : undefined;
+    const focusedWindow = confirmedOrigin() && headline && statedDate ? { from: null, through: null } : input.window;
+    await open(rankSearch(await searchTavily(precise, focusedWindow, domains),
       topic, variants, country), 2);
     await open(follow([...pages.values()]), 2);
     if (!confirmedOrigin() && deadline - Date.now() > 14_000 && seen.size < MAX_PAGES) {

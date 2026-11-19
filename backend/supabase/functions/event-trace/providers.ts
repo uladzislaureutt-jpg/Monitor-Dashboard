@@ -10,7 +10,7 @@ function deadlineSignal(deadline: number, maxMillis: number): AbortSignal {
   return AbortSignal.timeout(Math.max(1, Math.min(maxMillis, deadline - Date.now())));
 }
 
-export async function tavily(query: string, window: Window, deadline: number): Promise<Candidate[]> {
+export async function tavily(query: string, window: Window, deadline: number, domains?: string[]): Promise<Candidate[]> {
   const key = Deno.env.get("TAVILY_API_KEY") || Deno.env.get("EVENT_TAVILY_API_KEY");
   if (!key) throw new Error("tavily_not_configured");
   const response = await fetch(tavilyEndpoint, {
@@ -19,6 +19,7 @@ export async function tavily(query: string, window: Window, deadline: number): P
     body: JSON.stringify({
       query, max_results: 7, search_depth: "basic", auto_parameters: false,
       include_answer: false, include_raw_content: false,
+      ...(domains?.length ? { include_domains: domains } : {}),
       ...(window.from ? { start_date: window.from } : {}), ...(window.through ? { end_date: window.through } : {}),
     }),
   });
