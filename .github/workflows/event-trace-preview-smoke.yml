@@ -1,0 +1,36 @@
+name: Event Trace preview verification
+on:
+  push:
+    branches: [codex/event-trace-windows]
+    paths: ['.github/workflows/event-trace-preview-smoke.yml']
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Auth gateway
+        run: |
+          endpoint=https://kcmmnngcjfmyjzzczvko.supabase.co/functions/v1/event-trace
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -X POST "$endpoint" -H 'Content-Type: application/json' -d '{"action":"latest"}')
+          printf 'Anonymous POST HTTP %s\n' "$code"
+          test "$code" = 401
+      - name: Parser and provider contracts
+        run: npx --yes --package deno -- deno test --no-config --no-lock backend/supabase/functions/event-trace/trace.test.ts
+      - name: Read public articles in the server runtime
+        run: |
+          npx --yes --package deno -- deno eval --no-config --no-lock '
+            import { openArticle } from "./backend/supabase/functions/event-trace/providers.ts";
+            for (const url of [
+              "https://www.elysee.fr/emmanuel-macron/2024/12/06/communique-conjoint-a-propos-de-la-ceremonie-de-reouverture-de-notre-dame-de-paris",
+              "https://mdta.maryland.gov/blog-category/mdta-traffic-advisories/avoid-i-695-southeast-corridor-key-bridge-collapse",
+              "https://hromadske.ua/en/world/274598-polands-president-secretly-gifted-trump-an-amber-decorated-throne-media-report"
+            ]) {
+              const page = await openArticle({url}, Date.now() + 7000);
+              console.log("EVENT_PUBLIC_ARTICLE", JSON.stringify({host: new URL(url).hostname, access: page.access, published: page.published, updated: page.updated, sourceLinks: page.links.filter(link => link.kind === "citation").length}));
+            }'

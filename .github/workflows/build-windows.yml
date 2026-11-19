@@ -3,7 +3,7 @@ name: Build Monitor Dashboard Windows x64
 on:
   workflow_dispatch:
   push:
-    branches: [codex/event-trace-windows]
+    branches: [main]
 
 permissions:
   contents: read
