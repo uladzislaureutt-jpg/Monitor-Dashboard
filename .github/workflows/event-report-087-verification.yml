@@ -82,8 +82,8 @@ jobs:
           libreoffice "-env:UserInstallation=file://$RUNNER_TEMP/lo-event" --headless --convert-to pdf --outdir . amber-event-report.docx
           pdfinfo amber-event-report.pdf | grep -E 'Pages:|Page size:'
           pdftotext amber-event-report.pdf amber-event-report-rendered.txt
-          rg -q 'Хронология распространения' amber-event-report-rendered.txt
-          rg -q 'Реестр источников' amber-event-report-rendered.txt
+          grep -q 'Хронология распространения' amber-event-report-rendered.txt
+          grep -q 'Реестр источников' amber-event-report-rendered.txt
       - uses: actions/upload-artifact@v4
         with:
           name: amber-editorial-preview
