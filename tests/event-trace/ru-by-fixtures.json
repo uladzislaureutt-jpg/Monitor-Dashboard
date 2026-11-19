@@ -1,0 +1,61 @@
+[
+  {
+    "id": "ru-moscow-storm",
+    "label": "Москва — шторм и предупреждение МЧС",
+    "country": "RU",
+    "window": {"from": "2024-06-19", "through": "2024-06-21"},
+    "task": "Восстанови первые сообщения и официальное предупреждение о грозе, ливне и шквале в Москве 20 июня 2024 года.",
+    "pages": [
+      {"id":"moscow-mchs","role":"official","url":"https://moscow.mchs.gov.ru/deyatelnost/press-centr/operativnaya-informaciya/5303775","date":"2024-06-19","anchors":["20 июня","смерчей","18-23"]},
+      {"id":"moscow-mosgaz","role":"related_official","url":"https://www.mos-gaz.ru/press-service/news-moscow/2024/06/20/7974","date":"2024-06-20","anchors":["20 июня","смерчей","Бирюков"]}
+    ]
+  },
+  {
+    "id": "ru-kamchatka-earthquake",
+    "label": "Камчатка — землетрясение и предупреждение о цунами",
+    "country": "RU",
+    "window": {"from": "2024-08-17", "through": "2024-08-19"},
+    "task": "Найди ранние сообщения властей и агентств о сильном землетрясении у Камчатки 17–18 августа 2024 года и предупреждении о возможном цунами.",
+    "pages": [
+      {"id":"kamchatka-hydromet","role":"official","url":"https://www.meteorf.gov.ru/press/news/38439/","date":"2024-08-18","anchors":["Северо-Курильском","160.5","1910 UTC"]},
+      {"id":"kamchatka-interfax","role":"agency","url":"https://www.interfax.ru/russia/976985","date":"2024-08-17","anchors":["геофизической службы РАН","108 км","Петропавловска-Камчатского"]},
+      {"id":"kamchatka-local","role":"local","url":"https://km41.ru/news/kamch/23560-utrom_18_avgusta_na_kamchatke_proizoshlo_oshchutimoe_zemletryasenie/","date":"2024-08-18","anchors":["Кам 24","сейсмической опасности","07:10"]}
+    ]
+  },
+  {
+    "id": "by-braslav-crash",
+    "label": "Браслав — ДТП 13 ноября и сообщение ГАИ",
+    "country": "BY",
+    "window": {"from": "2026-11-12", "through": "2026-11-14"},
+    "task": "Проследи публикации о ДТП с несовершеннолетней в Браславе утром 13 ноября 2026 года. Найди сообщение ГАИ и публикации местных изданий.",
+    "pages": [
+      {"id":"braslav-star","role":"local","url":"https://www.braslav-star.by/2026/11/13/в-браславе-в-дтп-пострадала-12-летняя-де/","date":"2026-11-13","anchors":["Дзержинского","Юбилейная","Проводится проверка"]},
+      {"id":"braslav-gai","role":"official_telegram","url":"https://t.me/vitebsk_gai/26470","date":"2026-11-13","anchors":["Дзержинского","Юбилейная","Проводится проверка"]},
+      {"id":"braslav-vitbichi","role":"related_media","url":"https://vitbichi.by/news/proisshestviya/v_braslave_v_dtp_postradala_12_letnyaya_devochka/","date":"2026-11-13","anchors":["Дзержинского","Юбилейная","Проводится проверка"]}
+    ]
+  },
+  {
+    "id": "by-gomel-storm",
+    "label": "Гомельщина — последствия шквала 14 июля",
+    "country": "BY",
+    "window": {"from": "2024-07-14", "through": "2024-07-16"},
+    "task": "Найди первые сообщения МЧС и белорусских СМИ о последствиях шквала 14 июля 2024 года в Гомельской области.",
+    "pages": [
+      {"id":"gomel-mchs","role":"official_telegram","url":"https://t.me/mchs112by/6862","date":"2024-07-15","anchors":["грозового фронта","249","Могилевская"]},
+      {"id":"gomel-belta","role":"agency","url":"https://www.belta.by/regions/view/za-chas-posle-grozovogo-fronta-bolee-sta-zvonkov-spasateli-gomelskoj-oblasti-pomogajut-likvidirovat-648090-2024/","date":"2024-07-15","anchors":["ста звонков","грозового фронта","Гомельской области"]},
+      {"id":"gomel-mediabrest","role":"related_media","url":"https://mediabrest.by/news/sobytia/v-gomelskoy-oblasti-prodolzhayut-ustranyat-posledstviya-nepogody","date":"2024-07-16","anchors":["594","33 районах","более 800 деревьев"]}
+    ]
+  },
+  {
+    "id": "transport-controls",
+    "label": "Контроль издателей и архивного редиректа",
+    "country": "BY",
+    "window": null,
+    "task": null,
+    "pages": [
+      {"id":"braslav-archived","role":"negative_redirect","url":"https://www.braslav-star.by/2020/05/Браславский-РОЧС-начали-неделю-с-добр/","date":null,"anchors":["молодому лебедю","озера Новята","рыболовной леске"]},
+      {"id":"kraj-news","role":"publisher_control","url":"https://news.kraj.by/20261118/v-molodechno-uchashhiesya-kolledzha-obyasnili-pochemu-oni-polnopravnye-studenty","date":"2026-11-18","anchors":["полноправные студенты","Молодечно","колледжа"]},
+      {"id":"belka-home","role":"connectivity_only","url":"https://belkagomel.by/","date":null,"anchors":[]}
+    ]
+  }
+]

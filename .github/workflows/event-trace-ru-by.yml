@@ -1,0 +1,30 @@
+name: Event Trace RU/BY source pilot
+on:
+  push:
+    branches: [codex/event-trace-ru-by]
+    paths: ['tests/event-trace/**', '.github/workflows/event-trace-ru-by.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: event-trace-ru-by-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  sources:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run source and parser comparison
+        env:
+          TAVILY_API_KEY: ${{ secrets.EVENT_TAVILY_API_KEY || secrets.TAVILY_API_KEY }}
+        run: npx --yes --package deno -- deno run --no-config --no-lock --allow-net --allow-env=TAVILY_API_KEY,EVENT_TAVILY_API_KEY --allow-write=event-ru-by.json tests/event-trace/ru-by-smoke.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: event-ru-by
+          path: event-ru-by.json
+          if-no-files-found: error
