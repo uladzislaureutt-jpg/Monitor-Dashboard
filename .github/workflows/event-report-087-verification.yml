@@ -65,12 +65,19 @@ jobs:
               assert sum('https://' in item.attrib.get('Target', '') for item in relationships) == 3
               print('Verified document structure, repeated table headers and three source destinations')
           PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: amber-editorial-report
+          path: |
+            amber-event-report.docx
+            amber-event-report.json
+          if-no-files-found: error
       - name: Render in LibreOffice
         shell: bash
         run: |
-          if ! command -v libreoffice >/dev/null; then
+          if ! command -v libreoffice >/dev/null || ! command -v pdfinfo >/dev/null; then
             sudo apt-get -qq update
-            sudo apt-get -qq -y install libreoffice-writer
+            sudo apt-get -qq -y --no-install-recommends install libreoffice-writer poppler-utils fonts-liberation
           fi
           libreoffice "-env:UserInstallation=file://$RUNNER_TEMP/lo-event" --headless --convert-to pdf --outdir . amber-event-report.docx
           pdfinfo amber-event-report.pdf | grep -E 'Pages:|Page size:'
@@ -79,10 +86,8 @@ jobs:
           rg -q 'Реестр источников' amber-event-report-rendered.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: amber-editorial-report
+          name: amber-editorial-preview
           path: |
-            amber-event-report.docx
-            amber-event-report.json
             amber-event-report.pdf
             amber-event-report-rendered.txt
           if-no-files-found: error
