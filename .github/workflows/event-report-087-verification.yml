@@ -1,0 +1,88 @@
+name: Verify Monitor Event 0.8.87
+
+on:
+  push:
+    branches: [codex/event-report-087-verify]
+
+permissions:
+  contents: read
+
+jobs:
+  sources:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno test --no-lock backend/supabase/functions/event-trace/trace.test.ts
+      - run: deno run --no-lock --allow-net --allow-env --allow-write=event-regression.json tests/event-trace/live-regression.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: event-source-regression
+          path: event-regression.json
+          if-no-files-found: error
+  word:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Generate and validate the actual Word document
+        shell: bash
+        run: |
+          node --experimental-strip-types tests/event-trace/event-report-fixture.mjs amber-event-report.json
+          mkdir -p "$RUNNER_TEMP/event-report/src"
+          cat > "$RUNNER_TEMP/event-report/Cargo.toml" <<'TOML'
+          [package]
+          name = "event-report-smoke"
+          version = "0.1.0"
+          edition = "2024"
+          [dependencies]
+          serde = { version = "1", features = ["derive"] }
+          serde_json = "1"
+          regex = "1.11"
+          zip = { version = "9.0.3", default-features = false, features = ["deflate", "deflate64"] }
+          TOML
+          cat > "$RUNNER_TEMP/event-report/src/main.rs" <<RUST
+          #[allow(dead_code)]
+          #[path = "$GITHUB_WORKSPACE/src-tauri/src/report.rs"]
+          mod report;
+          fn main() {
+            let args: Vec<String> = std::env::args().collect();
+            let data = std::fs::read_to_string(&args[1]).unwrap();
+            let event = serde_json::from_str::<report::EventReport>(&data).unwrap();
+            report::export_event_report_docx(std::path::Path::new(&args[2]), &event).unwrap();
+          }
+          RUST
+          cargo test --manifest-path "$RUNNER_TEMP/event-report/Cargo.toml"
+          cargo run --manifest-path "$RUNNER_TEMP/event-report/Cargo.toml" -- amber-event-report.json amber-event-report.docx
+          python3 - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree
+          from zipfile import ZipFile
+          with ZipFile(Path('amber-event-report.docx')) as doc:
+              for path in doc.namelist():
+                  if path.endswith(('.xml', '.rels')):
+                      ElementTree.fromstring(doc.read(path))
+              ns = {'w':'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+              root = ElementTree.fromstring(doc.read('word/document.xml'))
+              assert len(root.findall('.//w:tbl', ns)) >= 2
+              assert len(root.findall('.//w:hyperlink', ns)) >= 3
+              assert len(root.findall('.//w:tblHeader', ns)) >= 2
+              relationships = ElementTree.fromstring(doc.read('word/_rels/document.xml.rels'))
+              assert sum('https://' in item.attrib.get('Target', '') for item in relationships) == 3
+              print('Verified document structure, repeated table headers and three source destinations')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: amber-editorial-report
+          path: |
+            amber-event-report.docx
+            amber-event-report.json
+          if-no-files-found: error
