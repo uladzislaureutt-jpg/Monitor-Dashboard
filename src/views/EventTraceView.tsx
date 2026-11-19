@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { desktopApi } from "../api";
-import { eventDate, eventRun, type EventEntry, type EventRun } from "../eventTrace";
+import { eventRun, type EventRun } from "../eventTrace";
+import { makeEventReport, type ReportPart } from "../eventReport";
 import { useI18n } from "../i18n";
 
 const LIMIT = 500;
@@ -76,65 +77,23 @@ export function EventTraceView() {
   }
 
   const result = run?.result;
-  const entries = result?.entries || [];
-  const byId = new Map(entries.map((entry) => [entry.id, entry]));
-  const earliest = result?.earliestId ? byId.get(result.earliestId) : undefined;
-  const cited = new Set(result?.citedSourceIds);
-  const sameDayUncertain = Boolean(earliest && entries.some((entry) => entry.id !== earliest.id &&
-    !entry.outsideWindow && entry.published && eventDate(entry.published, locale).split(",")[0].trim() ===
-    eventDate(earliest.published, locale).split(",")[0].trim() &&
-    (entry.published.length === 10 || earliest.published?.length === 10)));
+  const report = run && result?.entries.length ? makeEventReport(run, locale) : null;
   const title = be ? "Падзея" : "Событие";
-  const timelineTitle = be ? "Храналогія публікацый" : "Хронология публикаций";
-  const earliestTitle = be ? "Самая ранняя з датаваных публікацый" : "Самая ранняя из датированных публикаций";
-  const uncertainty = be ? "Для некаторых публікацый за гэты дзень час невядомы." : "Для части публикаций за этот день точное время неизвестно.";
-  const dateRange = run?.options.from || run?.options.through ?
-    `${run.options.from ? eventDate(run.options.from, locale) : "…"} — ${run.options.through ? eventDate(run.options.through, locale) : "…"}`
-    : be ? "паводле запыту, без жорсткага фільтра" : "по запросу, без жёсткого фильтра";
 
-  const roles = (entry: EventEntry) => [
-    cited.has(entry.id) ? (be ? "На яе спасылаюцца" : "На неё ссылаются") : "",
-    entry.citations.length ? (be ? "Спасылаецца на крыніцы" : "Ссылается на источники") : "",
-    entry.outsideWindow ? (be ? "Па-за перыядам" : "Вне периода") : "",
-  ].filter(Boolean).join(" · ");
-  const access = (entry: EventEntry) => entry.access === "readable" ? "" : entry.access === "lead"
-    ? (be ? "Загаловак і лід" : "Заголовок и лид") : (be ? "Толькі метаданыя" : "Только метаданные");
-
-  function openSource(entry: EventEntry) {
-    void desktopApi.openUrl(entry.url).catch(() => setError("open_failed"));
+  function parts(items: ReportPart[]) {
+    return items.map((part, index) => part.url
+      ? <button key={index} className="link-button" type="button" onClick={() => {
+          void desktopApi.openUrl(part.url!).catch(() => setError("open_failed"));
+        }}>{part.text}</button>
+      : <span key={index}>{part.text}</span>);
   }
 
   async function exportDocx() {
-    if (!run || !entries.length) return;
+    if (!report) return;
     setError("");
     try {
       const path = await save({ defaultPath: be ? "Падзея.docx" : "Событие.docx", filters: [{ name: "Word", extensions: ["docx"] }] });
-      if (!path) return;
-      const names = entries.map((entry) => `${entry.publisher.replace(/[«»]/g, "").trim()} [${entry.id}]`);
-      const nameById = new Map(entries.map((entry, index) => [entry.id, names[index]]));
-      const asLink = (entry: EventEntry) => `«${nameById.get(entry.id)}»`;
-      const output = [
-        title, run.task, `${be ? "Перыяд" : "Период"} · ${dateRange}`,
-        result?.summary ? [result.summary, ...(result.summarySources || []).flatMap((id) => {
-          const source = byId.get(id);
-          return source ? [asLink(source)] : [];
-        })].join(" ") : "",
-        earliest ? `${earliestTitle} · ${asLink(earliest)} · ${eventDate(earliest.published, locale)}` : "",
-        sameDayUncertain ? uncertainty : "",
-        run.status === "partial" ? (be ? "Частковы вынік" : "Частичный результат") : "",
-        timelineTitle,
-        ...entries.map((entry) => {
-          const facts = [eventDate(entry.published, locale), asLink(entry), entry.title, roles(entry), access(entry)].filter(Boolean);
-          if (entry.updated && entry.updated !== entry.published) facts.push(`${be ? "абноўлена" : "обновлено"} ${eventDate(entry.updated, locale)}`);
-          const references = entry.citations.flatMap((citation) => {
-            const source = byId.get(citation.sourceId);
-            return source ? [`${be ? "Спасылка на" : "Ссылка на"} ${asLink(source)} · ${citation.evidence}`] : [];
-          });
-          return [facts.join(" · "), ...references].join("\n\n");
-        }),
-      ].filter(Boolean);
-      await desktopApi.exportWReview(path, output.join("\n\n"), names, [title, timelineTitle], [],
-        entries.map((entry, index) => ({ name: names[index], url: entry.url })));
+      if (path) await desktopApi.exportEventReport(path, report);
     } catch { setError("export_failed"); }
   }
 
@@ -177,41 +136,32 @@ export function EventTraceView() {
         <button className="primary-button" disabled={!task.trim() || submitting || running || loading || Boolean(from && through && from > through)}>{be ? "Прасачыць" : "Проследить"}</button>
       </form>
       <div className="panel event-trace-output">
-        <div className="event-trace-output-head"><h2>{be ? "Вынік" : "Результат"}</h2>{entries.length > 0 &&
+        <div className="event-trace-output-head"><h2>{be ? "Вынік" : "Результат"}</h2>{report &&
           <button className="secondary-button small-button" onClick={() => void exportDocx()}>{be ? "Захаваць DOCX" : "Сохранить DOCX"}</button>}</div>
         <p role="status" className="muted">{loading ? "Загрузка…" : running || submitting ?
           (run ? `${labels[run.stage]}…` : `${labels.search}…`) : run?.status === "failed" ?
           (be ? "Пошук перарваўся." : "Поиск прервался.") : run?.status === "partial" ?
           (be ? "Частковы вынік" : "Частичный результат") : !run ?
           (be ? "Тут з’явяцца крыніцы і храналогія." : "Здесь появятся источники и хронология.") : ""}</p>
-        {run && <p className="muted">{be ? "Перыяд" : "Период"} · {dateRange}</p>}
         {[...new Set(warnings)].map((warning) => <p className="muted" key={warning}>{warning}</p>)}
-        {result?.summary && <div><p>{result.summary}</p><div className="event-trace-links">{(result.summarySources || []).map((id) => {
-          const source = byId.get(id);
-          return source && <button className="link-button" key={id} onClick={() => openSource(source)}>{source.publisher} · {id}</button>;
-        })}</div></div>}
-        {earliest ? <div className="event-trace-earliest"><b>{earliestTitle}</b>
-          <button className="link-button" onClick={() => openSource(earliest)}>{earliest.title}</button>
-          <small>{earliest.publisher} · {eventDate(earliest.published, locale)}</small>
-          {sameDayUncertain && <small>{uncertainty}</small>}
-        </div> : result && !running && <p>{be ? "Публікацыі з пацверджанай датай за гэты перыяд не знойдзеныя." : "Публикации с подтверждённой датой за этот период не найдены."}</p>}
-        {entries.length > 0 && <div className="event-trace-timeline">
-          <h3>{timelineTitle}</h3>
-          <p className="muted">{be ? "Час па Мінску" : "Время по Минску"} · {be ? "Праверана старонак" : "Проверено страниц"} {result?.checked}</p>
-          <ol>{entries.map((entry) => <li key={entry.id}>
-            <small>{entry.publisher} · {eventDate(entry.published, locale)}</small>
-            <button className="link-button event-trace-article" onClick={() => openSource(entry)}>{entry.title}</button>
-            {(roles(entry) || access(entry)) && <small>{[roles(entry), access(entry)].filter(Boolean).join(" · ")}</small>}
-            {entry.updated && entry.updated !== entry.published && <small>{be ? "Абноўлена" : "Обновлено"} · {eventDate(entry.updated, locale)}</small>}
-            {entry.citations.map((citation) => {
-              const source = byId.get(citation.sourceId);
-              return source && <div key={source.id} className="event-trace-citation">
-                <button className="link-button" onClick={() => openSource(source)}>{be ? "Спасылка на" : "Ссылка на"} {source.publisher} · {source.id}</button>
-                <small>{citation.evidence}</small>
-              </div>;
-            })}
-          </li>)}</ol>
-        </div>}
+        {report ? <article className="event-editorial-report">
+          <h3 className="event-report-title">{report.title}</h3>
+          <dl className="event-report-meta">{report.metadata.map(([label, value]) =>
+            <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+          {report.sections.map((section) => <section className="event-report-section" key={section.heading}>
+            <h4>{section.heading}</h4>
+            {section.paragraphs.map((paragraph, index) => <p key={index}>{parts(paragraph)}</p>)}
+            {section.table && <div className="event-report-table-wrap">
+              <table aria-label={section.heading}>
+                <colgroup>{section.table.widths.map((width, index) => <col key={index} style={{ width: width + "%" }} />)}</colgroup>
+                <thead><tr>{section.table.headers.map((header) => <th key={header} scope="col">{header}</th>)}</tr></thead>
+                <tbody>{section.table.rows.map((row, number) => <tr key={number}>
+                  {row.map((cell, index) => <td key={index}>{parts(cell)}</td>)}
+                </tr>)}</tbody>
+              </table>
+            </div>}
+          </section>)}
+        </article> : result && !running && <p>{be ? "Публікацыі за гэты перыяд не знойдзеныя." : "Публикации за этот период не найдены."}</p>}
       </div>
     </div>
   </section>;

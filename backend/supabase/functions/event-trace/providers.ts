@@ -1,6 +1,6 @@
 import { request as httpRequest, type IncomingHttpHeaders } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { metadataPage, plain, publicAddress, publicArticleUrl, readPage, type Candidate, type Page, type Window } from "./core.ts";
+import { metadataPage, plain, publicAddress, publicArticleUrl, readPage, readTelegramPost, redirectedToHome, telegramPostKey, type Candidate, type Page, type Window } from "./core.ts";
 
 const tavilyEndpoint = "https://api.tavily.com/search";
 const brightEndpoint = "https://mcp.brightdata.com/mcp";
@@ -180,23 +180,43 @@ function loadHtmlPage(url: URL, address: string, signal: AbortSignal):
 }
 
 export async function openArticle(candidate: Candidate, deadline: number): Promise<Page> {
-  const signal = deadlineSignal(deadline, 5200);
-  let url = publicArticleUrl(candidate.url);
-  try {
+  const signal = deadlineSignal(deadline, 6500);
+  const post = telegramPostKey(candidate.url);
+  let bestPost: Page | null = null;
+  async function download(target: string) {
+    let url = publicArticleUrl(target);
     for (let hop = 0; hop < 4 && url && !signal.aborted; hop++) {
       const current = new URL(url);
       const address = await resolvePublicAddress(current.hostname, signal);
-      if (!address) break;
+      if (!address) return null;
       const reply = await loadHtmlPage(current, address, signal);
       if (reply.status >= 300 && reply.status < 400) {
         url = publicArticleUrl(reply.headers.location, url);
         continue;
       }
-      if (reply.html) return readPage(reply.html, url, candidate);
-      break;
+      return { url, html: reply.html };
     }
-  } catch { /* The search candidate is still usable as metadata. */ }
-  return metadataPage(candidate);
+    return null;
+  }
+  try {
+    if (post) {
+      const [channel, id] = post.split("/");
+      for (const target of [`https://t.me/${post}?embed=1`, `https://t.me/s/${channel}?before=${Number(id) + 1}`]) {
+        if (signal.aborted) break;
+        const page = await download(target);
+        if (page?.html) {
+          const exact = readTelegramPost(page.html, candidate.url, candidate);
+          if (exact?.published) return exact;
+          if (exact) bestPost = exact;
+        }
+      }
+      return bestPost || metadataPage(candidate, signal.aborted ? "timeout" : "unavailable");
+    }
+    const page = await download(candidate.url);
+    if (page && redirectedToHome(candidate.url, page.url)) return metadataPage(candidate, "redirect_home");
+    if (page?.html) return readPage(page.html, page.url, candidate);
+  } catch { /* Keep the search card and its original URL. */ }
+  return bestPost || metadataPage(candidate, signal.aborted ? "timeout" : "unavailable");
 }
 
 export function cloudflareConfigured(): boolean {

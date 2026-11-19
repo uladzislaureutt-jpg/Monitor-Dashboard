@@ -64,3 +64,56 @@ Deno.test("a reserve can complete a citation chain even with synthesis unavailab
   expect(result.warnings, ["summary_unavailable"]);
   expect(stages, ["sources", "sources", "reserve", "summary"]);
 });
+
+Deno.test("follows an editorial Source label and isolates the exact public Telegram post", async () => {
+  const { trace } = await import("./trace.ts");
+  const { readTelegramPost } = await import("./core.ts");
+  const newsroom = "https://www.braslav-star.by/2026/11/13/item/";
+  const telegram = "https://t.me/vitebsk_gai/26470";
+  const page = readPage(`<main><article><h1>ДТП в Браславе</h1>
+    <meta property="article:published_time" content="2026-11-13T12:56:00+03:00"/>
+    <p>Сообщение о дорожно-транспортном происшествии.</p><p>Источник: <a href="${telegram}">Витебск ГАИ</a></p>
+    </article></main>`, newsroom, { url: newsroom });
+  const post = readTelegramPost(`<div data-post="vitebsk_gai/26469"><div class="tgme_widget_message_text">Другая публикация.</div></div>
+    <div data-post="vitebsk_gai/26470"><div class="tgme_widget_message_text">ДТП в Браславе. Полиция проводит проверку обстоятельств происшествия.</div>
+    <time datetime="2026-11-13T09:46:35Z"></time></div>`, telegram, { url: telegram });
+  if (!post) throw new Error("The exact post was skipped");
+  expect(post.excerpt.includes("Другая публикация"), false);
+  expect(post.published, "2026-11-13T09:46:35.000Z");
+  expect(urlKey(telegram), urlKey("https://t.me/s/vitebsk_gai/26470?embed=1"));
+  const opened: string[] = [];
+  const result = await trace({ task: "ДТП в Браславе", window: { from: "2026-11-13", through: "2026-11-13" }, locale: "ru" },
+    async () => {}, {
+      tavily: async () => [{ url: newsroom }],
+      openArticle: async (candidate) => { opened.push(candidate.url); return candidate.url === newsroom ? page : post; },
+      cloudflareConfigured: () => false,
+      eventModel: async () => null,
+      brightSearch: async () => { throw new Error("A supported origin should stop paid search"); },
+    });
+  expect(opened, [newsroom, telegram]);
+  expect(result.earliestId, result.entries.find((entry) => entry.url === telegram)?.id);
+  expect(result.entries.find((entry) => entry.url === newsroom)?.citations.map((edge) => edge.sourceId), [result.earliestId]);
+});
+
+Deno.test("uses the article byline and rejects home redirects instead of dating them", () => {
+  const url = "https://vitbichi.by/news/episode/";
+  const page = readPage('<header><p>Опубликовано 19 ноября 2026</p></header><main><article><h1>ДТП</h1><p>Пятница, 13.11.2026 14:40 | Рубрика: Происшествия</p><p>Текст статьи.</p></article></main>', url, { url });
+  expect(page.published, "2026-11-13T11:40:00.000Z");
+  expect(page.publicationEvidence, "Подпись в статье");
+  const home = readPage("<h1>Главная</h1><p>Опубликовано 19 ноября 2026</p>", "https://vitbichi.by/", { url });
+  expect([home.url, home.issue, home.published, home.access], [url, "redirect_home", null, "metadata"]);
+});
+
+Deno.test("a model observation must be an exact extract from a readable card", async () => {
+  const { validateObservations } = await import("./trace.ts");
+  const url = "https://tvn24.pl/story";
+  const excerpt = "Редакция сообщает о подарке и ссылается на собеседника в администрации.";
+  const entry = { ...readPage("<main><h1>Сообщение</h1><p>" + excerpt + "</p></main>", url, { url }),
+    id: "S01", outsideWindow: false, citations: [], excerpt, access: "readable" as const };
+  expect(validateObservations([
+    { source_id: "S99", excerpt, kind: "detail" },
+    { source_id: "S01", excerpt, kind: "disputed" },
+    { source_id: "S01", excerpt: "Абсолютно новая и выдуманная подробность, которой публикация не содержит.", kind: "statement" },
+    { source_id: "S01", excerpt, kind: "statement" },
+  ], [entry]), [{ sourceId: "S01", excerpt, kind: "statement" }]);
+});

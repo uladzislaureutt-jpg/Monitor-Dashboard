@@ -4,6 +4,13 @@ export type EventEntry = {
   id: string; url: string; title: string; publisher: string; excerpt: string;
   published: string | null; updated: string | null; outsideWindow: boolean;
   access: "readable" | "lead" | "metadata";
+  publicationEvidence?: string;
+  updateEvidence?: string;
+  extraction?: "html" | "readability" | "telegram";
+  issue?: "redirect_home" | "timeout" | "unavailable";
+  originKind?: "official" | "media";
+  country?: string;
+  namedSources?: string[];
   citations: Array<{ sourceId: string; evidence: string }>;
 };
 
@@ -16,6 +23,8 @@ export type EventTraceResult = {
   warnings: string[];
   summary: string | null;
   summarySources?: string[];
+  observations?: Array<{ sourceId: string; excerpt: string; kind: "statement" | "detail" | "disputed" }>;
+  checkedAt?: string;
 };
 
 export type EventRun = {
@@ -26,6 +35,7 @@ export type EventRun = {
   options: { from: string | null; through: string | null };
   result: EventTraceResult | null;
   created_at: string;
+  updated_at?: string;
 };
 
 type Request = { action: "latest" } | { action: "status"; id: string } |
@@ -44,12 +54,4 @@ export async function eventRun(body: Request, signal?: AbortSignal): Promise<Eve
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(typeof payload.error === "string" ? payload.error : `HTTP_${response.status}`);
   return payload.run ?? null;
-}
-
-export function eventDate(value: string | null, locale: "ru" | "be") {
-  if (!value) return locale === "be" ? "дата не пацверджаная" : "дата не подтверждена";
-  if (value.length === 10) return value.split("-").reverse().join(".");
-  return new Intl.DateTimeFormat(locale === "be" ? "be-BY" : "ru-RU", {
-    timeZone: "Europe/Minsk", dateStyle: "short", timeStyle: "short",
-  }).format(new Date(value));
 }
