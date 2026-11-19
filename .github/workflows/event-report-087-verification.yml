@@ -46,7 +46,7 @@ jobs:
             report::export_event_report_docx(std::path::Path::new(&args[2]), &event).unwrap();
           }
           RUST
-          cargo test --manifest-path "$RUNNER_TEMP/event-report/Cargo.toml"
+          cargo test --manifest-path "$RUNNER_TEMP/event-report/Cargo.toml" event_word::tests
           cargo run --manifest-path "$RUNNER_TEMP/event-report/Cargo.toml" -- amber-event-report.json amber-event-report.docx
           python3 - <<'PY'
           from pathlib import Path
