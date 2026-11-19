@@ -31,7 +31,8 @@ function close(connection?: Deno.Conn) {
 
 async function connect(addresses: string[], port: number, signal: AbortSignal) {
   for (const [index, address] of addresses.slice(0, 2).entries()) {
-    const attempt = index === 0 && addresses.length > 1 ? AbortSignal.any([signal, AbortSignal.timeout(3400)]) : signal;
+    const sameFamilyBackup = addresses.length > 1 && address.includes(":") === addresses[1].includes(":");
+    const attempt = index === 0 && sameFamilyBackup ? AbortSignal.any([signal, AbortSignal.timeout(3400)]) : signal;
     const pending = Deno.connect({ hostname: address, port }).then(connection => {
       if (attempt.aborted) { close(connection); throw attempt.reason; }
       return connection;

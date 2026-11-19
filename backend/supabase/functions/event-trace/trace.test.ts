@@ -214,3 +214,24 @@ Deno.test("the pinned HTTP reader de-chunks a fragmented response and handles a 
   const redirect = await readReply(serve(["HTTP/1.1 302 Found\r\nLocation: /news/1\r\nContent-Length: 999\r\n\r\n"]), {phase:"headers"});
   expect([redirect.status, redirect.headers.get("location"), redirect.html], [302, "/news/1", ""]);
 });
+
+Deno.test("a contextual citation from another city and an unrelated year stay out of the timeline", async () => {
+  const { trace } = await import("./trace.ts");
+  const current = "https://example.org/storm";
+  const other = "https://example.org/st-petersburg";
+  const old = "https://example.org/previous-storm";
+  const results = new Map([
+    [current, readPage(`<article><h1>Ливень в Москве</h1><p>По данным <a href="${other}">соседнего издания</a> в другом городе тоже прошёл ливень.</p></article>`, current, {url:current})],
+    [other, readPage('<article><h1>Ливень в Петербурге</h1><time itemprop="datePublished" datetime="2024-06-20T07:00:00Z"></time><p>По словам МЧС, проблемы есть и в Москве.</p></article>', other, {url:other})],
+    [old, readPage('<article><h1>Ливень в Москве</h1><time itemprop="datePublished" datetime="2023-06-20T07:00:00Z"></time><p>Последствия в Москве.</p></article>', old, {url:old})],
+  ]);
+  const result = await trace({task:"Ливень в Москве 20 июня 2024 года",window:{from:"2024-06-19",through:"2024-06-21"},locale:"ru"},
+    async () => {}, {
+      tavily: async () => [{url:current}, {url:old}],
+      openArticle: async ({url}) => results.get(url)!,
+      cloudflareConfigured: () => false,
+      eventModel: async () => null,
+      brightSearch: async () => ({hits:[], failures:0}),
+    });
+  expect(result.entries.map(({url})=>url), [current]);
+});
