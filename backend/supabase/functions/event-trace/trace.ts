@@ -24,7 +24,7 @@ function searchableWords(value: string) {
 
 function topicStems(value: string) {
   const words = searchableWords(value.replace(/\b\d{1,2}\s+\p{L}{3,12}\s+\d{4}\b/gu, ""));
-  return [...new Set(words.filter((word) => !queryFiller.has(word)).map((word) => word.slice(0, 5)))];
+  return [...new Set(words.filter((word) => !queryFiller.has(word) && !word.startsWith("предупре")).map((word) => word.slice(0, 5)))];
 }
 
 export function matchesEvent(title: string, excerpt: string, task: string, variants: string[]) {
