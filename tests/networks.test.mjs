@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { importNetworkCards, mergeNetworkCards, networkTrend, isTikTokVideoUrl, safeTikTokPreview, effectiveCategory, includedInOperatorOverview, isNetworkOperatorReview, isNetworkOperatorVisible,
-  networkOperatorSection, latestOperatorRuns, operatorRun, selectOperatorArchive } from "../src/networks.ts";
+  compareOperatorReview, networkOperatorSection, latestOperatorRuns, operatorRun, selectOperatorArchive } from "../src/networks.ts";
 
 const now = "2026-11-02T07:00:00Z";
 function card(id, category = "P2", date = "2026-11-02T05:00:00Z") {
@@ -283,4 +283,16 @@ test("operator moves a review card without changing its run, evidence or archive
   assert.equal(networkTrend([item], null, Date.parse(now), decided.sections).at(-1).count, 1);
   assert.equal(cloudModerationToLocal([{ item_id: item.item_id, flagged: true, deleted: true,
     operator_section: "appeals" }]).sections, undefined);
+});
+
+test("the app retains the producer's four additional pages of ranked reviews", () => {
+  const ranked = Array.from({ length: 54 }, (_, i) => ({
+    ...card(String(7705100000000000001n + BigInt(i)), "REVIEW"),
+    included_in_current_overview: false, report_suppressed: true,
+    operator_review_lane: "triage", operator_review_seen_run: 43,
+    operator_review_rank: i + 1, operator_display_section: "review",
+  }));
+  const selected = selectOperatorArchive(ranked.reverse()).sort(compareOperatorReview);
+  assert.deepEqual(selected.map((row) => row.operator_review_rank),
+    Array.from({ length: 50 }, (_, i) => i + 1));
 });
