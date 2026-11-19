@@ -178,8 +178,8 @@ function articleText(markup: string): string {
   if (!markup) return "";
   try {
     // Bound CPU and avoid translating navigation or script data into article text.
-    const { document } = parseHTML(markup.slice(0, 360_000));
-    const dom = document as unknown as Document;
+    const window = parseHTML(markup.slice(0, 360_000));
+    const { document: dom } = window as unknown as { document: ConstructorParameters<typeof Readability>[0] };
     const parsed = new Readability(dom, { charThreshold: 140, maxElemsToParse: 9000, nbTopCandidates: 4 }).parse();
     const body = plain(parsed?.textContent, 2300);
     return gated.test(body) ? "" : body;
