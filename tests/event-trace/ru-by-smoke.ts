@@ -86,9 +86,20 @@ async function inspect(fixture: Fixture) {
   };
 }
 
+const key = Deno.env.get("TAVILY_API_KEY") || Deno.env.get("EVENT_TAVILY_API_KEY");
+let freeTavily = false;
+if (key) {
+  try {
+    const res = await fetch("https://api.tavily.com/usage", {
+      headers: { Authorization: `Bearer ${key}` }, redirect: "error", signal: AbortSignal.timeout(6000),
+    });
+    const data = res.ok ? await res.json() : null;
+    const remaining = Number(data?.account?.plan_limit) - Number(data?.account?.plan_usage);
+    freeTavily = /researcher|^free$/i.test(data?.account?.current_plan || "") && remaining >= 20;
+  } catch { /* Skip search unless it can run within confirmed free credits. */ }
+}
 const report = { route: "GitHub ubuntu-latest", country: null as string | null,
-  hasTavilyKey: Boolean(Deno.env.get("TAVILY_API_KEY") || Deno.env.get("EVENT_TAVILY_API_KEY")),
-  cases: [] as unknown[] };
+  hasTavilyKey: Boolean(key), freeTavily, cases: [] as unknown[] };
 try {
   const reply = await fetch("https://www.cloudflare.com/cdn-cgi/trace", { signal: AbortSignal.timeout(5000) });
   report.country = (await reply.text()).match(/^loc=([A-Z]{2})$/m)?.[1] ?? null;
@@ -97,7 +108,7 @@ try {
 for (const item of cases) {
   const sources = await Promise.all(item.pages.map(inspect));
   let discovery: unknown = null;
-  if (item.task && item.window && report.hasTavilyKey) {
+  if (item.task && item.window && report.freeTavily) {
     const stages: string[] = [];
     const searched: Array<{ query: string; hits: string[] }> = [];
     const result = await trace({ task: item.task, window: item.window, locale: "ru" }, async (stage) => { stages.push(stage); }, {
@@ -121,4 +132,4 @@ for (const item of cases) {
   console.log("EVENT_RU_BY_CASE", JSON.stringify(row));
 }
 await Deno.writeTextFile("event-ru-by.json", JSON.stringify(report, null, 2));
-console.log("EVENT_RU_BY_ENV", JSON.stringify({ runnerCountry: report.country, tavilyConfigured: report.hasTavilyKey }));
+console.log("EVENT_RU_BY_ENV", JSON.stringify({ runnerCountry: report.country, tavilyConfigured: report.hasTavilyKey, freeTavily: report.freeTavily }));
