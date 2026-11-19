@@ -117,3 +117,33 @@ Deno.test("a model observation must be an exact extract from a readable card", a
     { source_id: "S01", excerpt, kind: "statement" },
   ], [entry]), [{ sourceId: "S01", excerpt, kind: "statement" }]);
 });
+
+Deno.test("date overlap does not admit an unrelated search result", async () => {
+  const { matchesEvent } = await import("./trace.ts");
+  const task = "Найди первые сообщения МЧС и белорусских СМИ о последствиях шквала 14 июля 2024 года в Гомельской области.";
+  expect(matchesEvent("В Кыргызстане из-за дождя затопило рынок", "14 июля. По данным МЧС.", task, []), false);
+  expect(matchesEvent("В Гомеле повалены сотни деревьев", "Последствия шквала устраняют коммунальные службы.", task, []), true);
+  expect(matchesEvent("Polish president gave Trump a secret amber throne", "",
+    "Освещение истории с янтарным креслом для Дональда Трампа", ["Nawrocki gives Trump an amber throne"]), true);
+});
+
+Deno.test("a direct attribution can restore a previously checked candidate without a second download", async () => {
+  const { trace } = await import("./trace.ts");
+  const original = "https://gov.pl/briefing";
+  const copy = "https://news.pl/gift";
+  const entries = new Map([
+    [original, readPage('<article><h1>Briefing</h1><time itemprop="datePublished" datetime="2026-11-18T08:00:00Z"></time><p>Original source.</p></article>', original, { url: original })],
+    [copy, readPage(`<article><h1>Amber throne for Trump</h1><p>According to <a href="${original}">the official briefing</a>, the gift was presented in June.</p></article>`, copy, { url: copy })],
+  ]);
+  const checked: string[] = [];
+  const result = await trace({ task: "Amber throne for Trump", window: { from: null, through: null }, locale: "ru" },
+    async () => {}, {
+      tavily: async () => [{ url: original }, { url: copy }],
+      openArticle: async (candidate) => { checked.push(candidate.url); return entries.get(candidate.url)!; },
+      cloudflareConfigured: () => false,
+      eventModel: async () => null,
+      brightSearch: async () => ({ hits: [], failures: 0 }),
+    });
+  expect(checked, [original, copy]);
+  expect(result.entries.find((entry) => entry.url === copy)?.citations.map((edge) => edge.sourceId), [result.earliestId]);
+});
