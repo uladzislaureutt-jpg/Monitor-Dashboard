@@ -229,7 +229,8 @@ export function sortOperatorArchive(a: NetworkCard, b: NetworkCard): number {
     || operatorRun(b) - operatorRun(a) || a.item_id.localeCompare(b.item_id);
 }
 
-const REVIEW_LIMIT = 10;
+export const REVIEW_PAGE_SIZE = 10;
+export const REVIEW_LIMIT = 5 * REVIEW_PAGE_SIZE;
 const LEGACY_REVIEW_WEIGHT: Record<string, number> = {
   possible_false_reject: 8, presidential_media_priority: 7, firsthand_audio_review: 7,
   gemini_positive_veto: 5, near_review: 5, candidate: 4, visual_context_review: 2,
@@ -267,12 +268,20 @@ export function selectOperatorArchive(cards: NetworkCard[]): NetworkCard[] {
   }
   for (const reviews of reviewByRun.values()) {
     const ranked = reviews.filter((card) => card.operator_display_section === "review");
-    selected.push(...(ranked.length ? ranked : reviews).sort(compareOperatorReview).slice(0, REVIEW_LIMIT));
+    const shortlist = ranked.length ? ranked : reviews;
+    const limit = ranked.length ? REVIEW_LIMIT : REVIEW_PAGE_SIZE;
+    selected.push(...shortlist.sort(compareOperatorReview).slice(0, limit));
   }
   return selected.sort(sortOperatorArchive);
 }
 
 export function operatorReviewLabel(card: NetworkCard, be: boolean): string {
+  if (card.operator_review_reason === "local_issue_source_review") {
+    return be ? "Праверыць абставіны і першакрыніцу" : "Проверить обстоятельства и первоисточник";
+  }
+  if (card.operator_review_reason === "source_verification") {
+    return be ? "Праверыць першакрыніцу і маўленне" : "Проверить первоисточник и речь";
+  }
   if (card.operator_review_lane === "gemini_veto") {
     return be ? "Gemini прапанаваў, фільтры панізілі ацэнку" : "Gemini предложил, фильтры понизили оценку";
   }
