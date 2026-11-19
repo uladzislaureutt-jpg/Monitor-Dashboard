@@ -3,7 +3,7 @@ name: Build Monitor Dashboard Windows x64
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [codex/networks-access-088-windows]
 
 permissions:
   contents: read
