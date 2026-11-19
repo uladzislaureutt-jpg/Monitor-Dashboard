@@ -1509,3 +1509,27 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 .workroom-conversation-picker { display: grid; gap: 5px; margin: 0 12px 10px; }
 .workroom-conversation-picker label, .workroom-compose > label { color: var(--ink); font-size: 11px; font-weight: 600; }
 .workroom-conversation-picker select { width: 100%; min-width: 0; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: #fffdfa; color: var(--ink); }
+
+.event-trace-layout { grid-template-columns: minmax(0, 1fr); }
+.event-trace-view { max-width: 1440px; margin: 0 auto; }
+.event-trace-view h1 { margin: 0 0 18px; }
+.event-trace-columns { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(0, 2fr); gap: 18px; align-items: start; }
+.event-trace-input, .event-trace-output { min-width: 0; padding: 18px; }
+.event-trace-input { display: grid; gap: 12px; }
+.event-trace-input textarea { width: 100%; padding: 10px; border: 1px solid #c8bbaa; border-radius: 8px; font: inherit; resize: vertical; }
+.event-trace-count { justify-self: end; margin-top: -7px; }
+.event-trace-input fieldset { margin: 0; padding: 0; border: 0; }
+.event-trace-dates { display: flex; flex-wrap: wrap; gap: 10px; margin: 7px 0; }
+.event-trace-dates label { display: grid; gap: 3px; }
+.event-trace-output-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.event-trace-output-head h2 { margin: 0; }
+.event-trace-output p { margin: 8px 0 12px; }
+.event-trace-output p:empty { display: none; }
+.event-trace-earliest { display: grid; gap: 5px; padding: 12px; background: #efe8db; border-radius: 8px; }
+.event-trace-output .link-button { width: fit-content; text-align: left; overflow-wrap: anywhere; }
+.event-trace-links { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.event-trace-timeline ol { margin: 0; padding-left: 23px; }
+.event-trace-timeline li { padding: 8px 0; border-top: 1px solid #dbcfc0; }
+.event-trace-timeline li > small, .event-trace-article, .event-trace-citation small { display: block; margin-bottom: 4px; }
+.event-trace-citation { margin: 5px 0; padding-left: 10px; border-left: 2px solid #c8bbaa; }
+@media (max-width: 760px) { .event-trace-columns { grid-template-columns: minmax(0, 1fr); } }
