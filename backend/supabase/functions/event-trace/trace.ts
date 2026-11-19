@@ -13,6 +13,7 @@ const queryFiller = new Set(
    "публикация публикации публикаций сообщение сообщения сообщений официальный официальное официальные " +
    "предупреждение местный местных издания изданий агентств первоисточник распространение области область " +
    "года годов утром сведения материал источник история истории освещение освещали пожалуйста мчс " +
+   "возможной возможном возможного сильное сильный сильном последствия последствиях причина причины " +
    "find trace search report reports reporting article articles original publication publications " +
    "first early earliest official statement warning sources source media news story").split(" "),
 );
@@ -29,8 +30,14 @@ function topicStems(value: string) {
 export function matchesEvent(title: string, excerpt: string, task: string, variants: string[]) {
   const groups = [task, ...variants].map(topicStems).filter((terms) => terms.length >= 2);
   if (!groups.length) return true;
-  const words = new Set(searchableWords(`${title} ${excerpt}`).map((word) => word.slice(0, 5)));
-  return groups.some((terms) => terms.filter((word) => words.has(word)).length >= 2);
+  const heading = new Set(topicStems(title));
+  const lead = new Set(topicStems(excerpt.slice(0, 550)));
+  return groups.some((terms) => {
+    const headings = terms.filter((word) => heading.has(word)).length;
+    const leading = terms.filter((word) => lead.has(word)).length;
+    return (headings > 0 && terms.filter((word) => heading.has(word) || lead.has(word)).length >= 2)
+      || (headings === 0 && leading >= 3);
+  });
 }
 
 export async function trace(input: TraceInput,
