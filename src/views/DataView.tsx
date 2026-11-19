@@ -32,6 +32,10 @@ export function DataView({
   const [adminBusy, setAdminBusy] = useState(false);
   const [adminError, setAdminError] = useState("");
   const be = locale === "be";
+  const moduleLabels: Record<string, string> = {
+    social_economic: "SEP-Monitor", lukashenko: "L-Monitor", w_review: "W-Review",
+    event_trace: be ? "Падзея" : "Событие", tiktok: be ? "Сеткі" : "Сети",
+  };
   const atx = {
     title: be ? "Карыстальнікі і доступ" : "Пользователи и доступ",
     pending: be ? "Запыты на доступ" : "Запросы на доступ",
@@ -40,11 +44,11 @@ export function DataView({
     users: be ? "Карыстальнікі" : "Пользователи",
     access: be ? "Доступ" : "Доступ",
     admin: be ? "Адміністратар" : "Администратор",
-    personalMonitors: be ? "Маніторынгі" : "Мониторинги",
+    personalMonitors: be ? "Раздзелы" : "Разделы",
     active: be ? "актыўны" : "активен",
     suspended: be ? "прыпынены" : "приостановлен",
     lastLogin: be ? "Апошні ўваход" : "Последний вход",
-    monitors: be ? "Даступнасць маніторынгаў" : "Доступность мониторингов",
+    monitors: be ? "Даступнасць раздзелаў" : "Доступность разделов",
     works: be ? "Працуе" : "Работает",
     maintenance: be ? "Тэхнічныя работы" : "Технические работы",
     noRequests: be ? "Няма запытаў, якія чакаюць рашэння." : "Нет запросов, ожидающих решения.",
@@ -90,19 +94,19 @@ export function DataView({
       {adminError && <div className="notice error">{adminError}</div>}
       <div className="admin-access-grid">
         <div className="admin-access-block"><h4>{atx.pending}</h4>{(adminSnapshot?.requests.filter((item) => item.status === "pending").length ?? 0) === 0 ? <p className="muted">{atx.noRequests}</p> : adminSnapshot?.requests.filter((item) => item.status === "pending").map((item) => <div className="admin-request-row" key={item.id}><div><b>{item.displayName}</b><span>{item.email} · {item.locale.toUpperCase()}</span></div><div><button className="primary-button small-button" disabled={adminBusy} onClick={() => adminAction({ action: "review_request", request_id: item.id, decision: "approved" })}>{atx.approve}</button><button className="ghost-button small-button" disabled={adminBusy} onClick={() => adminAction({ action: "review_request", request_id: item.id, decision: "rejected" })}>{atx.reject}</button><button className="text-danger small-button" disabled={adminBusy} onClick={() => { if (window.confirm(atx.deleteRequestConfirm)) void adminAction({ action: "delete_request", request_id: item.id }); }}>{atx.delete}</button></div></div>)}</div>
-        <div className="admin-access-block"><h4>{atx.monitors}</h4>{adminSnapshot?.monitors.map((item) => <div className="admin-monitor-row" key={item.monitorKey}><div><b>{item.monitorKey === "social_economic" ? "SEP-Monitor" : item.monitorKey === "lukashenko" ? "L-Monitor" : item.monitorKey === "w_review" ? "W-Review" : item.monitorKey === "event_trace" ? (be ? "Падзея" : "Событие") : item.monitorKey}</b><span>{item.enabled ? atx.works : atx.maintenance}</span></div><label className="toggle-label"><input type="checkbox" checked={item.enabled} disabled={adminBusy} onChange={(e) => adminAction({ action: "set_monitor", monitor_key: item.monitorKey, enabled: e.target.checked, maintenance_message_ru: item.maintenanceMessageRu, maintenance_message_be: item.maintenanceMessageBe })} /><span>{item.enabled ? atx.works : atx.maintenance}</span></label></div>)}</div>
+        <div className="admin-access-block"><h4>{atx.monitors}</h4>{adminSnapshot?.monitors.map((item) => <div className="admin-monitor-row" key={item.monitorKey}><div><b>{moduleLabels[item.monitorKey] ?? item.monitorKey}</b><span>{item.enabled ? atx.works : atx.maintenance}</span></div><label className="toggle-label"><input type="checkbox" checked={item.enabled} disabled={adminBusy} onChange={(e) => adminAction({ action: "set_monitor", monitor_key: item.monitorKey, enabled: e.target.checked, maintenance_message_ru: item.maintenanceMessageRu, maintenance_message_be: item.maintenanceMessageBe })} /><span>{item.enabled ? atx.works : atx.maintenance}</span></label></div>)}</div>
       </div>
-      <div className="admin-user-list"><h4>{atx.users}</h4><p className="admin-user-access-note">{be ? "Персанальныя правы можна задаваць загадзя. Яны дзейнічаюць толькі калі адпаведны маніторынг глабальна ўключаны вышэй." : "Персональные права можно назначать заранее. Они действуют только когда соответствующий мониторинг глобально включён выше."}</p>{adminSnapshot?.users.map((item) => {
+      <div className="admin-user-list"><h4>{atx.users}</h4><p className="admin-user-access-note">{be ? "Адміністратары бачаць усе раздзелы. Для аператараў дзейнічаюць глабальны і персанальны сцяжкі." : "Администраторы видят все разделы. Операторам доступ открывают общий и персональный флажки."}</p>{adminSnapshot?.users.map((item) => {
         const monitorItems = adminSnapshot.monitors;
         return <div className="admin-user-row" key={item.id}>
           <div className="admin-user-main"><b>{item.displayName}</b><span>{item.email} · {item.status === "active" ? atx.active : atx.suspended}{item.lastSignInAt ? ` · ${atx.lastLogin}: ${formatDate(item.lastSignInAt)}` : ""}</span></div>
           <div className="admin-user-monitor-access" aria-label={atx.personalMonitors}>
             {item.isAdmin
-              ? <span className="muted">{be ? "Усе маніторынгі" : "Все мониторинги"}</span>
+              ? <span className="muted">{be ? "Усе раздзелы" : "Все разделы"}</span>
               : monitorItems.map((monitor) => {
                   const granted = adminSnapshot.userMonitors.find((entry) => entry.userId === item.id && entry.monitorKey === monitor.monitorKey)?.enabled === true;
-                  const label = monitor.monitorKey === "social_economic" ? "SEP" : monitor.monitorKey === "lukashenko" ? "L" : monitor.monitorKey === "w_review" ? "W-Review" : monitor.monitorKey === "event_trace" ? (be ? "Падзея" : "Событие") : monitor.monitorKey;
-                  return <label key={monitor.monitorKey} title={!monitor.enabled ? (be ? "Маніторынг глабальна адключаны" : "Мониторинг глобально отключён") : ""}>
+                  const label = monitor.monitorKey === "social_economic" ? "SEP" : monitor.monitorKey === "lukashenko" ? "L" : moduleLabels[monitor.monitorKey] ?? monitor.monitorKey;
+                  return <label key={monitor.monitorKey} title={!monitor.enabled ? (be ? "Раздзел глабальна адключаны" : "Раздел глобально отключён") : ""}>
                     <input
                       type="checkbox"
                       checked={granted}

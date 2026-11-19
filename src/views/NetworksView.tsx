@@ -1,10 +1,11 @@
+import { useMonitorAccess } from "../access";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { desktopApi } from "../api";
 import { ensureWorkroomSession, loadWorkroomConfig, loadWorkroomSession } from "../workroom";
 import { useI18n } from "../i18n";
 import { TrendColumns, TrendLine } from "../components/Charts";
-import { NetworkEditorView } from "./NetworkEditorView";
+import { NetworkEditorView, networkTranscriptKey } from "./NetworkEditorView";
 import { applyTikTokCloudModeration, downloadTikTokCloud, migrateTikTokLocalModeration, moveTikTokReviewCard, uploadTikTokFinalCards } from "../tiktokCloudSync";
 import { contextFromCard, normalizeSourceContext, rememberSourceContext, type TikTokSourceContextMap } from "../networkEditorMetadata";
 import {
@@ -25,14 +26,14 @@ export type NetworkPage = "home" | "archive" | "editor";
 export type NetworkPlatform = "tiktok" | "threads";
 type TrendKind = "bars" | "line";
 
-function initialContext(): TikTokSourceContextMap {
-  try { return normalizeSourceContext(JSON.parse(localStorage.getItem(EDITOR_CONTEXT_KEY) || "null")); }
+function initialContext(key: string): TikTokSourceContextMap {
+  try { return normalizeSourceContext(JSON.parse(localStorage.getItem(key) || "null")); }
   catch { return {}; }
 }
 
-function initialSlots(): string[] {
+function initialSlots(key: string): string[] {
   try {
-    const value = JSON.parse(localStorage.getItem(SLOTS_STORAGE_KEY) || "null");
+    const value = JSON.parse(localStorage.getItem(key) || "null");
     if (Array.isArray(value) && value.length && value.length <= 5) {
       return value.map((item) => typeof item === "string" ? item : "");
     }
@@ -47,9 +48,9 @@ function displayDate(raw: string | null | undefined, locale: string): string {
   });
 }
 
-function ClipCard({ item, be, checked, flagged, decision, moderationBusy, onToggle, onFlag, onDelete, onAdd, onMove }: {
+function ClipCard({ item, be, checked, flagged, decision, moderationBusy, canModerate, onToggle, onFlag, onDelete, onAdd, onMove }: {
   item: NetworkCard; be: boolean; checked: boolean; flagged: boolean;
-  decision?: TikTokMoveSection; moderationBusy: boolean;
+  decision?: TikTokMoveSection; moderationBusy: boolean; canModerate: boolean;
   onToggle: (item: NetworkCard) => void;
   onFlag: (item: NetworkCard) => void;
   onDelete: (item: NetworkCard) => void;
@@ -90,19 +91,21 @@ function ClipCard({ item, be, checked, flagged, decision, moderationBusy, onTogg
       <div className="network-clip-controls">
         <button className="secondary-button small-button" onClick={() => onAdd(item)}
           disabled={checked}>{checked ? (be ? "У аглядзе" : "В обзоре") : be ? "У агляд" : "В обзор"}</button>
-        <button className={flagged ? "network-flag active" : "network-flag"} onClick={() => onFlag(item)} disabled={moderationBusy}
-          title={be ? "Чырвоны сцяжок: пазначыць / зняць" : "Красный флажок: поставить / снять"}
-          aria-label={be ? "Чырвоны сцяжок" : "Красный флажок"} aria-pressed={flagged}>⚑</button>
-        {section === "review" && <>
-          <button className="secondary-button small-button" disabled={moderationBusy}
-            onClick={() => onMove(item, "appeals")}>{be ? "У звароты" : "В обращения"}</button>
-          <button className="secondary-button small-button" disabled={moderationBusy}
-            onClick={() => onMove(item, "complaints")}>{be ? "У скаргі" : "В жалобы"}</button>
+        {canModerate && <>
+          <button className={flagged ? "network-flag active" : "network-flag"} onClick={() => onFlag(item)} disabled={moderationBusy}
+            title={be ? "Чырвоны сцяжок: пазначыць / зняць" : "Красный флажок: поставить / снять"}
+            aria-label={be ? "Чырвоны сцяжок" : "Красный флажок"} aria-pressed={flagged}>⚑</button>
+          {section === "review" && <>
+            <button className="secondary-button small-button" disabled={moderationBusy}
+              onClick={() => onMove(item, "appeals")}>{be ? "У звароты" : "В обращения"}</button>
+            <button className="secondary-button small-button" disabled={moderationBusy}
+              onClick={() => onMove(item, "complaints")}>{be ? "У скаргі" : "В жалобы"}</button>
         </>}
         {decision && <button className="ghost-button small-button" disabled={moderationBusy}
           onClick={() => onMove(item, null)}>{be ? "Адмяніць перанос" : "Отменить перенос"}</button>}
         <button className="ghost-button small-button network-delete" disabled={moderationBusy} onClick={() => onDelete(item)}
           title={be ? "Выдаліць ролік з Monitor" : "Удалить ролик из Monitor"}>{be ? "Выдаліць" : "Удалить"}</button>
+        </>}
       </div>
     </div>
   </article>;
@@ -115,12 +118,17 @@ export function NetworksView({ page, platform, onPlatformChange }: {
 }) {
   const { locale } = useI18n();
   const be = locale === "be";
+  const { profile, session } = useMonitorAccess();
+  const isAdmin = profile.isAdmin;
+  const operatorId = isAdmin ? undefined : session.userId;
+  const slotsKey = operatorId ? `${SLOTS_STORAGE_KEY}:${operatorId}` : SLOTS_STORAGE_KEY;
+  const contextKey = operatorId ? `${EDITOR_CONTEXT_KEY}:${operatorId}` : EDITOR_CONTEXT_KEY;
   const setPlatform = onPlatformChange;
   const [cards, setCards] = useState<NetworkCard[]>([]);
   const [period, setPeriod] = useState<number | null>(30);
   const [trendKind, setTrendKind] = useState<TrendKind>("bars");
-  const [slots, setSlots] = useState<string[]>(initialSlots);
-  const [sourceContext, setSourceContext] = useState<TikTokSourceContextMap>(initialContext);
+  const [slots, setSlots] = useState<string[]>(() => initialSlots(slotsKey));
+  const [sourceContext, setSourceContext] = useState<TikTokSourceContextMap>(() => initialContext(contextKey));
   const [activeSlot, setActiveSlot] = useState(0);
   const [archiveQuery, setArchiveQuery] = useState("");
   const [archivePage, setArchivePage] = useState(0);
@@ -145,6 +153,7 @@ export function NetworksView({ page, platform, onPlatformChange }: {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (!isAdmin) { setLoading(false); return; }
     let cancelled = false;
     desktopApi.getSetting(CARDS_STORAGE_KEY).then((data) => {
       if (cancelled || !data) return;
@@ -157,17 +166,18 @@ export function NetworksView({ page, platform, onPlatformChange }: {
       if (!cancelled) setError(be ? "Памылка чытання лакальнага архіва: " + reason : "Ошибка чтения локального архива: " + reason);
     }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [isAdmin]);
 
 
   useEffect(() => {
+    if (!isAdmin) return;
     let cancelled = false;
     desktopApi.getSetting(SYNC_RUNS_KEY).then((raw) => {
       const runs: unknown = raw ? JSON.parse(raw) : [];
       if (!cancelled && Array.isArray(runs)) setCompletedRuns(runs);
     }).catch(() => { /* Existing cards still carry their report run. */ });
     return () => { cancelled = true; };
-  }, []);
+  }, [isAdmin]);
 
   /** Reconcile both computers against the same server data and tombstones. */
   const syncCloud = useCallback(async () => {
@@ -175,19 +185,22 @@ export function NetworksView({ page, platform, onPlatformChange }: {
     cloudLock.current = true;
     setCloudSyncing(true);
     try {
-      // Each old installation publishes its historic deletions exactly once.
-      // The SQL migration only unions deletions and flags; it cannot restore deletions.
-      if (localStorage.getItem(CLOUD_MIGRATED_KEY) !== "1") {
-        await migrateTikTokLocalModeration(moderationRef.current);
-        localStorage.setItem(CLOUD_MIGRATED_KEY, "1");
+      if (isAdmin) {
+        // Each old installation publishes its historic deletions exactly once.
+        if (localStorage.getItem(CLOUD_MIGRATED_KEY) !== "1") {
+          await migrateTikTokLocalModeration(moderationRef.current);
+          localStorage.setItem(CLOUD_MIGRATED_KEY, "1");
+        }
+        await uploadTikTokFinalCards(cardsRef.current);
       }
-      await uploadTikTokFinalCards(cardsRef.current);
       const remote = await downloadTikTokCloud();
-      const merged = mergeNetworkCards(cardsRef.current, remote.cards);
-      await desktopApi.setSetting(CARDS_STORAGE_KEY, JSON.stringify(merged));
+      const merged = isAdmin ? mergeNetworkCards(cardsRef.current, remote.cards) : remote.cards;
+      if (isAdmin) {
+        await desktopApi.setSetting(CARDS_STORAGE_KEY, JSON.stringify(merged));
+        await desktopApi.setSetting(MODERATION_KEY, JSON.stringify(remote.moderation));
+      }
       cardsRef.current = merged;
       setCards(merged);
-      await desktopApi.setSetting(MODERATION_KEY, JSON.stringify(remote.moderation));
       moderationRef.current = remote.moderation;
       setModeration(remote.moderation);
       const deleted = new Set(remote.moderation.deleted);
@@ -199,14 +212,26 @@ export function NetworksView({ page, platform, onPlatformChange }: {
       setCloudState(be ? "Воблачная сінхранізацыя завершана" : "Облачная синхронизация завершена");
     } catch (reason) {
       setError((be ? "Сінхранізацыя воблака: " : "Синхронизация облака: ") + String(reason));
-      setCloudState(be ? "Воблака недаступнае — паказаны лакальныя даныя" : "Облако недоступно — показаны локальные данные");
+      if (!isAdmin) {
+        cardsRef.current = [];
+        setCards([]);
+        setModeration({ flagged: [], deleted: [] });
+      }
+      setCloudState(isAdmin
+        ? (be ? "Воблака недаступнае — паказаны лакальныя даныя" : "Облако недоступно — показаны локальные данные")
+        : (be ? "Воблачны архіў недаступны" : "Облачный архив недоступен"));
     } finally {
       cloudLock.current = false;
       setCloudSyncing(false);
     }
-  }, [be]);
+  }, [be, isAdmin]);
 
   const syncNetwork = useCallback(async (silent = false) => {
+    if (!isAdmin) {
+      if (!silent) setError("");
+      await syncCloud();
+      return;
+    }
     if (syncLock.current) return;
     syncLock.current = true;
     setSyncing(true);
@@ -257,18 +282,19 @@ export function NetworksView({ page, platform, onPlatformChange }: {
     } catch (reason) {
       setError((be ? "Сінхранізацыя TikTok: " : "Синхронизация TikTok: ") + String(reason));
     } finally { await syncCloud(); syncLock.current = false; setSyncing(false); }
-  }, [be, syncCloud]);
+  }, [be, isAdmin, syncCloud]);
 
   useEffect(() => {
     if (loading || !moderationLoaded) return;
     void syncNetwork(true);
-    const artifactsInterval = window.setInterval(() => void syncNetwork(true), 30 * 60 * 1000);
+    const artifactsInterval = isAdmin ? window.setInterval(() => void syncNetwork(true), 30 * 60 * 1000) : undefined;
     // Moderation and cloud archive convergence are much faster than GitHub artifact polling.
     const cloudInterval = window.setInterval(() => void syncCloud(), 2 * 60 * 1000);
     return () => { window.clearInterval(artifactsInterval); window.clearInterval(cloudInterval); };
-  }, [loading, moderationLoaded, syncNetwork, syncCloud]);
+  }, [loading, moderationLoaded, isAdmin, syncNetwork, syncCloud]);
 
   useEffect(() => {
+    if (!isAdmin) { setModerationLoaded(true); return; }
     let cancelled = false;
     desktopApi.getSetting(MODERATION_KEY).then((value) => {
       if (cancelled) return;
@@ -277,7 +303,7 @@ export function NetworksView({ page, platform, onPlatformChange }: {
     }).catch((reason) => { if (!cancelled) setError(String(reason)); })
       .finally(() => { if (!cancelled) setModerationLoaded(true); });
     return () => { cancelled = true; };
-  }, []);
+  }, [isAdmin]);
 
   async function updateModerationCloud(item: NetworkCard, change: { flagged?: boolean; delete?: boolean }) {
     if (moderationBusyRef.current || cloudLock.current) return;
@@ -337,8 +363,8 @@ export function NetworksView({ page, platform, onPlatformChange }: {
     void updateModerationCloud(item, { delete: true });
   }
 
-  useEffect(() => { localStorage.setItem(SLOTS_STORAGE_KEY, JSON.stringify(slots)); }, [slots]);
-  useEffect(() => { localStorage.setItem(EDITOR_CONTEXT_KEY, JSON.stringify(sourceContext)); }, [sourceContext]);
+  useEffect(() => { localStorage.setItem(slotsKey, JSON.stringify(slots)); }, [slotsKey, slots]);
+  useEffect(() => { localStorage.setItem(contextKey, JSON.stringify(sourceContext)); }, [contextKey, sourceContext]);
   // Migration: previously selected videos had a URL but no descriptive snapshot.
   // Recover their original captions from the already imported local Networks cards.
   useEffect(() => {
@@ -398,6 +424,7 @@ export function NetworksView({ page, platform, onPlatformChange }: {
   }
 
   async function importFile() {
+    if (!isAdmin) return;
     const path = await open({ multiple: false, directory: false,
       title: be ? "Імпарт TikTok networks.v1" : "Импорт TikTok networks.v1",
       filters: [{ name: "Networks JSONL / ZIP", extensions: ["jsonl", "zip"] }] });
@@ -432,7 +459,7 @@ export function NetworksView({ page, platform, onPlatformChange }: {
       const config = loadWorkroomConfig();
       const session = await ensureWorkroomSession(config, loadWorkroomSession());
       for (const url of urls) {
-        const key = `monitor-networks-transcription:${url}`;
+        const key = networkTranscriptKey(url, operatorId);
         let saved: Record<string, unknown> = {};
         try {
           const raw = localStorage.getItem(key);
@@ -465,7 +492,7 @@ export function NetworksView({ page, platform, onPlatformChange }: {
 
   const renderCard = (item: NetworkCard) => <ClipCard key={item.item_id} item={item} be={be}
     checked={selectedUrls.has(item.source_url)} flagged={moderation.flagged.includes(item.item_id)}
-    decision={moderation.sections?.[item.item_id]} moderationBusy={moderationBusy || cloudSyncing}
+    decision={moderation.sections?.[item.item_id]} canModerate={isAdmin} moderationBusy={moderationBusy || cloudSyncing}
     onToggle={toggleClip} onAdd={toggleClip} onFlag={toggleFlag} onDelete={removeClip} onMove={moveClip} />;
 
   return <div className="view-stack networks-view">
@@ -486,13 +513,13 @@ export function NetworksView({ page, platform, onPlatformChange }: {
       <div className="network-toolbar">
 
         <div className="network-sync-controls">
-          <span className="network-sync-status">{syncing || cloudSyncing ? (be ? "Сінхранізацыя…" : "Синхронизация…") : cloudState || syncState || (be ? "Сінхранізацыя: архіў кожныя 30 хв., воблака кожныя 2 хв." : "Синхронизация: архив каждые 30 мин., облако каждые 2 мин.")}</span>
+          <span className="network-sync-status">{syncing || cloudSyncing ? (be ? "Сінхранізацыя…" : "Синхронизация…") : cloudState || syncState || (isAdmin ? (be ? "Сінхранізацыя: архіў кожныя 30 хв., воблака кожныя 2 хв." : "Синхронизация: архив каждые 30 мин., облако каждые 2 мин.") : (be ? "Сінхранізацыя з воблачным архівам" : "Синхронизация с облачным архивом"))}</span>
           <button className="primary-button small-button" disabled={syncing || importing || cloudSyncing || moderationBusy} onClick={() => void syncNetwork(false)}>
             {be ? "Сінхранізаваць" : "Синхронизировать"}
           </button>
-          <button className="secondary-button small-button" disabled={importing || syncing} onClick={() => void importFile()}>
+          {isAdmin && <button className="secondary-button small-button" disabled={importing || syncing} onClick={() => void importFile()}>
             {importing ? "…" : be ? "Імпарт ZIP / JSONL" : "Импорт ZIP / JSONL"}
-          </button>
+          </button>}
         </div>
       </div>
       {notice && <div className="notice success">{notice}</div>}
@@ -549,7 +576,7 @@ export function NetworksView({ page, platform, onPlatformChange }: {
           {trendKind === "bars" ? <TrendColumns data={trend} /> : <TrendLine data={trend} />}
         </details>
       </div>}
-      {page === "editor" && <NetworkEditorView slots={slots} setSlots={setSlots} sourceContext={sourceContext}
+      {page === "editor" && <NetworkEditorView operatorId={operatorId} slots={slots} setSlots={setSlots} sourceContext={sourceContext}
         onRemove={() => {}} transcribeSelected={() => void transcribeSelected()}
         batchBusy={transcribingBatch} batchRevision={batchRevision} />}
     </>}
