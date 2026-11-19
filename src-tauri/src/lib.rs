@@ -561,6 +561,11 @@ fn export_report_docx(
 }
 
 #[tauri::command]
+fn export_event_report_docx(path: String, report: report::EventReport) -> Result<(), String> {
+    report::export_event_report_docx(&PathBuf::from(path), &report)
+}
+
+#[tauri::command]
 fn export_w_review_docx(
     path: String,
     text: String,
@@ -694,6 +699,7 @@ pub fn run() {
             transcribe_local_video,
             recognize_video_screenshot,
             export_report_docx,
+            export_event_report_docx,
             export_w_review_docx,
             extract_w_review_sample,
             export_tiktok_transcript_docx,
