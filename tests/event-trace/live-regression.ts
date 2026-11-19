@@ -20,7 +20,12 @@ const byCase: Record<string, Candidate[]> = {
   "amber-chair": [{ url: amber.pages[0].url }],
 };
 const normalize = (text: string) => text.normalize("NFKC").toLowerCase().replace(/ё/g, "е").replace(/[\p{Pd}\u2212]/gu, "-");
+const excluded: Record<string, string[]> = {
+  "ru-kamchatka-earthquake": ["svpressa.ru/health/news/426120"],
+  "by-gomel-storm": ["zakon.kz/mir/6441461-v-kyrgyzstane-izza-dozhdya-i-selya-zatopilo-rynok-goroda-osh-i-neskolko-sel.html"],
+};
 const report: unknown[] = [];
+const problems: string[] = [];
 for (const item of [...cases, amber]) {
   const sources = [];
   for (let offset = 0; offset < item.pages.length; offset += 3) {
@@ -50,7 +55,11 @@ for (const item of [...cases, amber]) {
       eventModel: async () => item.id === "amber-chair" ? { queries: ["Poland president Nawrocki Trump amber throne"] } : null,
       brightSearch: async () => ({ hits: [], failures: 0 }),
     });
-    replay = { checked: result.checked, earliest: result.entries.find(({ id }) => id === result.earliestId)?.url ?? null,
+    const admitted = result.entries.map(({ url }) => url);
+    for (const wrong of excluded[item.id] ?? []) {
+      if (admitted.some((url) => urlKey(url) === wrong)) problems.push(`${item.id}: off-topic page in timeline: ${wrong}`);
+    }
+    replay = { checked: result.checked, admitted, earliest: result.entries.find(({ id }) => id === result.earliestId)?.url ?? null,
       controls: item.pages.filter((test) => opened.some((url) => urlKey(url) === urlKey(test.url))).map(({ id }) => id),
       links: result.entries.flatMap((row) => row.citations.map((edge) => ({
         from: row.url, to: result.entries.find(({ id }) => id === edge.sourceId)?.url, evidence: plain(edge.evidence, 140),
@@ -61,3 +70,4 @@ for (const item of [...cases, amber]) {
   report.push(section);
 }
 await Deno.writeTextFile("event-regression.json", JSON.stringify(report, null, 2));
+if (problems.length) throw new Error(problems.join("\n"));
