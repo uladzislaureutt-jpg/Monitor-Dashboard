@@ -47,7 +47,7 @@ for (const item of [...cases, amber]) {
       },
       openArticle: async (candidate, deadline) => { opened.push(candidate.url); return await openArticle(candidate, deadline); },
       cloudflareConfigured: () => false,
-      eventModel: async () => null,
+      eventModel: async () => item.id === "amber-chair" ? { queries: ["Poland president Nawrocki Trump amber throne"] } : null,
       brightSearch: async () => ({ hits: [], failures: 0 }),
     });
     replay = { checked: result.checked, earliest: result.entries.find(({ id }) => id === result.earliestId)?.url ?? null,

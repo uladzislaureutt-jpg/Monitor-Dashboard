@@ -8,10 +8,35 @@ const attributed = { ru: "первоисточник официальное со
 
 const providers = { tavily, openArticle, brightSearch, cloudflareConfigured, eventModel };
 
+const queryFiller = new Set(
+  ("найди поиск отыщи проследи восстанови проверь сравни когда какой какие первый первые ранний ранние " +
+   "публикация публикации публикаций сообщение сообщения сообщений официальный официальное официальные " +
+   "предупреждение местный местных издания изданий агентств первоисточник распространение области область " +
+   "года годов утром сведения материал источник история истории освещение освещали пожалуйста " +
+   "find trace search report reports reporting article articles original publication publications " +
+   "first early earliest official statement warning sources source media news story").split(" "),
+);
+
+function searchableWords(value: string) {
+  return value.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().match(/\p{L}{3,}/gu) || [];
+}
+
+function topicStems(value: string) {
+  return [...new Set(searchableWords(value).filter((word) => !queryFiller.has(word)).map((word) => word.slice(0, 5)))];
+}
+
+export function matchesEvent(title: string, excerpt: string, task: string, variants: string[]) {
+  const groups = [task, ...variants].map(topicStems).filter((terms) => terms.length >= 2);
+  if (!groups.length) return true;
+  const words = new Set(searchableWords(`${title} ${excerpt}`).map((word) => word.slice(0, 5)));
+  return groups.some((terms) => terms.filter((word) => words.has(word)).length >= 2);
+}
+
 export async function trace(input: TraceInput,
     checkpoint: (stage: TraceStage, result: TraceResult) => Promise<void>, adapters = providers) {
   const deadline = Date.now() + 80_000;
   const pages = new Map<string, Page>();
+  const unmatched = new Map<string, Page>();
   const seen = new Set<string>();
   const resolved = new Map<string, string>();
   const warnings = new Set<string>();
@@ -20,6 +45,9 @@ export async function trace(input: TraceInput,
   let summarySources: string[] = [];
   let observations: NonNullable<TraceResult["observations"]> = [];
   let checked = 0;
+  let topic = "";
+  let variants: string[] = [];
+  type InputCandidate = Candidate & { linked?: boolean };
 
   function snapshot(): TraceResult & { summarySources: string[] } {
     return { ...timeline([...pages.values()], resolved, input.window), checked, search: { ...search },
@@ -35,13 +63,29 @@ export async function trace(input: TraceInput,
       return [];
     }
   }
-  async function open(candidates: Candidate[], max: number) {
-    const selected: Candidate[] = [];
+  function remember(requested: string, page: Page) {
+    const key = urlKey(page.url);
+    resolved.set(requested, key);
+    seen.add(key);
+    const old = pages.get(key);
+    if (!old || (old.access === "metadata" && page.access !== "metadata")) pages.set(key, page);
+  }
+  async function open(candidates: InputCandidate[], max: number) {
+    const selected: InputCandidate[] = [];
     for (const candidate of candidates) {
-      if (selected.length >= max || seen.size >= MAX_PAGES) break;
       const url = publicArticleUrl(candidate.url);
-      if (!url || seen.has(urlKey(url))) continue;
-      seen.add(urlKey(url));
+      if (!url) continue;
+      const key = urlKey(url);
+      if (seen.has(key)) {
+        const page = candidate.linked ? unmatched.get(key) : undefined;
+        if (page) {
+          unmatched.delete(key);
+          remember(key, page);
+        }
+        continue;
+      }
+      if (selected.length >= max || seen.size >= MAX_PAGES) continue;
+      seen.add(key);
       selected.push({ ...candidate, url });
     }
     for (let start = 0; start < selected.length; start += 4) {
@@ -50,18 +94,16 @@ export async function trace(input: TraceInput,
       await Promise.all(group.map(async (candidate) => {
         checked++;
         const page = await adapters.openArticle(candidate, deadline);
-        const key = urlKey(page.url);
-        resolved.set(urlKey(candidate.url), key);
-        seen.add(key);
-        const old = pages.get(key);
-        if (!old || (old.access === "metadata" && page.access !== "metadata")) pages.set(key, page);
+        const requested = urlKey(candidate.url);
+        if (candidate.linked || matchesEvent(page.title, page.excerpt, topic, variants)) remember(requested, page);
+        else unmatched.set(requested, page);
       }));
     }
   }
   function follow(candidates: Page[]) {
     return candidates.flatMap((page) => page.links
       .filter((link) => link.kind !== "reference")
-      .map((link) => ({ url: link.url, title: link.label })));
+      .map((link) => ({ url: link.url, title: link.label, linked: link.kind === "citation" })));
   }
   function confirmedOrigin() {
     const result = snapshot();
@@ -76,9 +118,10 @@ export async function trace(input: TraceInput,
   const urls = (input.task.match(/https?:\/\/[^\s<>"«»]+/giu) ?? []).slice(0, 2)
     .map((raw) => publicArticleUrl(raw.replace(/[),.;!?]+$/u, ""))).filter((url): url is string => Boolean(url));
   const cleanTask = plain(input.task.replace(/https?:\/\/[^\s<>"«»]+/giu, ""), 380);
-  if (urls.length) await open(urls.map((url) => ({ url })), 2);
+  if (urls.length) await open(urls.map((url) => ({ url, linked: true })), 2);
   const seedTitle = pages.values().next().value?.title || "";
   const base = cleanTask || seedTitle;
+  topic = base;
   const initial = base ? searchTavily(base) : Promise.resolve([]);
   const planned = base ? await adapters.eventModel(
     "Prepare search strings only. Return JSON {queries:[string,string,string],country:string|null}. " +
@@ -87,7 +130,7 @@ export async function trace(input: TraceInput,
     { task: base, window: input.window, operatorLanguage: input.locale }, deadline, 8500, 550,
   ) : null;
   const country = typeof planned?.country === "string" && /^[a-z]{2}$/.test(planned.country) ? planned.country : null;
-  const variants = (Array.isArray(planned?.queries) ? planned.queries : []).map((query) => plain(query, 300)).filter(Boolean);
+  variants = (Array.isArray(planned?.queries) ? planned.queries : []).map((query) => plain(query, 300)).filter(Boolean).slice(0, 3);
   const queries = [...new Set([base, ...variants, base && `${base.slice(0, 250)} ${attributed[input.locale]}`].filter(Boolean))].slice(0, 4);
   const matches = await Promise.all([initial, ...queries.slice(1).map(searchTavily)]);
   await open(interleave(matches), 9);
@@ -101,7 +144,7 @@ export async function trace(input: TraceInput,
     const official = /(?:\.gov(?:\.|$)|\.gouv\.fr$|\.elysee\.fr$|^elysee\.fr$)/i.test(new URL(page.url).hostname);
     return page.links.filter((link) => link.kind === "citation" || (official &&
       new URL(link.url).hostname === new URL(page.url).hostname && /communiqu|avis|notice|statement|advisory|press release/i.test(link.label)))
-      .map((link) => ({ url: link.url, title: link.label }));
+      .map((link) => ({ url: link.url, title: link.label, linked: link.kind === "citation" || official }));
   });
   if (fromDossiers.length) await open(fromDossiers, 3);
   await checkpoint("sources", snapshot());
@@ -113,7 +156,7 @@ export async function trace(input: TraceInput,
     const focused = citationTitle ? `${base.slice(0, 145)} ${citationTitle.label} ${new URL(citationTitle.url).hostname}`
       : named ? `${base.slice(0, 165)} ${named}`
       : variants[0] ? `${variants[0].slice(0, 225)} ${country === "fr" ? "communiqué officiel" : "official statement original publication"}`
-      : `${base.slice(0, 235)} official statement original publication`;
+      : `${base.slice(0, 235)} ${attributed[input.locale]}`;
     await open(await searchTavily(focused), 2);
     await open(follow([...pages.values()]), 2);
     if (!confirmedOrigin() && deadline - Date.now() > 14_000 && seen.size < MAX_PAGES) {
