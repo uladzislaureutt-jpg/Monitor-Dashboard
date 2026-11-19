@@ -1,0 +1,26 @@
+name: Verify Event search and transport
+
+on:
+  push:
+    branches: [codex/event-search-coverage-verify]
+
+permissions:
+  contents: read
+
+jobs:
+  event:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno test --no-lock --node-modules-dir=auto backend/supabase/functions/event-trace/trace.test.ts
+      - run: deno run --no-lock --node-modules-dir=auto --allow-net --allow-env --allow-write=event-regression.json tests/event-trace/live-regression.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: event-search-coverage-regression
+          path: event-regression.json
+          if-no-files-found: ignore
