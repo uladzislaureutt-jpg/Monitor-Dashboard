@@ -1,6 +1,7 @@
 import {COUNTRIES,QUERY,urlKey,validDate,relevant,contentLevel,perigonBudget,publicUrl,sourceFor} from './core.ts';
 import {extractPage,ukrainianEdition} from './extraction.ts';
-import {validRussianCard} from './translation.ts';
+import {translateCard,validRussianCard} from './translation.ts';
+import type {Job,Runtime} from './providers.ts';
 import {githubPublications} from './github.ts';
 import {zipSync,strToU8} from 'npm:fflate@0.8.2';
 function assert(x:unknown):asserts x{if(!x)throw new Error('assertion failed');}
@@ -27,10 +28,44 @@ Deno.test('26-hour absolute publication window',()=>{
  equal(validDate('2026-11-18T13:07:00+03:00',from,to),'2026-11-18T10:07:00.000Z');
  equal(validDate('2026-11-18T10:06:59Z',from,to),null);equal(validDate('2026-11-19T12:07:01Z',from,to),null);
 });
-Deno.test('late analytical mention is retained and shown in excerpt',()=>{
+Deno.test('late analytical mention reaches contextual review',()=>{
  const body='Background about regional politics. '.repeat(200)+'Alexander Lukashenko plays a central role because the negotiations depend on the decisions of the Belarusian leadership. '+'Other news. '.repeat(200);
- const r=relevant({...c,body});assert(r.pass);assert(r.evidence.includes('Lukashenko'));assert(r.evidence.length<=1000);
+ const r=relevant({...c,body});assert(r.pass);equal(r.review?.length,1);
+ assert(r.evidence.includes('Lukashenko'));assert(r.review?.[0].context.includes('Other news'));
  assert(!relevant(c).pass);
+});
+Deno.test('context verdict rejects a passing reference and returns one translated, source-anchored draft',async()=>{
+ const incidental={...c,title:'Erasmus+ in Hungary',body:'The talks concern Hungarian universities. Before 2020, the country led by Alexander Lukashenko also participated in the exchange program.'};
+ const substantive={...c,title:'Units put on alert',lead:'Alexander Lukashenko ordered an inspection of border units.',body:'Alexander Lukashenko ordered an inspection of border units. The inspection covers units on the Polish border.'};
+ const replies=[
+  {verdict:'passing_reference'},
+  {verdict:'substantive',evidence_index:0,title_ru:'Подразделения приведены в готовность',excerpt_ru:'Александр Лукашенко распорядился проверить пограничные подразделения.'},
+ ];
+ const fetchOriginal=globalThis.fetch;
+ const rt={secret:(key:string)=>key==='GEMINI_API_KEY'?'fixture-gemini':'',db:{
+  rpc:()=>({data:1}),
+  from:()=>({update:()=>({eq:()=>({data:null})})}),
+ }} as Runtime;
+ const job={id:1} as Job;
+ const source={domain:'example.com',name:'Example',country:'GB'};
+ let attempts=0;
+ globalThis.fetch=(_url,request)=>{
+  attempts++;
+  const payload=JSON.parse(String(request?.body));
+  assert(payload.contents[0].parts[0].text.includes('evidence_index'));
+  return Promise.resolve(Response.json({candidates:[{content:{parts:[{text:JSON.stringify(replies.shift())}]}}]}));
+ };
+ try{
+  const first=relevant(incidental);
+  const rejected=await translateCard(rt,job,null,incidental,source,first.evidence,first.review);
+  equal(rejected,{accepted:false,reason:'passing_lukashenko_mention'});
+  const second=relevant(substantive);
+  equal(second.review?.length,1);
+  const ready=await translateCard(rt,job,null,substantive,source,second.evidence,second.review);
+  assert(ready.accepted);
+  if(ready.accepted)equal(ready.evidence,substantive.lead);
+  equal(attempts,2);
+ }finally{globalThis.fetch=fetchOriginal;}
 });
 Deno.test('previews and paywalls cannot become full text; CJK can',()=>{
  const body='Substantive original article paragraph. '.repeat(200);

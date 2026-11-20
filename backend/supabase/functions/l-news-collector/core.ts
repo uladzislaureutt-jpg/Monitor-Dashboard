@@ -47,20 +47,37 @@ export function containsName(text:string):boolean {
  const t=text.normalize('NFKD').replace(/\p{M}/gu,'').toLowerCase();
  return NAMES.some(n=>t.includes(n.normalize('NFKD').replace(/\p{M}/gu,'').toLowerCase()))||/lukas(?:h|c|s|z)?enk|лукаш[еэ]нк/.test(t);
 }
-export function relevant(candidate:Candidate,body=candidate.body):{pass:boolean;reason:string;evidence:string} {
- const title=clean(candidate.title), text=clean(body),lead=clean(candidate.lead);
+export type RelevancePassage = { quote:string; context:string };
+type Relevance = {pass:boolean;reason:string;evidence:string;review?:RelevancePassage[]};
+
+function mentionExcerpt(value:string){
+ const pattern=new RegExp(NAMES.join('|')+'|lukas(?:h|c|s|z)?enk|лукаш[еэ]нк','iu');
+ const position=value.search(pattern);
+ return value.slice(Math.max(0,position-185),Math.max(0,position-185)+850);
+}
+
+export function relevant(candidate:Candidate,body=candidate.body):Relevance {
+ const title=clean(candidate.title),lead=clean(candidate.lead),translatedTitle=clean(candidate.title_en);
  if(containsName(title))return {pass:true,reason:'name_in_title',evidence:title};
- const paragraphs=body.split(/(?<=[.!?。！？])\s+|\n+/u).map(clean).filter(Boolean);
- const evidence=paragraphs.find(p=>containsName(p)&&p.length>=50);
- function context(value:string){
-  const pattern=new RegExp(NAMES.join('|')+'|lukas(?:h|c|s|z)?enk|лукаш[еэ]нк','iu');
-  const index=value.search(pattern);const start=Math.max(0,index-200);return value.slice(start,start+1000);
+ if(containsName(translatedTitle))return {pass:true,reason:'translated_title_mention',evidence:translatedTitle};
+ const passages=new Map<string,RelevancePassage>();
+ for(const text of [lead,body]){
+  const sentences=text.split(/(?<=[.!?。！？])\s+|\n+/u).map(clean).filter(Boolean);
+  for(const [index,sentence] of sentences.entries()){
+   if(!containsName(sentence))continue;
+   const previous=sentences[index-1]?.slice(-300)??'';
+   const next=sentences[index+1]?.slice(0,300)??'';
+   const context=[previous,next].filter(Boolean).join('\n');
+   const previousPassage=passages.get(sentence);
+   if(!previousPassage||context.length>previousPassage.context.length){
+    passages.set(sentence,{quote:mentionExcerpt(sentence),context});
+   }
+  }
  }
- if(evidence)return {pass:true,reason:'substantive_body_mention',evidence:context(evidence)};
- if(containsName(text)&&text.length>=200)return {pass:true,reason:'body_mention',evidence:context(text)};
- if(containsName(lead)&&lead.length>=80)return {pass:true,reason:'public_lead_mention',evidence:lead};
- if(containsName(candidate.title_en||''))return {pass:true,reason:'translated_title_mention',evidence:candidate.title_en!};
- return {pass:false,reason:'no_substantive_lukashenko_mention',evidence:''};
+ const review=[...passages.values()];
+ if(!review.length)return {pass:false,reason:'no_substantive_lukashenko_mention',evidence:''};
+ const samples=review.length>8?[...review.slice(0,4),...review.slice(-4)]:review;
+ return {pass:true,reason:'context_review',evidence:samples[0].quote,review:samples};
 }
 export function contentLevel(text:string,paywall=false,truncated=false):string {
  const body=text.trim();if(!body)return 'METADATA';

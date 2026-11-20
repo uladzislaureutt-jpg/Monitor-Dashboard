@@ -111,12 +111,13 @@ export function RunSourcePublications({ github, assistant }: { github?: RunSumma
         {hasBoth && selected === "both" && <p>{githubLabel} · {assistantLabel}</p>}
       </div>
       <div className="run-source-filters">
-        {hasBoth && <select aria-label={be ? "Паток публікацый" : "Поток публикаций"} value={selected}
+        {hasBoth && <div className="run-source-feed-filter"><select className="run-source-filter-control"
+          aria-label={be ? "Паток публікацый" : "Поток публикаций"} value={selected}
           onChange={(event) => setFeed(event.target.value as Feed)}>
           <option value="both">{be ? "Абодва патокі" : "Оба потока"}</option>
           <option value="github">{githubLabel}</option>
           <option value="assistant">{assistantLabel}</option>
-        </select>}
+        </select></div>}
         {countryOptions.length > 0 && <div className="source-multiselect run-source-country-filter" ref={countryMenu}
           onKeyDown={event => {
             if (event.key !== "Escape" || !countryMenuOpen) return;
@@ -125,14 +126,15 @@ export function RunSourcePublications({ github, assistant }: { github?: RunSumma
             countryTrigger.current?.focus();
           }}>
           <button type="button" ref={countryTrigger}
-            className={`source-multiselect-trigger ${selectedCountries.length ? "has-selection" : ""}`}
+            className="run-source-filter-control run-source-country-trigger"
             aria-label={`${countryFilterLabel} · ${countrySelectionLabel}`}
+            title={countrySelectionLabel}
             aria-expanded={countryMenuOpen} aria-controls="run-source-countries"
             onClick={() => {
               if (!countryMenuOpen) setCountryQuery("");
               setCountryMenuOpen(!countryMenuOpen);
             }}>
-            <span>{countrySelectionLabel}</span><b aria-hidden="true">⌄</b>
+            <span>{countrySelectionLabel}</span>
           </button>
           {countryMenuOpen && <div id="run-source-countries" className="source-multiselect-menu" role="group"
             aria-label={countryFilterLabel}>

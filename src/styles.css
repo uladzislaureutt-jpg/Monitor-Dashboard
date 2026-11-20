@@ -102,7 +102,12 @@ kbd { color: #c4d5df; border: 1px solid #ffffff25; background: #ffffff0e; border
 .l-monitor-country-column { display: grid; align-content: start; min-width: 0; gap: 14px; }
 .run-source-panel .panel-head { flex-wrap: wrap; }
 .run-source-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.run-source-country-filter { min-width: 125px; }
+.run-source-feed-filter { position: relative; }
+.run-source-feed-filter, .run-source-filters .run-source-country-filter { flex: 0 0 140px; min-width: 0; }
+.run-source-filter-control { appearance: none; position: relative; width: 100%; min-width: 125px; min-height: 38px; border: 1px solid #dcd6ce; border-radius: 10px; background: #fffdfa; color: #263a49; padding: 0 30px 0 12px; font-size: 11px; text-align: left; cursor: pointer; }
+.run-source-filter-control:focus-visible { outline: 2px solid #87b0ca; outline-offset: 1px; }
+.run-source-country-trigger span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run-source-feed-filter::after, .run-source-country-trigger::after { content: ""; position: absolute; right: 13px; top: 50%; width: 6px; height: 6px; border-right: 1.5px solid #3f5261; border-bottom: 1.5px solid #3f5261; transform: translateY(-70%) rotate(45deg); pointer-events: none; }
 .run-source-country-filter .source-multiselect-menu { right: 0; left: auto; width: 250px; max-height: 295px; }
 .run-source-list { display: grid; gap: 5px; max-height: 370px; overflow-y: auto; }
 .run-source-list details { min-width: 0; border-radius: 8px; background: #f5f1ea; }
@@ -113,6 +118,9 @@ kbd { color: #c4d5df; border: 1px solid #ffffff25; background: #ffffff0e; border
 .run-source-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
 .run-source-name strong { overflow-wrap: anywhere; }
 .run-source-name small { color: #637481; font-size: 10px; }
+.report-translation-stats { margin-top: 8px; color: #61717c; font-size: 11px; }
+.report-translation-stats summary { width: fit-content; cursor: pointer; }
+.report-translation-stats p { margin: 6px 0; }
 .run-source-count { color: #597080; font-weight: 700; font-variant-numeric: tabular-nums; }
 .run-source-list ul { margin: 0; padding: 0 9px 7px 28px; list-style: none; }
 .run-source-list a { display: block; padding: 5px 0; border-top: 1px solid var(--line); color: #315b76; font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; text-decoration: none; }

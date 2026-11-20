@@ -112,7 +112,10 @@ export function DashboardView({
     <section className="dashboard-grid">
       <article className="panel chart-panel span-two">
         <div className="panel-head chart-head-with-mode">
-          <div><h3>{t("dashboard.trend")}</h3><p>{isLMonitor ? (locale === "be" ? "Два патокі: унутраная павестка і знешняя палітыка." : "Два потока: внутренняя повестка и внешняя политика.") : t("dashboard.trendHelp")}</p></div>
+          <div><h3>{t("dashboard.trend")}</h3><p>{isLMonitor
+            ? (locale === "be" ? "Тры патокі · унутраная павестка, знешняя палітыка і міжнародная павестка."
+              : "Три потока · внутренняя повестка, внешняя политика и международная повестка.")
+            : t("dashboard.trendHelp")}</p></div>
           <div className="panel-control-stack trend-controls">
             <PeriodSelector value={period} onChange={onPeriodChange} compact />
             <div className="chart-mode-switch">

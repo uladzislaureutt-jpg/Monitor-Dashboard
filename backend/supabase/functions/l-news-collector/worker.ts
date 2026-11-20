@@ -96,11 +96,16 @@ async function article(rt:Runtime,job:Job,run:Run,sources:Source[]){
  if(known&&String(known.origin).startsWith('github')){
   must(await rt.db.from('l_news_items').update({state:'rejected',reason:'already_reported_github'}).eq('id',item.id));return {already_reported_github:true};
  }
- const excerpt=(rel.reason==='substantive_body_mention'||rel.reason==='body_mention')?rel.evidence.slice(0,1000):(c.lead||c.body.slice(0,800));
- const translated=await translateCard(rt,job,run,c,source,excerpt);
+ const excerpt=rel.review?rel.evidence:(c.lead||c.body.slice(0,800));
+ const translated=await translateCard(rt,job,run,c,source,excerpt,rel.review);
+ if(!translated.accepted){
+  must(await rt.db.from('l_news_items').update({state:'rejected',reason:translated.reason,updated_at:new Date().toISOString()}).eq('id',item.id));
+  return {rejected:true,reason:translated.reason};
+ }
  const uid=item.document_uid;
- const card=buildCard(c,source,uid,translated.title,translated.lead,level,rel.evidence,run.id);
+ const card=buildCard(c,source,uid,translated.title,translated.lead,level,translated.evidence??rel.evidence,run.id);
  (card.provenance as any).translation_provider=translated.route;(card.provenance as any).extraction_strategy=strategy;
+ (card.provenance as any).relevance_reason=rel.review?'context_confirmed':rel.reason;
  const full=c.body.length>=350?{schema_version:'0.3',monitor_key:'lukashenko',document_id:uid,text:c.body,text_sha256:await sha(c.body),text_length:c.body.length,quality:level,extraction_strategy:strategy,transport:c.provider}:null;
  const revision=must(await rt.db.rpc('l_news_new_revision'));
  must(await rt.db.from('l_news_items').update({state:'ready',reason:null,card,full_text:full,content_level:level,published_at:published,ready_at:new Date().toISOString(),ready_run_id:run.id,revision,updated_at:new Date().toISOString()}).eq('id',item.id));
@@ -118,6 +123,7 @@ export async function workOne(rt:Runtime,job:Job){
   const rel=relevant(item.original);if(!rel.pass)return {unchanged:true};
   const source=(await sourcesFor(rt)).find(s=>s.domain===item.source_domain)!;
   const translated=await translateCard(rt,job,run,item.original,source,rel.evidence);
+  if(!translated.accepted)return {unchanged:true};
   item.card.publication.excerpt=translated.lead;item.card.provenance.evidence=rel.evidence;
   const revision=must(await rt.db.rpc('l_news_new_revision'));
   must(await rt.db.from('l_news_items').update({card:item.card,revision,updated_at:new Date().toISOString()}).eq('id',item.id));return {repaired:true};

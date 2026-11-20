@@ -22,7 +22,7 @@ async function worker(){
   results.push({id:job.id,state:patch.state});
  }catch(error){
   const message=error instanceof Error?error.message:'worker_error';
-  const retry=job.kind!=='gdelt_probe'&&job.attempts<4&&/translation_unavailable|transport|timeout|search_0$|search_429$|search_50[0234]$/.test(message);
+  const retry=job.kind!=='gdelt_probe'&&job.attempts<4&&/translation_unavailable|relevance_review_unavailable|transport|timeout|search_0$|search_429$|search_50[0234]$/.test(message);
   must(await db.from('l_news_jobs').update({state:retry?'waiting':'failed',error:message.slice(0,350),available_at:new Date(Date.now()+60000*job.attempts*job.attempts).toISOString(),lease_until:null,updated_at:new Date().toISOString()}).eq('id',job.id));
   if(!retry&&job.kind==='article')must(await db.from('l_news_items').update({state:'failed',reason:message.slice(0,250)}).eq('id',job.payload.item_id).neq('state','ready'));
   results.push({id:job.id,state:retry?'retry':'failed',error:message});
