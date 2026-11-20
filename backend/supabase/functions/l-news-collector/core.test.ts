@@ -8,11 +8,12 @@ function assert(x:unknown):asserts x{if(!x)throw new Error('assertion failed');}
 function equal(a:unknown,b:unknown){assert(JSON.stringify(a)===JSON.stringify(b));}
 const c={url:'https://example.com/article',title:'Analysis of regional diplomacy',lead:'',body:'',published_at:'2026-11-19T10:00:00Z',language:'en',country:'GB',domain:'example.com',provider:'test',provider_id:'1'};
 Deno.test('requested geography and multilingual query',()=>{
- equal(new Set(COUNTRIES).size,65);
- for(const country of ['KG','UZ','TJ','HU','RO','SK','NO','AE','OM','EG','DZ','ZW','GQ']){
+ equal(new Set(COUNTRIES).size,72);
+ for(const country of ['KG','UZ','TJ','HU','RO','SK','NO','AE','OM','EG','DZ','ZW','GQ','AU','KR','TW','LY','MM','LB','CU']){
   assert(COUNTRIES.includes(country));
  }
- assert(QUERY.length<1000);assert(QUERY.includes('卢卡申科'));
+ assert(QUERY.length<1000);assert(QUERY.includes('卢卡申科'));assert(QUERY.includes('魯卡申柯'));
+ assert(relevant({...c,title:'習近平北京會見白俄總統魯卡申柯'}).pass);
 });
 Deno.test('tracking removal preserves article IDs and path case',()=>{
  equal(urlKey('http://www.example.com/News/A/?utm_source=x&id=7#top'),'https://example.com/News/A?id=7');
@@ -22,6 +23,11 @@ Deno.test('tracking removal preserves article IDs and path case',()=>{
 Deno.test('public URL validation and strict source matching',()=>{
  equal(publicUrl('http://127.0.0.1/a'),null);equal(publicUrl('https://user:pass@example.com/a'),null);
  assert(!sourceFor('https://trusted.com.evil.net/a',[{domain:'trusted.com',name:'Trusted',country:'US'}]));
+ const english={domain:'euronews.com',name:'Euronews English',country:'BE'};
+ const french={domain:'fr.euronews.com',name:'Euronews France',country:'FR'};
+ equal(sourceFor('https://www.euronews.com/news/a',[english,french]),english);
+ equal(sourceFor('https://fr.euronews.com/news/a',[english,french]),french);
+ equal(sourceFor('https://ru.euronews.com/news/a',[english,french]),undefined);
 });
 Deno.test('26-hour absolute publication window',()=>{
  const from='2026-11-18T10:07:00Z',to='2026-11-19T12:07:00Z';

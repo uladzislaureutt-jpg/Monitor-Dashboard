@@ -10,9 +10,10 @@ export const COUNTRY_NAMES: Record<string,string> = {
  DZ:'Алжир',ZW:'Зимбабве',GQ:'Экваториальная Гвинея',ZA:'ЮАР',NG:'Нигерия',KE:'Кения',
  MA:'Марокко',ET:'Эфиопия',NL:'Нидерланды',IE:'Ирландия',DK:'Дания',PT:'Португалия',
  GR:'Греция',EE:'Эстония',HR:'Хорватия',SI:'Словения',MD:'Молдова',VA:'Ватикан',
+ AU:'Австралия',KR:'Южная Корея',TW:'Тайвань',LY:'Ливия',MM:'Мьянма',LB:'Ливан',CU:'Куба',
 };
 export const COUNTRIES = Object.keys(COUNTRY_NAMES);
-export const NAMES = ['Лукашенко','Лукашенка','Лукашэнка','Lukashenko','Lukashenka','Loukachenko','Lukaschenko','Łukaszenka','Łukaszenki','Łukaszenkę','Łukaszenką','Łukaszence','Lukaszenko','Lukašenka','Lukašenko','Lukaşenko','Lukašenko','Lukašenkos','Lukašenkas','Lukašenko','Lukashenkon','Lukașenko','卢卡申科','ルカシェンコ','لوکاشنکو','لوكاشينكو','לוקשנקו','ლუკაშენკო','Լուկաշենկո'];
+export const NAMES = ['Лукашенко','Лукашенка','Лукашэнка','Lukashenko','Lukashenka','Loukachenko','Lukaschenko','Łukaszenka','Łukaszenki','Łukaszenkę','Łukaszenką','Łukaszence','Lukaszenko','Lukašenka','Lukašenko','Lukaşenko','Lukašenko','Lukašenkos','Lukašenkas','Lukašenko','Lukashenkon','Lukașenko','卢卡申科','魯卡申柯','盧卡申科','ルカシェンコ','لوکاشنکو','لوكاشينكو','לוקשנקו','ლუკაშენკო','Լուկաշենկո'];
 export const QUERY = [...new Set(NAMES)].map(x=>'"'+x+'"').join(' OR ');
 export const ROLE_QUERY = '"President of Belarus" OR "Belarusian president" OR "президент Беларуси" OR "президент Белоруссии" OR "prezydent Białorusi"';
 const tracking=/^(utm_.+|fbclid|gclid|yclid|dclid|mc_cid|mc_eid|ref_src|cmpid|ocid)$/i;
@@ -37,7 +38,9 @@ export function urlKey(value:string):string {
 }
 export function domainOf(value:string):string {try{return new URL(value).hostname.toLowerCase().replace(/^www\./,'');}catch{return '';}}
 export function sourceFor(value:string,sources:Source[]):Source|undefined {
- const domain=domainOf(value);return sources.find(s=>s.domain===domain)||sources.filter(s=>domain.endsWith('.'+s.domain)).sort((a,b)=>b.domain.length-a.domain.length)[0];
+ const domain=domainOf(value);
+ // The root Euronews domain is the English edition. Other editions have their own domains.
+ return sources.find(s=>s.domain===domain)||sources.filter(s=>s.domain!=='euronews.com'&&domain.endsWith('.'+s.domain)).sort((a,b)=>b.domain.length-a.domain.length)[0];
 }
 export function clean(value:unknown):string{return String(value??'').replace(/<[^>]*>/g,' ').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim();}
 export function validDate(value:unknown,from:string,to:string):string|null {

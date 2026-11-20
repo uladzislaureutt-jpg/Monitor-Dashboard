@@ -57,6 +57,7 @@ export function DataView({
     deleteUserConfirm: be ? "Цалкам выдаліць карыстальніка і яго ўліковы запіс? Гэта дзеянне нельга адмяніць." : "Полностью удалить пользователя и его учётную запись? Это действие нельзя отменить.",
   };
   const latest = runs[0] ?? null;
+  const recentRuns = runs.slice(0, 5);
   const productionRuns = runs.filter((run) => run.dryRun === false).length;
   const [form, setForm] = useState(syncSettings);
   useEffect(() => setForm(syncSettings), [syncSettings]);
@@ -136,7 +137,23 @@ export function DataView({
     </section>
     {monitorKey === "lukashenko" && <LNewsAssistant importedRuns={runs} onSync={() => onSyncNow(form)} syncBusy={syncBusy} />}
     <section className="kpi-grid"><article className="kpi"><strong>{stats?.runs ?? "—"}</strong><span>{t("data.importedRuns")}</span></article><article className="kpi"><strong>{stats?.documents ?? "—"}</strong><span>{t("data.uniquePublications")}</span></article><article className="kpi"><strong>{stats?.sources ?? "—"}</strong><span>{t("data.sources")}</span></article><article className="kpi"><strong>{productionRuns}</strong><span>{t("data.productionRuns")}</span></article><article className="kpi"><strong>{latest?.collector ? `П${latest.collectorNumber}` : latest?.runNumber ?? "—"}</strong><span>{t("data.latestRun")}</span></article></section>
-    <section className="panel"><div className="panel-head"><div><h3>{t("data.runsTitle")}</h3><p>{t("data.runsHelp")}</p></div><span className="badge">{t("data.contract")}</span></div><div className="table-wrap"><table><thead><tr><th>{t("data.run")}</th><th>{t("data.mode")}</th><th>{t("data.start")}</th><th>{t("data.publications")}</th><th>{t("data.sourcesCol")}</th><th>{t("data.imported")}</th></tr></thead><tbody>{runs.length === 0 ? <tr><td colSpan={6} className="empty">{t("data.noBundles")}</td></tr> : runs.map((run) => <tr key={run.id}><td><b>{run.collector ? `Помощник #${run.collectorNumber ?? "—"}` : `GitHub #${run.runNumber ?? "—"}`}</b><small>{run.monitorKey === "social_economic" ? t("data.monitorSocial") : run.monitorName}</small></td><td><span className={`mode mode-${run.dryRun === true ? "dry" : run.dryRun === false ? "prod" : "unknown"}`}>{formatMode(run.dryRun)}</span></td><td>{formatDate(run.startedAt)}</td><td>{run.publications}</td><td>{run.sourcesInCoverage}</td><td>{formatDate(run.importedAt)}</td></tr>)}</tbody></table></div></section>
+    <section className="panel">
+      <div className="panel-head">
+        <div>
+          <h3>{t("data.runsTitle")}</h3>
+          {recentRuns.length > 0 && <p>{t("data.runsShown", { shown: recentRuns.length, total: runs.length })}</p>}
+        </div>
+        <span className="badge">{t("data.contract")}</span>
+      </div>
+      <div className="table-wrap"><table>
+        <thead><tr><th>{t("data.run")}</th><th>{t("data.mode")}</th><th>{t("data.start")}</th><th>{t("data.publications")}</th><th>{t("data.sourcesCol")}</th><th>{t("data.imported")}</th></tr></thead>
+        <tbody>{recentRuns.length === 0 ? <tr><td colSpan={6} className="empty">{t("data.noBundles")}</td></tr> : recentRuns.map((run) => <tr key={run.id}>
+          <td><b>{run.collector ? `Помощник #${run.collectorNumber ?? "—"}` : `GitHub #${run.runNumber ?? "—"}`}</b><small>{run.monitorKey === "social_economic" ? t("data.monitorSocial") : run.monitorName}</small></td>
+          <td><span className={`mode mode-${run.dryRun === true ? "dry" : run.dryRun === false ? "prod" : "unknown"}`}>{formatMode(run.dryRun)}</span></td>
+          <td>{formatDate(run.startedAt)}</td><td>{run.publications}</td><td>{run.sourcesInCoverage}</td><td>{formatDate(run.importedAt)}</td>
+        </tr>)}</tbody>
+      </table></div>
+    </section>
     <section className="panel db-path"><span>{t("data.sqliteShared")}</span><code title={stats?.databasePath}>{stats?.databasePath ?? t("status.initializing")}</code></section>
     {access.profile.isAdmin && <AdminNotebook session={access.session} be={be}/>} 
   </div>;
