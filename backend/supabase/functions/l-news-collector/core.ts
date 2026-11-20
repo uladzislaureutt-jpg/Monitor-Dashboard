@@ -56,13 +56,21 @@ function mentionExcerpt(value:string){
  return value.slice(Math.max(0,position-185),Math.max(0,position-185)+850);
 }
 
+function isHistoricalParticipationAside(title:string,lead:string,passages:RelevancePassage[]){
+ if(passages.length!==1||containsName(lead)||/\b(?:belarus(?:ian)?|minsk)\b/i.test(title+' '+lead))return false;
+ const quote=passages[0].quote;
+ const identification=/\bthe country (?:led|headed|governed|ruled) by (?:Alexander |Aleksandr |Alyaksandr )?Lukashenk[oa]\b/i;
+ return identification.test(quote)&&!containsName(quote.replace(identification,''))&&
+  /\b(?:used to participate|formerly participated|previously participated|once participated)\b/i.test(quote);
+}
+
 export function relevant(candidate:Candidate,body=candidate.body):Relevance {
  const title=clean(candidate.title),lead=clean(candidate.lead),translatedTitle=clean(candidate.title_en);
  if(containsName(title))return {pass:true,reason:'name_in_title',evidence:title};
  if(containsName(translatedTitle))return {pass:true,reason:'translated_title_mention',evidence:translatedTitle};
  const passages=new Map<string,RelevancePassage>();
  for(const text of [lead,body]){
-  const sentences=text.split(/(?<=[.!?。！？])\s+|\n+/u).map(clean).filter(Boolean);
+  const sentences=text.split(/(?<=[.!?])\s+|(?<=[。！？])\s*|\n+/u).map(clean).filter(Boolean);
   for(const [index,sentence] of sentences.entries()){
    if(!containsName(sentence))continue;
    const previous=sentences[index-1]?.slice(-300)??'';
@@ -76,6 +84,9 @@ export function relevant(candidate:Candidate,body=candidate.body):Relevance {
  }
  const review=[...passages.values()];
  if(!review.length)return {pass:false,reason:'no_substantive_lukashenko_mention',evidence:''};
+ if(isHistoricalParticipationAside(title,lead,review)){
+  return {pass:false,reason:'passing_lukashenko_mention',evidence:review[0].quote};
+ }
  const samples=review.length>8?[...review.slice(0,4),...review.slice(-4)]:review;
  return {pass:true,reason:'context_review',evidence:samples[0].quote,review:samples};
 }

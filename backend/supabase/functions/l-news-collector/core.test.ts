@@ -34,6 +34,14 @@ Deno.test('late analytical mention reaches contextual review',()=>{
  assert(r.evidence.includes('Lukashenko'));assert(r.review?.[0].context.includes('Other news'));
  assert(!relevant(c).pass);
 });
+Deno.test('a historical participation aside in an unrelated article is rejected before any model call',()=>{
+ const body='Before 2020, the country led by Alexander Lukashenko also used to participate in the exchange program for a while.';
+ const result=relevant({...c,title:'Hungarian universities and Erasmus+',body});
+ equal(result.pass,false);
+ equal(result.reason,'passing_lukashenko_mention');
+ const sameTopic=relevant({...c,title:'Belarus and EU academic exchange',body});
+ assert(sameTopic.pass&&sameTopic.review?.length===1);
+});
 Deno.test('context verdict rejects a passing reference and returns one translated, source-anchored draft',async()=>{
  const incidental={...c,title:'Erasmus+ in Hungary',body:'The talks concern Hungarian universities. Before 2020, the country led by Alexander Lukashenko also participated in the exchange program.'};
  const substantive={...c,title:'Units put on alert',lead:'Alexander Lukashenko ordered an inspection of border units.',body:'Alexander Lukashenko ordered an inspection of border units. The inspection covers units on the Polish border.'};
