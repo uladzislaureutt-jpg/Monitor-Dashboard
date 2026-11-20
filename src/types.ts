@@ -24,6 +24,7 @@ export type RunSummary = {
 export type RunPublication = {
   id: number;
   source: string | null;
+  country: string | null;
   title: string;
   url: string;
 };

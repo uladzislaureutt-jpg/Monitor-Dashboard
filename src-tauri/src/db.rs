@@ -219,7 +219,8 @@ pub fn list_runs(path: &Path, monitor_key: &str) -> Result<Vec<RunSummary>, Stri
 pub fn l_monitor_run_publications(path: &Path, run_id: i64) -> Result<Vec<RunPublication>, String> {
     let conn = open_database(path)?;
     let mut stmt = conn.prepare(r#"
-        SELECT mi.id, NULLIF(TRIM(s.canonical_name), ''), d.title, d.url
+        SELECT mi.id, NULLIF(TRIM(s.canonical_name), ''), d.title, d.url,
+               NULLIF(TRIM(s.configured_region), '')
         FROM run_items ri
         JOIN runs r ON r.id = ri.run_id
         JOIN monitors m ON m.id = r.monitor_id
@@ -240,6 +241,7 @@ pub fn l_monitor_run_publications(path: &Path, run_id: i64) -> Result<Vec<RunPub
             source: row.get(1)?,
             title: row.get(2)?,
             url: row.get(3)?,
+            country: row.get(4)?,
         })
     }).map_err(|e| format!("Не удалось прочитать публикации запуска: {e}"))?;
     rows.collect::<Result<Vec<_>, _>>()

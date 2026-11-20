@@ -179,6 +179,7 @@ pub struct CollectorCountryCount {
 pub struct RunPublication {
     pub id: i64,
     pub source: Option<String>,
+    pub country: Option<String>,
     pub title: String,
     pub url: String,
 }

@@ -1126,7 +1126,11 @@ mod identity_integration_tests {
      let countries = &runs[0].collector_countries;
      assert_eq!(countries.len(), 3);
      assert!(countries.iter().all(|row| row.sources == 1));
-     assert_eq!(crate::db::l_monitor_run_publications(&path, imported.run_id).unwrap().len(), 4);
+     let publications = crate::db::l_monitor_run_publications(&path, imported.run_id).unwrap();
+     assert_eq!(publications.len(), 4);
+     assert_eq!(publications[0].country.as_deref(), Some("Германия"));
+     assert_eq!(publications[1].country.as_deref(), Some("Великобритания"));
+     assert_eq!(publications[2].country.as_deref(), Some("Польша"));
      let dashboard = crate::db::dashboard_overview(&path, "lukashenko", None).unwrap();
      assert_eq!((dashboard.publications, dashboard.active_sources, dashboard.regions), (4, 3, 3));
      assert_eq!(dashboard.trend.iter().map(|point| point.count).sum::<i64>(), 4);
