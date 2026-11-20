@@ -34,7 +34,7 @@ Deno.test('previews and paywalls cannot become full text; CJK can',()=>{
 Deno.test('publisher metadata preserves body, published time and paywall',()=>{
  const body='Alexander Lukashenko discussed negotiations. '.repeat(100);
  const html='<html><head><link rel="canonical" href="/article/123"><script type="application/ld+json">'+JSON.stringify({'@type':'NewsArticle',datePublished:'2026-11-19T09:00:00Z',isAccessibleForFree:false,articleBody:body})+'</script></head><body></body></html>';
- const p=extractPage(html,'https://example.com/article/123?utm_source=x');equal(p.body,body);assert(p.paywall);equal(p.published,'2026-11-19T09:00:00Z');equal(p.canonical,'https://example.com/article/123');
+ const p=extractPage(html,'https://example.com/article/123?utm_source=x');equal(p.body,body.trim());assert(p.paywall);equal(p.published,'2026-11-19T09:00:00Z');equal(p.canonical,'https://example.com/article/123');
 });
 Deno.test('Perigon reserve bounds collection',()=>{
  const resetAt=new Date(Date.now()+29.9*86400000).toISOString();

@@ -19,7 +19,7 @@ jobs:
         with:
           deno-version: v2.x
       - run: deno check --node-modules-dir=auto backend/supabase/functions/l-news-collector/index.ts
-      - run: deno test --node-modules-dir=auto --allow-env --allow-read backend/supabase/functions/l-news-collector/core.test.ts
+      - run: deno test --node-modules-dir=auto --allow-env --allow-read backend/supabase/functions/l-news-collector/
   importer:
     runs-on: ubuntu-latest
     steps:

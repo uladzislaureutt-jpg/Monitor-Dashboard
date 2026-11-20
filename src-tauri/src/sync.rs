@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
-use sha2::Digest;
 
 use crate::{db, importer};
 
@@ -533,22 +532,6 @@ pub fn sync_assistant(db_path:&Path,base_url:&str,anon_key:&str,access_token:&st
         let status=response.status();let value:serde_json::Value=response.json().map_err(|e|e.to_string())?;
         if !status.is_success(){return Err(format!("HTTP {}: {}",status.as_u16(),value));}Ok(value)
     };
-    // Register only delivered GitHub publications; failed fetches and API cards
-    // must never poison the shared seen-URL index.
-    let rows={let conn=db::open_database(db_path)?;
-        let mut stmt=conn.prepare(r#"SELECT DISTINCT d.document_uid,d.url FROM documents d
-          JOIN monitor_items mi ON mi.document_id=d.id JOIN monitors m ON m.id=mi.monitor_id
-          JOIN run_items ri ON ri.monitor_item_id=mi.id JOIN runs r ON r.id=ri.run_id
-          WHERE m.monitor_key='lukashenko' AND json_extract(r.manifest_json,'$.run.collector') IS NULL
-          AND datetime(COALESCE(r.started_at,r.imported_at))>=datetime('now','-45 days') ORDER BY d.document_uid,d.url"#).map_err(|e|e.to_string())?;
-        stmt.query_map([],|r|Ok(serde_json::json!({"document_uid":r.get::<_,String>(0)?,"url":r.get::<_,String>(1)?}))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?
-    };
-    let signature=hex::encode(sha2::Sha256::digest(serde_json::to_vec(&rows).map_err(|e|e.to_string())?));
-    let index_key=format!("l-assistant-known:{base_url}");
-    if db::get_app_setting(db_path,&index_key)?.as_deref()!=Some(&signature){
-        for chunk in rows.chunks(1000){post(serde_json::json!({"action":"register_known","rows":chunk}))?;}
-        db::set_app_setting(db_path,&index_key,&signature)?;
-    }
     let manifest=post(serde_json::json!({"action":"manifest"}))?;
     let runs=manifest["runs"].as_array().ok_or("Нет списка запусков помощника")?;
     let mut imported=0;

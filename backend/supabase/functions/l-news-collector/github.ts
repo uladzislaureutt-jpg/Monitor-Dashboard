@@ -10,11 +10,11 @@ export function githubPublications(bytes:Uint8Array){
  if(!file)throw new Error('publications_missing');
  return strFromU8(file).split('\n').filter(Boolean).map(line=>JSON.parse(line));
 }
-export async function registerKnown(rt:Runtime,rows:any[],origin='github_client'){
+async function registerKnown(rt:Runtime,rows:any[]){
  const safe=[];for(const row of rows.slice(0,1000)){try{
   const url=urlKey(String(row.url||row.canonical_url||''));const uid=String(row.document_uid||row.document_id||'');
   if(!uid||uid.length>160)continue;
-  safe.push({canonical_url:url,document_uid:uid,origin,content_level:String(row.content_level||'METADATA').slice(0,24),aliases:[],observed_at:new Date().toISOString()});
+  safe.push({canonical_url:url,document_uid:uid,origin:'github_bundle',content_level:String(row.content_level||'METADATA').slice(0,24),aliases:[],observed_at:new Date().toISOString()});
  }catch{/* skip malformed URL */}}
  if(!safe.length)return 0;
  // Preserve the identity first recorded centrally; all raw GitHub identities are
@@ -40,7 +40,7 @@ export async function indexGithub(rt:Runtime){
   const bytes=new Uint8Array(await r.arrayBuffer());if(bytes.length>12000000)throw new Error('archive_size_limit');
   const rows=githubPublications(bytes);
   if(rows.some(r=>r.monitor_key!=='lukashenko'))throw new Error('unexpected_monitor');
-  for(let i=0;i<rows.length;i+=200)indexed+=await registerKnown(rt,rows.slice(i,i+200).map(r=>({url:r.publication.url,document_id:r.document_id,content_level:r.provenance?.content_level||'METADATA'})),'github_bundle');
+  for(let i=0;i<rows.length;i+=200)indexed+=await registerKnown(rt,rows.slice(i,i+200).map(r=>({url:r.publication.url,document_id:r.document_id,content_level:r.provenance?.content_level||'METADATA'})));
   seen.add(a.id);
  }catch(error){warnings.push('GitHub-индекс: '+a.name+' ('+(error instanceof Error?error.message.slice(0,100):'error')+')');}}
  await saveState(rt,'github_index',{artifacts:[...seen].slice(-200),indexed_last:indexed});return {indexed,warnings};

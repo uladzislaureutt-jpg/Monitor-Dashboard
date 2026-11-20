@@ -57,7 +57,7 @@ persists before translation so retries reuse the fetched text.
 
 ## Server access and operations
 
-`l-news-collector` implements status, manifest, download and register_known for
+`l-news-collector` implements status, manifest and download for
 active users with L-Monitor access. Admins additionally have start, settings,
 quota and retry_failed. Settings accept enabled and lookback_hours.
 
@@ -65,6 +65,7 @@ The public gateway validates the user's Supabase session, active profile and
 monitor access itself. The worker validates a private Vault token and accepts
 only its worker action. Tables/RPCs are service-role only. Network transport
 tables/functions in schema net have anonymous/public access revoked.
+The shared seen-URL index is built on the server from GitHub artifacts and collector records. Desktop clients reconcile imported publications locally.
 No keys or credential-bearing URLs are stored in cards or usage logs.
 Bounded worker leases, provider reservations and idempotent job keys persist
 across function restarts.
