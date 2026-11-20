@@ -9,6 +9,7 @@ type Run = {
   status: string;
   to_at: string;
   revision?: number;
+  settings?: { country_scope?: string[] };
   counters: Record<string, number>;
   warnings: string[];
 };
@@ -17,6 +18,7 @@ type Snapshot = {
   settings: { enabled: boolean; lookback_hours: number };
   runs: Run[];
   providers: { provider: string; info: Record<string, any> }[];
+  country_names?: Record<string, string>;
   sources: { country: string; baseline: boolean; coverage: Record<string, unknown> }[];
 };
 
@@ -48,6 +50,7 @@ export function LNewsAssistant({
   const [busy, setBusy] = useState(false);
   const [draftHours, setDraftHours] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
+  const [countries, setCountries] = useState<string[]>([]);
   const token = session.accessToken;
   const onSyncRef = useRef(onSync);
   onSyncRef.current = onSync;
@@ -107,6 +110,10 @@ export function LNewsAssistant({
   const newscatcher = data?.providers.find(provider => provider.provider === "newscatcher")?.info;
   const limits = perigon?.limits || {};
   const latest = data?.runs[0];
+  const eligibleCountries = [...new Set(data?.sources.map(source => source.country))]
+    .map(code => ({ code, label: data?.country_names?.[code] ?? code }))
+    .sort((left, right) => left.label.localeCompare(right.label, "ru"));
+  const selectedCountries = eligibleCountries.filter(({ code }) => countries.includes(code)).map(({ code }) => code);
   const savedHours = data?.settings.lookback_hours ?? 26;
   const hours = draftHours ?? String(savedHours);
   const validHours = Number.isInteger(Number(hours)) && Number(hours) >= 1 && Number(hours) <= 168;
@@ -143,11 +150,23 @@ export function LNewsAssistant({
       <button className="secondary-button" disabled={busy || !data}
         onClick={() => void act("settings", { enabled: !data?.settings.enabled })}>{data?.settings.enabled ? "Приостановить расписание" : "Включить расписание"}</button>
       <button className="primary-button" disabled={busy || !data || Boolean(latest && active(latest))}
-        onClick={() => void act("start")}>Собрать сейчас</button>
+        onClick={() => void act("start", selectedCountries.length ? { countries: selectedCountries } : {})}>Собрать сейчас</button>
       <button className="secondary-button" disabled={busy} onClick={() => void act("quota")}>Проверить остатки</button>
       <button className="secondary-button" disabled={busy} onClick={() => void act("retry_failed")}>Повторить ошибки обработки</button>
       <button className="secondary-button" disabled={syncBusy} onClick={onSync}>Получить карточки</button>
     </div>
+    <details className="sync-note">
+      <summary>Страны для ручного сбора · {selectedCountries.length ? selectedCountries.map(code => data?.country_names?.[code] ?? code).join(", ") : "все страны"}</summary>
+      {selectedCountries.length > 0 && <button type="button" className="secondary-button small-button" onClick={() => setCountries([])}>Все страны</button>}
+      <div className="l-news-country-picker">
+        {eligibleCountries.map(({ code, label }) => <label key={code}>
+          <input type="checkbox" checked={countries.includes(code)} onChange={event => {
+            const checked = event.target.checked;
+            setCountries(previous => checked ? [...previous, code] : previous.filter(country => country !== code));
+          }} /> {label}
+        </label>)}
+      </div>
+    </details>
     <p className="sync-note">Глубина от 1 до 168 часов действует для следующих ручных и плановых сборов. Ручной сбор использует общие лимиты API.</p>
     <div className="table-wrap"><table>
       <thead><tr><th>Сбор</th><th>Состояние</th><th>Готово / полные тексты</th><th>Источники по странам</th><th>Повторы</th><th>Расход</th></tr></thead>
@@ -156,7 +175,7 @@ export function LNewsAssistant({
         const countries = localRun?.collectorCountries ?? [];
         const countryLabels = countries.map(item => `${item.country} — ${item.sources}`);
         return <tr key={run.id}>
-          <td>Помощник #{run.number}<small>{new Date(run.to_at).toLocaleString("ru-RU", { timeZone: "Europe/Minsk" })}</small></td>
+          <td>Помощник #{run.number}<small>{new Date(run.to_at).toLocaleString("ru-RU", { timeZone: "Europe/Minsk" })}</small>{run.settings?.country_scope && <small>{run.settings.country_scope.map(code => data?.country_names?.[code] ?? code).join(", ")}</small>}</td>
           <td>{labels[run.status] || run.status}
             {active(run) && <small>В очереди: {run.counters.jobs_pending || 0}</small>}
             {!!run.warnings?.length && <details><summary>Показать замечания ({run.warnings.length})</summary>

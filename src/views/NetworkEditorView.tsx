@@ -21,13 +21,15 @@ export type NetworkEditorItem = {
   url: string; text: string; imageText: string; comments: string[];
 };
 
-const stateKey = (url: string) => `monitor-networks-transcription:${url}`;
-export function collectEditorItems(urls: string[]): NetworkEditorItem[] {
+export function networkTranscriptKey(url: string, operatorId?: string) {
+  return operatorId ? `monitor-networks-transcription:${operatorId}:${url}` : `monitor-networks-transcription:${url}`;
+}
+export function collectEditorItems(urls: string[], operatorId?: string): NetworkEditorItem[] {
   const items: NetworkEditorItem[] = [];
   for (const url of [...new Set(urls.map((item) => item.trim()).filter(Boolean))].slice(0, 5)) {
     if (!isTikTokVideoUrl(url)) continue;
     let raw: Record<string, unknown> = {};
-    try { raw = JSON.parse(localStorage.getItem(stateKey(url)) || "{}") as Record<string, unknown>; }
+    try { raw = JSON.parse(localStorage.getItem(networkTranscriptKey(url, operatorId)) || "{}") as Record<string, unknown>; }
     catch { /* ignore corrupt draft */ }
     const comments = [
       ...(Array.isArray(raw.comments) ? raw.comments.map((value) => String((value as { text?: string })?.text || "")) : []),
@@ -42,8 +44,9 @@ export function collectEditorItems(urls: string[]): NetworkEditorItem[] {
 }
 
 export function NetworkEditorView({
-  slots, setSlots, sourceContext, onRemove, transcribeSelected, batchBusy, batchRevision,
+  operatorId, slots, setSlots, sourceContext, onRemove, transcribeSelected, batchBusy, batchRevision,
 }: {
+  operatorId?: string;
   slots: string[];
   setSlots: (next: string[]) => void;
   sourceContext: TikTokSourceContextMap;
@@ -80,7 +83,7 @@ export function NetworkEditorView({
   }
   async function exportCombined() {
     setError(""); setMessage("");
-    const items = collectEditorItems(slots);
+    const items = collectEditorItems(slots, operatorId);
     if (items.length === 0 || items.some((item) => !item.text && !item.imageText && !item.comments.length)) {
       setError(be ? "Для экспарту кожнае абранае відэа павінна мець адрэдагаваны тэкст або каментарыі." : "Для экспорта у каждого выбранного видео должен быть текст для экспорта или комментарии.");
       return;
@@ -150,7 +153,7 @@ export function NetworkEditorView({
           </div>
         </section>}
         {url && isTikTokVideoUrl(url) ? <TranscriptionView key={`${url}:${batchRevision}`}
-          initialUrl={url} storageKey={stateKey(url)} embedded hideExport /> :
+          initialUrl={url} storageKey={networkTranscriptKey(url, operatorId)} embedded hideExport /> :
           <section className="panel network-empty"><p>{be ? "Устаўце прамую спасылку на ролік." : "Вставьте прямую ссылку на ролик."}</p></section>}
       </div>
         </details>

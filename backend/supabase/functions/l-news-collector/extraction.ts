@@ -2,7 +2,7 @@ import {load} from 'npm:cheerio@1.0.0-rc.12';
 import {Readability} from 'npm:@mozilla/readability@0.6.0';
 import {parseHTML} from 'npm:linkedom@0.18.12';
 import ipaddr from 'npm:ipaddr.js@2.2.0';
-import {Candidate,Source,clean,contentLevel,domainOf,publicUrl,sourceFor} from './core.ts';
+import {Candidate,Source,clean,contentLevel,domainOf,publicUrl,sourceFor,urlKey} from './core.ts';
 import {Job,Run,Runtime,must,reserve} from './providers.ts';
 
 const MAX_BYTES=1500000;
@@ -38,12 +38,29 @@ export function extractPage(html:string,url:string){
  const title=clean($('meta[property="og:title"]').attr('content')||$('h1').first().text()||$('title').text());
  const lead=clean($('meta[name="description"]').attr('content')||$('meta[property="og:description"]').attr('content'));
  published=published||$('meta[property="article:published_time"]').attr('content')||$('meta[itemprop="datePublished"]').attr('content')||$('time[datetime]').first().attr('datetime')||null;
+ const alternatives=$('head link[rel="alternate"][hreflang]').toArray().map(e=>({
+  language:$(e).attr('hreflang')?.toLowerCase(),url:$(e).attr('href'),
+ }));
  const canonical=$('link[rel="canonical"]').attr('href');const amp=$('link[rel="amphtml"]').attr('href');
  if(body.length<700){try{const document=(parseHTML(html) as any).document;const article=new Readability(document).parse();const text=article?.textContent?.trim()||'';if(text.length>body.length)body=text;}catch{/* DOM fallback below */}}
  if(body.length<350){$('script,style,nav,header,footer,aside,[class*="related"],[class*="recommend"]').remove();const nodes=$('article p,[itemprop="articleBody"] p,main p').toArray().map(e=>clean($(e).text())).filter(t=>t.length>40);if(nodes.join('\n\n').length>body.length)body=nodes.join('\n\n');}
  body=body.split(/\n+/).map(clean).filter(Boolean).join('\n\n').slice(0,150000);
  if(/subscribe to (?:continue|read)|подпишитесь.{0,25}читать|доступно.{0,15}подписчик|abonnez.vous pour lire|subscription required/i.test(body))paywall=true;
- return {body,title,lead,published,paywall,canonical:canonical?new URL(canonical,url).href:null,amp:amp?new URL(amp,url).href:null};
+ return {body,title,lead,published,paywall,alternatives,canonical:canonical?new URL(canonical,url).href:null,amp:amp?new URL(amp,url).href:null};
+}
+export function ukrainianEdition(url:string, alternatives:{language?:string;url?:string}[]) {
+ const host=domainOf(url);
+ if(host!=='24tv.ua'&&!host.endsWith('.24tv.ua'))return null;
+ const editions:Record<string,string>={};
+ for(const alternate of alternatives){
+  if(!alternate.language||!['uk','ru','en'].includes(alternate.language)||!alternate.url)continue;
+  try{
+   const target=urlKey(new URL(alternate.url,url).href);
+   if(domainOf(target)===host&&/_n[0-9]+$/.test(new URL(target).pathname))editions[alternate.language]=target;
+  }catch{/* ignore unusable metadata */}
+ }
+ const primary=editions.uk;
+ return primary&&Object.values(editions).includes(urlKey(url))?{primary,aliases:Object.values(editions)}:null;
 }
 function sameArticle(title:string,other:string):boolean {
  const a=title.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu)||[],b=other.toLowerCase();return !a.length||a.filter(t=>b.includes(t)).length>=Math.min(3,Math.ceil(a.length*.35));
@@ -52,9 +69,11 @@ export async function recoverArticle(rt:Runtime,job:Job,run:Run,c:Candidate,sour
  const startedRecovery=Date.now();
  const originalBody=c.body;let best={...c},level=contentLevel(c.body,!!c.paywall,!!c.content_truncated),strategy=c.body?'provider_content':'provider_metadata';
  const attempts:any[]=[];
- if(level==='FULL_TEXT')return {candidate:best,level,strategy,attempts};
+ if(level==='FULL_TEXT'&&source.domain!=='24tv.ua')return {candidate:best,level,strategy,attempts};
  async function accept(html:string,url:string,route:string){
   const page=extractPage(html,url);
+  const editions=ukrainianEdition(url,page.alternatives);
+  if(editions){best.identity_url=editions.primary;best.aliases=editions.aliases;}
   if(!sameArticle(c.title,page.title))return null;
   if(page.body.length>best.body.length){best.body=page.body;best.paywall=page.paywall;best.content_truncated=false;strategy=route;}
   if(!best.lead&&page.lead)best.lead=page.lead;
@@ -62,7 +81,7 @@ export async function recoverArticle(rt:Runtime,job:Job,run:Run,c:Candidate,sour
   if(page.canonical&&sourceFor(page.canonical,sources)?.domain===source.domain&&new URL(page.canonical).pathname.length>1)best.canonical=page.canonical;
   level=contentLevel(best.body,!!best.paywall,!!best.content_truncated);return page;
  }
- try{const page=await fetchPage(c.url);attempts.push({route:'direct',status:page.status});
+ try{const page=await fetchPage(source.domain==='fontanka.ru'?urlKey(c.url):c.url);attempts.push({route:'direct',status:page.status});
   if(page.html){const parsed=await accept(page.html,page.url,'publisher_direct');
    if(level!=='FULL_TEXT'&&parsed?.amp&&sourceFor(parsed.amp,sources)?.domain===source.domain){const amp=await fetchPage(parsed.amp);attempts.push({route:'amp',status:amp.status});if(amp.html)await accept(amp.html,amp.url,'publisher_amp');}}
  }catch(e){attempts.push({route:'direct',error:e instanceof Error?e.message:'transport_error'});}

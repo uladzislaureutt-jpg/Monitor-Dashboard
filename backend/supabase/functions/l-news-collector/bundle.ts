@@ -8,7 +8,12 @@ export async function bundleForRun(rt:Runtime,id:string){
  for(let i=0;i<ids.length;i+=150)rows.push(...must(await rt.db.from('l_news_items').select('*').in('id',ids.slice(i,i+150))));
  const upgrade=new Set(links.filter((r:any)=>r.role==='upgrade').map((r:any)=>r.item_id));
  const ready=rows.filter(r=>r.state==='ready'&&(r.ready_run_id===id||upgrade.has(r.id))&&r.card);
- const sources=must(await rt.db.from('l_news_sources').select('*').eq('enabled',true).order('domain'));
+ const observed=new Set(rows.map(row=>row.source_domain));
+ const catalog=must(await rt.db.from('l_news_sources').select('*').order('domain')) as {
+  domain:string;enabled?:boolean;country:string;name:string;source_type:string;priority:string;coverage:unknown
+ }[];
+ const sources=catalog.filter(source=>observed.has(source.domain)||
+  (source.enabled!==false&&(!run.settings.country_scope||run.settings.country_scope.includes(source.country))));
  const source_metrics=sources.map((s:any)=>{
   const candidates=rows.filter(r=>r.source_domain===s.domain),included=ready.filter(r=>r.source_domain===s.domain);
   return {schema_version:'0.3',monitor_key:'lukashenko',source:s.name,domain:s.domain,source_type:s.source_type,source_region:COUNTRY_NAMES[s.country]||s.country,source_locality:null,priority:s.priority,

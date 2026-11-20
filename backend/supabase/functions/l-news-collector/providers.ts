@@ -40,6 +40,14 @@ export async function searchPerigon(rt:Runtime,job:Job,run:Run){
  const maxCalls=perigonBudget(info,run.settings.perigon_per_run,run.settings.perigon_reserve);
  if(maxCalls<1||page*size>=Number(info.paginationLimit||300))return {capped:true,candidates:[] as Candidate[],next:false};
  const q=new URLSearchParams({q:job.payload.layer==='role'?ROLE_QUERY:QUERY,searchTranslation:'true',from:run.from_at,to:run.to_at,sortBy:'date',showReprints:'true',page:String(page),size:String(size)});
+ const sources:string[]=job.payload.source_domains??[];
+ const exclusions:string[]=job.payload.excluded_domains??[];
+ if(sources.length&&sources.length<=100){
+  for(const domain of sources){q.append('source',domain);if(domain==='24tv.ua')q.append('source','*.24tv.ua');}
+ }else if(sources.length){
+  for(const country of run.settings.country_scope)q.append('sourceCountry',country.toLowerCase());
+ }
+ for(const domain of exclusions){q.append('excludeSource',domain);q.append('excludeSource','*.'+domain);}
  const response=await apiRequest(rt,job,run,'perigon','https://api.perigon.io/v1/all?'+q,{headers:{'x-api-key':rt.perigonKey}},page,maxCalls,0);
  if(response.capped)return {capped:true,candidates:[],next:false};
  if(response.status!==200)throw new Error('perigon_search_'+response.status);

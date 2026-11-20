@@ -8557,7 +8557,7 @@
     "source_type": "media",
     "priority": "B",
     "baseline": true,
-    "enabled": true,
+    "enabled": false,
     "coverage": {
       "gdelt": "unverified",
       "perigon": "unverified",
@@ -8587,7 +8587,7 @@
     "source_type": "media",
     "priority": "B",
     "baseline": true,
-    "enabled": true,
+    "enabled": false,
     "coverage": {
       "gdelt": "unverified",
       "perigon": "unverified",
@@ -8617,7 +8617,7 @@
     "source_type": "media",
     "priority": "B",
     "baseline": true,
-    "enabled": true,
+    "enabled": false,
     "coverage": {
       "gdelt": "unverified",
       "perigon": "unverified",
@@ -8632,7 +8632,7 @@
     "source_type": "media",
     "priority": "B",
     "baseline": true,
-    "enabled": true,
+    "enabled": false,
     "coverage": {
       "gdelt": "unverified",
       "perigon": "unverified",
@@ -8647,7 +8647,7 @@
     "source_type": "media",
     "priority": "C",
     "baseline": true,
-    "enabled": true,
+    "enabled": false,
     "coverage": {
       "gdelt": "unverified",
       "perigon": "unverified",
@@ -8662,7 +8662,7 @@
     "source_type": "media",
     "priority": "B",
     "baseline": true,
-    "enabled": true,
+    "enabled": false,
     "coverage": {
       "gdelt": "unverified",
       "perigon": "unverified",
@@ -8677,7 +8677,7 @@
     "source_type": "media",
     "priority": "C",
     "baseline": true,
-    "enabled": true,
+    "enabled": false,
     "coverage": {
       "gdelt": "unverified",
       "perigon": "unverified",
@@ -8707,7 +8707,7 @@
     "source_type": "media",
     "priority": "A",
     "baseline": true,
-    "enabled": true,
+    "enabled": false,
     "coverage": {
       "gdelt": "unverified",
       "perigon": "unverified",
@@ -8722,7 +8722,7 @@
     "source_type": "media",
     "priority": "B",
     "baseline": true,
-    "enabled": true,
+    "enabled": false,
     "coverage": {
       "gdelt": "unverified",
       "perigon": "unverified",
@@ -8797,7 +8797,7 @@
     "source_type": "media",
     "priority": "A",
     "baseline": true,
-    "enabled": true,
+    "enabled": false,
     "coverage": {
       "gdelt": "unverified",
       "perigon": "unverified",
@@ -8812,7 +8812,7 @@
     "source_type": "media",
     "priority": "A",
     "baseline": true,
-    "enabled": true,
+    "enabled": false,
     "coverage": {
       "gdelt": "unverified",
       "perigon": "unverified",
@@ -8857,7 +8857,7 @@
     "source_type": "media",
     "priority": "B",
     "baseline": true,
-    "enabled": true,
+    "enabled": false,
     "coverage": {
       "gdelt": "unverified",
       "perigon": "unverified",
@@ -8872,7 +8872,7 @@
     "source_type": "media",
     "priority": "A",
     "baseline": true,
-    "enabled": true,
+    "enabled": false,
     "coverage": {
       "gdelt": "unverified",
       "perigon": "unverified",
@@ -8887,7 +8887,7 @@
     "source_type": "media",
     "priority": "B",
     "baseline": true,
-    "enabled": true,
+    "enabled": false,
     "coverage": {
       "gdelt": "unverified",
       "perigon": "unverified",
@@ -8947,7 +8947,7 @@
     "source_type": "media",
     "priority": "C",
     "baseline": true,
-    "enabled": true,
+    "enabled": false,
     "coverage": {
       "gdelt": "unverified",
       "perigon": "unverified",
@@ -9052,7 +9052,7 @@
     "source_type": "media",
     "priority": "C",
     "baseline": true,
-    "enabled": true,
+    "enabled": false,
     "coverage": {
       "gdelt": "unverified",
       "perigon": "unverified",
@@ -9112,7 +9112,7 @@
     "source_type": "media",
     "priority": "C",
     "baseline": true,
-    "enabled": true,
+    "enabled": false,
     "coverage": {
       "gdelt": "unverified",
       "perigon": "unverified",
@@ -9127,7 +9127,7 @@
     "source_type": "media",
     "priority": "B",
     "baseline": true,
-    "enabled": true,
+    "enabled": false,
     "coverage": {
       "gdelt": "unverified",
       "perigon": "unverified",
@@ -9142,7 +9142,7 @@
     "source_type": "media",
     "priority": "B",
     "baseline": true,
-    "enabled": true,
+    "enabled": false,
     "coverage": {
       "gdelt": "unverified",
       "perigon": "unverified",
@@ -9157,7 +9157,7 @@
     "source_type": "media",
     "priority": "B",
     "baseline": true,
-    "enabled": true,
+    "enabled": false,
     "coverage": {
       "gdelt": "unverified",
       "perigon": "unverified",
@@ -9202,7 +9202,7 @@
     "source_type": "media",
     "priority": "C",
     "baseline": true,
-    "enabled": true,
+    "enabled": false,
     "coverage": {
       "gdelt": "unverified",
       "perigon": "unverified",
@@ -9217,7 +9217,7 @@
     "source_type": "media",
     "priority": "B",
     "baseline": true,
-    "enabled": true,
+    "enabled": false,
     "coverage": {
       "gdelt": "unverified",
       "perigon": "unverified",

@@ -85,7 +85,12 @@ pub fn import_collector_bundle(db_path:&Path,value:Value)->Result<ImportResult,S
     let source_metrics=value.get("source_metrics").and_then(Value::as_array).cloned().ok_or("Отсутствуют source_metrics помощника")?;
     let run_metrics=value.get("run_metrics").cloned().ok_or("Отсутствуют run_metrics помощника")?;
     let full_texts=serde_json::from_value(value.get("full_texts").cloned().unwrap_or(serde_json::json!([]))).map_err(|e|e.to_string())?;
-    let parsed=ParsedBundle{input_kind:"collector-json".into(),bundle_sha256:hex::encode(Sha256::digest(&bytes)),manifest_value,manifest,publication_values,publications,source_metrics,run_metrics,full_texts,entities:Vec::new()};
+    let mut fingerprint = Sha256::new();
+    fingerprint.update(&bytes);
+    if publication_values.iter().any(|record| record.pointer("/provenance/superseded_document_ids").is_some()) {
+        fingerprint.update(b"publisher-alias-reconciliation-v2");
+    }
+    let parsed=ParsedBundle{input_kind:"collector-json".into(),bundle_sha256:hex::encode(fingerprint.finalize()),manifest_value,manifest,publication_values,publications,source_metrics,run_metrics,full_texts,entities:Vec::new()};
     validate_and_ingest(db_path,Path::new("L-News-Assistant"),parsed)
 }
 
@@ -758,6 +763,11 @@ fn ingest_publications(
         let preserve_event=item.provenance.as_ref().and_then(|v|v.get("report")).and_then(Value::as_str)==Some("L-News-Assistant")
             && item.event.signature.is_none()
             && tx.query_row("SELECT EXISTS(SELECT 1 FROM event_items ei JOIN events e ON e.id=ei.event_id WHERE ei.monitor_item_id=?1 AND e.event_signature IS NOT NULL)",params![monitor_item_db_id],|r|r.get::<_,i64>(0)).map_err(|e|e.to_string())?!=0;
+        if item.provenance.as_ref().and_then(|value|value.get("report")).and_then(Value::as_str)==Some("L-News-Assistant") {
+            if let Some(superseded) = item.provenance.as_ref().and_then(|value| value.get("superseded_document_ids")).and_then(Value::as_array) {
+                crate::identity::merge_collector_duplicates(tx,monitor_id,monitor_item_db_id,document_db_id,&aliases,superseded)?;
+            }
+        }
         if !preserve_event {
         tx.execute("DELETE FROM event_items WHERE monitor_item_id=?1", params![monitor_item_db_id])
             .map_err(|e| format!("Не удалось обновить event relation: {e}"))?;

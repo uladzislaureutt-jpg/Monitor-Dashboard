@@ -1,5 +1,5 @@
 import {COUNTRIES,QUERY,urlKey,validDate,relevant,contentLevel,perigonBudget,publicUrl,sourceFor} from './core.ts';
-import {extractPage} from './extraction.ts';
+import {extractPage,ukrainianEdition} from './extraction.ts';
 import {validRussianCard} from './translation.ts';
 import {githubPublications} from './github.ts';
 import {zipSync,strToU8} from 'npm:fflate@0.8.2';
@@ -49,4 +49,19 @@ Deno.test('nested GitHub artifact wrappers are indexed',()=>{
  const row={monitor_key:'lukashenko',document_id:'gh-doc',publication:{url:'https://example.com/a'}};
  const inner=zipSync({'publications.jsonl':strToU8(JSON.stringify(row)+'\n')});
  equal(githubPublications(inner),[row]);equal(githubPublications(zipSync({'dashboard_bundle.zip':inner})),[row]);
+});
+
+Deno.test('Fontanka comment route resolves to the original article ID',()=>{
+ const url='https://www.fontanka.ru/2026/11/19/76778292/comments/?utm_source=test';
+ equal(urlKey(url),'https://fontanka.ru/2026/11/19/76778292');
+ equal(urlKey('https://example.com/2026/11/19/76778292/comments/'),'https://example.com/2026/11/19/76778292/comments');
+});
+Deno.test('24 Kanal groups only publisher-declared translations on the same host',()=>{
+ const uk='https://24tv.ua/same-interview_n3183327';
+ const ru='https://24tv.ua/ru/interview_n3183750';
+ const en='https://24tv.ua/en/interview_n3183752';
+ const page=extractPage('<head>'+[['uk',uk],['ru',ru],['en',en]].map(([lang,url])=>'<link rel="alternate" hreflang="'+lang+'" href="'+url+'">').join('')+'</head>',ru);
+ equal(ukrainianEdition(ru,page.alternatives),{primary:uk,aliases:[uk,ru,en]});
+ equal(ukrainianEdition('https://24tv.ua/unrelated_n3184000',page.alternatives),null);
+ equal(ukrainianEdition(ru,[{language:'uk',url:'https://example.com/interview_n1'},{language:'ru',url:ru}]),null);
 });

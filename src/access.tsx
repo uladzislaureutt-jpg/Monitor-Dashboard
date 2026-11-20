@@ -25,6 +25,7 @@ type AccessContextValue = {
   profile: WorkroomProfile;
   session: WorkroomSession;
   monitors: MonitorAccessState[];
+  canOpenModule: (key: string) => boolean;
   refreshAccess: () => Promise<void>;
   setPreferredLocale: (locale: "ru" | "be") => Promise<void>;
   logout: () => void;
@@ -144,7 +145,11 @@ export function MonitorAccessProvider({ children }: { children: ReactNode }) {
   }} />;
   if (profile.status !== "active") return <div className="access-shell"><div className="access-card suspended-card"><div className="brand-mark large">M</div><h1>{locale === "be" ? "Доступ прыпынены" : "Доступ приостановлен"}</h1><p>{locale === "be" ? "Доступ да Monitor прыпынены адміністратарам." : "Доступ к Monitor приостановлен администратором."}</p><button className="primary-button" onClick={logout}>{locale === "be" ? "Выйсці" : "Выйти"}</button></div></div>;
 
-  const value: AccessContextValue = { profile, session, monitors, refreshAccess: () => refreshAccess(session), setPreferredLocale, logout };
+  const value: AccessContextValue = {
+    profile, session, monitors,
+    canOpenModule: (key) => profile.isAdmin || monitors.some((item) => item.monitorKey === key && item.enabled),
+    refreshAccess: () => refreshAccess(session), setPreferredLocale, logout,
+  };
   return <AccessContext.Provider value={value}>{children}</AccessContext.Provider>;
 }
 

@@ -13,6 +13,7 @@ import { SourcesView } from "./views/SourcesView";
 import { DataView } from "./views/DataView";
 import { ReportView } from "./views/ReportView";
 import { WReviewView } from "./views/WReviewView";
+import { EventTraceView } from "./views/EventTraceView";
 import { TranscriptionView } from "./views/TranscriptionView";
 import { NetworksView, type NetworkPage, type NetworkPlatform } from "./views/NetworksView";
 import { useReportWorkspace } from "./reportWorkspace";
@@ -81,6 +82,7 @@ export default function App() {
   const [view, setView] = useState<ViewKey>("dashboard");
   const [monitorKey, setMonitorKey] = useState<MonitorKey>("social_economic");
   const [wReviewOpen, setWReviewOpen] = useState(false);
+  const [eventOpen, setEventOpen] = useState(false);
   const [wReviewDenied, setWReviewDenied] = useState(false);
   const [wReviewSection, setWReviewSection] = useState<"review" | "style">("review");
   const [transcriptionOpen, setTranscriptionOpen] = useState(false);
@@ -305,6 +307,7 @@ export default function App() {
     setWReviewDenied(false);
     if ((next === "data" || next === "sources") && !access.profile.isAdmin) return;
     setWReviewOpen(false);
+    setEventOpen(false);
     setTranscriptionOpen(false);
     setNetworksOpen(false);
     setView(next);
@@ -314,8 +317,9 @@ export default function App() {
     setWReviewDenied(false);
     const state = access.monitors.find((item) => item.monitorKey === next);
     if (!access.profile.isAdmin && state && !state.enabled) return;
-    if (next === monitorKey && !wReviewOpen && !transcriptionOpen && !networksOpen) return;
+    if (next === monitorKey && !wReviewOpen && !eventOpen && !transcriptionOpen && !networksOpen) return;
     setWReviewOpen(false);
+    setEventOpen(false);
     setTranscriptionOpen(false);
     setNetworksOpen(false);
     desktopApi.setActiveMonitorKey(next);
@@ -335,8 +339,11 @@ export default function App() {
   const activeMonitorAccess = access.monitors.find((item) => item.monitorKey === monitorKey);
   const wReviewAccess = access.monitors.find((item) => item.monitorKey === "w_review");
   const wReviewAllowed = access.profile.isAdmin || wReviewAccess?.enabled === true;
+  const eventAllowed = access.canOpenModule("event_trace");
+  const networksAllowed = access.canOpenModule("tiktok");
   const monitorBlocked = !access.profile.isAdmin && activeMonitorAccess?.enabled === false;
-  useEffect(() => { if (!access.profile.isAdmin && networksOpen) setNetworksOpen(false); }, [access.profile.isAdmin, networksOpen]);
+  useEffect(() => { if (!networksAllowed && networksOpen) setNetworksOpen(false); }, [networksAllowed, networksOpen]);
+  useEffect(() => { if (!eventAllowed && eventOpen) setEventOpen(false); }, [eventAllowed, eventOpen]);
   useEffect(() => {
     if (wReviewDenied && wReviewAllowed) { setWReviewOpen(true); setWReviewDenied(false); }
   }, [wReviewDenied, wReviewAllowed]);
@@ -390,23 +397,27 @@ export default function App() {
   return <div className="app-shell">
     <header className="topbar">
       <button className="brand" onClick={() => navigate("dashboard")}><span className="brand-mark">M</span><span><b>{t("brand.title")}</b><small>{t("brand.subtitle", { version: appVersion })}</small></span></button>
-      {!networksOpen && <div className="global-search-wrap"><span className="search-icon">⌕</span><input ref={searchRef} value={globalQuery} onFocus={() => setSearchOpen(true)} onChange={(event) => { setGlobalQuery(event.target.value); setSearchOpen(true); }} placeholder={t("search.placeholder")} aria-label={t("search.aria")} /><kbd>Ctrl K</kbd></div>}
+      {!networksOpen && !eventOpen && <div className="global-search-wrap"><span className="search-icon">⌕</span><input ref={searchRef} value={globalQuery} onFocus={() => setSearchOpen(true)} onChange={(event) => { setGlobalQuery(event.target.value); setSearchOpen(true); }} placeholder={t("search.placeholder")} aria-label={t("search.aria")} /><kbd>Ctrl K</kbd></div>}
       <div className="top-actions">
         <div className="language-switch" role="group" aria-label={t("lang.aria")}><button className={locale === "ru" ? "active" : ""} onClick={() => void access.setPreferredLocale("ru")}>{t("lang.ru")}</button><button className={locale === "be" ? "active" : ""} onClick={() => void access.setPreferredLocale("be")}>{t("lang.be")}</button></div>
         <div className="module-switch" role="group" aria-label="Выбор мониторинга">
-          <button disabled={!access.profile.isAdmin && access.monitors.find((item) => item.monitorKey === "social_economic")?.enabled === false} title={!access.profile.isAdmin && access.monitors.find((item) => item.monitorKey === "social_economic")?.enabled === false ? (locale === "be" ? "Тэхнічныя работы" : "Технические работы") : ""} className={monitorKey === "social_economic" && !wReviewOpen && !networksOpen ? "active" : ""} onClick={() => switchMonitor("social_economic")}>SEP-Monitor</button>
-          <button disabled={!access.profile.isAdmin && access.monitors.find((item) => item.monitorKey === "lukashenko")?.enabled === false} title={!access.profile.isAdmin && access.monitors.find((item) => item.monitorKey === "lukashenko")?.enabled === false ? (locale === "be" ? "Тэхнічныя работы" : "Технические работы") : ""} className={monitorKey === "lukashenko" && !wReviewOpen && !networksOpen ? "active" : ""} onClick={() => switchMonitor("lukashenko")}>L-Monitor</button>
+          <button disabled={!access.profile.isAdmin && access.monitors.find((item) => item.monitorKey === "social_economic")?.enabled === false} title={!access.profile.isAdmin && access.monitors.find((item) => item.monitorKey === "social_economic")?.enabled === false ? (locale === "be" ? "Тэхнічныя работы" : "Технические работы") : ""} className={monitorKey === "social_economic" && !wReviewOpen && !networksOpen && !eventOpen ? "active" : ""} onClick={() => switchMonitor("social_economic")}>SEP-Monitor</button>
+          <button disabled={!access.profile.isAdmin && access.monitors.find((item) => item.monitorKey === "lukashenko")?.enabled === false} title={!access.profile.isAdmin && access.monitors.find((item) => item.monitorKey === "lukashenko")?.enabled === false ? (locale === "be" ? "Тэхнічныя работы" : "Технические работы") : ""} className={monitorKey === "lukashenko" && !wReviewOpen && !networksOpen && !eventOpen ? "active" : ""} onClick={() => switchMonitor("lukashenko")}>L-Monitor</button>
           <button
             title={!wReviewAllowed ? (locale === "be" ? "W-Review пакуль недаступны для вашага ўліковага запісу" : "W-Review пока недоступен для вашей учётной записи") : ""}
             className={wReviewOpen ? "active" : ""}
-            onClick={() => { if (!wReviewAllowed) { setWReviewDenied(true); setTranscriptionOpen(false); setNetworksOpen(false); void access.refreshAccess(); return; } setWReviewDenied(false); setWReviewOpen(true); setTranscriptionOpen(false); setNetworksOpen(false); setWReviewSection("review"); setWorkroomOpen(false); }}
+            onClick={() => { setEventOpen(false); if (!wReviewAllowed) { setWReviewDenied(true); setTranscriptionOpen(false); setNetworksOpen(false); void access.refreshAccess(); return; } setWReviewDenied(false); setWReviewOpen(true); setTranscriptionOpen(false); setNetworksOpen(false); setWReviewSection("review"); setWorkroomOpen(false); }}
           >W-Review</button>
-          {access.profile.isAdmin && <button className={networksOpen ? "active" : ""} onClick={() => { setNetworksOpen(true); setWReviewOpen(false); setTranscriptionOpen(false); setWReviewDenied(false); setWorkroomOpen(false); }} title={locale === "be" ? "Сацыяльныя сеткі: TikTok і Threads" : "Социальные сети: TikTok и Threads"}>{locale === "be" ? "Сеткі" : "Сети"}</button>}
+          {eventAllowed && <button className={eventOpen ? "active" : ""} onClick={() => {
+            setEventOpen(true); setWReviewOpen(false); setWReviewDenied(false); setTranscriptionOpen(false);
+            setNetworksOpen(false); setWorkroomOpen(false); setSearchOpen(false);
+          }}>{locale === "be" ? "Падзея" : "Событие"}</button>}
+          {networksAllowed && <button className={networksOpen ? "active" : ""} onClick={() => { setEventOpen(false); setNetworksOpen(true); setWReviewOpen(false); setTranscriptionOpen(false); setWReviewDenied(false); setWorkroomOpen(false); }} title={locale === "be" ? "Сацыяльныя сеткі: TikTok і Threads" : "Социальные сети: TikTok и Threads"}>{locale === "be" ? "Сеткі" : "Сети"}</button>}
         </div>
         <button className="account-button" onClick={access.logout} title={locale === "be" ? "Выйсці" : "Выйти"}><span>{access.profile.displayName}</span><small>{access.profile.isAdmin ? (locale === "be" ? "адміністратар" : "администратор") : (locale === "be" ? "аператар" : "оператор")}</small></button>
       </div>
     </header>
-    <div className="layout"><aside className="sidebar">{networksOpen && access.profile.isAdmin ? <><div className="nav-label">{locale === "be" ? "Сеткі" : "Сети"}</div>
+    <div className={`layout${eventOpen && eventAllowed ? " event-trace-layout" : ""}`}>{!(eventOpen && eventAllowed) && <aside className="sidebar">{networksOpen && networksAllowed ? <><div className="nav-label">{locale === "be" ? "Сеткі" : "Сети"}</div>
         <button className={`nav-item ${networksPlatform === "tiktok" && networksPage === "home" ? "active" : ""}`}
           onClick={() => { setNetworksPlatform("tiktok"); setNetworksPage("home"); }}>
           <span className="nav-icon">◉</span><span>{locale === "be" ? "Агляд TikTok" : "Обзор TikTok"}</span>
@@ -420,8 +431,8 @@ export default function App() {
           <span className="nav-icon">✎</span><span>{locale === "be" ? "Рэдактар агляду" : "Редактор обзора"}</span>
         </button>
         {workroomButton}
-        <div className="sidebar-spacer" /></> : wReviewOpen && wReviewAllowed ? <><div className="nav-label">{t("nav.label")}</div>{workroomButton}<button className="nav-item" onClick={() => { setTranscriptionOpen(true); setWReviewOpen(false); setWorkroomOpen(false); }}><span className="nav-icon">◍</span><span>{locale === "be" ? "Транскрыпцыя" : "Транскрипция"}</span></button><button className={`nav-item ${wReviewSection === "style" ? "active" : ""}`} onClick={() => { setWReviewSection("style"); setWorkroomOpen(false); }}><span className="nav-icon">✦</span><span>{locale === "be" ? "Аўтарскі стыль" : "Авторский стиль"}</span></button><div className="sidebar-spacer" /></> : <><div className="nav-label">{t("nav.label")}</div>{nav.filter((item) => item.key !== "data" && (item.key !== "sources" || access.profile.isAdmin)).map((item) => <button key={item.key} className={`nav-item ${view === item.key ? "active" : ""}`} onClick={() => navigate(item.key)}><span className="nav-icon">{item.icon}</span><span>{item.label}{item.key === "report" && report.pendingCount > 0 && <span className="report-count-badge">{report.pendingCount}</span>}</span></button>)}{workroomButton}<button className={`nav-item ${transcriptionOpen ? "active" : ""}`} onClick={() => { setTranscriptionOpen(true); setWReviewOpen(false); setWorkroomOpen(false); }}><span className="nav-icon">◍</span><span>{locale === "be" ? "Транскрыпцыя" : "Транскрипция"}</span></button>{!access.profile.isAdmin && <button className="nav-item" disabled={syncBusy || monitorBlocked} onClick={() => void performSync(syncSettings)}><span className="nav-icon">↻</span><span>{syncBusy ? (locale === "be" ? "Сінхранізацыя…" : "Синхронизация…") : (locale === "be" ? "Сінхранізацыя" : "Синхронизация")}</span></button>}{access.profile.isAdmin && nav.filter((item) => item.key === "data").map((item) => <button key={item.key} className={`nav-item ${view === item.key ? "active" : ""}`} onClick={() => navigate(item.key)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}<div className="sidebar-spacer" />{access.profile.isAdmin ? <button className="side-status side-status-button" onClick={() => navigate("data")} title={t("data.syncNow")}><span className={`status-dot ${syncBusy ? "pulse" : ""}`} /><div><b>{syncSettings.autoSync ? t("sync.autoLabel") : t("status.localDb")}</b><small>{syncSettings.autoSync && syncSettings.repository ? (syncStatusText || t("status.ready")) : dashboard ? t("status.stats", { docs: dashboard.publications, sources: dashboard.activeSources }) : t("status.initializing")}</small></div></button> : <div className="side-status"><span className="status-dot" /><div><b>{t("status.localDb")}</b><small>{dashboard ? t("status.stats", { docs: dashboard.publications, sources: dashboard.activeSources }) : t("status.initializing")}</small></div></div>}</>}</aside>
-      <main className="content">{networksOpen && access.profile.isAdmin ? <NetworksView key={access.session!.userId} page={networksPage} platform={networksPlatform} onPlatformChange={setNetworksPlatform} /> : transcriptionOpen ? <TranscriptionView /> : wReviewOpen && wReviewAllowed ? <WReviewView key={access.session!.userId} userId={access.session!.userId} section={wReviewSection} onCloseStyle={() => setWReviewSection("review")} /> : standardContent}</main>
+        <div className="sidebar-spacer" /></> : wReviewOpen && wReviewAllowed ? <><div className="nav-label">{t("nav.label")}</div>{workroomButton}<button className="nav-item" onClick={() => { setTranscriptionOpen(true); setWReviewOpen(false); setWorkroomOpen(false); }}><span className="nav-icon">◍</span><span>{locale === "be" ? "Транскрыпцыя" : "Транскрипция"}</span></button><button className={`nav-item ${wReviewSection === "style" ? "active" : ""}`} onClick={() => { setWReviewSection("style"); setWorkroomOpen(false); }}><span className="nav-icon">✦</span><span>{locale === "be" ? "Аўтарскі стыль" : "Авторский стиль"}</span></button><div className="sidebar-spacer" /></> : <><div className="nav-label">{t("nav.label")}</div>{nav.filter((item) => item.key !== "data" && (item.key !== "sources" || access.profile.isAdmin)).map((item) => <button key={item.key} className={`nav-item ${view === item.key ? "active" : ""}`} onClick={() => navigate(item.key)}><span className="nav-icon">{item.icon}</span><span>{item.label}{item.key === "report" && report.pendingCount > 0 && <span className="report-count-badge">{report.pendingCount}</span>}</span></button>)}{workroomButton}<button className={`nav-item ${transcriptionOpen ? "active" : ""}`} onClick={() => { setTranscriptionOpen(true); setWReviewOpen(false); setWorkroomOpen(false); }}><span className="nav-icon">◍</span><span>{locale === "be" ? "Транскрыпцыя" : "Транскрипция"}</span></button>{!access.profile.isAdmin && <button className="nav-item" disabled={syncBusy || monitorBlocked} onClick={() => void performSync(syncSettings)}><span className="nav-icon">↻</span><span>{syncBusy ? (locale === "be" ? "Сінхранізацыя…" : "Синхронизация…") : (locale === "be" ? "Сінхранізацыя" : "Синхронизация")}</span></button>}{access.profile.isAdmin && nav.filter((item) => item.key === "data").map((item) => <button key={item.key} className={`nav-item ${view === item.key ? "active" : ""}`} onClick={() => navigate(item.key)}><span className="nav-icon">{item.icon}</span>{item.label}</button>)}<div className="sidebar-spacer" />{access.profile.isAdmin ? <button className="side-status side-status-button" onClick={() => navigate("data")} title={t("data.syncNow")}><span className={`status-dot ${syncBusy ? "pulse" : ""}`} /><div><b>{syncSettings.autoSync ? t("sync.autoLabel") : t("status.localDb")}</b><small>{syncSettings.autoSync && syncSettings.repository ? (syncStatusText || t("status.ready")) : dashboard ? t("status.stats", { docs: dashboard.publications, sources: dashboard.activeSources }) : t("status.initializing")}</small></div></button> : <div className="side-status"><span className="status-dot" /><div><b>{t("status.localDb")}</b><small>{dashboard ? t("status.stats", { docs: dashboard.publications, sources: dashboard.activeSources }) : t("status.initializing")}</small></div></div>}</>}</aside>}
+      <main className="content">{eventOpen && eventAllowed ? <EventTraceView key={access.session!.userId} /> : networksOpen && networksAllowed ? <NetworksView key={`${access.session.userId}:${access.profile.isAdmin}`} page={networksPage} platform={networksPlatform} onPlatformChange={setNetworksPlatform} /> : transcriptionOpen ? <TranscriptionView /> : wReviewOpen && wReviewAllowed ? <WReviewView key={access.session!.userId} userId={access.session!.userId} section={wReviewSection} onCloseStyle={() => setWReviewSection("review")} /> : standardContent}</main>
     </div>
     <SearchOverlay key={monitorKey} query={globalQuery} open={searchOpen} onClose={() => setSearchOpen(false)} onShowArchive={showArchiveForSearch} /><WorkroomDrawer key={access.session.userId} open={workroomOpen} onClose={() => setWorkroomOpen(false)} onUnreadChange={setWorkroomUnread} />
   </div>;

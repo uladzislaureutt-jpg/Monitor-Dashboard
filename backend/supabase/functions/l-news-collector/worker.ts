@@ -9,11 +9,15 @@ export async function enqueue(rt:Runtime,run:string|null,kind:string,payload:any
 }
 async function sourcesFor(rt:Runtime):Promise<Source[]>{return must(await rt.db.from('l_news_sources').select('*').eq('enabled',true).order('country').order('domain'));}
 async function setup(rt:Runtime,job:Job,run:Run){
- const warnings:string[]=[];const sources=await sourcesFor(rt);
+ const warnings:string[]=[];
+ const sources=(await sourcesFor(rt)).filter(source=>run.settings.countries.includes(source.country));
+ const disabled=must(await rt.db.from('l_news_sources').select('domain').eq('enabled',false)) as {domain:string}[];
+ const scope={source_domains:run.settings.country_scope?sources.map(source=>source.domain):[],
+  excluded_domains:disabled.map(source=>source.domain)};
  try{warnings.push(...(await indexGithub(rt)).warnings);}catch{warnings.push('GitHub-индекс временно недоступен; повторы дополнительно объединяются в приложении');}
- if(rt.perigonKey){try{const quota=await perigonLimits(rt);await enqueue(rt,run.id,'perigon',{page:0,quota,layer:'name'},run.id+':perigon:name:0');
+ if(rt.perigonKey){try{const quota=await perigonLimits(rt);await enqueue(rt,run.id,'perigon',{page:0,quota,layer:'name',...scope},run.id+':perigon:name:0');
   // The optional role query fits in the same four-request daily allowance.
-  await enqueue(rt,run.id,'perigon',{page:0,quota,layer:'role'},run.id+':perigon:role:0');}catch{warnings.push('Perigon: не удалось подтвердить доступную квоту');}}
+  await enqueue(rt,run.id,'perigon',{page:0,quota,layer:'role',...scope},run.id+':perigon:role:0');}catch{warnings.push('Perigon: не удалось подтвердить доступную квоту');}}
  else warnings.push('Perigon: ключ отсутствует');
  if(rt.newscatcherKey){try{const account=await newscatcherSubscription(rt);
   const pageSize=Math.min(100,Number((account.subscription as any).articles?.max_articles_per_page)||100);
@@ -74,14 +78,17 @@ async function article(rt:Runtime,job:Job,run:Run,sources:Source[]){
  const rel=relevant(c);
  if(!published||!rel.pass){const reason=!published?'unconfirmed_or_outside_publication_window':rel.reason;must(await rt.db.from('l_news_items').update({state:'rejected',reason,updated_at:new Date().toISOString()}).eq('id',item.id));return {rejected:true,reason};}
  c.published_at=published;
- const canonical=urlKey(c.canonical||c.url);const owner=must(await rt.db.rpc('l_news_claim_alias',{p_alias:canonical,p_item:item.id}));
+ const canonical=urlKey(c.identity_url||c.canonical||c.url);const owner=must(await rt.db.rpc('l_news_claim_alias',{p_alias:canonical,p_item:item.id}));
  if(owner!==item.id){
+  must(await rt.db.from('l_news_url_aliases').update({item_id:owner}).eq('item_id',item.id));
   must(await rt.db.from('l_news_observations').update({item_id:owner,disposition:'canonical_duplicate'}).eq('item_id',item.id));
   must(await rt.db.from('l_news_run_items').upsert({run_id:run.id,item_id:owner,role:'seen'},{onConflict:'run_id,item_id',ignoreDuplicates:true}));
   must(await rt.db.from('l_news_run_items').delete().eq('run_id',run.id).eq('item_id',item.id));
   must(await rt.db.from('l_news_items').update({state:'rejected',reason:'canonical_duplicate'}).eq('id',item.id));
   await enqueue(rt,run.id,'article',{item_id:owner},run.id+':article:'+owner);return {duplicate:true};
  }
+ for(const alias of c.aliases??[])await rt.db.rpc('l_news_claim_alias',{p_alias:urlKey(alias),p_item:item.id}).then(must);
+ if(source.domain==='fontanka.ru'&&/\/comments\/?$/.test(new URL(c.url).pathname))c={...c,url:urlKey(c.url)};
  const known=must(await rt.db.from('l_news_known_urls').select('*').eq('canonical_url',canonical).maybeSingle());
  if(known&&String(known.origin).startsWith('github')){
   must(await rt.db.from('l_news_items').update({state:'rejected',reason:'already_reported_github'}).eq('id',item.id));return {already_reported_github:true};

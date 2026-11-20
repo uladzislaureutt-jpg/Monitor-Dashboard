@@ -1,3 +1,4 @@
+import type { EventReport } from "./eventReport";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   ArchiveFacets,
@@ -89,6 +90,7 @@ export const desktopApi = {
   writeClipboardText: (text: string) => invoke<void>("write_clipboard_text", { text }),
   exportReport: (path: string, date: string, items: ReportExportItem[], monitorKey = activeMonitorKey) =>
     invoke<void>("export_report_docx", { path, date, items, monitorKey }),
+  exportEventReport: (path: string, report: EventReport) => invoke<void>("export_event_report_docx", { path, report }),
   exportWReview: (path: string, text: string, sourceNames: string[], sectionTitles: string[], boldPhrases: string[], sourceLinks: {name:string;url:string}[]) => invoke<void>("export_w_review_docx", { path, text, sourceNames, sectionTitles, boldPhrases, sourceLinks }),
   extractWReviewSample: (path: string) => invoke<string>("extract_w_review_sample", { path }),
   exportTikTokMultiTranscript: (path: string, items: Array<{ url: string; text: string; imageText: string; comments: string[] }>) =>

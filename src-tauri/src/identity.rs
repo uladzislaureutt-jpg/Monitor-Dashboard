@@ -76,3 +76,67 @@ mod tests {
         assert_ne!(url_key("https://example.com/A"),url_key("https://example.com/a"));
     }
 }
+
+/// Reconcile publisher-confirmed duplicates in a revised API package.
+pub fn merge_collector_duplicates(
+    conn: &Connection,
+    monitor_id: i64,
+    item_id: i64,
+    document_id: i64,
+    urls: &[String],
+    duplicate_uids: &[serde_json::Value],
+) -> Result<(), String> {
+    let keys: Vec<_> = urls.iter().map(|url| url_key(url)).collect();
+    for uid in duplicate_uids.iter().filter_map(serde_json::Value::as_str) {
+        if !uid.starts_with("lapi_") {
+            continue;
+        }
+        let row: Option<(i64, i64, String, String)> = conn.query_row(
+            r#"SELECT mi.id,d.id,d.url,d.document_uid FROM monitor_items mi JOIN documents d ON mi.document_id=d.id
+               WHERE mi.monitor_id=?1 AND d.id<>?2 AND
+                 (d.document_uid=?3 OR EXISTS(SELECT 1 FROM document_uid_aliases a WHERE a.alias_uid=?3 AND a.document_id=d.id))
+                 AND NOT EXISTS (SELECT 1 FROM monitor_items other WHERE other.document_id=d.id AND other.monitor_id<>?1)"#,
+            params![monitor_id, document_id, uid],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        ).optional().map_err(|error| error.to_string())?;
+        let Some((old_item, old_document, old_url, old_uid)) = row else { continue; };
+        if !keys.contains(&url_key(&old_url)) {
+            continue;
+        }
+        conn.execute(
+            r#"INSERT OR IGNORE INTO run_items
+               (run_id,monitor_item_id,was_primary_result,event_echo,event_echo_anchor,event_echo_sources,also_covered_by,also_covered_urls)
+               SELECT run_id,?1,was_primary_result,event_echo,event_echo_anchor,event_echo_sources,also_covered_by,also_covered_urls
+               FROM run_items WHERE monitor_item_id=?2"#,
+            params![item_id, old_item],
+        ).map_err(|error| error.to_string())?;
+        conn.execute(
+            "UPDATE document_url_aliases SET document_id=?1 WHERE document_id=?2",
+            params![document_id, old_document],
+        ).map_err(|error| error.to_string())?;
+        conn.execute(
+            "UPDATE document_uid_aliases SET document_id=?1 WHERE document_id=?2",
+            params![document_id, old_document],
+        ).map_err(|error| error.to_string())?;
+        register(conn, document_id, &old_uid, &[old_url])?;
+        if uid != old_uid {
+            register(conn, document_id, uid, &[])?;
+        }
+        conn.execute(
+            r#"UPDATE documents AS target SET
+                 (full_text,full_text_sha256,full_text_quality,full_text_extraction_strategy,full_text_transport,text_length)
+               =(SELECT full_text,full_text_sha256,full_text_quality,full_text_extraction_strategy,full_text_transport,text_length
+                 FROM documents WHERE id=?2)
+               WHERE target.id=?1 AND EXISTS(SELECT 1 FROM documents previous
+                 WHERE previous.id=?2 AND previous.full_text IS NOT NULL
+                   AND (target.full_text IS NULL OR
+                     (previous.full_text_quality='FULL_TEXT' AND COALESCE(target.full_text_quality,'')<>'FULL_TEXT') OR
+                     (COALESCE(previous.full_text_quality,'')=COALESCE(target.full_text_quality,'')
+                       AND length(previous.full_text)>length(target.full_text))))"#,
+            params![document_id, old_document],
+        ).map_err(|error| error.to_string())?;
+        conn.execute("DELETE FROM monitor_items WHERE id=?1", params![old_item])
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
