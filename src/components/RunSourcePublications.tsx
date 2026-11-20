@@ -3,26 +3,37 @@ import { desktopApi } from "../api";
 import { useI18n } from "../i18n";
 import type { RunPublication, RunSummary } from "../types";
 
-export function RunSourcePublications({ run }: { run?: RunSummary }) {
+type Feed = "both" | "github" | "assistant";
+
+export function RunSourcePublications({ github, assistant }: { github?: RunSummary; assistant?: RunSummary }) {
   const { locale } = useI18n();
   const be = locale === "be";
+  const [feed, setFeed] = useState<Feed>("both");
+  const hasBoth = Boolean(github && assistant);
+  const selected = hasBoth ? feed : "both";
+  const githubId = selected !== "assistant" ? github?.id : undefined;
+  const assistantId = selected !== "github" ? assistant?.id : undefined;
+  const githubRevision = selected !== "assistant" ? github?.importedAt : undefined;
+  const assistantRevision = selected !== "github" ? assistant?.importedAt : undefined;
   const [items, setItems] = useState<RunPublication[]>([]);
-  const [loading, setLoading] = useState(Boolean(run));
+  const [loading, setLoading] = useState(Boolean(github || assistant));
   const [error, setError] = useState("");
   const [linkError, setLinkError] = useState("");
-  const runId = run?.id;
-  const importedAt = run?.importedAt;
 
   useEffect(() => {
-    const id = runId;
-    if (id === undefined) return;
+    const ids = [githubId, assistantId].filter((id): id is number => id !== undefined);
+    if (!ids.length) {
+      setItems([]);
+      setLoading(false);
+      return;
+    }
     let revision = 0;
     const reload = () => {
       const request = ++revision;
       setLoading(true);
       setError("");
-      void desktopApi.lMonitorRunPublications(id).then((next) => {
-        if (request === revision) setItems(next);
+      void Promise.all(ids.map((id) => desktopApi.lMonitorRunPublications(id))).then((next) => {
+        if (request === revision) setItems([...new Map(next.flat().map((item) => [item.id, item])).values()]);
       }).catch((reason) => {
         if (request === revision) setError(String(reason));
       }).finally(() => {
@@ -35,7 +46,7 @@ export function RunSourcePublications({ run }: { run?: RunSummary }) {
       revision += 1;
       window.removeEventListener("monitor:moderation-changed", reload);
     };
-  }, [runId, importedAt]);
+  }, [githubId, assistantId, githubRevision, assistantRevision]);
 
   const sources = useMemo(() => {
     const groups = new Map<string, RunPublication[]>();
@@ -47,23 +58,32 @@ export function RunSourcePublications({ run }: { run?: RunSummary }) {
     }
     return [...groups].sort(([left, a], [right, b]) => b.length - a.length || left.localeCompare(right, locale));
   }, [items, be, locale]);
+  const run = selected === "github" ? github : selected === "assistant" ? assistant : hasBoth ? undefined : github ?? assistant;
   const runDate = run ? new Date(run.startedAt ?? run.importedAt) : null;
   const dateLabel = runDate && Number.isFinite(runDate.valueOf()) ? runDate.toLocaleDateString(be ? "be-BY" : "ru-RU") : "";
-  const runLabel = [be ? "Апошні запуск" : "Последний прогон",
-    run?.runNumber == null ? "" : `№${run.runNumber}`,
-  ].filter(Boolean).join(" ");
+  const githubLabel = github?.runNumber == null ? "GitHub" : `GitHub №${github.runNumber}`;
+  const assistantLabel = [be ? "Памочнік" : "Помощник",
+    assistant?.collectorNumber == null ? "" : `№${assistant.collectorNumber}`].filter(Boolean).join(" ");
+  const runLabel = run?.collector ? assistantLabel : githubLabel;
 
   return <section className="panel run-source-panel" aria-labelledby="run-source-heading" aria-busy={loading}>
     <div className="panel-head">
       <div>
         <h3 id="run-source-heading">{be ? "Публікацыі ў крыніцах" : "Публикации в источниках"}</h3>
         {run && <p>{[runLabel, dateLabel].filter(Boolean).join(" · ")}</p>}
+        {hasBoth && selected === "both" && <p>{githubLabel} · {assistantLabel}</p>}
       </div>
+      {hasBoth && <select aria-label={be ? "Паток публікацый" : "Поток публикаций"} value={selected}
+        onChange={(event) => setFeed(event.target.value as Feed)}>
+        <option value="both">{be ? "Абодва патокі" : "Оба потока"}</option>
+        <option value="github">{githubLabel}</option>
+        <option value="assistant">{assistantLabel}</option>
+      </select>}
     </div>
     {linkError && <div className="notice error" role="alert">{linkError}</div>}
     {loading ? <div className="chart-empty">{be ? "Загрузка публікацый…" : "Загрузка публикаций…"}</div>
       : error ? <div className="notice error" role="alert">{error}</div>
-        : !sources.length ? <div className="chart-empty">{run
+        : !sources.length ? <div className="chart-empty">{github || assistant
           ? (be ? "У гэтым запуску няма публікацый" : "В этом прогоне нет публикаций")
           : (be ? "Запускаў пакуль няма" : "Прогоны ещё не загружены")}</div>
           : <div className="run-source-list">{sources.map(([source, publications]) => <details key={source}>

@@ -5,7 +5,7 @@ use std::path::Path;
 use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExtension, Row};
 
 use crate::models::{
-    ArchiveFacets, ArchivePage, CountPoint, DashboardOverview, DatabaseStats,
+    ArchiveFacets, ArchivePage, CollectorCountryCount, CountPoint, DashboardOverview, DatabaseStats,
     PublicationSummary, RunPublication, RunSummary, SourceSummary, StorySummary, TopicTrendPoint, SourceDiversitySummary, CoverageHealthSummary,
     ModerationFlagInput, ModerationExclusionInput, EditorialSource, EditorialEntity,
 };
@@ -156,7 +156,21 @@ pub fn list_runs(path: &Path, monitor_key: &str) -> Result<Vec<RunSummary>, Stri
                   WHERE ri.run_id = r.id AND d.source_id IS NOT NULL) AS sources_in_result,
                 (SELECT COUNT(*) FROM source_run_metrics srm WHERE srm.run_id = r.id) AS sources_in_coverage,
                 json_extract(r.manifest_json,'$.run.collector'),
-                json_extract(r.manifest_json,'$.run.collector_number')
+                json_extract(r.manifest_json,'$.run.collector_number'),
+                CASE WHEN json_extract(r.manifest_json,'$.run.collector') = 'api_assistant' THEN (
+                    SELECT json_group_array(json_object('country', country, 'sources', source_count))
+                    FROM (
+                        SELECT COALESCE(NULLIF(TRIM(json_extract(srm.metrics_json, '$.source_region')), ''),
+                                        'Не определено') AS country,
+                               COUNT(DISTINCT COALESCE(NULLIF(json_extract(srm.metrics_json, '$.domain'), ''),
+                                                       CAST(srm.source_id AS TEXT))) AS source_count
+                        FROM source_run_metrics srm
+                        WHERE srm.run_id = r.id AND COALESCE(srm.included, srm.results, 0) > 0
+                        GROUP BY country
+                        ORDER BY source_count DESC, country
+                    )
+                ) END,
+                json_extract(r.manifest_json,'$.run.collector_run_id')
             FROM runs r
             JOIN monitors m ON m.id = r.monitor_id
             WHERE m.monitor_key = ?1
@@ -168,6 +182,14 @@ pub fn list_runs(path: &Path, monitor_key: &str) -> Result<Vec<RunSummary>, Stri
     let rows = stmt
         .query_map(params![monitor_key], |row| {
             let dry: Option<i64> = row.get(7)?;
+            let countries: Option<String> = row.get(15)?;
+            let collector_countries: Vec<CollectorCountryCount> = countries.as_deref()
+                .map(serde_json::from_str)
+                .transpose()
+                .map_err(|error| rusqlite::Error::FromSqlConversionFailure(
+                    15, rusqlite::types::Type::Text, Box::new(error),
+                ))?
+                .unwrap_or_default();
             Ok(RunSummary {
                 id: row.get(0)?,
                 monitor_key: row.get(1)?,
@@ -184,6 +206,8 @@ pub fn list_runs(path: &Path, monitor_key: &str) -> Result<Vec<RunSummary>, Stri
                 sources_in_coverage: row.get(12)?,
                 collector: row.get(13)?,
                 collector_number: row.get(14)?,
+                collector_countries,
+                collector_run_id: row.get(16)?,
             })
         })
         .map_err(|e| format!("Не удалось прочитать список запусков: {e}"))?;
@@ -288,7 +312,8 @@ fn publication_select() -> &'static str {
             mi.score,
             d.preview_image_url,
             CASE WHEN NULLIF(TRIM(d.full_text),'') IS NOT NULL THEN 1 ELSE 0 END AS has_full_text,
-            (SELECT COUNT(*) FROM run_items ri2 WHERE ri2.monitor_item_id = mi.id) AS seen_in_runs
+            (SELECT COUNT(*) FROM run_items ri2 WHERE ri2.monitor_item_id = mi.id) AS seen_in_runs,
+            julianday(d.published_at) AS published_day
         FROM monitor_items mi
         JOIN monitors m ON m.id = mi.monitor_id
         JOIN documents d ON d.id = mi.document_id
@@ -386,6 +411,48 @@ fn coverage_health_summary(conn:&Connection,monitor_key:&str)->Result<CoverageHe
     Ok(CoverageHealthSummary{run_number,total_sources:total,stable_sources:stable,recovery_sources:recovery,limited_sources:limited,attention_sources:attention})
 }
 
+struct StoryHeadline {
+    day: Option<f64>,
+    terms: HashSet<String>,
+}
+
+impl StoryHeadline {
+    fn new(title: &str, day: Option<f64>) -> Self {
+        let common = [
+            "лукаше", "белару", "белору", "презид", "сообщи", "расска", "заявил", "назвал",
+            "объясн", "высказ", "сказал", "новост", "подроб", "заявле", "которы",
+            "после", "почему", "сегодн", "стало", "приэто",
+        ];
+        let normalized = title.to_lowercase().replace('ё', "е");
+        let terms = normalized.split(|character: char| !character.is_alphanumeric())
+            .filter(|word| word.chars().count() >= 4)
+            .map(|word| word.chars().take(6).collect::<String>())
+            .filter(|term| !common.contains(&term.as_str()))
+            .collect();
+        Self { day, terms }
+    }
+
+    fn overlap(&self, other: &Self) -> Option<usize> {
+        let distance = (self.day? - other.day?).abs();
+        if distance > 2.0 {
+            return None;
+        }
+        let shared = self.terms.intersection(&other.terms).count();
+        let smaller = self.terms.len().min(other.terms.len());
+        (shared >= 3 && shared * 5 >= smaller * 3).then_some(shared)
+    }
+
+    fn day_key(&self) -> Option<i64> {
+        self.day.map(|day| day.floor() as i64)
+    }
+}
+
+fn story_publication(row: &Row<'_>) -> rusqlite::Result<(PublicationSummary, StoryHeadline)> {
+    let publication = publication_row(row)?;
+    let headline = StoryHeadline::new(&publication.title, row.get(18)?);
+    Ok((publication, headline))
+}
+
 fn l_monitor_stories(
     conn: &Connection,
     monitor_key: &str,
@@ -411,7 +478,7 @@ fn l_monitor_stories(
         GROUP BY e.id
         HAVING COUNT(DISTINCT mi.id) > 1
         ORDER BY publication_count DESC, latest_at DESC
-        LIMIT 6
+        LIMIT 18
     "#);
     let mut story_stmt = conn.prepare(&story_sql)
         .map_err(|e| format!("Не удалось подготовить сюжеты L-Monitor: {e}"))?;
@@ -420,6 +487,8 @@ fn l_monitor_stories(
     }).map_err(|e| format!("Не удалось прочитать сюжеты L-Monitor: {e}"))?;
 
     let mut stories = Vec::new();
+    let mut headlines = Vec::new();
+    let mut grouped_publications = HashSet::new();
     for story_row in story_rows {
         let (event_id, story_title) = story_row
             .map_err(|e| format!("Не удалось прочитать сюжет L-Monitor: {e}"))?;
@@ -435,18 +504,75 @@ fn l_monitor_stories(
             .map_err(|e| format!("Не удалось подготовить публикации сюжета: {e}"))?;
         let member_rows = member_stmt.query_map(
             params![monitor_key, period_days, event_id, story_title.as_str()],
-            publication_row,
+            story_publication,
         ).map_err(|e| format!("Не удалось прочитать публикации сюжета: {e}"))?;
-        let publications = member_rows.collect::<Result<Vec<_>, _>>()
-            .map_err(|e| format!("Не удалось собрать публикации сюжета: {e}"))?;
+        let (publications, group_headlines): (Vec<_>, Vec<_>) = member_rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Не удалось собрать публикации сюжета: {e}"))?
+            .into_iter().unzip();
         if let Some(representative) = publications.first().cloned() {
+            grouped_publications.extend(publications.iter().map(|item| item.id));
             stories.push(StorySummary {
                 title: if story_title.trim().is_empty() { representative.title.clone() } else { story_title },
                 representative,
                 publications,
             });
+            headlines.push(group_headlines);
         }
     }
+
+    // API cards can also enter the database before a GitHub story has been assigned.
+    // Compare their headlines within a short time window and keep existing groups intact.
+    let existing_count = stories.len();
+    let mut headline_days: HashMap<i64, Vec<(usize, usize)>> = HashMap::new();
+    for (group_index, group) in headlines.iter().enumerate() {
+        for (headline_index, headline) in group.iter().take(8).enumerate() {
+            if let Some(day) = headline.day_key() {
+                headline_days.entry(day).or_default().push((group_index, headline_index));
+            }
+        }
+    }
+    let assistant_sql = format!(
+        r#"{} WHERE m.monitor_key=?1 AND {}
+           AND NOT EXISTS (SELECT 1 FROM moderation_flags mf WHERE mf.monitor_key=m.monitor_key AND mf.document_uid=d.document_uid)
+           AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid)
+           AND EXISTS (SELECT 1 FROM run_items ri JOIN runs r ON r.id=ri.run_id
+                       WHERE ri.monitor_item_id=mi.id AND json_extract(r.manifest_json,'$.run.collector')='api_assistant')
+           ORDER BY datetime(d.published_at) DESC, mi.id DESC"#,
+        publication_select(), period
+    );
+    let mut assistant_stmt = conn.prepare(&assistant_sql)
+        .map_err(|e| format!("Не удалось подготовить публикации помощника для сюжетов: {e}"))?;
+    let assistant_rows = assistant_stmt.query_map(params![monitor_key, period_days], story_publication)
+        .map_err(|e| format!("Не удалось прочитать публикации помощника для сюжетов: {e}"))?;
+    for row in assistant_rows {
+        let (publication, headline) = row.map_err(|e| format!("Не удалось прочитать публикацию сюжета: {e}"))?;
+        if !grouped_publications.insert(publication.id) {
+            continue;
+        }
+        let Some(day) = headline.day_key() else { continue; };
+        let matching_group = (day - 2..=day + 2).filter_map(|key| headline_days.get(&key))
+            .flatten().filter_map(|&(group_index, headline_index)| {
+                headline.overlap(&headlines[group_index][headline_index]).map(|shared| (group_index, shared))
+            }).max_by_key(|(index, shared)| (*shared, std::cmp::Reverse(*index)));
+        if let Some((index, _)) = matching_group {
+            stories[index].publications.push(publication);
+        } else {
+            // Index only the first headline of a new group to avoid chaining matches.
+            headline_days.entry(day).or_default().push((stories.len(), 0));
+            stories.push(StorySummary {
+                title: publication.title.clone(),
+                representative: publication.clone(),
+                publications: vec![publication],
+            });
+            headlines.push(vec![headline]);
+        }
+    }
+    let mut stories: Vec<_> = stories.into_iter().enumerate().filter_map(|(index, story)| {
+        let more_than_one_source = story.publications.iter().any(|item| item.source != story.representative.source);
+        (index < existing_count || more_than_one_source).then_some(story)
+    }).collect();
+    stories.sort_by_key(|story| std::cmp::Reverse(story.publications.len()));
+    stories.truncate(6);
     Ok(stories)
 }
 

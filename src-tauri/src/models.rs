@@ -157,6 +157,7 @@ pub struct RunSummary {
     pub collector: Option<String>,
     pub collector_number: Option<i64>,
     pub external_run_id: Option<String>,
+    pub collector_run_id: Option<String>,
     pub started_at: Option<String>,
     pub lookback_hours: Option<i64>,
     pub dry_run: Option<bool>,
@@ -165,6 +166,13 @@ pub struct RunSummary {
     pub publications: i64,
     pub sources_in_result: i64,
     pub sources_in_coverage: i64,
+    pub collector_countries: Vec<CollectorCountryCount>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CollectorCountryCount {
+    pub country: String,
+    pub sources: i64,
 }
 
 #[derive(Debug, Serialize)]

@@ -1074,4 +1074,56 @@ mod identity_integration_tests {
  }
  #[test] fn github_then_api_preserves_moderation_and_body(){check_order(false);}
  #[test] fn api_then_github_preserves_moderation_and_body(){check_order(true);}
+
+ #[test]
+ fn assistant_package_updates_dashboard_and_country_counts() {
+     let dir = std::env::temp_dir().join(format!(
+         "monitor-assistant-dashboard-{}-{}", std::process::id(), N.fetch_add(1, Ordering::SeqCst)
+     ));
+     let path = dir.join("dashboard.sqlite");
+     crate::db::initialize_database(&path).unwrap();
+     let mut package = bundle(true, "unused", "https://example.org/unused", "Preview", "SNIPPET");
+     let template = package["publications"][0].clone();
+     let rows = [
+         ("one", "Example UK", "uk.example.org", "Великобритания", "Министр опроверг создание обменного фонда заключённых", "2025-11-19T10:00:00Z"),
+         ("two", "Example PL", "pl.example.org", "Польша", "Лукашенко опроверг сообщения о создании обменного фонда заключенных", "2025-11-19T11:00:00Z"),
+         ("three", "Example UK", "uk.example.org", "Великобритания", "Вышли новые правила оформления студенческих виз", "2025-11-19T12:00:00Z"),
+         ("four", "Example DE", "de.example.org", "Германия", "Президент опроверг создание обменного фонда заключенных", "2025-12-19T10:00:00Z"),
+     ];
+     package["publications"] = Value::Array(rows.iter().map(|(id, name, domain, country, title, date)| {
+         let mut row = template.clone();
+         row["document_id"] = json!(id);
+         row["monitor_item_id"] = json!(format!("item-{id}"));
+         row["source"]["name"] = json!(name);
+         row["source"]["configured_region"] = json!(country);
+         row["publication"]["title"] = json!(title);
+         row["publication"]["published_at"] = json!(date);
+         let url = format!("https://{domain}/{id}");
+         row["publication"]["url"] = json!(url);
+         row["publication"]["normalized_url"] = json!(url);
+         row
+     }).collect());
+     package["source_metrics"] = json!([
+         {"schema_version":"0.3","monitor_key":"lukashenko","source":"Example UK","domain":"uk.example.org","source_region":"Великобритания","included":2},
+         {"schema_version":"0.3","monitor_key":"lukashenko","source":"Example PL","domain":"pl.example.org","source_region":"Польша","included":1},
+         {"schema_version":"0.3","monitor_key":"lukashenko","source":"Example DE","domain":"de.example.org","source_region":"Германия","included":1},
+         {"schema_version":"0.3","monitor_key":"lukashenko","source":"Unused","domain":"unused.example.org","source_region":"США","included":0}
+     ]);
+     package["run_metrics"]["final_publications"] = json!(4);
+     package["full_texts"] = json!([]);
+     let imported = import_collector_bundle(&path, package).unwrap();
+     let runs = crate::db::list_runs(&path, "lukashenko").unwrap();
+     let countries = &runs[0].collector_countries;
+     assert_eq!(countries.len(), 3);
+     assert!(countries.iter().all(|row| row.sources == 1));
+     assert_eq!(crate::db::l_monitor_run_publications(&path, imported.run_id).unwrap().len(), 4);
+     let dashboard = crate::db::dashboard_overview(&path, "lukashenko", None).unwrap();
+     assert_eq!((dashboard.publications, dashboard.active_sources, dashboard.regions), (4, 3, 3));
+     assert_eq!(dashboard.trend.iter().map(|point| point.count).sum::<i64>(), 4);
+     assert_eq!(dashboard.region_breakdown.iter().map(|point| point.count).sum::<i64>(), 4);
+     assert_eq!(dashboard.source_breakdown.iter().map(|point| point.count).sum::<i64>(), 4);
+     assert_eq!(dashboard.stories.len(), 1);
+     assert_eq!(dashboard.stories[0].publications.len(), 2);
+     std::fs::remove_dir_all(dir).unwrap();
+ }
 }

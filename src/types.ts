@@ -4,6 +4,8 @@ export type PeriodDays = 1 | 7 | 30 | 365 | null;
 export type RunSummary = {
   collector: string | null;
   collectorNumber: number | null;
+  collectorRunId?: string | null;
+  collectorCountries?: { country: string; sources: number }[];
   id: number;
   monitorKey: string;
   monitorName: string;
