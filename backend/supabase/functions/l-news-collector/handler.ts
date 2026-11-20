@@ -2,6 +2,7 @@ import {COUNTRY_NAMES,VERSION} from './core.ts';
 import {Job,Runtime,must,readPages} from './providers.ts';
 import {enqueue,workOne} from './worker.ts';
 import {probe} from './probe.ts';
+import {probeGdelt} from './gdelt.ts';
 import {bundleForRun} from './bundle.ts';
 
 const cors={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization,apikey,content-type,x-client-info','Access-Control-Allow-Methods':'POST,OPTIONS'};
@@ -12,11 +13,16 @@ export function createCollectorHandler(rt: Runtime) {
 async function worker(){
  const jobs=must(await db.rpc('l_news_claim_jobs',{p_limit:1})) as Job[];const results=[];
  for(const job of jobs){try{
-  const result=job.kind==='probe'?await probe(rt,job):await workOne(rt,job);
-  must(await db.from('l_news_jobs').update({state:'done',result,lease_until:null,updated_at:new Date().toISOString()}).eq('id',job.id));results.push({id:job.id,state:'done'});
+  const result=job.kind==='probe'?await probe(rt,job):job.kind==='gdelt_probe'?await probeGdelt(rt,job):await workOne(rt,job);
+  const retryAt=job.kind==='gdelt'?result.retry_at:null;
+  const patch=retryAt
+   ?{state:'waiting',available_at:retryAt,attempts:job.attempts-1}
+   :{state:'done',result};
+  must(await db.from('l_news_jobs').update({...patch,lease_until:null,updated_at:new Date().toISOString()}).eq('id',job.id));
+  results.push({id:job.id,state:patch.state});
  }catch(error){
   const message=error instanceof Error?error.message:'worker_error';
-  const retry=job.attempts<4&&/translation_unavailable|transport|timeout|search_0$|search_429$|search_50[0234]$/.test(message);
+  const retry=job.kind!=='gdelt_probe'&&job.attempts<4&&/translation_unavailable|transport|timeout|search_0$|search_429$|search_50[0234]$/.test(message);
   must(await db.from('l_news_jobs').update({state:retry?'waiting':'failed',error:message.slice(0,350),available_at:new Date(Date.now()+60000*job.attempts*job.attempts).toISOString(),lease_until:null,updated_at:new Date().toISOString()}).eq('id',job.id));
   if(!retry&&job.kind==='article')must(await db.from('l_news_items').update({state:'failed',reason:message.slice(0,250)}).eq('id',job.payload.item_id).neq('state','ready'));
   results.push({id:job.id,state:retry?'retry':'failed',error:message});

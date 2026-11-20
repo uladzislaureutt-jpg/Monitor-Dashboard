@@ -1,5 +1,6 @@
 import {Candidate,Source,batches,buildCard,contentLevel,containsName,domainOf,relevant,sha,sourceFor,urlKey,validDate} from './core.ts';
-import {Job,Run,Runtime,must,newscatcherSubscription,perigonLimits,readPages,searchGdelt,searchNewscatcher,searchPerigon} from './providers.ts';
+import {Job,Run,Runtime,must,newscatcherSubscription,perigonLimits,readPages,searchNewscatcher,searchPerigon} from './providers.ts';
+import {searchGdelt} from './gdelt.ts';
 import {recoverArticle} from './extraction.ts';
 import {translateCard} from './translation.ts';
 import {indexGithub} from './github.ts';
@@ -127,6 +128,7 @@ export async function workOne(rt:Runtime,job:Job){
  if(job.kind==='perigon'||job.kind==='newscatcher'||job.kind==='gdelt'){
   const found:any=job.kind==='perigon'?await searchPerigon(rt,job,run):job.kind==='newscatcher'?await searchNewscatcher(rt,job,run):await searchGdelt(rt,job,run);
   if(found.capped)return {capped:true,provider:job.kind};
+  if(job.kind==='gdelt'&&(found.warnings||found.retry_at))return found;
   const result=await ingest(rt,job,run,found.candidates,sources);
   if(found.next){const next=Number(found.page)+1;await enqueue(rt,run.id,job.kind,{...job.payload,page:next,quota:found.quota||job.payload.quota},run.id+':'+job.kind+':'+(job.payload.layer||job.payload.group)+':'+next);}
   if(found.split){const middle=new Date(Math.floor((Date.parse(found.from)+Date.parse(found.to))/2)).toISOString();for(const [from,to] of [[found.from,middle],[middle,found.to]])await enqueue(rt,run.id,'gdelt',{from,to},run.id+':gdelt:'+from+':'+to);}

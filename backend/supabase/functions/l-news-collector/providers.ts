@@ -78,11 +78,3 @@ export async function searchNewscatcher(rt:Runtime,job:Job,run:Run){
  const data=response.data,list=data.results||data.articles;if(!Array.isArray(list))throw new Error('newscatcher_invalid_response');
  return {capped:false,candidates:list.map((a:any):Candidate=>({url:a.url||a.link,title:clean(a.title),title_en:clean(a.title_en),lead:clean(a.snippet||a.description||a.summary),body:String(a.content||''),published_at:a.published_at||a.published_date||null,language:a.language||'',country:String(a.country||'').toUpperCase(),domain:domainOf(a.url||a.link),provider:'newscatcher',provider_id:a.id||a._id||a.url||a.link,image:a.image_url||a.media,paywall:false,content_truncated:family==='news-api'})),next:page<Number(data.total_pages||1),page,page_size:size,total:Number(data.total_hits||0)};
 }
-export async function searchGdelt(rt:Runtime,job:Job,run:Run){
- const id=await reserve(rt,job,run,'gdelt','doc',0,run.settings.gdelt_per_run,10000);if(!id)return {capped:true,candidates:[],split:false};
- const from=job.payload.from||run.from_at,to=job.payload.to||run.to_at;const stamp=(v:string)=>new Date(v).toISOString().replace(/[-:T]/g,'').slice(0,14);
- const q=new URLSearchParams({query:'(Lukashenko OR Lukashenka) -sourcecountry:belarus',mode:'artlist',format:'json',startdatetime:stamp(from),enddatetime:stamp(to),maxrecords:'250',sort:'datedesc'});
- const start=Date.now();const response=await fetch('https://api.gdeltproject.org/api/v2/doc/doc?'+q,{signal:AbortSignal.timeout(25000)});const raw=await response.text();let data:any;try{data=JSON.parse(raw);}catch{data={};}const list=data.articles||[];
- must(await rt.db.from('l_news_usage').update({status:response.status,result_count:list.length,credits:0,elapsed_ms:Date.now()-start}).eq('id',id));if(!response.ok)throw new Error('gdelt_search_'+response.status);if(!Array.isArray(data.articles))throw new Error('gdelt_transport_invalid_response_'+raw.replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').slice(0,120));
- return {capped:false,candidates:list.map((a:any):Candidate=>({url:a.url,title:clean(a.title),lead:'',body:'',published_at:null,language:String(a.language||'').toLowerCase(),country:'',domain:domainOf(a.url),provider:'gdelt',provider_id:a.url,image:a.socialimage})),split:list.length>=250&&Date.parse(to)-Date.parse(from)>3600000,from,to};
-}

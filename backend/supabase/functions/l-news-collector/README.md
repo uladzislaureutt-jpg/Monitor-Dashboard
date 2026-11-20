@@ -28,8 +28,11 @@ only wakes due queue work and does not start searches on an empty queue.
   10 Perigon requests reserved. Remaining quota is distributed over days
   before the provider's actual reset.
 - GDELT returned invalid output and HTTP 429 on bounded retries. It was disabled
-  for the pilot through gdelt_per_run=0. It can be re-enabled after its access
-  path is verified. No other feed depends on its availability.
+  for the pilot through gdelt_per_run=0. A one-off `gdelt_probe` job captures
+  status, content type, Retry-After and a short response excerpt without
+  starting a collection run. A 429 pauses GDELT across workers until the next
+  scheduled collection or a later Retry-After deadline. Other providers keep
+  processing their jobs.
 - Existing WebScraping.AI fallback is capped at four requests/run and 120/month;
   the control run needed none. AI translation logs contain token metadata.
   Dollar costs are not inferred from API credit balances.
