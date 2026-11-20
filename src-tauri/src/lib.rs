@@ -1,6 +1,7 @@
 mod db;
 mod fulltext;
 mod importer;
+mod identity;
 mod models;
 mod networks_sync;
 mod report;
@@ -600,6 +601,12 @@ fn sync_tiktok_network_bundles(
 }
 
 #[tauri::command]
+async fn sync_l_news_assistant(base_url:String,anon_key:String,access_token:String,state:State<'_,AppState>)->Result<usize,String>{
+    let path=state.db_path.clone();
+    tauri::async_runtime::spawn_blocking(move||sync::sync_assistant(&path,&base_url,&anon_key,&access_token)).await.map_err(|e|e.to_string())?
+}
+
+#[tauri::command]
 fn sync_server_artifacts(
     base_url: String,
     anon_key: String,
@@ -699,6 +706,7 @@ pub fn run() {
             export_tiktok_transcript_docx,
             export_tiktok_multi_docx,
             sync_server_artifacts,
+            sync_l_news_assistant,
             sync_tiktok_network_bundles,
             replace_moderation_snapshot,
             get_app_setting,

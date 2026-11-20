@@ -2,6 +2,8 @@ export type ViewKey = "dashboard" | "archive" | "report" | "analytics" | "source
 export type PeriodDays = 1 | 7 | 30 | 365 | null;
 
 export type RunSummary = {
+  collector: string | null;
+  collectorNumber: number | null;
   id: number;
   monitorKey: string;
   monitorName: string;
@@ -380,6 +382,7 @@ export type SyncSettings = {
 };
 
 export type SyncResult = {
+  assistantImportedRuns: number;
   checkedArtifacts: number;
   latestAvailableRun: number | null;
   latestRemoteRun: number | null;

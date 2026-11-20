@@ -69,6 +69,28 @@ pub fn import_bundle(db_path: &Path, input_path: &Path) -> Result<ImportResult, 
         .map_err(|e| format!("Не удалось прочитать выбранный ZIP: {e}"))?;
     let parsed = parse_bundle(input_bytes)?;
 
+    validate_and_ingest(db_path,input_path,parsed)
+}
+
+/// Import the same contract directly from the independently authenticated API feed.
+/// A collector UUID is a different namespace from GitHub workflow/run numbers.
+pub fn import_collector_bundle(db_path:&Path,value:Value)->Result<ImportResult,String>{
+    let bytes=serde_json::to_vec(&value).map_err(|e|e.to_string())?;
+    if bytes.len() as u64>MAX_INPUT_BYTES{return Err("Пакет помощника превышает 128 МБ".into());}
+    let manifest_value=value.get("manifest").cloned().ok_or("Отсутствует manifest помощника")?;
+    let manifest:Manifest=serde_json::from_value(manifest_value.clone()).map_err(|e|e.to_string())?;
+    if manifest.monitor.key!="lukashenko"||manifest.run.collector.as_deref()!=Some("api_assistant")||manifest.run.collector_run_id.as_deref().unwrap_or("").is_empty(){return Err("Неверный контур пакета помощника".into());}
+    let publication_values=value.get("publications").and_then(Value::as_array).cloned().ok_or("Отсутствуют publications помощника")?;
+    let publications=publication_values.iter().map(|v|serde_json::from_value(v.clone())).collect::<Result<Vec<PublicationRecord>,_>>().map_err(|e|e.to_string())?;
+    let source_metrics=value.get("source_metrics").and_then(Value::as_array).cloned().ok_or("Отсутствуют source_metrics помощника")?;
+    let run_metrics=value.get("run_metrics").cloned().ok_or("Отсутствуют run_metrics помощника")?;
+    let full_texts=serde_json::from_value(value.get("full_texts").cloned().unwrap_or(serde_json::json!([]))).map_err(|e|e.to_string())?;
+    let parsed=ParsedBundle{input_kind:"collector-json".into(),bundle_sha256:hex::encode(Sha256::digest(&bytes)),manifest_value,manifest,publication_values,publications,source_metrics,run_metrics,full_texts,entities:Vec::new()};
+    validate_and_ingest(db_path,Path::new("L-News-Assistant"),parsed)
+}
+
+fn validate_and_ingest(db_path:&Path,input_path:&Path,parsed:ParsedBundle)->Result<ImportResult,String>{
+
     ensure_supported_contract(&parsed.manifest.dashboard_contract_version)?;
     validate_json("manifest.json", MANIFEST_SCHEMA, &parsed.manifest_value)?;
     validate_json("run_metrics.json", RUN_METRICS_SCHEMA, &parsed.run_metrics)?;
@@ -300,12 +322,15 @@ fn ingest(conn: &Connection, input_path: &Path, parsed: ParsedBundle) -> Result<
         &parsed.manifest.monitor.key,
         &parsed.manifest.monitor.display_name,
     )?;
-    let external_run_key = parsed
+    let external_run_key = parsed.manifest.run.collector_run_id.as_ref()
+        .filter(|v|!v.trim().is_empty())
+        .map(|id|format!("collector:{}:{}",parsed.manifest.run.collector.as_deref().unwrap_or("api"),id))
+        .or_else(||parsed
         .manifest
         .run
         .github_run_id
         .clone()
-        .filter(|v| !v.trim().is_empty())
+        .filter(|v| !v.trim().is_empty()))
         .unwrap_or_else(|| {
             format!(
                 "run:{}:{}",
@@ -443,7 +468,13 @@ fn ingest_sources(
     for metric in metrics {
         let name = str_field(metric, "source").ok_or("source_metrics: отсутствует source")?;
         let domain = str_field(metric, "domain");
-        let uid = source_uid(name, domain);
+        let generated_uid = source_uid(name, domain);
+        let uid = if monitor_key=="lukashenko" {
+            let normalized_domain=domain.unwrap_or("").trim().to_lowercase().trim_start_matches("www.").to_string();
+            if normalized_domain.is_empty(){generated_uid}else{
+                tx.query_row("SELECT source_uid FROM sources WHERE LOWER(CASE WHEN domain LIKE 'www.%' THEN substr(domain,5) ELSE domain END)=?1 ORDER BY id LIMIT 1",params![normalized_domain],|r|r.get::<_,String>(0)).optional().map_err(|e|e.to_string())?.unwrap_or(generated_uid)
+            }
+        }else{generated_uid};
         tx.execute(
             r#"
             INSERT INTO sources(source_uid, canonical_name, domain, source_type, configured_region, configured_locality, priority)
@@ -551,14 +582,11 @@ fn ingest_publications(
         };
         let seen = observed_at.or(item.publication.published_at.as_deref());
 
-        let existing_by_url: Option<i64> = tx
-            .query_row(
-                "SELECT id FROM documents WHERE normalized_url=?1",
-                params![item.publication.normalized_url],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(|e| format!("Не удалось проверить normalized_url {}: {e}", item.publication.normalized_url))?;
+        let mut aliases=vec![item.publication.normalized_url.clone(),item.publication.url.clone()];
+        if let Some(values)=item.provenance.as_ref().and_then(|v|v.get("url_aliases")).and_then(Value::as_array){
+            aliases.extend(values.iter().filter_map(Value::as_str).map(str::to_string));
+        }
+        let existing_by_url=crate::identity::find_document(tx,&item.document_id,&aliases)?;
 
         let document_db_id = if let Some(existing_id) = existing_by_url {
             tx.execute(
@@ -647,6 +675,24 @@ fn ingest_publications(
         };
         document_ids.insert(item.document_id.clone(), document_db_id);
 
+        crate::identity::register(tx,document_db_id,&item.document_id,&aliases)?;
+        let stable_document_uid:String=tx.query_row("SELECT document_uid FROM documents WHERE id=?1",params![document_db_id],|r|r.get(0)).map_err(|e|e.to_string())?;
+        let existing_item:Option<(String,String)>=tx.query_row("SELECT monitor_item_uid,raw_json FROM monitor_items WHERE monitor_id=?1 AND document_id=?2",params![monitor_id,document_db_id],|r|Ok((r.get(0)?,r.get(1)?))).optional().map_err(|e|e.to_string())?;
+        let stable_item_uid=existing_item.as_ref().map(|v|v.0.clone()).unwrap_or_else(||format!("item_{}_{}",monitor_key,stable_document_uid));
+        let mut raw=serde_json::to_value(item).map_err(|e|e.to_string())?;
+        raw["document_id"]=Value::String(stable_document_uid);
+        raw["monitor_item_id"]=Value::String(stable_item_uid.clone());
+        let mut origins=Vec::new();
+        if let Some((_,old))=&existing_item{if let Ok(v)=serde_json::from_str::<Value>(old){
+            if let Some(values)=v.pointer("/provenance/collectors").and_then(Value::as_array){origins.extend(values.iter().filter_map(Value::as_str).map(str::to_string));}
+            if let Some(report)=v.pointer("/provenance/report").and_then(Value::as_str){origins.push(report.to_string());}
+        }}
+        if let Some(report)=raw.pointer("/provenance/report").and_then(Value::as_str){origins.push(report.to_string());}
+        origins.sort();origins.dedup();
+        if !raw["provenance"].is_object(){raw["provenance"]=serde_json::json!({});}
+        raw["provenance"]["collectors"]=serde_json::json!(origins);
+        let raw_json=serde_json::to_string(&raw).map_err(|e|e.to_string())?;
+
         tx.execute(
             r#"
             INSERT INTO monitor_items(
@@ -665,7 +711,7 @@ fn ingest_publications(
                 raw_json=excluded.raw_json
             "#,
             params![
-                item.monitor_item_id,
+                stable_item_uid,
                 monitor_id,
                 document_db_id,
                 item.classification.category,
@@ -676,14 +722,14 @@ fn ingest_publications(
                 value_to_text(item.classification.matched_terms.as_ref()),
                 item.classification.category_bonus_only.map(|v| if v { 1_i64 } else { 0_i64 }),
                 item.schema_version,
-                serde_json::to_string(&item).map_err(|e| format!("Не удалось сериализовать publication raw_json: {e}"))?,
+                raw_json,
             ],
         )
         .map_err(|e| format!("Не удалось записать monitor_item {}: {e}", item.monitor_item_id))?;
         let monitor_item_db_id: i64 = tx
             .query_row(
                 "SELECT id FROM monitor_items WHERE monitor_item_uid=?1",
-                params![item.monitor_item_id],
+                params![stable_item_uid],
                 |row| row.get(0),
             )
             .map_err(|e| format!("Не удалось найти monitor_item {}: {e}", item.monitor_item_id))?;
@@ -709,6 +755,10 @@ fn ingest_publications(
         )
         .map_err(|e| format!("Не удалось связать publication с run: {e}"))?;
 
+        let preserve_event=item.provenance.as_ref().and_then(|v|v.get("report")).and_then(Value::as_str)==Some("L-News-Assistant")
+            && item.event.signature.is_none()
+            && tx.query_row("SELECT EXISTS(SELECT 1 FROM event_items ei JOIN events e ON e.id=ei.event_id WHERE ei.monitor_item_id=?1 AND e.event_signature IS NOT NULL)",params![monitor_item_db_id],|r|r.get::<_,i64>(0)).map_err(|e|e.to_string())?!=0;
+        if !preserve_event {
         tx.execute("DELETE FROM event_items WHERE monitor_item_id=?1", params![monitor_item_db_id])
             .map_err(|e| format!("Не удалось обновить event relation: {e}"))?;
         if has_event(&item.event) {
@@ -754,6 +804,7 @@ fn ingest_publications(
             )
             .map_err(|e| format!("Не удалось связать event и publication: {e}"))?;
         }
+        }
     }
     Ok(document_ids)
 }
@@ -776,7 +827,9 @@ fn ingest_full_texts(
                 full_text_extraction_strategy=?5,
                 full_text_transport=?6,
                 text_length=COALESCE(?7, text_length)
-               WHERE id=?1"#,
+               WHERE id=?1 AND (COALESCE(full_text_quality,'')<>'FULL_TEXT' OR ?4='FULL_TEXT')
+                   AND (COALESCE(length(full_text),0)<=length(?2)
+                   OR (COALESCE(full_text_quality,'')<>'FULL_TEXT' AND ?4='FULL_TEXT'))"#,
             params![
                 document_db_id,
                 item.text,
@@ -787,9 +840,7 @@ fn ingest_full_texts(
                 item.text_length,
             ],
         ).map_err(|e| format!("Не удалось записать полный текст {}: {e}", item.document_id))?;
-        if changed == 0 {
-            return Err(format!("Не найден document для полного текста {}", item.document_id));
-        }
+        let _ = changed; // A shorter/partial candidate must not downgrade a stored body.
     }
     Ok(())
 }
@@ -974,4 +1025,53 @@ fn write_import_log(
     )
     .map_err(|e| format!("Не удалось записать import_log: {e}"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod identity_integration_tests {
+ use super::*;
+ use serde_json::json;
+ use std::sync::atomic::{AtomicUsize,Ordering};
+ static N:AtomicUsize=AtomicUsize::new(0);
+ fn bundle(api:bool,uid:&str,url:&str,body:&str,quality:&str)->Value{
+  let mut run=json!({"run_number":165,"github_run_id":"github-165","started_at":"2026-11-19T12:07:00Z","lookback_hours":26,"dry_run":false});
+  if api {run=json!({"run_number":null,"collector":"api_assistant","collector_run_id":"pilot-uuid","collector_number":1,"started_at":"2026-11-19T12:07:00Z","lookback_hours":26,"dry_run":false});}
+  json!({"manifest":{"dashboard_contract_version":"0.3","monitor":{"key":"lukashenko","display_name":"L-Monitor"},"run":run,"files":{"publications":"publications.jsonl","source_metrics":"source_metrics.jsonl","run_metrics":"run_metrics.json","full_texts":"full_texts.jsonl"},"capabilities":{}},
+   "publications":[{"schema_version":"0.3","monitor_key":"lukashenko","document_id":uid,"monitor_item_id":format!("item_{uid}"),"source":{"name":if api{"Example API"}else{"Example"},"type":"media","configured_region":"Великобритания"},"publication":{"published_at":"2026-11-19T10:00:00Z","title":if api{"Лукашенко: новый заголовок"}else{"Лукашенко: заголовок"},"url":url,"normalized_url":url,"text_length":body.len()},"classification":{"category":"Политика"},"event":{},"provenance":{"report":if api{"L-News-Assistant"}else{"M-Trouble"},"content_level":quality}}],
+   "source_metrics":[{"schema_version":"0.3","monitor_key":"lukashenko","source":if api{"Example API"}else{"Example"},"domain":"example.com","source_region":"Великобритания","results":1}],
+   "run_metrics":{"schema_version":"0.3","monitor_key":"lukashenko","final_publications":1},
+   "full_texts":[{"schema_version":"0.3","monitor_key":"lukashenko","document_id":uid,"text":body,"quality":quality,"text_length":body.len()}]})
+ }
+ fn import(db:&Path,v:Value){
+  if v.pointer("/manifest/run/collector").is_some(){import_collector_bundle(db,v).unwrap();return;}
+  // Exercise the exact common validation/import path used after ZIP parsing.
+  let manifest_value=v["manifest"].clone();let manifest=serde_json::from_value(manifest_value.clone()).unwrap();
+  let parsed=ParsedBundle{input_kind:"test-github".into(),bundle_sha256:hex::encode(Sha256::digest(serde_json::to_vec(&v).unwrap())),manifest_value,manifest,publication_values:v["publications"].as_array().unwrap().clone(),publications:serde_json::from_value(v["publications"].clone()).unwrap(),source_metrics:v["source_metrics"].as_array().unwrap().clone(),run_metrics:v["run_metrics"].clone(),full_texts:serde_json::from_value(v["full_texts"].clone()).unwrap(),entities:vec![]};
+  validate_and_ingest(db,Path::new("test"),parsed).unwrap();
+ }
+ fn check_order(api_first:bool){
+  let dir=std::env::temp_dir().join(format!("monitor-identity-test-{}-{}",std::process::id(),N.fetch_add(1,Ordering::SeqCst)));std::fs::create_dir_all(&dir).unwrap();let path=dir.join("test.sqlite");crate::db::initialize_database(&path).unwrap();
+  let long="Full original publication body. ".repeat(100);
+  let first=bundle(api_first,if api_first{"api-doc"}else{"gh-doc"},"https://www.example.com/News/A?utm_source=first&id=7",&long,"FULL_TEXT");
+  import(&path,first.clone());let conn=crate::db::open_database(&path).unwrap();let uid:String=conn.query_row("select document_uid from documents",[],|r|r.get(0)).unwrap();
+  conn.execute("insert into moderation_exclusions values('lukashenko',?1,'Operator','2026-11-19')",params![uid]).unwrap();
+  conn.execute("insert into moderation_flags values('lukashenko',?1,'u1','Operator','2026-11-19')",params![uid]).unwrap();
+  let second=bundle(!api_first,if api_first{"gh-doc"}else{"api-doc"},"http://example.com/News/A/?id=7&utm_source=second#top","Short publicly available lead","SNIPPET");import(&path,second.clone());import(&path,second);
+  assert_eq!(conn.query_row("select count(*) from documents",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+  assert_eq!(conn.query_row("select count(*) from monitor_items",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+  assert_eq!(conn.query_row("select count(*) from runs",[],|r|r.get::<_,i64>(0)).unwrap(),2);
+  assert_eq!(conn.query_row("select count(*) from sources",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+  assert_eq!(conn.query_row("select full_text from documents",[],|r|r.get::<_,String>(0)).unwrap(),long);
+  assert_eq!(crate::identity::stable_uid(&conn,if api_first{"gh-doc"}else{"api-doc"}).unwrap(),uid);
+  assert_eq!(conn.query_row("select count(*) from moderation_exclusions where document_uid=?1",params![uid],|r|r.get::<_,i64>(0)).unwrap(),1);
+  assert_eq!(conn.query_row("select count(*) from moderation_flags where document_uid=?1",params![uid],|r|r.get::<_,i64>(0)).unwrap(),1);
+  let runs=crate::db::list_runs(&path,"lukashenko").unwrap();assert!(runs.iter().any(|r|r.collector.as_deref()==Some("api_assistant")));
+  let sources=crate::db::list_sources(&path,"lukashenko",None).unwrap();assert_eq!(sources.len(),1);
+  // A different article ID remains a separate publication.
+  import(&path,bundle(true,"another-doc","https://example.com/News/A?id=8","Different article","SNIPPET"));
+  assert_eq!(conn.query_row("select count(*) from documents",[],|r|r.get::<_,i64>(0)).unwrap(),2);
+  drop(conn);let _=std::fs::remove_dir_all(dir);
+ }
+ #[test] fn github_then_api_preserves_moderation_and_body(){check_order(false);}
+ #[test] fn api_then_github_preserves_moderation_and_body(){check_order(true);}
 }

@@ -95,6 +95,7 @@ export const desktopApi = {
     invoke<void>("export_tiktok_multi_docx", { path, items }),
   exportTikTokTranscript: (path: string, text: string, comments: string[], accents: string[]) =>
     invoke<void>("export_tiktok_transcript_docx", { path, text, comments, accents }),
+  syncLNewsAssistant: (baseUrl:string,anonKey:string,accessToken:string) => invoke<number>("sync_l_news_assistant",{baseUrl,anonKey,accessToken}),
   syncServer: (baseUrl: string, anonKey: string, accessToken: string) =>
     invoke<SyncResult>("sync_server_artifacts", { baseUrl, anonKey, accessToken, monitorKey: activeMonitorKey }),
   syncServerFor: (monitorKey: string, baseUrl: string, anonKey: string, accessToken: string) =>

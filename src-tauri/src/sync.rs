@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 
 use crate::{db, importer};
 
@@ -41,6 +42,7 @@ pub struct SyncResult {
     latest_remote_run: Option<i64>,
     latest_imported_run: Option<i64>,
     imported_runs: Vec<i64>,
+    assistant_imported_runs: usize,
     skipped_dry_runs: Vec<i64>,
     already_present: usize,
     errors: Vec<String>,
@@ -257,6 +259,7 @@ pub fn sync_github(db_path: &Path, repository: &str, token: &str, monitor_key: &
         latest_remote_run,
         latest_imported_run,
         imported_runs,
+        assistant_imported_runs: 0,
         skipped_dry_runs,
         already_present,
         errors,
@@ -321,7 +324,7 @@ fn server_post_json<T: for<'de> Deserialize<'de>>(
     serde_json::from_str(&text).map_err(|e| format!("Сервер синхронизации вернул неожиданный JSON: {e}; body={text}"))
 }
 
-pub fn sync_server(
+fn sync_server_github(
     db_path: &Path,
     base_url: &str,
     anon_key: &str,
@@ -470,6 +473,7 @@ pub fn sync_server(
         latest_remote_run,
         latest_imported_run,
         imported_runs,
+        assistant_imported_runs: 0,
         skipped_dry_runs,
         already_present,
         errors,
@@ -505,4 +509,59 @@ mod tests {
         assert_eq!(artifacts[1].0, 137);
         assert_eq!(artifacts[1].1.id, 11274343220);
     }
+}
+
+
+/// Each feed is attempted even when the other one is temporarily unavailable.
+pub fn sync_server(db_path:&Path,base_url:&str,anon_key:&str,access_token:&str,monitor_key:&str)->Result<SyncResult,String>{
+    let github=sync_server_github(db_path,base_url,anon_key,access_token,monitor_key);
+    if monitor_key!=L_MONITOR_KEY{return github;}
+    let assistant=sync_assistant(db_path,base_url,anon_key,access_token);
+    match (github,assistant){
+        (Ok(mut result),Ok(n))=>{result.assistant_imported_runs=n;Ok(result)},
+        (Ok(mut result),Err(error))=>{result.errors.push(format!("Помощник: {error}"));Ok(result)},
+        (Err(error),Ok(n))=>Ok(SyncResult{checked_artifacts:0,latest_available_run:None,latest_remote_run:None,latest_imported_run:None,imported_runs:vec![],assistant_imported_runs:n,skipped_dry_runs:vec![],already_present:0,errors:vec![format!("GitHub: {error}")]}),
+        (Err(a),Err(b))=>Err(format!("GitHub: {a}; помощник: {b}")),
+    }
+}
+
+pub fn sync_assistant(db_path:&Path,base_url:&str,anon_key:&str,access_token:&str)->Result<usize,String>{
+    let base_url=validate_supabase_base_url(base_url)?;
+    let client=Client::builder().timeout(Duration::from_secs(120)).build().map_err(|e|e.to_string())?;
+    let post=|body:serde_json::Value|->Result<serde_json::Value,String>{
+        let response=client.post(format!("{base_url}/functions/v1/l-news-collector")).header("apikey",anon_key).bearer_auth(access_token).json(&body).send().map_err(|e|e.to_string())?;
+        let status=response.status();let value:serde_json::Value=response.json().map_err(|e|e.to_string())?;
+        if !status.is_success(){return Err(format!("HTTP {}: {}",status.as_u16(),value));}Ok(value)
+    };
+    // Register only delivered GitHub publications; failed fetches and API cards
+    // must never poison the shared seen-URL index.
+    let rows={let conn=db::open_database(db_path)?;
+        let mut stmt=conn.prepare(r#"SELECT DISTINCT d.document_uid,d.url FROM documents d
+          JOIN monitor_items mi ON mi.document_id=d.id JOIN monitors m ON m.id=mi.monitor_id
+          JOIN run_items ri ON ri.monitor_item_id=mi.id JOIN runs r ON r.id=ri.run_id
+          WHERE m.monitor_key='lukashenko' AND json_extract(r.manifest_json,'$.run.collector') IS NULL
+          AND datetime(COALESCE(r.started_at,r.imported_at))>=datetime('now','-45 days') ORDER BY d.document_uid,d.url"#).map_err(|e|e.to_string())?;
+        stmt.query_map([],|r|Ok(serde_json::json!({"document_uid":r.get::<_,String>(0)?,"url":r.get::<_,String>(1)?}))).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?
+    };
+    let signature=hex::encode(sha2::Sha256::digest(serde_json::to_vec(&rows).map_err(|e|e.to_string())?));
+    let index_key=format!("l-assistant-known:{base_url}");
+    if db::get_app_setting(db_path,&index_key)?.as_deref()!=Some(&signature){
+        for chunk in rows.chunks(1000){post(serde_json::json!({"action":"register_known","rows":chunk}))?;}
+        db::set_app_setting(db_path,&index_key,&signature)?;
+    }
+    let manifest=post(serde_json::json!({"action":"manifest"}))?;
+    let runs=manifest["runs"].as_array().ok_or("Нет списка запусков помощника")?;
+    let mut imported=0;
+    for run in runs.iter().rev(){
+        let id=run["id"].as_str().ok_or("Нет UUID запуска помощника")?;
+        let revision=run["revision"].to_string();let key=format!("l-assistant-revision:{base_url}:{id}");
+        if db::get_app_setting(db_path,&key)?.as_deref()==Some(&revision){continue;}
+        let bundle=post(serde_json::json!({"action":"download","run_id":id}))?;
+        // Save the revision actually downloaded, since collection may advance
+        // while the manifest is in flight.
+        let downloaded_revision=bundle["revision"].to_string();
+        importer::import_collector_bundle(db_path,bundle)?;
+        db::set_app_setting(db_path,&key,&downloaded_revision)?;imported+=1;
+    }
+    Ok(imported)
 }

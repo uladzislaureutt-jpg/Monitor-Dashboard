@@ -75,33 +75,17 @@ Migrations here use the deployed database's exact migration versions and SQL.
 
 ## Desktop integration status
 
-**The desktop update is not released.** During integration the execution
-environment became unavailable. Tested local changes remain in the working
-checkout at /workspace/scratch/73a704708ee1/monitor-dashboard; their availability
-must be verified when that environment returns. Do not claim that current
-Monitor installers receive the new feed.
+The importer, publication aliases, independent feed sync and admin panel
+were recovered from the prior checkout and saved on this branch. API bundles
+use a UUID and their own run-number namespace. The importer keeps existing
+publication identity, operator decisions and full text in both arrival orders.
+The desktop checks for already collected cards every five minutes while
+L-Monitor is open. This polling does not initiate paid searches.
 
-Prepared integration was tested locally: frontend build, backend Deno checks,
-ten collector tests, four Rust/importer checks including both arrival orders.
-The desktop files were not pushed before the outage. This branch contains
-the deployed backend, catalog, migrations and collector CI checks.
-
-Remaining release steps:
-1. Recover the local changes or reconstruct them against current main.
-2. Import JSON bundles through the common contract validator with
-   collector=api_assistant, collector_run_id UUID and collector_number.
-   Keep the GitHub run number namespace independent.
-3. Persist URL and document-UID aliases. Preserve existing document identity,
-   operator flags/exclusions and fuller body for both arrival orders.
-4. Sync the API feed independently of GitHub failures, using manifest revisions.
-   Register only already delivered GitHub URLs; never fetched-but-unreported URLs.
-5. Keep the latest catalog per collector; do not replace scraper health metrics
-   with API-only no-result statuses. Publication statistics must use unique items.
-6. Release the prepared admin panel (start/pause/lookback/quotas/usage), and the
-   five-minute download poll for L-Monitor operators. Polling does not start
-   paid searches. Verify active/admin access and test a real downloaded bundle.
-7. Re-run importer/frontend checks, merge, build the Windows installer and
-   confirm receipt in the updated application. Coordinate the version number
-   with other current Monitor work.
+Before release, verify an authenticated manifest/download against a real
+pilot bundle, confirm that it appears in the updated desktop application,
+and check both admin and operator access. Coordinate the release version
+with the other open Monitor changes, then build and validate the Windows
+installer.
 
 The existing M-Trouble GitHub scraper has not been modified.

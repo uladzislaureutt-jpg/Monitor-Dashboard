@@ -16,6 +16,7 @@ const MIGRATION_0003: &str = include_str!("../migrations/0003_preview_images.sql
 const MIGRATION_0004: &str = include_str!("../migrations/0004_moderation.sql");
 const MIGRATION_0005: &str = include_str!("../migrations/0005_editorial_sources.sql");
 const MIGRATION_0006: &str = include_str!("../migrations/0006_persistent_settings.sql");
+const MIGRATION_0007: &str = include_str!("../migrations/0007_publication_identity.sql");
 
 pub fn open_database(path: &Path) -> Result<Connection, String> {
     let conn = Connection::open(path).map_err(|e| format!("Не удалось открыть SQLite: {e}"))?;
@@ -93,6 +94,13 @@ pub fn initialize_database(path: &Path) -> Result<(), String> {
         tx.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (6)", []).map_err(|e| format!("Не удалось записать версию миграции 0006: {e}"))?;
         tx.commit().map_err(|e| format!("Не удалось завершить миграцию 0006: {e}"))?;
     }
+    if current < 7 {
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        tx.execute_batch(MIGRATION_0007).map_err(|e| e.to_string())?;
+        crate::identity::seed_aliases(&tx)?;
+        tx.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (7)", []).map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
@@ -146,7 +154,9 @@ pub fn list_runs(path: &Path, monitor_key: &str) -> Result<Vec<RunSummary>, Stri
                    JOIN monitor_items mi ON mi.id = ri.monitor_item_id
                    JOIN documents d ON d.id = mi.document_id
                   WHERE ri.run_id = r.id AND d.source_id IS NOT NULL) AS sources_in_result,
-                (SELECT COUNT(*) FROM source_run_metrics srm WHERE srm.run_id = r.id) AS sources_in_coverage
+                (SELECT COUNT(*) FROM source_run_metrics srm WHERE srm.run_id = r.id) AS sources_in_coverage,
+                json_extract(r.manifest_json,'$.run.collector'),
+                json_extract(r.manifest_json,'$.run.collector_number')
             FROM runs r
             JOIN monitors m ON m.id = r.monitor_id
             WHERE m.monitor_key = ?1
@@ -172,6 +182,8 @@ pub fn list_runs(path: &Path, monitor_key: &str) -> Result<Vec<RunSummary>, Stri
                 publications: row.get(10)?,
                 sources_in_result: row.get(11)?,
                 sources_in_coverage: row.get(12)?,
+                collector: row.get(13)?,
+                collector_number: row.get(14)?,
             })
         })
         .map_err(|e| format!("Не удалось прочитать список запусков: {e}"))?;
@@ -346,6 +358,7 @@ fn coverage_health_summary(conn:&Connection,monitor_key:&str)->Result<CoverageHe
         SELECT r.id, r.run_number FROM runs r
         JOIN monitors m ON m.id=r.monitor_id
         WHERE m.monitor_key=?1 AND r.dry_run=0
+          AND json_extract(r.manifest_json,'$.run.collector') IS NULL
         ORDER BY COALESCE(datetime(r.started_at),datetime(r.imported_at)) DESC, r.id DESC LIMIT 1
     "#,params![monitor_key],|row|Ok((row.get::<_,i64>(0)?,row.get::<_,Option<i64>>(1)?))).optional()
         .map_err(|e|format!("Не удалось определить последний production-запуск: {e}"))?;
@@ -791,17 +804,15 @@ pub fn list_sources(path: &Path, monitor_key: &str, period_days: Option<i64>) ->
             SELECT 1
             FROM source_run_metrics srm
             WHERE srm.source_id=s.id
-              AND srm.run_id=COALESCE(
-                  (
-                    SELECT r.id FROM runs r JOIN monitors m ON m.id=r.monitor_id
-                    WHERE m.monitor_key=?1 AND r.dry_run=0
-                    ORDER BY COALESCE(r.started_at,r.imported_at) DESC, r.id DESC LIMIT 1
-                  ),
-                  (
-                    SELECT r.id FROM runs r JOIN monitors m ON m.id=r.monitor_id
-                    WHERE m.monitor_key=?1
-                    ORDER BY COALESCE(r.started_at,r.imported_at) DESC, r.id DESC LIMIT 1
-                  )
+              AND srm.run_id IN (
+                SELECT id FROM (
+                  SELECT r.id, ROW_NUMBER() OVER (
+                    PARTITION BY COALESCE(json_extract(r.manifest_json,'$.run.collector'),'github')
+                    ORDER BY CASE WHEN r.dry_run=0 THEN 0 ELSE 1 END,
+                      COALESCE(r.started_at,r.imported_at) DESC,r.id DESC
+                  ) AS position
+                  FROM runs r JOIN monitors m ON m.id=r.monitor_id WHERE m.monitor_key=?1
+                ) WHERE position=1
               )
         )
         ORDER BY LOWER(s.canonical_name), s.id
@@ -887,13 +898,13 @@ pub fn replace_moderation_snapshot(
     for flag in flags {
         tx.execute(
             "INSERT OR REPLACE INTO moderation_flags(monitor_key,document_uid,user_id,user_name,flagged_at) VALUES (?1,?2,?3,?4,?5)",
-            params![monitor_key, flag.document_uid, flag.user_id, flag.user_name, flag.flagged_at],
+            params![monitor_key, crate::identity::stable_uid(&tx,&flag.document_uid)?, flag.user_id, flag.user_name, flag.flagged_at],
         ).map_err(|e| format!("Не удалось сохранить локальный флаг модерации: {e}"))?;
     }
     for exclusion in exclusions {
         tx.execute(
             "INSERT OR REPLACE INTO moderation_exclusions(monitor_key,document_uid,excluded_by_name,excluded_at) VALUES (?1,?2,?3,?4)",
-            params![monitor_key, exclusion.document_uid, exclusion.excluded_by_name, exclusion.excluded_at],
+            params![monitor_key, crate::identity::stable_uid(&tx,&exclusion.document_uid)?, exclusion.excluded_by_name, exclusion.excluded_at],
         ).map_err(|e| format!("Не удалось сохранить локальное исключение модерации: {e}"))?;
     }
     tx.commit().map_err(|e| format!("Не удалось завершить синхронизацию модерации: {e}"))?;

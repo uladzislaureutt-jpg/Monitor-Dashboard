@@ -89,7 +89,7 @@ export default function App() {
   const [networksPlatform, setNetworksPlatform] = useState<NetworkPlatform>("tiktok");
   const [stats, setStats] = useState<DatabaseStats | null>(null);
   const [runs, setRuns] = useState<RunSummary[]>([]);
-  const latestLMonitorRun = runs.find((run) => run.monitorKey === "lukashenko" && run.dryRun !== true);
+  const latestLMonitorRun = runs.find((run) => run.monitorKey === "lukashenko" && !run.collector && run.dryRun !== true);
   const [dashboard, setDashboard] = useState<DashboardOverview | null>(null);
   const [period, setPeriod] = useState<PeriodDays>(30);
   const [dashboardLoading, setDashboardLoading] = useState(false);
@@ -139,8 +139,8 @@ export default function App() {
       if (latestImported != null && (latestRemote == null || latestImported >= latestRemote || remoteIsSkippedDryRun)) setSyncStatus({ kind: "upToDate", run: latestImported });
       else if (latestRemote != null || result.errors.length) setSyncStatus({ kind: "configured" });
       else setSyncStatus({ kind: "notFound" });
-      if (result.importedRuns.length) {
-        setMessage(t("sync.added", { runs: result.importedRuns.join(", ") }));
+      if (result.importedRuns.length || result.assistantImportedRuns) {
+        setMessage([result.importedRuns.length ? t("sync.added", { runs: result.importedRuns.join(", ") }) : "", result.assistantImportedRuns ? `Помощник: обновлено сборов ${result.assistantImportedRuns}` : ""].filter(Boolean).join(". "));
         await Promise.all([refreshCore(), refreshDashboard(period)]);
       }
     } catch (reason) {
@@ -239,6 +239,22 @@ export default function App() {
     })();
     return () => { cancelled = true; };
   }, [access.profile.isAdmin, access.session?.userId, access.session.accessToken, access.monitors, locale, period, refreshCore, refreshDashboard]);
+
+  // The independent feed checks for already collected cards without starting
+  // paid searches or changing the user's GitHub auto-sync preference.
+  useEffect(() => {
+    if(monitorKey!=="lukashenko")return;
+    let stopped=false;
+    const timer=window.setInterval(async()=>{
+      if(syncBusyRef.current)return;
+      syncBusyRef.current=true;
+      try{const config=loadWorkroomConfig();const count=await desktopApi.syncLNewsAssistant(config.url,config.anonKey,access.session.accessToken);
+        if(count&&!stopped)await Promise.all([refreshCore(),refreshDashboard(period)]);
+      }catch(reason){if(!stopped)setSyncWarning(`Помощник: ${String(reason)}`);}
+      finally{syncBusyRef.current=false;}
+    },5*60_000);
+    return()=>{stopped=true;window.clearInterval(timer);};
+  },[monitorKey,access.session.accessToken,period,refreshCore,refreshDashboard]);
 
   useEffect(() => {
     const checkOnOpen = monitorKey === "lukashenko" || syncSettings.autoSync;
@@ -349,7 +365,7 @@ export default function App() {
       {view === "report" && <ReportView key={monitorKey} />}
       {view === "analytics" && <AnalyticsView key={monitorKey} data={dashboard} period={period} onPeriodChange={setPeriod} />}
       {view === "sources" && access.profile.isAdmin && <SourcesView key={monitorKey} />}
-      {view === "data" && access.profile.isAdmin && <DataView key={monitorKey} stats={stats} runs={runs.filter((run) => run.monitorKey === monitorKey)} busy={busy} onImport={importBundle} syncSettings={syncSettings} onSaveSyncSettings={saveSyncSettings} onSyncNow={(value) => performSync(value)} syncBusy={syncBusy} syncStatus={syncStatusText} />}
+      {view === "data" && access.profile.isAdmin && <DataView key={monitorKey} monitorKey={monitorKey} stats={stats} runs={runs.filter((run) => run.monitorKey === monitorKey)} busy={busy} onImport={importBundle} syncSettings={syncSettings} onSaveSyncSettings={saveSyncSettings} onSyncNow={(value) => performSync(value)} syncBusy={syncBusy} syncStatus={syncStatusText} />}
     </>}
   </>;
 
