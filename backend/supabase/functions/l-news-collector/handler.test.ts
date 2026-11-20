@@ -6,7 +6,7 @@ const admin = { id: 'admin', is_admin: true, status: 'active' };
 const operator = { id: 'operator', is_admin: false, status: 'active' };
 const disabled = { id: 'disabled', is_admin: true, status: 'disabled' };
 
-function fixture(hasMonitorAccess = true, monitorEnabled = true) {
+function fixture(hasMonitorAccess = true, monitorEnabled = true, catalog: Record<string,unknown>[] = []) {
   const tables: Record<string, Record<string, unknown>[]> = {
     monitor_profiles: [admin, operator, disabled],
     monitor_access: [{ monitor_key: 'lukashenko', enabled: monitorEnabled }],
@@ -17,7 +17,10 @@ function fixture(hasMonitorAccess = true, monitorEnabled = true) {
     }],
     l_news_run_items: [{ run_id: runId, item_id: 1, role: 'new' }],
     l_news_items: [{ id: 1, ready_run_id: runId, state: 'ready', card: { document_id: 'article-1' } }],
-    l_news_sources: [],
+    l_news_sources: catalog,
+    l_news_settings: [{ enabled: true, lookback_hours: 26 }],
+    l_news_provider_state: [],
+    l_news_usage: [],
   };
   const db = {
     auth: {
@@ -33,12 +36,22 @@ function fixture(hasMonitorAccess = true, monitorEnabled = true) {
         select() { return this; },
         order() { return this; },
         eq(name: string, value: unknown) { rows = rows.filter(row => row[name] === value); return this; },
+        gte() { return this; },
         in(name: string, values: unknown[]) { rows = rows.filter(row => values.includes(row[name])); return this; },
         limit(count: number) { return Promise.resolve({ data: rows.slice(0, count) }); },
+        range(from: number, to: number) { return Promise.resolve({ data: rows.slice(from, to + 1) }); },
         maybeSingle() { return Promise.resolve({ data: rows[0] ?? null }); },
         single() { return this.maybeSingle(); },
         then(resolve: (result: { data: typeof rows }) => void) { resolve({ data: rows }); },
       };
+    },
+    async rpc(name: string, params?: Record<string, unknown>) {
+      if (name === 'l_news_wake') return { data: null };
+      if (name === 'l_news_enqueue_scoped_run' && params?.p_trigger === 'manual') {
+        equal(params.p_countries, ['KG','EG']);
+        return { data: runId };
+      }
+      throw new Error('Unexpected RPC: ' + name);
     },
   };
   return createCollectorHandler({ db, secret: () => '', perigonKey: '', newscatcherKey: '' });
@@ -95,4 +108,23 @@ Deno.test('operator grants are required and client traffic cannot write the shar
   }
   equal((await handle(post('settings', 'admin', { lookback_hours: 0 }))).status, 400);
   equal((await handle(post('register_known', 'admin', { rows: [] }))).status, 400);
+});
+
+Deno.test('status and package return catalog rows beyond 1,000 and allow a new country scope', async () => {
+  const catalog = Array.from({ length: 1048 }, (_, i) => ({
+    domain: `example${String(i).padStart(4,'0')}.com`,
+    enabled: true,
+    country: i < 1046 ? 'US' : i === 1046 ? 'EG' : 'KG',
+    coverage: {},
+  }));
+  const handle = fixture(true, true, catalog);
+  const status = await (await handle(post('status','admin'))).json();
+  equal(status.sources.length, 1048);
+  equal(status.sources.at(-1).country, 'KG');
+  equal(status.country_names.KG, 'Кыргызстан');
+  const bundle = await (await handle(post('download','admin',{ run_id: runId }))).json();
+  equal(bundle.source_metrics.length, 1048);
+  equal(bundle.source_metrics.at(-1).source_region, 'Кыргызстан');
+  equal((await handle(post('start','admin',{ countries: ['KG','EG','KG'] }))).status, 200);
+  equal((await handle(post('start','admin',{ countries: ['Kyrgyzstan'] }))).status, 400);
 });

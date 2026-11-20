@@ -1,19 +1,19 @@
 import {COUNTRY_NAMES,VERSION} from './core.ts';
-import {Runtime,must} from './providers.ts';
+import {Runtime,must,readPages} from './providers.ts';
 
 export async function bundleForRun(rt:Runtime,id:string){
  const run=must(await rt.db.from('l_news_runs').select('*').eq('id',id).single());
- const links=must(await rt.db.from('l_news_run_items').select('role,item_id').eq('run_id',id));
- const ids=links.map((r:any)=>r.item_id);const rows:any[]=[];
+ const links=await readPages<{role:string;item_id:string}>(rt.db.from('l_news_run_items').select('role,item_id').eq('run_id',id).order('item_id'));
+ const ids=links.map(link=>link.item_id);const rows:any[]=[];
  for(let i=0;i<ids.length;i+=150)rows.push(...must(await rt.db.from('l_news_items').select('*').in('id',ids.slice(i,i+150))));
  const upgrade=new Set(links.filter((r:any)=>r.role==='upgrade').map((r:any)=>r.item_id));
  const ready=rows.filter(r=>r.state==='ready'&&(r.ready_run_id===id||upgrade.has(r.id))&&r.card);
  const observed=new Set(rows.map(row=>row.source_domain));
- const catalog=must(await rt.db.from('l_news_sources').select('*').order('domain')) as {
+ const catalog=await readPages<{
   domain:string;enabled?:boolean;country:string;name:string;source_type:string;priority:string;coverage:unknown
- }[];
+ }>(rt.db.from('l_news_sources').select('*').order('domain'));
  const sources=catalog.filter(source=>observed.has(source.domain)||
-  (source.enabled!==false&&(!run.settings.country_scope||run.settings.country_scope.includes(source.country))));
+  (source.enabled!==false&&(!run.settings.countries||run.settings.countries.includes(source.country))));
  const source_metrics=sources.map((s:any)=>{
   const candidates=rows.filter(r=>r.source_domain===s.domain),included=ready.filter(r=>r.source_domain===s.domain);
   return {schema_version:'0.3',monitor_key:'lukashenko',source:s.name,domain:s.domain,source_type:s.source_type,source_region:COUNTRY_NAMES[s.country]||s.country,source_locality:null,priority:s.priority,

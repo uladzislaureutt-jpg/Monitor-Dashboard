@@ -4,6 +4,18 @@ export type Run={id:string;from_at:string;to_at:string;settings:any;warnings:any
 export type Job={id:number;run_id:string|null;kind:string;payload:any;attempts:number};
 export const must=(r:any)=>{if(r.error)throw new Error(r.error.message);return r.data;};
 
+export async function readPages<T>(
+ query: {range(from:number,to:number):PromiseLike<{data:T[]|null;error:unknown}>},
+):Promise<T[]>{
+ const size=500;
+ const rows:T[]=[];
+ for(let start=0;;start+=size){
+  const page:T[]=must(await query.range(start,start+size-1));
+  rows.push(...page);
+  if(page.length<size)return rows;
+ }
+}
+
 export async function saveState(rt:Runtime,provider:string,info:any){must(await rt.db.from('l_news_provider_state').upsert({provider,info,updated_at:new Date().toISOString()}));}
 export async function perigonLimits(rt:Runtime){
  const response=await fetch('https://api.perigon.io/v1/limits',{headers:{'x-api-key':rt.perigonKey},signal:AbortSignal.timeout(15000)});

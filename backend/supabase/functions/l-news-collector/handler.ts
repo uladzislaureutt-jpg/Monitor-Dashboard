@@ -1,5 +1,5 @@
 import {COUNTRY_NAMES,VERSION} from './core.ts';
-import {Job,Runtime,must} from './providers.ts';
+import {Job,Runtime,must,readPages} from './providers.ts';
 import {enqueue,workOne} from './worker.ts';
 import {probe} from './probe.ts';
 import {bundleForRun} from './bundle.ts';
@@ -32,10 +32,10 @@ async function status(){
   db.from('l_news_settings').select('*').single(),
   db.from('l_news_runs').select('id,number,status,from_at,to_at,settings,counters,warnings,revision,created_at,completed_at').order('created_at',{ascending:false}).limit(30),
   db.from('l_news_provider_state').select('*'),
-  db.from('l_news_sources').select('country,baseline,coverage').eq('enabled',true),
+  readPages(db.from('l_news_sources').select('country,baseline,coverage').eq('enabled',true).order('domain')),
   db.from('l_news_usage').select('provider,billable,status,credits,created_at').gte('created_at',new Date(Date.now()-32*86400000).toISOString())
  ]);
- return {version:VERSION,country_names:COUNTRY_NAMES,settings:must(settings),runs:must(runs),providers:must(providers),sources:must(sources),usage:must(usage)};
+ return {version:VERSION,country_names:COUNTRY_NAMES,settings:must(settings),runs:must(runs),providers:must(providers),sources,usage:must(usage)};
 }
 return async (req: Request): Promise<Response> => {try{
  if(req.method==='OPTIONS')return new Response(null,{status:204,headers:cors});if(req.method!=='POST')return json({error:'method_not_allowed'},405);
@@ -52,7 +52,7 @@ return async (req: Request): Promise<Response> => {try{
  if(!profile.is_admin)return json({error:'admin_required'},403);
  if(action==='start'){
   const requested=body.countries;
-  if(requested!==undefined&&(!Array.isArray(requested)||requested.length===0||requested.some(code=>typeof code!=='string'||!Object.hasOwn(COUNTRY_NAMES,code))))return json({error:'invalid_countries'},400);
+  if(requested!==undefined&&(!Array.isArray(requested)||requested.length===0||requested.some(code=>typeof code!=='string'||!/^[A-Z]{2}$/.test(code))))return json({error:'invalid_countries'},400);
   const countries=requested===undefined?null:[...new Set(requested)];
   const result=countries===null?await db.rpc('l_news_enqueue_run',{p_trigger:'manual'}):
    await db.rpc('l_news_enqueue_scoped_run',{p_trigger:'manual',p_countries:countries});

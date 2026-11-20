@@ -11248,5 +11248,4805 @@
       "perigon": "unverified",
       "newscatcher": "unverified"
     }
+  },
+  {
+    "domain": "gulfnews.com",
+    "name": "Gulf News",
+    "country": "AE",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "khaleejtimes.com",
+    "name": "Khaleej Times",
+    "country": "AE",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "thenationalnews.com",
+    "name": "The National",
+    "country": "AE",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "wam.ae",
+    "name": "Emirates News Agency · WAM",
+    "country": "AE",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "aies.at",
+    "name": "Austria Institut für Europa- und Sicherheitspolitik",
+    "country": "AT",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "krone.at",
+    "name": "Kronen Zeitung",
+    "country": "AT",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "news.joyn.at",
+    "name": "PULS 24 / JOYN News",
+    "country": "AT",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "oe24.at",
+    "name": "oe24",
+    "country": "AT",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "ceps.eu",
+    "name": "Centre for European Policy Studies",
+    "country": "BE",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "crisisgroup.org",
+    "name": "International Crisis Group",
+    "country": "BE",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "epc.eu",
+    "name": "European Policy Centre",
+    "country": "BE",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "euobserver.com",
+    "name": "EUobserver",
+    "country": "BE",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "euractiv.com",
+    "name": "Euractiv",
+    "country": "BE",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "friendsofeurope.org",
+    "name": "Friends of Europe",
+    "country": "BE",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "politico.eu",
+    "name": "POLITICO Europe",
+    "country": "BE",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "actualno.com",
+    "name": "Actualno.com",
+    "country": "BG",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "btvnovinite.bg",
+    "name": "bTV Новините",
+    "country": "BG",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "fakti.bg",
+    "name": "Fakti.bg",
+    "country": "BG",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "nova.bg",
+    "name": "NOVA Bulgaria",
+    "country": "BG",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "trud.bg",
+    "name": "Труд",
+    "country": "BG",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "genevasolutions.news",
+    "name": "Geneva Solutions",
+    "country": "CH",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "globalinitiative.net",
+    "name": "Global Initiative Against Transnational Organized Crime",
+    "country": "CH",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "graduateinstitute.ch",
+    "name": "Geneva Graduate Institute",
+    "country": "CH",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "infosperber.ch",
+    "name": "Infosperber",
+    "country": "CH",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "lecourrier.ch",
+    "name": "Le Courrier",
+    "country": "CH",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "weltwoche.ch",
+    "name": "Die Weltwoche",
+    "country": "CH",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "woz.ch",
+    "name": "WOZ Die Wochenzeitung",
+    "country": "CH",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "e15.cz",
+    "name": "e15",
+    "country": "CZ",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "english.radio.cz",
+    "name": "Radio Prague International",
+    "country": "CZ",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "europeanvalues.cz",
+    "name": "European Values Center for Security Policy",
+    "country": "CZ",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "forum24.cz",
+    "name": "Forum 24",
+    "country": "CZ",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "hlidacipes.org",
+    "name": "HlídacíPes.org",
+    "country": "CZ",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "lidovky.cz",
+    "name": "Lidovky.cz",
+    "country": "CZ",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "reportermagazin.cz",
+    "name": "Reportér",
+    "country": "CZ",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "augsburger-allgemeine.de",
+    "name": "Augsburger Allgemeine",
+    "country": "DE",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "boell.de",
+    "name": "Heinrich-Böll-Stiftung",
+    "country": "DE",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "cicero.de",
+    "name": "Cicero",
+    "country": "DE",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "domradio.de",
+    "name": "DOMRADIO.DE",
+    "country": "DE",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "ecfr.eu",
+    "name": "European Council on Foreign Relations",
+    "country": "DE",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "fes.de",
+    "name": "Friedrich-Ebert-Stiftung",
+    "country": "DE",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "freitag.de",
+    "name": "der Freitag",
+    "country": "DE",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "jungewelt.de",
+    "name": "junge Welt",
+    "country": "DE",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "kas.de",
+    "name": "Konrad-Adenauer-Stiftung",
+    "country": "DE",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "libmod.de",
+    "name": "Zentrum Liberale Moderne",
+    "country": "DE",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "lvz.de",
+    "name": "Leipziger Volkszeitung",
+    "country": "DE",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "manager-magazin.de",
+    "name": "manager magazin",
+    "country": "DE",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "mopo.de",
+    "name": "Hamburger Morgenpost",
+    "country": "DE",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "nd-aktuell.de",
+    "name": "nd",
+    "country": "DE",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "nrz.de",
+    "name": "Neue Ruhr Zeitung",
+    "country": "DE",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "rnd.de",
+    "name": "RedaktionsNetzwerk Deutschland",
+    "country": "DE",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "stuttgarter-zeitung.de",
+    "name": "Stuttgarter Zeitung",
+    "country": "DE",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "wiwo.de",
+    "name": "WirtschaftsWoche",
+    "country": "DE",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "zois-berlin.de",
+    "name": "Centre for East European and International Studies",
+    "country": "DE",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "berlingske.dk",
+    "name": "Berlingske",
+    "country": "DK",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "borsen.dk",
+    "name": "Børsen",
+    "country": "DK",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "diis.dk",
+    "name": "Danish Institute for International Studies",
+    "country": "DK",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "dr.dk",
+    "name": "DR",
+    "country": "DK",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "information.dk",
+    "name": "Information",
+    "country": "DK",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "jyllands-posten.dk",
+    "name": "Jyllands-Posten",
+    "country": "DK",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "politiken.dk",
+    "name": "Politiken",
+    "country": "DK",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "tv2.dk",
+    "name": "TV 2 Danmark",
+    "country": "DK",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "aps.dz",
+    "name": "Algérie Presse Service",
+    "country": "DZ",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "elmoudjahid.dz",
+    "name": "El Moudjahid",
+    "country": "DZ",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "elwatan.dz",
+    "name": "El Watan",
+    "country": "DZ",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "tsa-algerie.dz",
+    "name": "TSA Algérie",
+    "country": "DZ",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "aripaev.ee",
+    "name": "Äripäev",
+    "country": "EE",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "delfi.ee",
+    "name": "Delfi Estonia",
+    "country": "EE",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "err.ee",
+    "name": "ERR",
+    "country": "EE",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "icds.ee",
+    "name": "International Centre for Defence and Security",
+    "country": "EE",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "ohtuleht.ee",
+    "name": "Õhtuleht",
+    "country": "EE",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "postimees.ee",
+    "name": "Postimees",
+    "country": "EE",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "almasryalyoum.com",
+    "name": "Al-Masry Al-Youm",
+    "country": "EG",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "dailynewsegypt.com",
+    "name": "Daily News Egypt",
+    "country": "EG",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "egypttoday.com",
+    "name": "Egypt Today",
+    "country": "EG",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "english.ahram.org.eg",
+    "name": "Ahram Online",
+    "country": "EG",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "ara.cat",
+    "name": "ARA",
+    "country": "ES",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "civio.es",
+    "name": "Fundación Civio",
+    "country": "ES",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "defensa.com",
+    "name": "Defensa.com",
+    "country": "ES",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "elcomercio.es",
+    "name": "El Comercio Asturias",
+    "country": "ES",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "elcorreo.com",
+    "name": "El Correo",
+    "country": "ES",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "elespanol.com",
+    "name": "El Español",
+    "country": "ES",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "elnacional.cat",
+    "name": "El Nacional.cat",
+    "country": "ES",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "fundacionalternativas.org",
+    "name": "Fundación Alternativas",
+    "country": "ES",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "infodefensa.com",
+    "name": "Infodefensa",
+    "country": "ES",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "infolibre.es",
+    "name": "infoLibre",
+    "country": "ES",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "lavozdegalicia.es",
+    "name": "La Voz de Galicia",
+    "country": "ES",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "addisstandard.com",
+    "name": "Addis Standard",
+    "country": "ET",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "amn.gov.et",
+    "name": "Addis Media Network",
+    "country": "ET",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "ena.et",
+    "name": "Ethiopian News Agency",
+    "country": "ET",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "aamulehti.fi",
+    "name": "Aamulehti",
+    "country": "FI",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "helsinkitimes.com",
+    "name": "Helsinki Times",
+    "country": "FI",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "hybridcoe.fi",
+    "name": "European Centre of Excellence for Countering Hybrid Threats",
+    "country": "FI",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "kaleva.fi",
+    "name": "Kaleva",
+    "country": "FI",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "ts.fi",
+    "name": "Turun Sanomat",
+    "country": "FI",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "cnews.fr",
+    "name": "CNEWS",
+    "country": "FR",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "diploweb.com",
+    "name": "Diploweb",
+    "country": "FR",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "disclose.ngo",
+    "name": "Disclose",
+    "country": "FR",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "europe1.fr",
+    "name": "Europe 1",
+    "country": "FR",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "fondapol.org",
+    "name": "Fondation pour l’innovation politique",
+    "country": "FR",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "institutdelors.eu",
+    "name": "Institut Jacques Delors",
+    "country": "FR",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "institutmontaigne.org",
+    "name": "Institut Montaigne",
+    "country": "FR",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "jean-jaures.org",
+    "name": "Fondation Jean-Jaurès",
+    "country": "FR",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "lesjours.fr",
+    "name": "Les Jours",
+    "country": "FR",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "monde-diplomatique.fr",
+    "name": "Le Monde diplomatique",
+    "country": "FR",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "orientxxi.info",
+    "name": "Orient XXI",
+    "country": "FR",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "revueconflits.com",
+    "name": "Conflits",
+    "country": "FR",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "rtl.fr",
+    "name": "RTL France",
+    "country": "FR",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "streetpress.com",
+    "name": "StreetPress",
+    "country": "FR",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "tf1info.fr",
+    "name": "TF1 Info / LCI",
+    "country": "FR",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "basicint.org",
+    "name": "BASIC",
+    "country": "GB",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "belfasttelegraph.co.uk",
+    "name": "Belfast Telegraph",
+    "country": "GB",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "britishforeignpolicy.group",
+    "name": "British Foreign Policy Group",
+    "country": "GB",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "centralbanking.com",
+    "name": "Central Banking",
+    "country": "GB",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "cer.eu",
+    "name": "Centre for European Reform",
+    "country": "GB",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "cityam.com",
+    "name": "City A.M.",
+    "country": "GB",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "commonslibrary.parliament.uk",
+    "name": "House of Commons Library",
+    "country": "GB",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "economicsobservatory.com",
+    "name": "Economics Observatory",
+    "country": "GB",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "europeanleadershipnetwork.org",
+    "name": "European Leadership Network",
+    "country": "GB",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "fpc.org.uk",
+    "name": "Foreign Policy Centre",
+    "country": "GB",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "gbnews.com",
+    "name": "GB News",
+    "country": "GB",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "henryjacksonsociety.org",
+    "name": "Henry Jackson Society",
+    "country": "GB",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "heraldscotland.com",
+    "name": "The Herald Scotland",
+    "country": "GB",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "indexoncensorship.org",
+    "name": "Index on Censorship",
+    "country": "GB",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "instituteforgovernment.org.uk",
+    "name": "Institute for Government",
+    "country": "GB",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "janes.com",
+    "name": "Janes",
+    "country": "GB",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "lbc.co.uk",
+    "name": "LBC",
+    "country": "GB",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "lloydslist.com",
+    "name": "Lloyd’s List",
+    "country": "GB",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "navylookout.com",
+    "name": "Navy Lookout",
+    "country": "GB",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "observer.co.uk",
+    "name": "The Observer",
+    "country": "GB",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "scotsman.com",
+    "name": "The Scotsman",
+    "country": "GB",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "thebureauinvestigates.com",
+    "name": "The Bureau of Investigative Journalism",
+    "country": "GB",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "theloadstar.com",
+    "name": "The Loadstar",
+    "country": "GB",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "yorkshirepost.co.uk",
+    "name": "The Yorkshire Post",
+    "country": "GB",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "ahoraeg.com",
+    "name": "Ahora EG",
+    "country": "GQ",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "guineaecuatorialpress.com",
+    "name": "Guinea Ecuatorial Press",
+    "country": "GQ",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "amna.gr",
+    "name": "Athens-Macedonian News Agency",
+    "country": "GR",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "ekathimerini.com",
+    "name": "Kathimerini · English",
+    "country": "GR",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "eliamep.gr",
+    "name": "ELIAMEP",
+    "country": "GR",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "in.gr",
+    "name": "in.gr",
+    "country": "GR",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "protothema.gr",
+    "name": "Proto Thema",
+    "country": "GR",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "skai.gr",
+    "name": "SKAI",
+    "country": "GR",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "tovima.gr",
+    "name": "To Vima",
+    "country": "GR",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "hina.hr",
+    "name": "HINA",
+    "country": "HR",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "hrt.hr",
+    "name": "Hrvatska radiotelevizija",
+    "country": "HR",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "index.hr",
+    "name": "Index.hr",
+    "country": "HR",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "jutarnji.hr",
+    "name": "Jutarnji list",
+    "country": "HR",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "vecernji.hr",
+    "name": "Večernji list",
+    "country": "HR",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "24.hu",
+    "name": "24.hu",
+    "country": "HU",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "hirado.hu",
+    "name": "Híradó",
+    "country": "HU",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "hvg.hu",
+    "name": "HVG",
+    "country": "HU",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "index.hu",
+    "name": "Index",
+    "country": "HU",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "telex.hu",
+    "name": "Telex",
+    "country": "HU",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "businesspost.ie",
+    "name": "Business Post",
+    "country": "IE",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "iiea.com",
+    "name": "Institute of International and European Affairs",
+    "country": "IE",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "independent.ie",
+    "name": "Irish Independent",
+    "country": "IE",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "irishexaminer.com",
+    "name": "Irish Examiner",
+    "country": "IE",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "irishtimes.com",
+    "name": "The Irish Times",
+    "country": "IE",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "rte.ie",
+    "name": "RTÉ News",
+    "country": "IE",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "thejournal.ie",
+    "name": "The Journal",
+    "country": "IE",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "agenzianova.com",
+    "name": "Agenzia Nova",
+    "country": "IT",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "analisidifesa.it",
+    "name": "Analisi Difesa",
+    "country": "IT",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "editorialedomani.it",
+    "name": "Domani",
+    "country": "IT",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "ilmessaggero.it",
+    "name": "Il Messaggero",
+    "country": "IT",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "ilriformista.it",
+    "name": "Il Riformista",
+    "country": "IT",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "limesonline.com",
+    "name": "Limes",
+    "country": "IT",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "linkiesta.it",
+    "name": "Linkiesta",
+    "country": "IT",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "nigrizia.it",
+    "name": "Nigrizia",
+    "country": "IT",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "quotidiano.net",
+    "name": "Quotidiano Nazionale",
+    "country": "IT",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "jordantimes.com",
+    "name": "The Jordan Times",
+    "country": "JO",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "petra.gov.jo",
+    "name": "Petra",
+    "country": "JO",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "nation.africa",
+    "name": "Nation Africa",
+    "country": "KE",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "standardmedia.co.ke",
+    "name": "The Standard Kenya",
+    "country": "KE",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "the-star.co.ke",
+    "name": "The Star Kenya",
+    "country": "KE",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "24.kg",
+    "name": "24.kg",
+    "country": "KG",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "akipress.org",
+    "name": "AKIpress",
+    "country": "KG",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "kabar.kg",
+    "name": "Кабар",
+    "country": "KG",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "kaktus.media",
+    "name": "Kaktus.media",
+    "country": "KG",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "voruta.lt",
+    "name": "Voruta",
+    "country": "LT",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "leta.lv",
+    "name": "LETA",
+    "country": "LV",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "press.lv",
+    "name": "Press.lv",
+    "country": "LV",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "rebaltica.lv",
+    "name": "Re:Baltica",
+    "country": "LV",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "tv3.lv",
+    "name": "TV3 Latvija",
+    "country": "LV",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "hespress.com",
+    "name": "Hespress",
+    "country": "MA",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "mapnews.ma",
+    "name": "Maghreb Arabe Presse",
+    "country": "MA",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "medias24.com",
+    "name": "Médias24",
+    "country": "MA",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "agora.md",
+    "name": "AGORA",
+    "country": "MD",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "moldpres.md",
+    "name": "Moldpres",
+    "country": "MD",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "newsmaker.md",
+    "name": "NewsMaker",
+    "country": "MD",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "tv8.md",
+    "name": "TV8 Moldova",
+    "country": "MD",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "zdg.md",
+    "name": "Ziarul de Gardă",
+    "country": "MD",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "channelstv.com",
+    "name": "Channels Television",
+    "country": "NG",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "premiumtimesng.com",
+    "name": "Premium Times",
+    "country": "NG",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "punchng.com",
+    "name": "The Punch",
+    "country": "NG",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "ad.nl",
+    "name": "Algemeen Dagblad",
+    "country": "NL",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "bnr.nl",
+    "name": "BNR Nieuwsradio",
+    "country": "NL",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "clingendael.org",
+    "name": "Clingendael Institute",
+    "country": "NL",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "fd.nl",
+    "name": "Het Financieele Dagblad",
+    "country": "NL",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "hcss.nl",
+    "name": "The Hague Centre for Strategic Studies",
+    "country": "NL",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "nos.nl",
+    "name": "NOS",
+    "country": "NL",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "nrc.nl",
+    "name": "NRC",
+    "country": "NL",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "nu.nl",
+    "name": "NU.nl",
+    "country": "NL",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "rtl.nl",
+    "name": "RTL Nieuws",
+    "country": "NL",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "telegraaf.nl",
+    "name": "De Telegraaf",
+    "country": "NL",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "trouw.nl",
+    "name": "Trouw",
+    "country": "NL",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "volkskrant.nl",
+    "name": "de Volkskrant",
+    "country": "NL",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "aftenposten.no",
+    "name": "Aftenposten",
+    "country": "NO",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "highnorthnews.com",
+    "name": "High North News",
+    "country": "NO",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "nrk.no",
+    "name": "NRK",
+    "country": "NO",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "tv2.no",
+    "name": "TV 2 Norge",
+    "country": "NO",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "vg.no",
+    "name": "Verdens Gang",
+    "country": "NO",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "omannews.gov.om",
+    "name": "Oman News Agency",
+    "country": "OM",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "omanobserver.om",
+    "name": "Oman Observer",
+    "country": "OM",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "timesofoman.com",
+    "name": "Times of Oman",
+    "country": "OM",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "gazeta.pl",
+    "name": "Gazeta.pl",
+    "country": "PL",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "kresy24.pl",
+    "name": "Kresy24",
+    "country": "PL",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "neweasterneurope.eu",
+    "name": "New Eastern Europe",
+    "country": "PL",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "radio.bialystok.pl",
+    "name": "Polskie Radio Białystok",
+    "country": "PL",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "wprost.pl",
+    "name": "Wprost",
+    "country": "PL",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "dn.pt",
+    "name": "Diário de Notícias",
+    "country": "PT",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "expresso.pt",
+    "name": "Expresso",
+    "country": "PT",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "jn.pt",
+    "name": "Jornal de Notícias",
+    "country": "PT",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "jornaldenegocios.pt",
+    "name": "Jornal de Negócios",
+    "country": "PT",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "observador.pt",
+    "name": "Observador",
+    "country": "PT",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "publico.pt",
+    "name": "Público",
+    "country": "PT",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "rtp.pt",
+    "name": "RTP Notícias",
+    "country": "PT",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "sicnoticias.pt",
+    "name": "SIC Notícias",
+    "country": "PT",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "adevarul.ro",
+    "name": "Adevărul",
+    "country": "RO",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "agerpres.ro",
+    "name": "AGERPRES",
+    "country": "RO",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "digi24.ro",
+    "name": "Digi24",
+    "country": "RO",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "g4media.ro",
+    "name": "G4Media",
+    "country": "RO",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "hotnews.ro",
+    "name": "HotNews.ro",
+    "country": "RO",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "021.rs",
+    "name": "021.rs",
+    "country": "RS",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "europeanwesternbalkans.com",
+    "name": "European Western Balkans",
+    "country": "RS",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "novosti.rs",
+    "name": "Večernje novosti",
+    "country": "RS",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "aawsat.com",
+    "name": "Asharq Al-Awsat",
+    "country": "SA",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "alarabiya.net",
+    "name": "Al Arabiya",
+    "country": "SA",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "arabnews.com",
+    "name": "Arab News",
+    "country": "SA",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "saudigazette.com.sa",
+    "name": "Saudi Gazette",
+    "country": "SA",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "spa.gov.sa",
+    "name": "Saudi Press Agency",
+    "country": "SA",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "dagensarena.se",
+    "name": "Dagens Arena",
+    "country": "SE",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "etc.se",
+    "name": "Dagens ETC",
+    "country": "SE",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "nyteknik.se",
+    "name": "Ny Teknik",
+    "country": "SE",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "sceeus.se",
+    "name": "Stockholm Centre for Eastern European Studies",
+    "country": "SE",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "silc.se",
+    "name": "Swedish International Liberal Centre",
+    "country": "SE",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "sipri.org",
+    "name": "Stockholm International Peace Research Institute",
+    "country": "SE",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "tv4.se",
+    "name": "TV4 Nyheterna",
+    "country": "SE",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "24ur.com",
+    "name": "24ur.com",
+    "country": "SI",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "delo.si",
+    "name": "Delo",
+    "country": "SI",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "rtvslo.si",
+    "name": "RTV Slovenija",
+    "country": "SI",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "sta.si",
+    "name": "Slovenska tiskovna agencija",
+    "country": "SI",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "aktuality.sk",
+    "name": "Aktuality.sk",
+    "country": "SK",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "dennikn.sk",
+    "name": "Denník N",
+    "country": "SK",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "pravda.sk",
+    "name": "Pravda",
+    "country": "SK",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "sme.sk",
+    "name": "SME",
+    "country": "SK",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "teraz.sk",
+    "name": "TASR / Teraz.sk",
+    "country": "SK",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "asiaplus.news",
+    "name": "Asia-Plus",
+    "country": "TJ",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "avesta.tj",
+    "name": "Avesta",
+    "country": "TJ",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "jumhuriyat.tj",
+    "name": "Jumhuriyat",
+    "country": "TJ",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "khovar.tj",
+    "name": "Ховар",
+    "country": "TJ",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "apostrophe.ua",
+    "name": "Апостроф",
+    "country": "UA",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "defence-ua.com",
+    "name": "Defense Express",
+    "country": "UA",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "fakty.ua",
+    "name": "ФАКТИ",
+    "country": "UA",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "militarnyi.com",
+    "name": "Мілітарний",
+    "country": "UA",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "prm.ua",
+    "name": "Прямий",
+    "country": "UA",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "ukraineworld.org",
+    "name": "UkraineWorld",
+    "country": "UA",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "volynnews.com",
+    "name": "Волинські новини",
+    "country": "UA",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "armscontrol.org",
+    "name": "Arms Control Association",
+    "country": "US",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "belfercenter.org",
+    "name": "Belfer Center",
+    "country": "US",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "cnas.org",
+    "name": "Center for a New American Security",
+    "country": "US",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "cnbc.com",
+    "name": "CNBC",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "courthousenews.com",
+    "name": "Courthouse News Service",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "defensenews.com",
+    "name": "Defense News",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "defenseone.com",
+    "name": "Defense One",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "democracynow.org",
+    "name": "Democracy Now!",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "federalnewsnetwork.com",
+    "name": "Federal News Network",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "forbes.com",
+    "name": "Forbes",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "fpri.org",
+    "name": "Foreign Policy Research Institute",
+    "country": "US",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "gmfus.org",
+    "name": "German Marshall Fund",
+    "country": "US",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "hoover.org",
+    "name": "Hoover Institution",
+    "country": "US",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "hudson.org",
+    "name": "Hudson Institute",
+    "country": "US",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "justsecurity.org",
+    "name": "Just Security",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "kennaninstitute.org",
+    "name": "Kennan Institute",
+    "country": "US",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "lawfaremedia.org",
+    "name": "Lawfare",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "marketwatch.com",
+    "name": "MarketWatch",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "militarytimes.com",
+    "name": "Military Times",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "nationalreview.com",
+    "name": "National Review",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "newlinesinstitute.org",
+    "name": "New Lines Institute",
+    "country": "US",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "newlinesmag.com",
+    "name": "New Lines Magazine",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "newrepublic.com",
+    "name": "The New Republic",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "newsnationnow.com",
+    "name": "NewsNation",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "nti.org",
+    "name": "Nuclear Threat Initiative",
+    "country": "US",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "piie.com",
+    "name": "Peterson Institute for International Economics",
+    "country": "US",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "quincyinst.org",
+    "name": "Quincy Institute",
+    "country": "US",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "reason.com",
+    "name": "Reason",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "rollcall.com",
+    "name": "Roll Call",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "salon.com",
+    "name": "Salon",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "slate.com",
+    "name": "Slate",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "stimson.org",
+    "name": "Stimson Center",
+    "country": "US",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "thebulwark.com",
+    "name": "The Bulwark",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "thedailybeast.com",
+    "name": "The Daily Beast",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "theweek.com",
+    "name": "The Week · US",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "twz.com",
+    "name": "The War Zone",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "understandingwar.org",
+    "name": "Institute for the Study of War",
+    "country": "US",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "upi.com",
+    "name": "United Press International",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "vox.com",
+    "name": "Vox",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "warontherocks.com",
+    "name": "War on the Rocks",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "washingtontimes.com",
+    "name": "The Washington Times",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "worldpoliticsreview.com",
+    "name": "World Politics Review",
+    "country": "US",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "daryo.uz",
+    "name": "Daryo",
+    "country": "UZ",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "gazeta.uz",
+    "name": "Gazeta.uz",
+    "country": "UZ",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "kun.uz",
+    "name": "Kun.uz",
+    "country": "UZ",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "uza.uz",
+    "name": "UzA",
+    "country": "UZ",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "vaticannews.va",
+    "name": "Vatican News",
+    "country": "VA",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "dailymaverick.co.za",
+    "name": "Daily Maverick",
+    "country": "ZA",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "issafrica.org",
+    "name": "Institute for Security Studies",
+    "country": "ZA",
+    "language": null,
+    "source_type": "think_tank",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "news24.com",
+    "name": "News24",
+    "country": "ZA",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "sabcnews.com",
+    "name": "SABC News",
+    "country": "ZA",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "heraldonline.co.zw",
+    "name": "The Herald",
+    "country": "ZW",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "newsday.co.zw",
+    "name": "NewsDay Zimbabwe",
+    "country": "ZW",
+    "language": null,
+    "source_type": "media",
+    "priority": "A",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
+  },
+  {
+    "domain": "newzimbabwe.com",
+    "name": "NewZimbabwe.com",
+    "country": "ZW",
+    "language": null,
+    "source_type": "media",
+    "priority": "B",
+    "baseline": false,
+    "enabled": true,
+    "coverage": {
+      "gdelt": "unverified",
+      "perigon": "unverified",
+      "newscatcher": "unverified"
+    }
   }
 ]

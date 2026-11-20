@@ -6,7 +6,13 @@ import {zipSync,strToU8} from 'npm:fflate@0.8.2';
 function assert(x:unknown):asserts x{if(!x)throw new Error('assertion failed');}
 function equal(a:unknown,b:unknown){assert(JSON.stringify(a)===JSON.stringify(b));}
 const c={url:'https://example.com/article',title:'Analysis of regional diplomacy',lead:'',body:'',published_at:'2026-11-19T10:00:00Z',language:'en',country:'GB',domain:'example.com',provider:'test',provider_id:'1'};
-Deno.test('requested geography and multilingual query',()=>{equal(new Set(COUNTRIES).size,35);assert(QUERY.length<1000);assert(QUERY.includes('卢卡申科'));});
+Deno.test('requested geography and multilingual query',()=>{
+ equal(new Set(COUNTRIES).size,65);
+ for(const country of ['KG','UZ','TJ','HU','RO','SK','NO','AE','OM','EG','DZ','ZW','GQ']){
+  assert(COUNTRIES.includes(country));
+ }
+ assert(QUERY.length<1000);assert(QUERY.includes('卢卡申科'));
+});
 Deno.test('tracking removal preserves article IDs and path case',()=>{
  equal(urlKey('http://www.example.com/News/A/?utm_source=x&id=7#top'),'https://example.com/News/A?id=7');
  assert(urlKey('https://example.com/a?id=7')!==urlKey('https://example.com/a?id=8'));

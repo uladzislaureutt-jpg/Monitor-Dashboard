@@ -1,5 +1,5 @@
 import {Candidate,Source,batches,buildCard,contentLevel,containsName,domainOf,relevant,sha,sourceFor,urlKey,validDate} from './core.ts';
-import {Job,Run,Runtime,must,newscatcherSubscription,perigonLimits,searchGdelt,searchNewscatcher,searchPerigon} from './providers.ts';
+import {Job,Run,Runtime,must,newscatcherSubscription,perigonLimits,readPages,searchGdelt,searchNewscatcher,searchPerigon} from './providers.ts';
 import {recoverArticle} from './extraction.ts';
 import {translateCard} from './translation.ts';
 import {indexGithub} from './github.ts';
@@ -7,11 +7,13 @@ import {indexGithub} from './github.ts';
 export async function enqueue(rt:Runtime,run:string|null,kind:string,payload:any,key:string,available?:string){
  const result=await rt.db.from('l_news_jobs').upsert({run_id:run,kind,payload,dedupe_key:key,...(available?{available_at:available}:{})},{onConflict:'dedupe_key',ignoreDuplicates:true});must(result);
 }
-async function sourcesFor(rt:Runtime):Promise<Source[]>{return must(await rt.db.from('l_news_sources').select('*').eq('enabled',true).order('country').order('domain'));}
+async function sourcesFor(rt:Runtime):Promise<Source[]>{
+ return readPages<Source>(rt.db.from('l_news_sources').select('*').eq('enabled',true).order('country').order('domain'));
+}
 async function setup(rt:Runtime,job:Job,run:Run){
  const warnings:string[]=[];
  const sources=(await sourcesFor(rt)).filter(source=>run.settings.countries.includes(source.country));
- const disabled=must(await rt.db.from('l_news_sources').select('domain').eq('enabled',false)) as {domain:string}[];
+ const disabled=await readPages<{domain:string}>(rt.db.from('l_news_sources').select('domain').eq('enabled',false).order('domain'));
  const scope={source_domains:run.settings.country_scope?sources.map(source=>source.domain):[],
   excluded_domains:disabled.map(source=>source.domain)};
  try{warnings.push(...(await indexGithub(rt)).warnings);}catch{warnings.push('GitHub-индекс временно недоступен; повторы дополнительно объединяются в приложении');}

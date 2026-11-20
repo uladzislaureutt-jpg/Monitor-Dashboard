@@ -1,6 +1,17 @@
 export const VERSION = 'l-news-pilot-1';
-export const COUNTRIES = ['RU','UA','PL','LT','LV','SE','FI','DE','AT','CZ','RS','BG','CH','IT','ES','FR','GB','TR','US','CA','BR','MX','CN','JP','VN','IN','PK','IR','QA','IL','AM','GE','AZ','KZ','BE'];
-export const COUNTRY_NAMES: Record<string,string> = {RU:'Россия',UA:'Украина',PL:'Польша',LT:'Литва',LV:'Латвия',SE:'Швеция',FI:'Финляндия',DE:'Германия',AT:'Австрия',CZ:'Чехия',RS:'Сербия',BG:'Болгария',CH:'Швейцария',IT:'Италия',ES:'Испания',FR:'Франция',GB:'Великобритания',TR:'Турция',US:'США',CA:'Канада',BR:'Бразилия',MX:'Мексика',CN:'Китай',JP:'Япония',VN:'Вьетнам',IN:'Индия',PK:'Пакистан',IR:'Иран',QA:'Катар',IL:'Израиль',AM:'Армения',GE:'Грузия',AZ:'Азербайджан',KZ:'Казахстан',BE:'Бельгия'};
+export const COUNTRY_NAMES: Record<string,string> = {
+ RU:'Россия',UA:'Украина',PL:'Польша',LT:'Литва',LV:'Латвия',SE:'Швеция',FI:'Финляндия',
+ DE:'Германия',AT:'Австрия',CZ:'Чехия',RS:'Сербия',BG:'Болгария',CH:'Швейцария',IT:'Италия',
+ ES:'Испания',FR:'Франция',GB:'Великобритания',TR:'Турция',US:'США',CA:'Канада',BR:'Бразилия',
+ MX:'Мексика',CN:'Китай',JP:'Япония',VN:'Вьетнам',IN:'Индия',PK:'Пакистан',IR:'Иран',
+ QA:'Катар',IL:'Израиль',AM:'Армения',GE:'Грузия',AZ:'Азербайджан',KZ:'Казахстан',BE:'Бельгия',
+ KG:'Кыргызстан',UZ:'Узбекистан',TJ:'Таджикистан',HU:'Венгрия',RO:'Румыния',SK:'Словакия',
+ NO:'Норвегия',AE:'ОАЭ',OM:'Оман',SA:'Саудовская Аравия',JO:'Иордания',EG:'Египет',
+ DZ:'Алжир',ZW:'Зимбабве',GQ:'Экваториальная Гвинея',ZA:'ЮАР',NG:'Нигерия',KE:'Кения',
+ MA:'Марокко',ET:'Эфиопия',NL:'Нидерланды',IE:'Ирландия',DK:'Дания',PT:'Португалия',
+ GR:'Греция',EE:'Эстония',HR:'Хорватия',SI:'Словения',MD:'Молдова',VA:'Ватикан',
+};
+export const COUNTRIES = Object.keys(COUNTRY_NAMES);
 export const NAMES = ['Лукашенко','Лукашенка','Лукашэнка','Lukashenko','Lukashenka','Loukachenko','Lukaschenko','Łukaszenka','Łukaszenki','Łukaszenkę','Łukaszenką','Łukaszence','Lukaszenko','Lukašenka','Lukašenko','Lukaşenko','Lukašenko','Lukašenkos','Lukašenkas','Lukašenko','Lukashenkon','Lukașenko','卢卡申科','ルカシェンコ','لوکاشنکو','لوكاشينكو','לוקשנקו','ლუკაშენკო','Լուկաշենկո'];
 export const QUERY = [...new Set(NAMES)].map(x=>'"'+x+'"').join(' OR ');
 export const ROLE_QUERY = '"President of Belarus" OR "Belarusian president" OR "президент Беларуси" OR "президент Белоруссии" OR "prezydent Białorusi"';
