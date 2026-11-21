@@ -858,3 +858,7 @@ mod w_review_format_contract_tests {
         assert_eq!(actual,"«CNN» и «Bloomberg» привели данные");
     }
 }
+
+#[path = "event_word.rs"]
+mod event_word;
+pub use event_word::{EventReport, export_event_report_docx};

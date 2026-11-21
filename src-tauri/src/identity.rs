@@ -1,0 +1,142 @@
+use reqwest::Url;
+use rusqlite::{Connection, OptionalExtension, params};
+
+/// Same URL policy as the API worker: preserve article IDs and path case.
+/// AMP/mobile paths are aliases only when a publisher has verified them.
+pub fn url_key(value: &str) -> String {
+    let Ok(mut url) = Url::parse(value.trim()) else { return value.trim().to_string(); };
+    url.set_fragment(None);
+    if matches!(url.scheme(), "http" | "https") { let _ = url.set_scheme("https"); }
+    if let Some(host) = url.host_str().map(str::to_owned) {
+        if let Some(stripped) = host.strip_prefix("www.") { let _ = url.set_host(Some(stripped)); }
+    }
+    let path = url.path().to_string();
+    if path.len() > 1 { url.set_path(path.trim_end_matches('/')); }
+    let mut pairs: Vec<(String,String)> = url.query_pairs()
+        .filter(|(key,_)| {
+            let key=key.to_lowercase();
+            !key.starts_with("utm_") && !matches!(key.as_str(),"fbclid"|"gclid"|"yclid"|"dclid"|"mc_cid"|"mc_eid"|"ref_src"|"cmpid"|"ocid")
+        }).map(|(k,v)|(k.into_owned(),v.into_owned())).collect();
+    pairs.sort_by(|a,b|a.0.cmp(&b.0));
+    url.set_query(None);
+    if !pairs.is_empty() { let mut q=url.query_pairs_mut(); for (k,v) in &pairs { q.append_pair(k,v); } }
+    url.to_string()
+}
+
+pub fn seed_aliases(conn: &Connection) -> Result<(),String> {
+    let rows={
+        let mut stmt=conn.prepare("SELECT id,document_uid,url,normalized_url FROM documents ORDER BY id")
+            .map_err(|e| e.to_string())?;
+        stmt.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?)))
+            .map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?
+    };
+    for (id,uid,url,normalized) in rows {
+        register(conn,id,&uid,&[url,normalized])?;
+    }
+    Ok(())
+}
+
+pub fn find_document(conn:&Connection,uid:&str,urls:&[String])->Result<Option<i64>,String>{
+    for url in urls {
+        let key=url_key(url);
+        let found=conn.query_row("SELECT document_id FROM document_url_aliases WHERE url_key=?1",params![key],|r|r.get(0))
+            .optional().map_err(|e|e.to_string())?;
+        if found.is_some(){return Ok(found);}
+    }
+    conn.query_row("SELECT id FROM documents WHERE document_uid=?1 UNION ALL SELECT document_id FROM document_uid_aliases WHERE alias_uid=?1 LIMIT 1",params![uid],|r|r.get(0))
+        .optional().map_err(|e|e.to_string())
+}
+
+pub fn register(conn:&Connection,id:i64,uid:&str,urls:&[String])->Result<(),String>{
+    conn.execute("INSERT INTO document_uid_aliases(alias_uid,document_id) VALUES(?1,?2) ON CONFLICT(alias_uid) DO NOTHING",params![uid,id]).map_err(|e|e.to_string())?;
+    for url in urls {
+        let key=url_key(url);
+        conn.execute("INSERT INTO document_url_aliases(url_key,document_id) VALUES(?1,?2) ON CONFLICT(url_key) DO NOTHING",params![key,id]).map_err(|e|e.to_string())?;
+    }
+    // A flag/exclusion can arrive before the publication that introduces its alias.
+    let stable:String=conn.query_row("SELECT document_uid FROM documents WHERE id=?1",params![id],|r|r.get(0)).map_err(|e|e.to_string())?;
+    if stable!=uid {
+        conn.execute("INSERT OR IGNORE INTO moderation_flags(monitor_key,document_uid,user_id,user_name,flagged_at) SELECT monitor_key,?1,user_id,user_name,flagged_at FROM moderation_flags WHERE document_uid=?2",params![stable,uid]).map_err(|e|e.to_string())?;
+        conn.execute("INSERT OR IGNORE INTO moderation_exclusions(monitor_key,document_uid,excluded_by_name,excluded_at) SELECT monitor_key,?1,excluded_by_name,excluded_at FROM moderation_exclusions WHERE document_uid=?2",params![stable,uid]).map_err(|e|e.to_string())?;
+    }
+    Ok(())
+}
+
+pub fn stable_uid(conn:&Connection,uid:&str)->Result<String,String>{
+    let value:Option<String>=conn.query_row("SELECT d.document_uid FROM document_uid_aliases a JOIN documents d ON d.id=a.document_id WHERE a.alias_uid=?1",params![uid],|r|r.get(0)).optional().map_err(|e|e.to_string())?;
+    Ok(value.unwrap_or_else(||uid.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test] fn url_identity_keeps_article_parameters(){
+        assert_eq!(url_key("http://www.example.com/News/A/?utm_source=x&id=7#part"),"https://example.com/News/A?id=7");
+        assert_ne!(url_key("https://example.com/a?id=7"),url_key("https://example.com/a?id=8"));
+        assert_ne!(url_key("https://example.com/A"),url_key("https://example.com/a"));
+    }
+}
+
+/// Reconcile publisher-confirmed duplicates in a revised API package.
+pub fn merge_collector_duplicates(
+    conn: &Connection,
+    monitor_id: i64,
+    item_id: i64,
+    document_id: i64,
+    urls: &[String],
+    duplicate_uids: &[serde_json::Value],
+) -> Result<(), String> {
+    let keys: Vec<_> = urls.iter().map(|url| url_key(url)).collect();
+    for uid in duplicate_uids.iter().filter_map(serde_json::Value::as_str) {
+        if !uid.starts_with("lapi_") {
+            continue;
+        }
+        let row: Option<(i64, i64, String, String)> = conn.query_row(
+            r#"SELECT mi.id,d.id,d.url,d.document_uid FROM monitor_items mi JOIN documents d ON mi.document_id=d.id
+               WHERE mi.monitor_id=?1 AND d.id<>?2 AND
+                 (d.document_uid=?3 OR EXISTS(SELECT 1 FROM document_uid_aliases a WHERE a.alias_uid=?3 AND a.document_id=d.id))
+                 AND NOT EXISTS (SELECT 1 FROM monitor_items other WHERE other.document_id=d.id AND other.monitor_id<>?1)"#,
+            params![monitor_id, document_id, uid],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        ).optional().map_err(|error| error.to_string())?;
+        let Some((old_item, old_document, old_url, old_uid)) = row else { continue; };
+        if !keys.contains(&url_key(&old_url)) {
+            continue;
+        }
+        conn.execute(
+            r#"INSERT OR IGNORE INTO run_items
+               (run_id,monitor_item_id,was_primary_result,event_echo,event_echo_anchor,event_echo_sources,also_covered_by,also_covered_urls)
+               SELECT run_id,?1,was_primary_result,event_echo,event_echo_anchor,event_echo_sources,also_covered_by,also_covered_urls
+               FROM run_items WHERE monitor_item_id=?2"#,
+            params![item_id, old_item],
+        ).map_err(|error| error.to_string())?;
+        conn.execute(
+            "UPDATE document_url_aliases SET document_id=?1 WHERE document_id=?2",
+            params![document_id, old_document],
+        ).map_err(|error| error.to_string())?;
+        conn.execute(
+            "UPDATE document_uid_aliases SET document_id=?1 WHERE document_id=?2",
+            params![document_id, old_document],
+        ).map_err(|error| error.to_string())?;
+        register(conn, document_id, &old_uid, &[old_url])?;
+        if uid != old_uid {
+            register(conn, document_id, uid, &[])?;
+        }
+        conn.execute(
+            r#"UPDATE documents AS target SET
+                 (full_text,full_text_sha256,full_text_quality,full_text_extraction_strategy,full_text_transport,text_length)
+               =(SELECT full_text,full_text_sha256,full_text_quality,full_text_extraction_strategy,full_text_transport,text_length
+                 FROM documents WHERE id=?2)
+               WHERE target.id=?1 AND EXISTS(SELECT 1 FROM documents previous
+                 WHERE previous.id=?2 AND previous.full_text IS NOT NULL
+                   AND (target.full_text IS NULL OR
+                     (previous.full_text_quality='FULL_TEXT' AND COALESCE(target.full_text_quality,'')<>'FULL_TEXT') OR
+                     (COALESCE(previous.full_text_quality,'')=COALESCE(target.full_text_quality,'')
+                       AND length(previous.full_text)>length(target.full_text))))"#,
+            params![document_id, old_document],
+        ).map_err(|error| error.to_string())?;
+        conn.execute("DELETE FROM monitor_items WHERE id=?1", params![old_item])
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}

@@ -25,6 +25,9 @@ pub struct RunDescriptor {
     pub started_at: Option<String>,
     pub lookback_hours: Option<i64>,
     pub dry_run: Option<bool>,
+    pub collector: Option<String>,
+    pub collector_run_id: Option<String>,
+    pub collector_number: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -151,7 +154,10 @@ pub struct RunSummary {
     pub monitor_key: String,
     pub monitor_name: String,
     pub run_number: Option<i64>,
+    pub collector: Option<String>,
+    pub collector_number: Option<i64>,
     pub external_run_id: Option<String>,
+    pub collector_run_id: Option<String>,
     pub started_at: Option<String>,
     pub lookback_hours: Option<i64>,
     pub dry_run: Option<bool>,
@@ -160,12 +166,20 @@ pub struct RunSummary {
     pub publications: i64,
     pub sources_in_result: i64,
     pub sources_in_coverage: i64,
+    pub collector_countries: Vec<CollectorCountryCount>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CollectorCountryCount {
+    pub country: String,
+    pub sources: i64,
 }
 
 #[derive(Debug, Serialize)]
 pub struct RunPublication {
     pub id: i64,
     pub source: Option<String>,
+    pub country: Option<String>,
     pub title: String,
     pub url: String,
 }

@@ -1,0 +1,28 @@
+name: L-Monitor API collector checks
+on:
+  pull_request:
+    paths:
+      - 'backend/supabase/functions/l-news-collector/**'
+      - 'src-tauri/migrations/**'
+      - 'src-tauri/src/**'
+      - 'tests/importer-harness/**'
+      - '.github/workflows/l-news-pilot.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  collector:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno check --node-modules-dir=auto backend/supabase/functions/l-news-collector/index.ts
+      - run: deno test --node-modules-dir=auto --allow-env --allow-read backend/supabase/functions/l-news-collector/
+  importer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --locked --manifest-path tests/importer-harness/Cargo.toml

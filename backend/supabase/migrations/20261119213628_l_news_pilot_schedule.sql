@@ -1,0 +1,1 @@
+select cron.schedule('l-news-pilot-daily','7 12 * * *','select l_news_private.daily();'); select cron.schedule('l-news-pilot-worker','* * * * *','select l_news_private.wake();'); update public.l_news_settings set enabled=true,lookback_hours=26,local_time='15:07',timezone='Europe/Minsk',updated_at=now() where id=true;
