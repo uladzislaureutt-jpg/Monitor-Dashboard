@@ -1,4 +1,4 @@
-import {COUNTRIES,QUERY,urlKey,validDate,relevant,contentLevel,perigonBudget,publicUrl,sourceFor} from './core.ts';
+import {COUNTRIES,QUERY,urlKey,validDate,relevant,contentLevel,perigonBudget,publicUrl,publisherArticleKey,sourceFor} from './core.ts';
 import {extractPage,ukrainianEdition} from './extraction.ts';
 import {translateCard,validRussianCard} from './translation.ts';
 import type {Job,Runtime} from './providers.ts';
@@ -119,4 +119,31 @@ Deno.test('24 Kanal groups only publisher-declared translations on the same host
  equal(ukrainianEdition(ru,page.alternatives),{primary:uk,aliases:[uk,ru,en]});
  equal(ukrainianEdition('https://24tv.ua/unrelated_n3184000',page.alternatives),null);
  equal(ukrainianEdition(ru,[{language:'uk',url:'https://example.com/interview_n1'},{language:'ru',url:ru}]),null);
+});
+
+Deno.test('same publisher article ID survives different Ukrainian and Russian URL paths',()=>{
+ const tsn='https://tsn.ua/svit/lukashenko-doruchyv-pidhotovku-3222839.html';
+ equal(publisherArticleKey(tsn),'edition:tsn.ua:3222839');
+ equal(publisherArticleKey('https://www.tsn.ua/ru/svit/lukashenko-poruchil-podgotovku-3222839.html?utm_source=fixture'),publisherArticleKey(tsn));
+ assert(publisherArticleKey(tsn)!==publisherArticleKey(tsn.replace('3222839','3222555')));
+ const pravda='https://www.pravda.com.ua/articles/2026/11/20/8063865/';
+ equal(publisherArticleKey(pravda),'edition:pravda.com.ua:8063865');
+ equal(publisherArticleKey(pravda.replace('/articles','/rus/articles')),publisherArticleKey(pravda));
+ equal(publisherArticleKey(pravda.replace('/articles','/eng/articles')),publisherArticleKey(pravda));
+ equal(publisherArticleKey('https://sport.pravda.com.ua/articles/2026/11/20/8063865/'),null);
+ equal(publisherArticleKey('https://tsn.ua/ru/tags/category-3222839'),null);
+ equal(publisherArticleKey('https://24tv.ua/news/some-article_n3183327'),null);
+ const rbc='https://www.rbc.ua/ukr/news/same-story-1795089124.html';
+ equal(publisherArticleKey(rbc),publisherArticleKey(rbc.replace('/ukr/','/rus/')+'/amp'));
+ assert(publisherArticleKey(rbc)!==publisherArticleKey(rbc.replace('same-story','other-story')));
+});
+
+Deno.test('other Ukrainian publishers require an article and a same-host language link to itself',()=>{
+ const uk='https://example.ua/news/one-local-article';
+ const ru='https://example.ua/ru/news/one-translated-article';
+ const alternatives=[{language:'uk-UA',url:uk},{language:'ru',url:ru}];
+ equal(ukrainianEdition(ru,alternatives),null);
+ equal(ukrainianEdition(ru,alternatives,true),{primary:uk,aliases:[uk,ru]});
+ equal(ukrainianEdition(ru,[{language:'uk',url:'https://example.ua/uk'},alternatives[1]],true),null);
+ equal(ukrainianEdition(ru,[{language:'uk',url:'https://other.ua/news/another-topic-article'},alternatives[1]],true),null);
 });

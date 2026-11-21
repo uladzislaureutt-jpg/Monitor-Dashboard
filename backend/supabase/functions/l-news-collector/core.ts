@@ -37,6 +37,19 @@ export function urlKey(value:string):string {
  u.searchParams.sort();if(u.pathname.length>1)u.pathname=u.pathname.replace(/\/+$/,'');return u.href;
 }
 export function domainOf(value:string):string {try{return new URL(value).hostname.toLowerCase().replace(/^www\./,'');}catch{return '';}}
+export function publisherArticleKey(value: string): string | null {
+ const domain = domainOf(value);
+ if (!['tsn.ua', 'pravda.com.ua', 'rbc.ua'].includes(domain)) return null;
+ const path = new URL(value).pathname.replace(/\/+$/, '');
+ if (domain === 'rbc.ua') {
+  const articlePath = path.match(/^\/(?:(?:rus|ukr|eng)\/)?(news\/[^/]+-[0-9]{10}\.html)(?:\/amp)?$/i)?.[1];
+  return articlePath ? `edition:https://rbc.ua/${articlePath}` : null;
+ }
+ const id = domain === 'tsn.ua'
+  ? path.match(/^\/(?:[^/]+\/)+[^/]+-([0-9]{6,10})\.html$/i)?.[1]
+  : path.match(/^\/(?:(?:rus|eng|ukr)\/)?(?:news|articles|columns|interview)\/[0-9]{4}\/[0-9]{2}\/[0-9]{2}\/([0-9]{6,10})$/i)?.[1];
+ return id ? `edition:${domain}:${id}` : null;
+}
 export function sourceFor(value:string,sources:Source[]):Source|undefined {
  const domain=domainOf(value);
  // The root Euronews domain is the English edition. Other editions have their own domains.

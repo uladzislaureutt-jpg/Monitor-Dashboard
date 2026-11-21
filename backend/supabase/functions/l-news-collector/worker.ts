@@ -1,4 +1,4 @@
-import {Candidate,Source,batches,buildCard,contentLevel,containsName,domainOf,relevant,sha,sourceFor,urlKey,validDate} from './core.ts';
+import {Candidate,Source,batches,buildCard,contentLevel,containsName,domainOf,publisherArticleKey,relevant,sha,sourceFor,urlKey,validDate} from './core.ts';
 import {Job,Run,Runtime,must,newscatcherSubscription,perigonLimits,readPages,searchNewscatcher,searchPerigon} from './providers.ts';
 import {searchGdelt} from './gdelt.ts';
 import {recoverArticle} from './extraction.ts';
@@ -45,7 +45,9 @@ async function ingest(rt:Runtime,job:Job,run:Run,candidates:Candidate[],sources:
   must(await rt.db.rpc('l_news_source_seen',{p_domain:source.domain,p_provider:c.provider,p_published:c.published_at}));
   const observation={run_id:run.id,provider:c.provider,provider_id:c.provider_id,url:c.url,content_level:contentLevel(c.body,!!c.paywall,!!c.content_truncated)};
   const already=must(await rt.db.from('l_news_observations').select('id').eq('run_id',run.id).eq('provider',c.provider).eq('provider_id',c.provider_id).maybeSingle());if(already){counts.duplicates++;continue;}
-  const alias=must(await rt.db.from('l_news_url_aliases').select('item_id').eq('alias',key).maybeSingle());
+  const edition=publisherArticleKey(key);
+  let alias=must(await rt.db.from('l_news_url_aliases').select('item_id').eq('alias',key).maybeSingle());
+  if(!alias&&edition)alias=must(await rt.db.from('l_news_url_aliases').select('item_id').eq('alias',edition).maybeSingle());
   let item=alias?must(await rt.db.from('l_news_items').select('*').eq('id',alias.item_id).maybeSingle()):must(await rt.db.from('l_news_items').select('*').eq('canonical_url',key).maybeSingle());
   if(!item){
    const known=must(await rt.db.from('l_news_known_urls').select('*').eq('canonical_url',key).maybeSingle());
@@ -60,7 +62,10 @@ async function ingest(rt:Runtime,job:Job,run:Run,candidates:Candidate[],sources:
   must(await rt.db.from('l_news_observations').insert({...observation,item_id:item.id,disposition:state}));
   must(await rt.db.from('l_news_items').update({last_seen_at:new Date().toISOString()}).eq('id',item.id));
   must(await rt.db.from('l_news_run_items').upsert({run_id:run.id,item_id:item.id,role:item.state==='ready'?'seen':'new'},{onConflict:'run_id,item_id',ignoreDuplicates:true}));
-  if(item.state==='ready'){counts.duplicates++;continue;}
+  if(item.state==='ready'){
+   if(edition)must(await rt.db.rpc('l_news_claim_alias',{p_alias:key,p_item:item.id}));
+   counts.duplicates++;continue;
+  }
   if(item.state==='rejected'){counts.excluded++;continue;}
   if(c.body.length>String(item.original?.body||'').length){must(await rt.db.from('l_news_items').update({original:c,state:'pending'}).eq('id',item.id));}
   await enqueue(rt,run.id,'article',{item_id:item.id},run.id+':article:'+item.id);counts.kept++;
@@ -70,7 +75,7 @@ async function ingest(rt:Runtime,job:Job,run:Run,candidates:Candidate[],sources:
 
 async function article(rt:Runtime,job:Job,run:Run,sources:Source[]){
  const item=must(await rt.db.from('l_news_items').select('*').eq('id',job.payload.item_id).single());
- if(item.state==='ready')return {duplicate:true};
+ if(item.state==='ready'||item.reason==='canonical_duplicate')return {duplicate:true};
  const source=sources.find(s=>s.domain===item.source_domain);if(!source)throw new Error('source_not_in_catalog');
  let c=item.original as Candidate;let level=item.content_level,strategy='provider',attempts:any[]=[];
  // Persist extraction independently of translation, so retries reuse its bytes.
@@ -81,7 +86,9 @@ async function article(rt:Runtime,job:Job,run:Run,sources:Source[]){
  const rel=relevant(c);
  if(!published||!rel.pass){const reason=!published?'unconfirmed_or_outside_publication_window':rel.reason;must(await rt.db.from('l_news_items').update({state:'rejected',reason,updated_at:new Date().toISOString()}).eq('id',item.id));return {rejected:true,reason};}
  c.published_at=published;
- const canonical=urlKey(c.identity_url||c.canonical||c.url);const owner=must(await rt.db.rpc('l_news_claim_alias',{p_alias:canonical,p_item:item.id}));
+ const canonical=urlKey(c.identity_url||c.canonical||c.url);
+ const edition=publisherArticleKey(c.url)??(c.identity_url?`edition:${canonical}`:null);
+ const owner=edition?item.id:must(await rt.db.rpc('l_news_claim_alias',{p_alias:canonical,p_item:item.id}));
  if(owner!==item.id){
   must(await rt.db.from('l_news_url_aliases').update({item_id:owner}).eq('item_id',item.id));
   must(await rt.db.from('l_news_observations').update({item_id:owner,disposition:'canonical_duplicate'}).eq('item_id',item.id));
@@ -90,11 +97,18 @@ async function article(rt:Runtime,job:Job,run:Run,sources:Source[]){
   must(await rt.db.from('l_news_items').update({state:'rejected',reason:'canonical_duplicate'}).eq('id',item.id));
   await enqueue(rt,run.id,'article',{item_id:owner},run.id+':article:'+owner);return {duplicate:true};
  }
- for(const alias of c.aliases??[])await rt.db.rpc('l_news_claim_alias',{p_alias:urlKey(alias),p_item:item.id}).then(must);
+ if(!edition)for(const alias of c.aliases??[])await rt.db.rpc('l_news_claim_alias',{p_alias:urlKey(alias),p_item:item.id}).then(must);
  if(source.domain==='fontanka.ru'&&/\/comments\/?$/.test(new URL(c.url).pathname))c={...c,url:urlKey(c.url)};
  const known=must(await rt.db.from('l_news_known_urls').select('*').eq('canonical_url',canonical).maybeSingle());
  if(known&&String(known.origin).startsWith('github')){
   must(await rt.db.from('l_news_items').update({state:'rejected',reason:'already_reported_github'}).eq('id',item.id));return {already_reported_github:true};
+ }
+ if(edition){
+  const registered=must(await rt.db.from('l_news_url_aliases').select('item_id').eq('alias',edition).maybeSingle());
+  if(registered&&registered.item_id!==item.id){
+   must(await rt.db.rpc('l_news_merge_edition',{p_winner:registered.item_id,p_duplicate:item.id}));
+   return {duplicate:true};
+  }
  }
  const excerpt=rel.review?rel.evidence:(c.lead||c.body.slice(0,800));
  const translated=await translateCard(rt,job,run,c,source,excerpt,rel.review);
@@ -107,6 +121,14 @@ async function article(rt:Runtime,job:Job,run:Run,sources:Source[]){
  (card.provenance as any).translation_provider=translated.route;(card.provenance as any).extraction_strategy=strategy;
  (card.provenance as any).relevance_reason=rel.review?'context_confirmed':rel.reason;
  const full=c.body.length>=350?{schema_version:'0.3',monitor_key:'lukashenko',document_id:uid,text:c.body,text_sha256:await sha(c.body),text_length:c.body.length,quality:level,extraction_strategy:strategy,transport:c.provider}:null;
+ if(edition){
+  const result=must(await rt.db.rpc('l_news_publish_edition',{
+   p_key:edition,p_item:item.id,p_run:run.id,p_canonical:canonical,
+   p_aliases:[...new Set([canonical,item.canonical_url,...(c.aliases??[]).map(urlKey)])],
+   p_card:card,p_full_text:full,p_level:level,p_published:published,
+  }));
+  return result?{ready:true,level,translation:translated.route,extraction:strategy}:{duplicate:true};
+ }
  const revision=must(await rt.db.rpc('l_news_new_revision'));
  must(await rt.db.from('l_news_items').update({state:'ready',reason:null,card,full_text:full,content_level:level,published_at:published,ready_at:new Date().toISOString(),ready_run_id:run.id,revision,updated_at:new Date().toISOString()}).eq('id',item.id));
  must(await rt.db.from('l_news_known_urls').upsert({canonical_url:canonical,document_uid:uid,origin:'api_collector',content_level:level,aliases:[item.canonical_url],observed_at:new Date().toISOString()},{onConflict:'canonical_url'}));

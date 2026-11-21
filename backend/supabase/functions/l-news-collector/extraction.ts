@@ -2,7 +2,7 @@ import {load} from 'npm:cheerio@1.0.0-rc.12';
 import {Readability} from 'npm:@mozilla/readability@0.6.0';
 import {parseHTML} from 'npm:linkedom@0.18.12';
 import ipaddr from 'npm:ipaddr.js@2.2.0';
-import {Candidate,Source,clean,contentLevel,domainOf,publicUrl,sourceFor,urlKey} from './core.ts';
+import {Candidate,Source,clean,contentLevel,domainOf,publicUrl,publisherArticleKey,sourceFor,urlKey} from './core.ts';
 import {Job,Run,Runtime,must,reserve} from './providers.ts';
 
 const MAX_BYTES=1500000;
@@ -29,10 +29,10 @@ export async function fetchPage(url:string):Promise<{html:string;url:string;stat
  }throw new Error('too_many_redirects');
 }
 export function extractPage(html:string,url:string){
- const $=load(html);let body='',published:string|null=null,paywall=false;
+ const $=load(html);let body='',published:string|null=null,paywall=false,articlePage=$('meta[property="og:type"]').attr('content')==='article';
  function walk(v:any){if(!v||typeof v!=='object')return;if(v.isAccessibleForFree===false||v.isAccessibleForFree==='false')paywall=true;
   if(typeof v.articleBody==='string'&&v.articleBody.length>body.length){body=v.articleBody;published=v.datePublished||published;}
-  if(/Article|Posting|Report/i.test(String(v['@type']||''))&&v.datePublished)published=String(v.datePublished);
+  if(/Article|Posting|Report/i.test(String(v['@type']||''))&&v.datePublished){articlePage=true;published=String(v.datePublished);}
   for(const child of Object.values(v)){if(child&&typeof child==='object')Array.isArray(child)?child.forEach(walk):walk(child);}}
  $('script[type="application/ld+json"]').each((_i,e)=>{try{walk(JSON.parse($(e).text()));}catch{/* malformed publisher metadata */}});
  const title=clean($('meta[property="og:title"]').attr('content')||$('h1').first().text()||$('title').text());
@@ -46,21 +46,26 @@ export function extractPage(html:string,url:string){
  if(body.length<350){$('script,style,nav,header,footer,aside,[class*="related"],[class*="recommend"]').remove();const nodes=$('article p,[itemprop="articleBody"] p,main p').toArray().map(e=>clean($(e).text())).filter(t=>t.length>40);if(nodes.join('\n\n').length>body.length)body=nodes.join('\n\n');}
  body=body.split(/\n+/).map(clean).filter(Boolean).join('\n\n').slice(0,150000);
  if(/subscribe to (?:continue|read)|подпишитесь.{0,25}читать|доступно.{0,15}подписчик|abonnez.vous pour lire|subscription required/i.test(body))paywall=true;
- return {body,title,lead,published,paywall,alternatives,canonical:canonical?new URL(canonical,url).href:null,amp:amp?new URL(amp,url).href:null};
+ return {body,title,lead,published,paywall,articlePage,alternatives,canonical:canonical?new URL(canonical,url).href:null,amp:amp?new URL(amp,url).href:null};
 }
-export function ukrainianEdition(url:string, alternatives:{language?:string;url?:string}[]) {
+export function ukrainianEdition(url:string, alternatives:{language?:string;url?:string}[], articlePage = false) {
  const host=domainOf(url);
- if(host!=='24tv.ua'&&!host.endsWith('.24tv.ua'))return null;
+ const channel24=host==='24tv.ua'||host.endsWith('.24tv.ua');
+ if(!channel24&&!articlePage)return null;
  const editions:Record<string,string>={};
  for(const alternate of alternatives){
-  if(!alternate.language||!['uk','ru','en'].includes(alternate.language)||!alternate.url)continue;
+  const language=alternate.language?.split('-')[0]??'';
+  if(!['uk','ru','en'].includes(language)||!alternate.url)continue;
   try{
    const target=urlKey(new URL(alternate.url,url).href);
-   if(domainOf(target)===host&&/_n[0-9]+$/.test(new URL(target).pathname))editions[alternate.language]=target;
+   const path=new URL(target).pathname;
+   const isArticle=channel24?/_n[0-9]+$/.test(path):/\/(?:[0-9]{5,}|[\w]+(?:-[\w]+){2,})(?:\.html)?$/i.test(path);
+   if(domainOf(target)===host&&isArticle)editions[language]=target;
   }catch{/* ignore unusable metadata */}
  }
  const primary=editions.uk;
- return primary&&Object.values(editions).includes(urlKey(url))?{primary,aliases:Object.values(editions)}:null;
+ const aliases=[...new Set(Object.values(editions))];
+ return primary&&aliases.length>1&&aliases.includes(urlKey(url))?{primary,aliases}:null;
 }
 function sameArticle(title:string,other:string):boolean {
  const a=title.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu)||[],b=other.toLowerCase();return !a.length||a.filter(t=>b.includes(t)).length>=Math.min(3,Math.ceil(a.length*.35));
@@ -69,12 +74,12 @@ export async function recoverArticle(rt:Runtime,job:Job,run:Run,c:Candidate,sour
  const startedRecovery=Date.now();
  const originalBody=c.body;let best={...c},level=contentLevel(c.body,!!c.paywall,!!c.content_truncated),strategy=c.body?'provider_content':'provider_metadata';
  const attempts:any[]=[];
- if(level==='FULL_TEXT'&&source.domain!=='24tv.ua')return {candidate:best,level,strategy,attempts};
+ if(level==='FULL_TEXT'&&(source.country!=='UA'||publisherArticleKey(c.url)))return {candidate:best,level,strategy,attempts};
  async function accept(html:string,url:string,route:string){
   const page=extractPage(html,url);
-  const editions=ukrainianEdition(url,page.alternatives);
-  if(editions){best.identity_url=editions.primary;best.aliases=editions.aliases;}
   if(!sameArticle(c.title,page.title))return null;
+  const editions=source.country==='UA'&&ukrainianEdition(url,page.alternatives,page.articlePage);
+  if(editions){best.identity_url=editions.primary;best.aliases=editions.aliases;}
   if(page.body.length>best.body.length){best.body=page.body;best.paywall=page.paywall;best.content_truncated=false;strategy=route;}
   if(!best.lead&&page.lead)best.lead=page.lead;
   if(!best.published_at&&page.published)best.published_at=page.published;
