@@ -1173,6 +1173,50 @@ mod identity_integration_tests {
  }
 
  #[test]
+ fn assistant_story_collapses_overview_cards_and_keeps_archive_links() {
+     let dir = test_directory("monitor-assistant-story");
+     let path = dir.join("dashboard.sqlite");
+     crate::db::initialize_database(&path).unwrap();
+     let cases = [
+         ("a", "Источник А", "Лукашенко похвалил россиян, скупающих дома в белорусских деревнях",
+          "Россияне скупают пустующие дома в белорусских деревнях", ""),
+         ("b", "Источник Б", "Россиян похвалили за покупку домов в соседней стране",
+          "Похвалу гражданам России, приобретающим жильё в Белоруссии, высказал Лукашенко.", ""),
+         ("c", "Источник В", "Лукашенко словами «батьку услышали» похвалил россиян",
+          "Подробности на сайте.", "Лукашенко похвалил россиян, которые покупают дома в белорусских деревнях, и призвал соотечественников брать с них пример."),
+         ("d", "Источник Г", "Лукашенко предложил выкупать арендное жильё",
+          "Президент рассказал о решении жилищного вопроса и возможности выкупа арендного жилья.", ""),
+     ];
+     let mut package = bundle(true, "unused", "https://example.com/unused", "Preview", "SNIPPET");
+     let template = package["publications"][0].clone();
+     package["publications"] = Value::Array(cases.iter().enumerate().map(|(index, &(id, source, title, excerpt, _))| {
+         let mut item = template.clone();
+         let url = format!("https://example.com/{id}");
+         item["document_id"] = json!(id);
+         item["monitor_item_id"] = json!(format!("item_{id}"));
+         item["source"]["name"] = json!(source);
+         item["publication"]["title"] = json!(title);
+         item["publication"]["excerpt"] = json!(excerpt);
+         item["publication"]["url"] = json!(url);
+         item["publication"]["normalized_url"] = json!(url);
+         item["publication"]["published_at"] = json!(format!("2025-11-20T{:02}:00:00Z", 16-index));
+         item["publication"]["preview_image_url"] = json!(format!("https://example.com/{id}.jpg"));
+         item
+     }).collect());
+     package["run_metrics"]["final_publications"] = json!(4);
+     let body = cases[2].4;
+     package["full_texts"] = json!([{"schema_version":"0.3","monitor_key":"lukashenko","document_id":"c","text":body,"quality":"FULL_TEXT","text_length":body.chars().count()}]);
+     let imported = import_collector_bundle(&path, package).unwrap();
+     let overview = crate::db::dashboard_overview(&path, "lukashenko", None).unwrap();
+     assert_eq!(overview.stories.len(), 1);
+     assert_eq!(overview.stories[0].publications.len(), 3);
+     assert_eq!(overview.recent.len(), 2);
+     assert_eq!(overview.visuals.len(), 2);
+     assert_eq!(crate::db::l_monitor_run_publications(&path, imported.run_id).unwrap().len(), 4);
+     let _ = std::fs::remove_dir_all(dir);
+ }
+
+ #[test]
  fn assistant_package_updates_dashboard_and_country_counts() {
      let dir = test_directory("monitor-assistant-dashboard");
      let path = dir.join("dashboard.sqlite");

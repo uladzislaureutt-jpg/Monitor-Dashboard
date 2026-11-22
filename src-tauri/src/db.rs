@@ -331,7 +331,8 @@ fn publication_select() -> &'static str {
             d.preview_image_url,
             CASE WHEN NULLIF(TRIM(d.full_text),'') IS NOT NULL THEN 1 ELSE 0 END AS has_full_text,
             (SELECT COUNT(*) FROM reported_run_items ri2 WHERE ri2.monitor_item_id = mi.id) AS seen_in_runs,
-            julianday(d.published_at) AS published_day
+            julianday(d.published_at) AS published_day,
+            CASE WHEN m.monitor_key='lukashenko' THEN substr(d.full_text,1,280) END
         FROM monitor_items mi
         JOIN monitors m ON m.id = mi.monitor_id
         JOIN documents d ON d.id = mi.document_id
@@ -431,33 +432,57 @@ fn coverage_health_summary(conn:&Connection,monitor_key:&str)->Result<CoverageHe
 
 struct StoryHeadline {
     day: Option<f64>,
-    terms: HashSet<String>,
+    title: HashSet<String>,
+    lead: HashSet<String>,
 }
 
 impl StoryHeadline {
-    fn new(title: &str, day: Option<f64>) -> Self {
+    fn terms(text: &str) -> HashSet<String> {
         let common = [
             "лукаше", "белару", "белору", "презид", "сообщи", "расска", "заявил", "назвал",
             "объясн", "высказ", "сказал", "новост", "подроб", "заявле", "которы",
-            "после", "почему", "сегодн", "стало", "приэто",
+            "после", "почему", "сегодн", "стало", "приэто", "алекса", "страны", "главы",
+            "глава", "респуб", "активн", "сайте", "сайт", "читайт",
         ];
-        let normalized = title.to_lowercase().replace('ё', "е");
-        let terms = normalized.split(|character: char| !character.is_alphanumeric())
-            .filter(|word| word.chars().count() >= 4)
-            .map(|word| word.chars().take(6).collect::<String>())
+        let normalized = text.to_lowercase().replace('ё', "е");
+        normalized.split(|character: char| !character.is_alphanumeric())
+            .filter(|word| word.chars().count() >= 4 || *word == "дом")
+            .map(|word| {
+                // Known variants often used by different outlets in reports on the same fact.
+                if ["покуп", "скуп", "приобр"].into_iter().any(|stem| word.starts_with(stem)) {
+                    "покуп".to_owned()
+                } else if matches!(word, "дом" | "дома" | "доме" | "дому" | "домом")
+                    || ["домов", "домик", "домам", "домах", "жиль"].into_iter().any(|stem| word.starts_with(stem)) {
+                    "дом".to_owned()
+                } else if ["деревн", "деревен", "сельск", "село", "селе"].into_iter().any(|stem| word.starts_with(stem)) {
+                    "деревн".to_owned()
+                } else {
+                    word.chars().take(6).collect()
+                }
+            })
             .filter(|term| !common.contains(&term.as_str()))
-            .collect();
-        Self { day, terms }
+            .collect()
+    }
+
+    fn new(title: &str, lead: &str, opening: &str, day: Option<f64>) -> Self {
+        let title = Self::terms(title);
+        let lead = Self::terms(&lead.chars().take(210).collect::<String>());
+        let lead = if lead.len() >= 3 { lead } else { Self::terms(opening) };
+        Self { day, title, lead }
     }
 
     fn overlap(&self, other: &Self) -> Option<usize> {
-        let distance = (self.day? - other.day?).abs();
-        if distance > 2.0 {
+        if (self.day? - other.day?).abs() > 2.0 {
             return None;
         }
-        let shared = self.terms.intersection(&other.terms).count();
-        let smaller = self.terms.len().min(other.terms.len());
-        (shared >= 3 && shared * 5 >= smaller * 3).then_some(shared)
+        let title_overlap = self.title.intersection(&other.title).next().is_some();
+        [(&self.title, &other.title), (&self.title, &other.lead),
+         (&self.lead, &other.title), (&self.lead, &other.lead)]
+            .into_iter().take(if title_overlap { 4 } else { 3 }).filter_map(|(left, right)| {
+                let shared = left.intersection(right).count();
+                let smaller = left.len().min(right.len());
+                (shared >= 3 && shared * 5 >= smaller * 3).then_some(shared)
+            }).max()
     }
 
     fn day_key(&self) -> Option<i64> {
@@ -467,7 +492,11 @@ impl StoryHeadline {
 
 fn story_publication(row: &Row<'_>) -> rusqlite::Result<(PublicationSummary, StoryHeadline)> {
     let publication = publication_row(row)?;
-    let headline = StoryHeadline::new(&publication.title, row.get(18)?);
+    let opening: Option<String> = row.get(19)?;
+    let headline = StoryHeadline::new(
+        &publication.title, publication.excerpt.as_deref().unwrap_or_default(),
+        opening.as_deref().unwrap_or_default(), row.get(18)?,
+    );
     Ok((publication, headline))
 }
 
@@ -594,6 +623,30 @@ fn l_monitor_stories(
     Ok(stories)
 }
 
+fn latest_overview_cards(
+    conn: &Connection,
+    sql: &str,
+    monitor_key: &str,
+    period_days: Option<i64>,
+    story_ids: &HashMap<i64, i64>,
+) -> Result<Vec<PublicationSummary>, String> {
+    let mut stmt = conn.prepare(sql).map_err(|e| format!("Не удалось подготовить публикации обзора: {e}"))?;
+    let rows = stmt.query_map(params![monitor_key, period_days], publication_row)
+        .map_err(|e| format!("Не удалось прочитать публикации обзора: {e}"))?;
+    let mut displayed = HashSet::new();
+    let mut cards = Vec::with_capacity(8);
+    for row in rows {
+        let card = row.map_err(|e| format!("Не удалось собрать публикации обзора: {e}"))?;
+        if displayed.insert(story_ids.get(&card.id).copied().unwrap_or(card.id)) {
+            cards.push(card);
+            if cards.len() == 8 {
+                break;
+            }
+        }
+    }
+    Ok(cards)
+}
+
 pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i64>) -> Result<DashboardOverview, String> {
     let conn = open_database(path)?;
     let period = period_clause("d", "?2");
@@ -647,6 +700,10 @@ pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i6
     let concept_breakdown = count_points(&conn, &concept_sql, monitor_key, period_days)?;
     let person_breakdown = person_breakdown(&conn, &base, monitor_key, period_days)?;
     let stories = l_monitor_stories(&conn, monitor_key, period_days)?;
+    let story_ids = stories.iter().flat_map(|story| story.publications.iter()
+        .map(move |publication| (publication.id, story.representative.id)))
+        .collect::<HashMap<_, _>>();
+    let card_limit = if story_ids.is_empty() { "LIMIT 8" } else { "" };
 
     // SEP dashboard: prefer stories with explicit cross-media coverage.
     // A primary publication + at least one `also_covered_by`/echo source is
@@ -695,22 +752,16 @@ pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i6
     let coverage_health = coverage_health_summary(&conn, monitor_key)?;
 
     let visuals_sql = format!(
-        "{} WHERE m.monitor_key=?1 AND {} AND NOT EXISTS (SELECT 1 FROM moderation_flags mf WHERE mf.monitor_key=m.monitor_key AND mf.document_uid=d.document_uid) AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid) AND NULLIF(TRIM(d.preview_image_url),'') IS NOT NULL ORDER BY COALESCE(datetime(d.published_at), datetime(d.last_seen_at), datetime(d.first_seen_at)) DESC, mi.id DESC LIMIT 8",
+        "{} WHERE m.monitor_key=?1 AND {} AND NOT EXISTS (SELECT 1 FROM moderation_flags mf WHERE mf.monitor_key=m.monitor_key AND mf.document_uid=d.document_uid) AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid) AND NULLIF(TRIM(d.preview_image_url),'') IS NOT NULL ORDER BY COALESCE(datetime(d.published_at), datetime(d.last_seen_at), datetime(d.first_seen_at)) DESC, mi.id DESC {card_limit}",
         publication_select(), period
     );
-    let mut visuals_stmt = conn.prepare(&visuals_sql).map_err(|e| format!("Не удалось подготовить визуальные материалы: {e}"))?;
-    let visuals_rows = visuals_stmt.query_map(params![monitor_key, period_days], publication_row)
-        .map_err(|e| format!("Не удалось прочитать визуальные материалы: {e}"))?;
-    let visuals = visuals_rows.collect::<Result<Vec<_>, _>>().map_err(|e| format!("Не удалось собрать визуальные материалы: {e}"))?;
+    let visuals = latest_overview_cards(&conn, &visuals_sql, monitor_key, period_days, &story_ids)?;
 
     let recent_sql = format!(
-        "{} WHERE m.monitor_key=?1 AND {} AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid) ORDER BY COALESCE(datetime(d.published_at), datetime(d.last_seen_at), datetime(d.first_seen_at)) DESC, mi.id DESC LIMIT 8",
+        "{} WHERE m.monitor_key=?1 AND {} AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid) ORDER BY COALESCE(datetime(d.published_at), datetime(d.last_seen_at), datetime(d.first_seen_at)) DESC, mi.id DESC {card_limit}",
         publication_select(), period
     );
-    let mut recent_stmt = conn.prepare(&recent_sql).map_err(|e| format!("Не удалось подготовить последние публикации: {e}"))?;
-    let recent_rows = recent_stmt.query_map(params![monitor_key, period_days], publication_row)
-        .map_err(|e| format!("Не удалось прочитать последние публикации: {e}"))?;
-    let recent = recent_rows.collect::<Result<Vec<_>, _>>().map_err(|e| format!("Не удалось собрать последние публикации: {e}"))?;
+    let recent = latest_overview_cards(&conn, &recent_sql, monitor_key, period_days, &story_ids)?;
 
     Ok(DashboardOverview {
         period_days,
