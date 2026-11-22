@@ -1,10 +1,48 @@
-import { day, metadataPage, publicAddress, publicArticleUrl, readPage, timeline, urlKey } from "./core.ts";
-import { organicResults } from "./providers.ts";
+import { day, eventPublicationWindow, metadataPage, publicAddress, publicArticleUrl, readPage, timeline, urlKey } from "./core.ts";
+import { organicResults, tavily } from "./providers.ts";
 
 function expect(found: unknown, want: unknown) {
   if (JSON.stringify(found) !== JSON.stringify(want)) throw new Error(`Expected ${JSON.stringify(want)}, got ${JSON.stringify(found)}`);
 }
 
+Deno.test("event search needs a start date and uses one Minsk day by default", async () => {
+  const { trace } = await import("./trace.ts");
+  const date = "2026-11-20";
+  const window = eventPublicationWindow(date, "");
+  expect(window, { from: date, through: date });
+  expect(eventPublicationWindow("", "2026-11-21"), null);
+  expect(eventPublicationWindow(date, "2026-11-19"), null);
+  expect(eventPublicationWindow(date, "2026-11-31"), null);
+  expect(eventPublicationWindow(date, "2026-11-21"), { from: date, through: "2026-11-21" });
+  if (!window) throw Error("Missing search window");
+  const windows: unknown[] = [];
+  await trace({ task: "ДТП в Браславе 20 ноября 2026 года", window, locale: "ru" }, async () => {}, {
+    tavily: async (_query, dates) => { windows.push(dates); return []; },
+    brightSearch: async (_queries, _country, dates) => { windows.push(dates); return { hits: [], failures: 0 }; },
+    openArticle: async candidate => metadataPage(candidate),
+    cloudflareConfigured: () => false,
+    eventModel: async () => null,
+  });
+  expect(windows.length > 2, true);
+  for (const dates of windows) expect(dates, window);
+});
+
+Deno.test("Tavily uses the following midnight as the end of a one-day interval", async () => {
+  const fetch = globalThis.fetch;
+  const prior = Deno.env.get("TAVILY_API_KEY");
+  try {
+    Deno.env.set("TAVILY_API_KEY", "test-key");
+    globalThis.fetch = async (_url, options) => {
+      const params = JSON.parse(String(options?.body));
+      expect([params.start_date, params.end_date], ["2026-11-30", "2026-12-01"]);
+      return Response.json({ results: [] });
+    };
+    expect(await tavily("news", { from: "2026-11-30", through: "2026-11-30" }, Date.now() + 10_000), []);
+  } finally {
+    globalThis.fetch = fetch;
+    if (prior === undefined) Deno.env.delete("TAVILY_API_KEY"); else Deno.env.set("TAVILY_API_KEY", prior);
+  }
+});
 Deno.test("the source date remains distinct from an update date", () => {
   const candidate = { url: "https://www.elysee.fr/notice" };
   const original = readPage('<main><h1>Communiqué</h1><p>Publié le 6 décembre 2024</p></main>', candidate.url, candidate);

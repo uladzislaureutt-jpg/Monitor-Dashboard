@@ -20,7 +20,7 @@ export async function tavily(query: string, window: Window, deadline: number, do
       query, max_results: 7, search_depth: "basic", auto_parameters: false,
       include_answer: false, include_raw_content: false,
       ...(domains?.length ? { include_domains: domains } : {}),
-      ...(window.from ? { start_date: window.from } : {}), ...(window.through ? { end_date: window.through } : {}),
+      ...(window.from ? { start_date: window.from } : {}), ...(window.through ? { end_date: nextDay(window.through) } : {}),
     }),
   });
   if (!response.ok) throw new Error(`tavily_http_${response.status}`);

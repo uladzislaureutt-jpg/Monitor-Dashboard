@@ -165,10 +165,10 @@ export async function trace(input: TraceInput,
     return { ...timeline([...pages.values()], resolved, input.window), checked, search: { ...search },
       warnings: [...warnings], summary, summarySources, observations, checkedAt: new Date().toISOString() };
   }
-  async function searchTavily(query: string, window = input.window, domains?: string[]) {
+  async function searchTavily(query: string, domains?: string[]) {
     if (deadline - Date.now() < 4000) return [];
     search.tavily++;
-    try { return await adapters.tavily(query, window, deadline, domains); }
+    try { return await adapters.tavily(query, input.window, deadline, domains); }
     catch (error) {
       const code = error instanceof Error ? error.message : "";
       warnings.add(/^tavily_(not_configured|format|http_\d{3})$/.test(code) ? code : "tavily_unavailable");
@@ -302,8 +302,7 @@ export async function trace(input: TraceInput,
     .filter(query => query !== base || statedDate).slice(0, 3);
   const searchFocus = newsEnabled ? makeNewsSearch(base, compact, planned?.news, input.window) : null;
   const newsSearch = searchNews(searchFocus);
-  const matches = await Promise.all([initial, ...queries.map(query => searchTavily(query,
-    query === compact && statedDate ? { from: null, through: null } : input.window))]);
+  const matches = await Promise.all([initial, ...queries.map(query => searchTavily(query))]);
   await open(rankSearch(interleave(matches), topic, variants, country), 8);
   await checkpoint("sources", snapshot());
 
@@ -342,8 +341,7 @@ export async function trace(input: TraceInput,
     const domains = !confirmedOrigin() && /мчс|гаи|росгидромет/iu.test(base)
       ? country === "by" ? ["mchs.gov.by", "mvd.gov.by", "t.me"] : country === "ru" ? ["mchs.gov.ru", "meteorf.gov.ru", "t.me"] : undefined
       : undefined;
-    const focusedWindow = confirmedOrigin() && headline && statedDate ? { from: null, through: null } : input.window;
-    await open(rankSearch(await searchTavily(precise, focusedWindow, domains),
+    await open(rankSearch(await searchTavily(precise, domains),
       topic, variants, country), 2);
     await open(follow([...pages.values()]), 2);
     if (!confirmedOrigin() && deadline - Date.now() > 14_000 && seen.size < MAX_PAGES) {
