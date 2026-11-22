@@ -385,6 +385,21 @@ fn ingest(conn: &Connection, input_path: &Path, parsed: ParsedBundle) -> Result<
     if parsed.manifest.files.entities.is_some() {
         ingest_entities(&tx, &parsed.publications, &parsed.entities, &document_ids)?;
     }
+    if parsed.input_kind == "collector-json" {
+        if let Some(withdrawn) = parsed.run_metrics["withdrawn_document_ids"].as_array() {
+            let mut remove_orphan = tx.prepare(
+                r#"DELETE FROM monitor_items
+                   WHERE monitor_id = ?1
+                     AND document_id = (SELECT id FROM documents WHERE document_uid = ?2)
+                     AND json_extract(raw_json, '$.provenance.report') = 'L-News-Assistant'
+                     AND NOT EXISTS (SELECT 1 FROM run_items WHERE monitor_item_id = monitor_items.id)"#,
+            ).map_err(|e| format!("Не удалось подготовить отзыв карточек помощника: {e}"))?;
+            for uid in withdrawn.iter().filter_map(Value::as_str) {
+                remove_orphan.execute(params![monitor_id, uid])
+                    .map_err(|e| format!("Не удалось отозвать карточку помощника: {e}"))?;
+            }
+        }
+    }
 
     write_import_log(
         &tx,
@@ -1100,6 +1115,35 @@ mod identity_integration_tests {
  }
  #[test] fn github_then_api_preserves_moderation_and_body(){check_order(false);}
  #[test] fn api_then_github_preserves_moderation_and_body(){check_order(true);}
+
+ #[test]
+ fn withdrawal_removes_assistant_only_card_and_preserves_github_card() {
+     let dir = test_directory("monitor-assistant-withdrawal");
+     let path = dir.join("test.sqlite");
+     crate::db::initialize_database(&path).unwrap();
+     let mut revised = bundle(true, "api-only", "https://example.com/only", "Preview", "SNIPPET");
+     import(&path, revised.clone());
+     import(&path, bundle(true, "api-shared", "https://example.com/shared", "API preview", "SNIPPET"));
+     import(&path, bundle(false, "gh-shared", "https://example.com/shared", "GitHub preview", "SNIPPET"));
+     revised["publications"] = json!([]);
+     revised["full_texts"] = json!([]);
+     revised["run_metrics"]["final_publications"] = json!(0);
+     revised["run_metrics"]["withdrawn_document_ids"] = json!(["api-only", "api-shared"]);
+     for _ in 0..2 {
+         import(&path, revised.clone());
+     }
+     let conn = crate::db::open_database(&path).unwrap();
+     let visible: String = conn.query_row(
+         "SELECT d.document_uid FROM monitor_items mi JOIN documents d ON mi.document_id=d.id",
+         [],
+         |row| row.get(0),
+     ).unwrap();
+     assert_eq!(visible, "api-shared");
+     assert_eq!(conn.query_row("SELECT COUNT(*) FROM monitor_items", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+     assert_eq!(conn.query_row("SELECT COUNT(*) FROM documents", [], |row| row.get::<_, i64>(0)).unwrap(), 2);
+     drop(conn);
+     let _ = std::fs::remove_dir_all(dir);
+ }
 
  #[test]
  fn migration_merges_already_imported_publisher_editions() {

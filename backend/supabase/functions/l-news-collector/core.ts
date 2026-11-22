@@ -81,10 +81,16 @@ function isHistoricalParticipationAside(title:string,lead:string,passages:Releva
 }
 
 export function relevant(candidate:Candidate,body=candidate.body):Relevance {
- const title=clean(candidate.title),lead=clean(candidate.lead),translatedTitle=clean(candidate.title_en);
- if(containsName(title))return {pass:true,reason:'name_in_title',evidence:title};
- if(containsName(translatedTitle))return {pass:true,reason:'translated_title_mention',evidence:translatedTitle};
+ const title=clean(candidate.title),lead=clean(candidate.lead);
+ const calendar=/^(?:(?:тақвими|календарь|calendar)\s+(?:амит|ниат|niat)|(?:этот день в истории|цей день в історії|on this day in history)\s*[:—–-])/iu;
+ if(calendar.test(title))return {pass:false,reason:'historical_calendar_roundup',evidence:title};
+
  const passages=new Map<string,RelevancePassage>();
+ if(containsName(title)){
+  const opening=clean(body).slice(0,1000);
+  const context=[lead.slice(0,400),opening].filter(Boolean).join('\n');
+  passages.set(title,{quote:mentionExcerpt(title),context});
+ }
  for(const text of [lead,body]){
   const sentences=text.split(/(?<=[.!?])\s+|(?<=[。！？])\s*|\n+/u).map(clean).filter(Boolean);
   for(const [index,sentence] of sentences.entries()){

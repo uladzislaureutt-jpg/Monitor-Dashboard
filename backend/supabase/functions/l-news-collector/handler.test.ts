@@ -15,8 +15,12 @@ function fixture(hasMonitorAccess = true, monitorEnabled = true, catalog: Record
       id: runId, number: 1, revision: 7, to_at: '2026-11-20T12:07:00Z',
       settings: { lookback_hours: 26 }, status: 'completed', counters: {},
     }],
-    l_news_run_items: [{ run_id: runId, item_id: 1, role: 'new' }],
-    l_news_items: [{ id: 1, ready_run_id: runId, state: 'ready', card: { document_id: 'article-1' } }],
+    l_news_run_items: [1, 2, 3].map(item_id => ({ run_id: runId, item_id, role: 'new' })),
+    l_news_items: [
+      { id: 1, ready_run_id: runId, state: 'ready', card: { document_id: 'article-1' } },
+      { id: 2, ready_run_id: runId, state: 'rejected', document_uid: 'article-2', card: { document_id: 'article-2' } },
+      { id: 3, ready_run_id: null, state: 'rejected', document_uid: 'article-3', card: null },
+    ],
     l_news_sources: catalog,
     l_news_settings: [{ enabled: true, lookback_hours: 26 }],
     l_news_provider_state: [],
@@ -108,6 +112,7 @@ Deno.test('admin and enabled operator both receive the manifest and bundle', asy
     const bundle = await download.json();
     equal(bundle.manifest.run.collector_run_id, runId);
     equal(bundle.publications, [{ document_id: 'article-1' }]);
+    equal(bundle.run_metrics.withdrawn_document_ids, ['article-2']);
     equal(bundle.revision, 7);
   }
 });

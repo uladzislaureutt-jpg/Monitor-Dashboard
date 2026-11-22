@@ -48,12 +48,36 @@ Deno.test('a historical participation aside in an unrelated article is rejected 
  const sameTopic=relevant({...c,title:'Belarus and EU academic exchange',body});
  assert(sameTopic.pass&&sameTopic.review?.length===1);
 });
+Deno.test('dated calendar digests are excluded but a current meeting reaches review',()=>{
+ const body='22 ноября 2023 года Эмомали Рахмон встретился с Александром Лукашенко.';
+ for(const title of ['КАЛЕНДАРЬ НИАТ «ХОВАР»: сегодня 22 ноября','ТАҚВИМИ АМИТ «ХОВАР»: имрӯз 22 ноябр']){
+  const result=relevant({...c,title,body});
+  equal(result.pass,false);
+  equal(result.reason,'historical_calendar_roundup');
+ }
+ const current=relevant({...c,title:'Лукашенко принял Эмомали Рахмона'});
+ assert(current.pass);
+ equal(current.review?.[0]?.quote,'Лукашенко принял Эмомали Рахмона');
+});
+Deno.test('headline labels reach review and provider translations alone are not evidence',()=>{
+ const article={...c,title:'Коментатор образив прихильницю Лукашенка Соболенко',lead:'Коментатор потрапив у скандал.',body:'Телеведучий висловився про тенісистку.'};
+ const result=relevant(article);
+ assert(result.pass);
+ equal(result.review?.[0]?.quote,article.title);
+ assert(result.review?.[0]?.context.includes(article.body));
+ const translationOnly=relevant({...article,title:'Коментатор образив Соболенко',title_en:'Commentator insults Lukashenko supporter'});
+ equal(translationOnly.pass,false);
+});
 Deno.test('context verdict rejects a passing reference and returns one translated, source-anchored draft',async()=>{
  const incidental={...c,title:'Erasmus+ in Hungary',body:'The talks concern Hungarian universities. Before 2020, the country led by Alexander Lukashenko also participated in the exchange program.'};
  const substantive={...c,title:'Units put on alert',lead:'Alexander Lukashenko ordered an inspection of border units.',body:'Alexander Lukashenko ordered an inspection of border units. The inspection covers units on the Polish border.'};
+ const headlineLabel={...c,title:'Комментатор оскорбил сторонницу Лукашенко Соболенко',lead:'Телеканал извинился за высказывание о теннисистке.',language:'ru'};
+ const directAction={...c,title:'Лукашенко выразил соболезнования после взрыва в Тбилиси',language:'ru'};
  const replies=[
   {verdict:'passing_reference'},
   {verdict:'substantive',evidence_index:0,title_ru:'Подразделения приведены в готовность',excerpt_ru:'Александр Лукашенко распорядился проверить пограничные подразделения.'},
+  {verdict:'passing_reference'},
+  {verdict:'substantive',evidence_index:0},
  ];
  const fetchOriginal=globalThis.fetch;
  const rt={secret:(key:string)=>key==='GEMINI_API_KEY'?'fixture-gemini':'',db:{
@@ -78,7 +102,13 @@ Deno.test('context verdict rejects a passing reference and returns one translate
   const ready=await translateCard(rt,job,null,substantive,source,second.evidence,second.review);
   assert(ready.accepted);
   if(ready.accepted)equal(ready.evidence,substantive.lead);
-  equal(attempts,2);
+  const label=relevant(headlineLabel);
+  equal(await translateCard(rt,job,null,headlineLabel,source,label.evidence,label.review),{accepted:false,reason:'passing_lukashenko_mention'});
+  const action=relevant(directAction);
+  const shortNews=await translateCard(rt,job,null,directAction,source,action.evidence,action.review);
+  assert(shortNews.accepted);
+  equal(shortNews.evidence,directAction.title);
+  equal(attempts,4);
  }finally{globalThis.fetch=fetchOriginal;}
 });
 Deno.test('previews and paywalls cannot become full text; CJK can',()=>{
