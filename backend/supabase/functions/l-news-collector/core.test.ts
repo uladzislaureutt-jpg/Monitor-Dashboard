@@ -79,7 +79,7 @@ Deno.test('context verdict rejects a passing reference and returns one translate
   {verdict:'passing_reference'},
   {verdict:'substantive',evidence_index:0,title_ru:'Подразделения приведены в готовность',excerpt_ru:'Александр Лукашенко распорядился проверить пограничные подразделения.'},
   {verdict:'passing_reference'},
-  {verdict:'substantive',evidence_index:0},
+  {verdict:'substantive',evidence_index:0,excerpt_ru:'Лукашенко передал соболезнования в связи со взрывом в Тбилиси.'},
  ];
  const fetchOriginal=globalThis.fetch;
  const rt={secret:(key:string)=>key==='GEMINI_API_KEY'?'fixture-gemini':'',db:{
@@ -110,6 +110,7 @@ Deno.test('context verdict rejects a passing reference and returns one translate
   const shortNews=await translateCard(rt,job,null,directAction,source,action.evidence,action.review);
   assert(shortNews.accepted);
   equal(shortNews.evidence,directAction.title);
+  equal(shortNews.lead,'Лукашенко передал соболезнования в связи со взрывом в Тбилиси.');
   equal(attempts,4);
  }finally{globalThis.fetch=fetchOriginal;}
 });
