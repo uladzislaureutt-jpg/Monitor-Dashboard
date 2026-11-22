@@ -58,6 +58,8 @@ Deno.test('dated calendar digests are excluded but a current meeting reaches rev
  const current=relevant({...c,title:'Лукашенко принял Эмомали Рахмона'});
  assert(current.pass);
  equal(current.review?.[0]?.quote,'Лукашенко принял Эмомали Рахмона');
+ const historical=relevant({...c,title:'Этот день в истории: как Лукашенко вёл переговоры'});
+ assert(historical.pass&&historical.review?.length===1);
 });
 Deno.test('headline labels reach review and provider translations alone are not evidence',()=>{
  const article={...c,title:'Коментатор образив прихильницю Лукашенка Соболенко',lead:'Коментатор потрапив у скандал.',body:'Телеведучий висловився про тенісистку.'};

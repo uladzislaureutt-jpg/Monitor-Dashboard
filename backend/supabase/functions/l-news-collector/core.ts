@@ -83,10 +83,11 @@ function isHistoricalParticipationAside(title:string,lead:string,passages:Releva
 export function relevant(candidate:Candidate,body=candidate.body):Relevance {
  const title=clean(candidate.title),lead=clean(candidate.lead);
  const calendar=/^(?:(?:тақвими|календарь|calendar)\s+(?:амит|ниат|niat)|(?:этот день в истории|цей день в історії|on this day in history)\s*[:—–-])/iu;
- if(calendar.test(title))return {pass:false,reason:'historical_calendar_roundup',evidence:title};
+ const namedInTitle=containsName(title);
+ if(!namedInTitle&&calendar.test(title))return {pass:false,reason:'historical_calendar_roundup',evidence:title};
 
  const passages=new Map<string,RelevancePassage>();
- if(containsName(title)){
+ if(namedInTitle){
   const opening=clean(body).slice(0,1000);
   const context=[lead.slice(0,400),opening].filter(Boolean).join('\n');
   passages.set(title,{quote:mentionExcerpt(title),context});
