@@ -178,7 +178,13 @@ pub fn list_runs(path: &Path, monitor_key: &str) -> Result<Vec<RunSummary>, Stri
                         ORDER BY source_count DESC, country
                     )
                 ) END,
-                json_extract(r.manifest_json,'$.run.collector_run_id')
+                json_extract(r.manifest_json,'$.run.collector_run_id'),
+                (SELECT COUNT(*) FROM reported_run_items ri
+                   JOIN monitor_items mi ON mi.id = ri.monitor_item_id
+                   JOIN documents d ON d.id = mi.document_id
+                  WHERE ri.run_id = r.id AND d.full_text IS NOT NULL
+                    AND UPPER(COALESCE(d.full_text_quality, '')) IN ('FULL_TEXT', 'FULL')),
+                (SELECT COUNT(*) FROM suppressed_l_monitor_run_items WHERE run_id = r.id)
             FROM runs r
             JOIN monitors m ON m.id = r.monitor_id
             WHERE m.monitor_key = ?1
@@ -216,6 +222,8 @@ pub fn list_runs(path: &Path, monitor_key: &str) -> Result<Vec<RunSummary>, Stri
                 collector_number: row.get(14)?,
                 collector_countries,
                 collector_run_id: row.get(16)?,
+                full_text_publications: row.get(17)?,
+                cross_collector_duplicates: row.get(18)?,
             })
         })
         .map_err(|e| format!("Не удалось прочитать список запусков: {e}"))?;

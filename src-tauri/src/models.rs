@@ -167,6 +167,8 @@ pub struct RunSummary {
     pub sources_in_result: i64,
     pub sources_in_coverage: i64,
     pub collector_countries: Vec<CollectorCountryCount>,
+    pub full_text_publications: i64,
+    pub cross_collector_duplicates: i64,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

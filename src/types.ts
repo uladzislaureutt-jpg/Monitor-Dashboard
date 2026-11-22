@@ -6,6 +6,8 @@ export type RunSummary = {
   collectorNumber: number | null;
   collectorRunId?: string | null;
   collectorCountries?: { country: string; sources: number }[];
+  fullTextPublications: number;
+  crossCollectorDuplicates: number;
   id: number;
   monitorKey: string;
   monitorName: string;

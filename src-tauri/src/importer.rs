@@ -1084,6 +1084,8 @@ mod identity_integration_tests {
   assert_eq!(conn.query_row("select count(*) from moderation_flags where document_uid=?1",params![uid],|r|r.get::<_,i64>(0)).unwrap(),1);
   let runs=crate::db::list_runs(&path,"lukashenko").unwrap();assert!(runs.iter().any(|r|r.collector.as_deref()==Some("api_assistant")));
   assert_eq!(runs.iter().map(|run| run.publications).sum::<i64>(), 1);
+  assert_eq!(runs.iter().map(|run| run.full_text_publications).sum::<i64>(), 1);
+  assert_eq!(runs.iter().map(|run| run.cross_collector_duplicates).sum::<i64>(), 1);
   conn.execute("DELETE FROM moderation_exclusions WHERE document_uid=?1", params![uid]).unwrap();
   for run in &runs {
       let expected = usize::from(run.collector.as_deref() == Some("api_assistant"));

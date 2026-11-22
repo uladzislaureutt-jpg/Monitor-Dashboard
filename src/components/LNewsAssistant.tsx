@@ -169,7 +169,7 @@ export function LNewsAssistant({
     </details>
     <p className="sync-note">Глубина от 1 до 168 часов действует для следующих ручных и плановых сборов. Ручной сбор использует общие лимиты API.</p>
     <div className="table-wrap"><table>
-      <thead><tr><th>Сбор</th><th>Состояние</th><th>Готово / полные тексты</th><th>Источники по странам</th><th>Повторы</th><th>Расход</th></tr></thead>
+      <thead><tr><th>Сбор</th><th>Состояние</th><th>Карточки в приложении / полные тексты</th><th>Источники по странам</th><th>Повторы</th><th>Расход</th></tr></thead>
       <tbody>{data?.runs.slice(0, 10).map(run => {
         const localRun = imported.get(run.id);
         const countries = localRun?.collectorCountries ?? [];
@@ -182,14 +182,14 @@ export function LNewsAssistant({
               <ul>{run.warnings.map(warning => <li key={warning}>{warningText(warning)}</li>)}</ul>
             </details>}
           </td>
-          <td>{run.counters.ready || 0} / {run.counters.full_texts || 0}</td>
+          <td>{localRun ? `${localRun.publications} / ${localRun.fullTextPublications}` : "—"}</td>
           <td>
             {countryLabels.slice(0, 6).join(" · ") || (!localRun && run.counters.ready > 0 ? "Пакет ещё не получен" : "—")}
             {countryLabels.length > 6 && <details><summary>Другие страны ({countryLabels.length - 6})</summary>
               {countryLabels.slice(6).join(" · ")}
             </details>}
           </td>
-          <td>{run.counters.already_known || 0}</td>
+          <td>{(run.counters.already_known ?? 0) + (localRun?.crossCollectorDuplicates ?? 0)}</td>
           <td>Perigon {run.counters.perigon_requests || 0}<small>Newscatcher {run.counters.newscatcher_credits || 0} кр.</small></td>
         </tr>;
       })}</tbody>
