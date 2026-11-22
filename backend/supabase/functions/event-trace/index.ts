@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { day, TASK_LIMIT } from "./core.ts";
 import { cloudflareConfigured } from "./providers.ts";
-import { newscatcherConfigured } from "./newscatcher.ts";
+import { newscatcherConfigured, newsPageLimit, type NewsAccounting } from "./newscatcher.ts";
 import { trace, type TraceInput } from "./trace.ts";
 
 const cors = {
@@ -106,15 +106,42 @@ Deno.serve(async (request: Request) => {
     };
     EdgeRuntime.waitUntil((async () => {
       let checkpointResult: unknown = null;
+      let newsRequested = false;
+      const accounting: NewsAccounting = {
+        reserve: async (page) => {
+          const { data: id, error } = await admin.rpc("l_news_reserve_call", {
+            p_run: null, p_job: null, p_provider: "newscatcher", p_endpoint: "event_articles",
+            p_page: page, p_run_limit: newsPageLimit, p_month_limit: 1800,
+          });
+          if (error) throw new Error("newscatcher_accounting_failed");
+          if (id !== null) newsRequested = true;
+          return id;
+        },
+        record: async (id, entry) => {
+          const { error } = await admin.from("l_news_usage").update({ ...entry, details: { event_run_id: run.id } }).eq("id", id);
+          if (error) throw new Error("newscatcher_accounting_failed");
+        },
+      };
       try {
         const result = await trace(payload, async (stage, result) => {
           await write({ stage, result });
           checkpointResult = result;
-        });
+        }, undefined, accounting);
         const partial = !result.entries.length || result.warnings.some((warning) => warning !== "summary_unavailable");
         await write({ status: partial ? "partial" : "complete", stage: "done", result });
       } catch {
         await write({ status: checkpointResult ? "partial" : "failed", stage: "done" }).catch(() => {});
+      } finally {
+        if (newsRequested) {
+          const { error } = await admin.from("l_news_jobs").upsert({
+            kind: "probe", payload: { pages: [], skip_perigon: true }, dedupe_key: "event-newscatcher-quota:" + run.id,
+          }, { onConflict: "dedupe_key", ignoreDuplicates: true });
+          if (error) console.error("event_newscatcher_quota_enqueue_failed", error.code);
+          else {
+            const { error: wakeError } = await admin.rpc("l_news_wake");
+            if (wakeError) console.error("event_newscatcher_quota_wake_failed", wakeError.code);
+          }
+        }
       }
     })());
     return json({ run }, 202);

@@ -17,9 +17,10 @@ type Run = {
 type Snapshot = {
   settings: { enabled: boolean; lookback_hours: number };
   runs: Run[];
-  providers: { provider: string; info: Record<string, any> }[];
+  providers: { provider: string; info: Record<string, any>; updated_at?: string }[];
   country_names?: Record<string, string>;
   sources: { country: string; baseline: boolean; coverage: Record<string, unknown> }[];
+  newscatcher_usage?: { days: number; credits: number; assistant: number; event: number; diagnostic: number; unconfirmed: number };
 };
 
 const active = (run: Run) => ["queued", "discovering", "processing"].includes(run.status);
@@ -107,7 +108,9 @@ export function LNewsAssistant({
   }
 
   const perigon = data?.providers.find(provider => provider.provider === "perigon")?.info;
-  const newscatcher = data?.providers.find(provider => provider.provider === "newscatcher")?.info;
+  const newscatcher = data?.providers.find(provider => provider.provider === "newscatcher");
+  const newsBalance = newscatcher?.info.subscription?.credits_balance ?? newscatcher?.info.balance;
+  const newsUsage = data?.newscatcher_usage;
   const limits = perigon?.limits || {};
   const latest = data?.runs[0];
   const eligibleCountries = [...new Set(data?.sources.map(source => source.country))]
@@ -120,11 +123,7 @@ export function LNewsAssistant({
   const coverage = data?.sources.filter(source => Object.values(source.coverage || {}).some(value =>
     typeof value === "object" && value !== null && "status" in value && value.status === "indexed_article_seen",
   )).length ?? 0;
-  const totals = data?.runs.reduce((sum, run) => ({
-    perigon: sum.perigon + (run.counters.perigon_requests || 0),
-    newscatcher: sum.newscatcher + (run.counters.newscatcher_requests || 0),
-    credits: sum.credits + (run.counters.newscatcher_credits || 0),
-  }), { perigon: 0, newscatcher: 0, credits: 0 });
+  const perigonTotal = data?.runs.reduce((sum, run) => sum + (run.counters.perigon_requests || 0), 0);
   const imported = new Map(importedRuns.filter(run => run.collector === "api_assistant")
     .map(run => [run.collectorRunId, run]));
 
@@ -139,10 +138,15 @@ export function LNewsAssistant({
       <article className="kpi"><strong>{data?.sources.length ?? "—"}</strong><span>Каталог · {new Set(data?.sources.map(source => source.country)).size} стран</span></article>
       <article className="kpi"><strong>{coverage}</strong><span>Источники с фактической выдачей API</span></article>
       <article className="kpi"><strong>{limits.requestsUsed ?? "—"} / {limits.requestLimit ?? 150}</strong><span>Perigon: использовано за расчётный месяц</span></article>
-      <article className="kpi"><strong>{newscatcher?.subscription?.credits_balance ?? newscatcher?.balance ?? "—"}</strong><span>Newscatcher: остаток кредитов</span></article>
+      <article className="kpi"><strong>{newsBalance ?? "—"}</strong><span>Newscatcher: остаток по данным сервиса</span>
+        {newscatcher?.updated_at && newsBalance != null && <small>Проверено {new Date(newscatcher.updated_at).toLocaleString("ru-RU", { timeZone: "Europe/Minsk" })} по Минску</small>}
+      </article>
     </div>
     <p>Perigon: одна страница — один запрос, до {limits.maxPageSize ?? 100} результатов. Лимит пилота — до 4 поисковых запросов в день, резерв — 10 в месяц. Сброс: {limits.resetAt ? new Date(limits.resetAt).toLocaleString("ru-RU", { timeZone: "Europe/Minsk" }) : "—"}.</p>
-    <p>За последние {data?.runs.length ?? 0} сборов: Perigon {totals?.perigon ?? 0} запросов; Newscatcher {totals?.newscatcher ?? 0} страниц / {totals?.credits ?? 0} кредитов. Диагностические запросы Perigon учтены в остатке выше. Каталог — список целей; доступность источников проверяется по выдаче.</p>
+    <p>Perigon за последние {data?.runs.length ?? 0} сборов — {perigonTotal ?? 0} запросов.</p>
+    {newsUsage && <p>Newscatcher за последние {newsUsage.days} дней — <strong>{newsUsage.credits} кр.</strong> · Помощник {newsUsage.assistant} кр. · Событие {newsUsage.event} кр.
+      {newsUsage.diagnostic > 0 && <> · Диагностика {newsUsage.diagnostic} кр.</>}
+      {newsUsage.unconfirmed > 0 && <> · Списание уточняется для {newsUsage.unconfirmed} зап.</>}</p>}
     <div className="sync-form">
       <label>Глубина, часов <input type="number" min={1} max={168} value={hours} onChange={event => setDraftHours(event.target.value)} /></label>
       <button className="secondary-button" disabled={busy || !data || !validHours || Number(hours) === savedHours}

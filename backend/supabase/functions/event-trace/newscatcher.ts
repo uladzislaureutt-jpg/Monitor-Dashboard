@@ -2,12 +2,18 @@ import { day, plain, publicArticleUrl, publicationDate, type Candidate, type Win
 
 const endpoint = "https://api.newscatcherapi.com/news-api/articles";
 const pageSize = 100;
+export const newsPageLimit = 8;
+const creditsPerPage = 5;
 const minInterval = 1_150;
 const twoDays = 2 * 86_400_000;
 let nextRequest = 0;
 
 export type NewsCandidate = Candidate & { publishedHint: string | null; countryHint: string };
 export type NewsSearch = { query: string; groups: string[][]; from: string; through: string };
+export type NewsAccounting = {
+  reserve: (page: number) => Promise<number | null>;
+  record: (id: number, entry: { status: number; credits: number | null; result_count: number | null; elapsed_ms: number }) => Promise<void>;
+};
 
 function key() {
   return Deno.env.get("NEWSCATCHER_API_KEY") || Deno.env.get("NEWSCATCHER_KEY") ||
@@ -48,7 +54,8 @@ export function makeNewsSearch(task: string, compact: string, plan: unknown, win
   return { query, groups, from: new Date(start).toISOString(), through: new Date(end).toISOString() };
 }
 
-export async function newscatcherPage(search: NewsSearch, page: 1 | 2, deadline: number, onAttempt: () => void) {
+export async function newscatcherPage(search: NewsSearch, page: number, deadline: number, onAttempt: () => void,
+    accounting?: NewsAccounting) {
   const apiKey = key();
   if (!apiKey) throw new Error("newscatcher_unavailable");
   const now = Date.now();
@@ -56,23 +63,38 @@ export async function newscatcherPage(search: NewsSearch, page: 1 | 2, deadline:
   if (deadline - requestAt < 2_500) throw new Error("newscatcher_window_partial");
   nextRequest = requestAt + minInterval;
   if (requestAt > now) await new Promise(resolve => setTimeout(resolve, requestAt - now));
+  const reservation = accounting ? await accounting.reserve(page) : null;
+  if (accounting && reservation === null) throw new Error("newscatcher_window_partial");
   onAttempt();
-  const response = await fetch(endpoint, {
-    method: "POST", redirect: "error",
-    signal: AbortSignal.timeout(Math.max(1, Math.min(8_000, deadline - Date.now()))),
-    headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      q: search.query, search_in: ["title_body", "title_body_translated"],
-      from_date: search.from, to_date: search.through, page, page_size: pageSize,
-      sort_by: "published_at", exclude_duplicates: false,
-    }),
-  });
-  if (!response.ok) {
-    await response.body?.cancel();
-    throw new Error(response.status === 429 ? "newscatcher_rate_limit" : "newscatcher_unavailable");
+  const started = Date.now();
+  let status = 0;
+  let count: number | null = null;
+  let result;
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST", redirect: "error",
+      signal: AbortSignal.timeout(Math.max(1, Math.min(8_000, deadline - Date.now()))),
+      headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        q: search.query, search_in: ["title_body", "title_body_translated"],
+        from_date: search.from, to_date: search.through, page, page_size: pageSize,
+        sort_by: "published_at", exclude_duplicates: false,
+      }),
+    });
+    status = response.status;
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new Error(status === 429 ? "newscatcher_rate_limit" : "newscatcher_unavailable");
+    }
+    result = await response.json();
+    if (!Array.isArray(result.results)) throw new Error("newscatcher_unavailable");
+    count = result.results.length;
+  } finally {
+    if (accounting && reservation !== null) await accounting.record(reservation, {
+      status, credits: status === 200 ? creditsPerPage : status === 0 ? null : 0,
+      result_count: count, elapsed_ms: Date.now() - started,
+    });
   }
-  const result = await response.json();
-  if (!Array.isArray(result.results)) throw new Error("newscatcher_unavailable");
   const hits = result.results.slice(0, pageSize).flatMap((row: Record<string, unknown>): NewsCandidate[] => {
     const url = publicArticleUrl(row?.url);
     if (!url) return [];
