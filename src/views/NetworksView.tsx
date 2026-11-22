@@ -1,5 +1,5 @@
 import { useMonitorAccess } from "../access";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { desktopApi } from "../api";
 import { ensureWorkroomSession, loadWorkroomConfig, loadWorkroomSession } from "../workroom";
@@ -12,7 +12,7 @@ import {
   compareOperatorReview, importNetworkCards, isTikTokVideoUrl, latestOperatorRuns, mergeNetworkCards,
   networkOperatorSection, networkSectionName, networkTrend, normalizeNetworkModeration,
   operatorReviewLabel, operatorRun, publishedTimestamp, safeTikTokPreview, selectOperatorArchive,
-  TIKTOK_SECTIONS, type NetworkCard, type NetworkModeration, type TikTokMoveSection,
+  REVIEW_LIMIT, REVIEW_PAGE_SIZE, TIKTOK_SECTIONS, type NetworkCard, type NetworkModeration, type TikTokMoveSection,
 } from "../networks";
 
 const CARDS_STORAGE_KEY = "networks.tiktok.cards.v1";
@@ -109,6 +109,22 @@ function ClipCard({ item, be, checked, flagged, decision, moderationBusy, canMod
       </div>
     </div>
   </article>;
+}
+
+function ReviewCards({ cards, be, renderCard }: {
+  cards: NetworkCard[]; be: boolean; renderCard: (card: NetworkCard) => ReactNode;
+}) {
+  const [shown, setShown] = useState(REVIEW_PAGE_SIZE);
+  const nextCount = Math.min(REVIEW_PAGE_SIZE, Math.min(cards.length, REVIEW_LIMIT) - shown);
+  return <>
+    <div className="network-card-list">{cards.slice(0, shown).map(renderCard)}</div>
+    {nextCount > 0 && <div className="network-pagination">
+      <button type="button" className="secondary-button small-button"
+        onClick={() => setShown((count) => Math.min(count + REVIEW_PAGE_SIZE, REVIEW_LIMIT))}>
+        {be ? `Яшчэ ${nextCount} на праверку` : `Ещё ${nextCount} на проверку`}
+      </button>
+    </div>}
+  </>;
 }
 
 /** The social networks never alter the active SEP/L database or its sync route. */
@@ -532,12 +548,16 @@ export function NetworksView({ page, platform, onPlatformChange }: {
         {TIKTOK_SECTIONS.map((section) => {
           const group = recent.filter((item) => networkOperatorSection(item, moderation.sections?.[item.item_id]) === section);
           if (section === "review") {
-            group.sort((a, b) => operatorRun(b) - operatorRun(a) || compareOperatorReview(a, b));
+            const reserve = (card: NetworkCard) => Number((card.operator_review_rank || 0) > REVIEW_PAGE_SIZE);
+            group.sort((a, b) => reserve(a) - reserve(b)
+              || operatorRun(b) - operatorRun(a) || compareOperatorReview(a, b));
           }
           return <section className="panel network-group" key={section}>
             <div className="panel-head"><h3>{networkSectionName(section, be)}</h3></div>
             {group.length > 0
-              ? <div className="network-card-list">{group.map(renderCard)}</div>
+              ? section === "review"
+                ? <ReviewCards key={runs.join(":")} cards={group} be={be} renderCard={renderCard} />
+                : <div className="network-card-list">{group.map(renderCard)}</div>
               : !loading && <div className="report-empty">{be ? "Няма матэрыялаў." : "Нет материалов."}</div>}
           </section>;
         })}
