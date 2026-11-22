@@ -2,6 +2,12 @@ export type ViewKey = "dashboard" | "archive" | "report" | "analytics" | "source
 export type PeriodDays = 1 | 7 | 30 | 365 | null;
 
 export type RunSummary = {
+  collector: string | null;
+  collectorNumber: number | null;
+  collectorRunId?: string | null;
+  collectorCountries?: { country: string; sources: number }[];
+  fullTextPublications: number;
+  crossCollectorDuplicates: number;
   id: number;
   monitorKey: string;
   monitorName: string;
@@ -20,6 +26,7 @@ export type RunSummary = {
 export type RunPublication = {
   id: number;
   source: string | null;
+  country: string | null;
   title: string;
   url: string;
 };
@@ -380,6 +387,7 @@ export type SyncSettings = {
 };
 
 export type SyncResult = {
+  assistantImportedRuns: number;
   checkedArtifacts: number;
   latestAvailableRun: number | null;
   latestRemoteRun: number | null;

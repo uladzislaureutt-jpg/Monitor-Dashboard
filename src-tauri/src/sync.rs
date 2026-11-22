@@ -41,6 +41,7 @@ pub struct SyncResult {
     latest_remote_run: Option<i64>,
     latest_imported_run: Option<i64>,
     imported_runs: Vec<i64>,
+    assistant_imported_runs: usize,
     skipped_dry_runs: Vec<i64>,
     already_present: usize,
     errors: Vec<String>,
@@ -257,6 +258,7 @@ pub fn sync_github(db_path: &Path, repository: &str, token: &str, monitor_key: &
         latest_remote_run,
         latest_imported_run,
         imported_runs,
+        assistant_imported_runs: 0,
         skipped_dry_runs,
         already_present,
         errors,
@@ -321,7 +323,7 @@ fn server_post_json<T: for<'de> Deserialize<'de>>(
     serde_json::from_str(&text).map_err(|e| format!("Сервер синхронизации вернул неожиданный JSON: {e}; body={text}"))
 }
 
-pub fn sync_server(
+fn sync_server_github(
     db_path: &Path,
     base_url: &str,
     anon_key: &str,
@@ -470,6 +472,7 @@ pub fn sync_server(
         latest_remote_run,
         latest_imported_run,
         imported_runs,
+        assistant_imported_runs: 0,
         skipped_dry_runs,
         already_present,
         errors,
@@ -505,4 +508,43 @@ mod tests {
         assert_eq!(artifacts[1].0, 137);
         assert_eq!(artifacts[1].1.id, 11274343220);
     }
+}
+
+
+/// Each feed is attempted even when the other one is temporarily unavailable.
+pub fn sync_server(db_path:&Path,base_url:&str,anon_key:&str,access_token:&str,monitor_key:&str)->Result<SyncResult,String>{
+    if monitor_key!=L_MONITOR_KEY{return sync_server_github(db_path,base_url,anon_key,access_token,monitor_key);}
+    let assistant=sync_assistant(db_path,base_url,anon_key,access_token);
+    let github=sync_server_github(db_path,base_url,anon_key,access_token,monitor_key);
+    match (github,assistant){
+        (Ok(mut result),Ok(n))=>{result.assistant_imported_runs=n;Ok(result)},
+        (Ok(mut result),Err(error))=>{result.errors.push(format!("Помощник: {error}"));Ok(result)},
+        (Err(error),Ok(n))=>Ok(SyncResult{checked_artifacts:0,latest_available_run:None,latest_remote_run:None,latest_imported_run:None,imported_runs:vec![],assistant_imported_runs:n,skipped_dry_runs:vec![],already_present:0,errors:vec![format!("GitHub: {error}")]}),
+        (Err(a),Err(b))=>Err(format!("GitHub: {a}; помощник: {b}")),
+    }
+}
+
+pub fn sync_assistant(db_path:&Path,base_url:&str,anon_key:&str,access_token:&str)->Result<usize,String>{
+    let base_url=validate_supabase_base_url(base_url)?;
+    let client=Client::builder().timeout(Duration::from_secs(120)).build().map_err(|e|e.to_string())?;
+    let post=|body:serde_json::Value|->Result<serde_json::Value,String>{
+        let response=client.post(format!("{base_url}/functions/v1/l-news-collector")).header("apikey",anon_key).bearer_auth(access_token).json(&body).send().map_err(|e|e.to_string())?;
+        let status=response.status();let value:serde_json::Value=response.json().map_err(|e|e.to_string())?;
+        if !status.is_success(){return Err(format!("HTTP {}: {}",status.as_u16(),value));}Ok(value)
+    };
+    let manifest=post(serde_json::json!({"action":"manifest"}))?;
+    let runs=manifest["runs"].as_array().ok_or("Нет списка запусков помощника")?;
+    let mut imported=0;
+    for run in runs.iter().rev(){
+        let id=run["id"].as_str().ok_or("Нет UUID запуска помощника")?;
+        let revision=run["revision"].to_string();let key=format!("l-assistant-revision:v2:{base_url}:{id}");
+        if db::get_app_setting(db_path,&key)?.as_deref()==Some(&revision){continue;}
+        let bundle=post(serde_json::json!({"action":"download","run_id":id}))?;
+        // Save the revision actually downloaded, since collection may advance
+        // while the manifest is in flight.
+        let downloaded_revision=bundle["revision"].to_string();
+        importer::import_collector_bundle(db_path,bundle)?;
+        db::set_app_setting(db_path,&key,&downloaded_revision)?;imported+=1;
+    }
+    Ok(imported)
 }

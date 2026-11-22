@@ -1,6 +1,7 @@
 mod db;
 mod fulltext;
 mod importer;
+mod identity;
 mod models;
 mod networks_sync;
 mod report;
@@ -561,6 +562,11 @@ fn export_report_docx(
 }
 
 #[tauri::command]
+fn export_event_report_docx(path: String, report: report::EventReport) -> Result<(), String> {
+    report::export_event_report_docx(&PathBuf::from(path), &report)
+}
+
+#[tauri::command]
 fn export_w_review_docx(
     path: String,
     text: String,
@@ -597,6 +603,12 @@ fn sync_tiktok_network_bundles(
     base_url: String, anon_key: String, access_token: String, known_runs: Vec<i64>,
 ) -> Result<networks_sync::TikTokSyncResponse, String> {
     networks_sync::fetch(base_url, anon_key, access_token, known_runs)
+}
+
+#[tauri::command]
+async fn sync_l_news_assistant(base_url:String,anon_key:String,access_token:String,state:State<'_,AppState>)->Result<usize,String>{
+    let path=state.db_path.clone();
+    tauri::async_runtime::spawn_blocking(move||sync::sync_assistant(&path,&base_url,&anon_key,&access_token)).await.map_err(|e|e.to_string())?
 }
 
 #[tauri::command]
@@ -694,11 +706,13 @@ pub fn run() {
             transcribe_local_video,
             recognize_video_screenshot,
             export_report_docx,
+            export_event_report_docx,
             export_w_review_docx,
             extract_w_review_sample,
             export_tiktok_transcript_docx,
             export_tiktok_multi_docx,
             sync_server_artifacts,
+            sync_l_news_assistant,
             sync_tiktok_network_bundles,
             replace_moderation_snapshot,
             get_app_setting,

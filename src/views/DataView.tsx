@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import type { AdminSnapshot, DatabaseStats, RunSummary, SyncSettings } from "../types";
 import { useI18n } from "../i18n";
 import { useMonitorAccess } from "../access";
+import { LNewsAssistant } from "../components/LNewsAssistant";
 import { AdminNotebook } from "../components/AdminNotebook";
 import { adminAccessAction, getAdminSnapshot, loadWorkroomConfig } from "../workroom";
 
 export function DataView({
+  monitorKey,
   stats,
   runs,
   busy,
@@ -16,6 +18,7 @@ export function DataView({
   syncBusy,
   syncStatus,
 }: {
+  monitorKey: string;
   stats: DatabaseStats | null;
   runs: RunSummary[];
   busy: boolean;
@@ -54,6 +57,7 @@ export function DataView({
     deleteUserConfirm: be ? "Цалкам выдаліць карыстальніка і яго ўліковы запіс? Гэта дзеянне нельга адмяніць." : "Полностью удалить пользователя и его учётную запись? Это действие нельзя отменить.",
   };
   const latest = runs[0] ?? null;
+  const recentRuns = runs.slice(0, 5);
   const productionRuns = runs.filter((run) => run.dryRun === false).length;
   const [form, setForm] = useState(syncSettings);
   useEffect(() => setForm(syncSettings), [syncSettings]);
@@ -90,7 +94,7 @@ export function DataView({
       {adminError && <div className="notice error">{adminError}</div>}
       <div className="admin-access-grid">
         <div className="admin-access-block"><h4>{atx.pending}</h4>{(adminSnapshot?.requests.filter((item) => item.status === "pending").length ?? 0) === 0 ? <p className="muted">{atx.noRequests}</p> : adminSnapshot?.requests.filter((item) => item.status === "pending").map((item) => <div className="admin-request-row" key={item.id}><div><b>{item.displayName}</b><span>{item.email} · {item.locale.toUpperCase()}</span></div><div><button className="primary-button small-button" disabled={adminBusy} onClick={() => adminAction({ action: "review_request", request_id: item.id, decision: "approved" })}>{atx.approve}</button><button className="ghost-button small-button" disabled={adminBusy} onClick={() => adminAction({ action: "review_request", request_id: item.id, decision: "rejected" })}>{atx.reject}</button><button className="text-danger small-button" disabled={adminBusy} onClick={() => { if (window.confirm(atx.deleteRequestConfirm)) void adminAction({ action: "delete_request", request_id: item.id }); }}>{atx.delete}</button></div></div>)}</div>
-        <div className="admin-access-block"><h4>{atx.monitors}</h4>{adminSnapshot?.monitors.map((item) => <div className="admin-monitor-row" key={item.monitorKey}><div><b>{item.monitorKey === "social_economic" ? "SEP-Monitor" : item.monitorKey === "lukashenko" ? "L-Monitor" : item.monitorKey === "w_review" ? "W-Review" : item.monitorKey}</b><span>{item.enabled ? atx.works : atx.maintenance}</span></div><label className="toggle-label"><input type="checkbox" checked={item.enabled} disabled={adminBusy} onChange={(e) => adminAction({ action: "set_monitor", monitor_key: item.monitorKey, enabled: e.target.checked, maintenance_message_ru: item.maintenanceMessageRu, maintenance_message_be: item.maintenanceMessageBe })} /><span>{item.enabled ? atx.works : atx.maintenance}</span></label></div>)}</div>
+        <div className="admin-access-block"><h4>{atx.monitors}</h4>{adminSnapshot?.monitors.map((item) => <div className="admin-monitor-row" key={item.monitorKey}><div><b>{item.monitorKey === "social_economic" ? "SEP-Monitor" : item.monitorKey === "lukashenko" ? "L-Monitor" : item.monitorKey === "w_review" ? "W-Review" : item.monitorKey === "event_trace" ? (be ? "Падзея" : "Событие") : item.monitorKey === "tiktok" ? (be ? "Сеткі" : "Сети") : item.monitorKey}</b><span>{item.enabled ? atx.works : atx.maintenance}</span></div><label className="toggle-label"><input type="checkbox" checked={item.enabled} disabled={adminBusy} onChange={(e) => adminAction({ action: "set_monitor", monitor_key: item.monitorKey, enabled: e.target.checked, maintenance_message_ru: item.maintenanceMessageRu, maintenance_message_be: item.maintenanceMessageBe })} /><span>{item.enabled ? atx.works : atx.maintenance}</span></label></div>)}</div>
       </div>
       <div className="admin-user-list"><h4>{atx.users}</h4><p className="admin-user-access-note">{be ? "Персанальныя правы можна задаваць загадзя. Яны дзейнічаюць толькі калі адпаведны маніторынг глабальна ўключаны вышэй." : "Персональные права можно назначать заранее. Они действуют только когда соответствующий мониторинг глобально включён выше."}</p>{adminSnapshot?.users.map((item) => {
         const monitorItems = adminSnapshot.monitors;
@@ -101,7 +105,7 @@ export function DataView({
               ? <span className="muted">{be ? "Усе маніторынгі" : "Все мониторинги"}</span>
               : monitorItems.map((monitor) => {
                   const granted = adminSnapshot.userMonitors.find((entry) => entry.userId === item.id && entry.monitorKey === monitor.monitorKey)?.enabled === true;
-                  const label = monitor.monitorKey === "social_economic" ? "SEP" : monitor.monitorKey === "lukashenko" ? "L" : monitor.monitorKey === "w_review" ? "W-Review" : monitor.monitorKey;
+                  const label = monitor.monitorKey === "social_economic" ? "SEP" : monitor.monitorKey === "lukashenko" ? "L" : monitor.monitorKey === "w_review" ? "W-Review" : monitor.monitorKey === "event_trace" ? (be ? "Падзея" : "Событие") : monitor.monitorKey === "tiktok" ? (be ? "Сеткі" : "Сети") : monitor.monitorKey;
                   return <label key={monitor.monitorKey} title={!monitor.enabled ? (be ? "Маніторынг глабальна адключаны" : "Мониторинг глобально отключён") : ""}>
                     <input
                       type="checkbox"
@@ -131,8 +135,25 @@ export function DataView({
       </div>
       <div className="sync-note">{t("data.syncNote")}</div>
     </section>
-    <section className="kpi-grid"><article className="kpi"><strong>{stats?.runs ?? "—"}</strong><span>{t("data.importedRuns")}</span></article><article className="kpi"><strong>{stats?.documents ?? "—"}</strong><span>{t("data.uniquePublications")}</span></article><article className="kpi"><strong>{stats?.sources ?? "—"}</strong><span>{t("data.sources")}</span></article><article className="kpi"><strong>{productionRuns}</strong><span>{t("data.productionRuns")}</span></article><article className="kpi"><strong>{latest?.runNumber ?? "—"}</strong><span>{t("data.latestRun")}</span></article></section>
-    <section className="panel"><div className="panel-head"><div><h3>{t("data.runsTitle")}</h3><p>{t("data.runsHelp")}</p></div><span className="badge">{t("data.contract")}</span></div><div className="table-wrap"><table><thead><tr><th>{t("data.run")}</th><th>{t("data.mode")}</th><th>{t("data.start")}</th><th>{t("data.publications")}</th><th>{t("data.sourcesCol")}</th><th>{t("data.imported")}</th></tr></thead><tbody>{runs.length === 0 ? <tr><td colSpan={6} className="empty">{t("data.noBundles")}</td></tr> : runs.map((run) => <tr key={run.id}><td><b>#{run.runNumber ?? "—"}</b><small>{run.monitorKey === "social_economic" ? t("data.monitorSocial") : run.monitorName}</small></td><td><span className={`mode mode-${run.dryRun === true ? "dry" : run.dryRun === false ? "prod" : "unknown"}`}>{formatMode(run.dryRun)}</span></td><td>{formatDate(run.startedAt)}</td><td>{run.publications}</td><td>{run.sourcesInCoverage}</td><td>{formatDate(run.importedAt)}</td></tr>)}</tbody></table></div></section>
+    {monitorKey === "lukashenko" && <LNewsAssistant importedRuns={runs} onSync={() => onSyncNow(form)} syncBusy={syncBusy} />}
+    <section className="kpi-grid"><article className="kpi"><strong>{stats?.runs ?? "—"}</strong><span>{t("data.importedRuns")}</span></article><article className="kpi"><strong>{stats?.documents ?? "—"}</strong><span>{t("data.uniquePublications")}</span></article><article className="kpi"><strong>{stats?.sources ?? "—"}</strong><span>{t("data.sources")}</span></article><article className="kpi"><strong>{productionRuns}</strong><span>{t("data.productionRuns")}</span></article><article className="kpi"><strong>{latest?.collector ? `П${latest.collectorNumber}` : latest?.runNumber ?? "—"}</strong><span>{t("data.latestRun")}</span></article></section>
+    <section className="panel">
+      <div className="panel-head">
+        <div>
+          <h3>{t("data.runsTitle")}</h3>
+          {recentRuns.length > 0 && <p>{t("data.runsShown", { shown: recentRuns.length, total: runs.length })}</p>}
+        </div>
+        <span className="badge">{t("data.contract")}</span>
+      </div>
+      <div className="table-wrap"><table>
+        <thead><tr><th>{t("data.run")}</th><th>{t("data.mode")}</th><th>{t("data.start")}</th><th>{t("data.publications")}</th><th>{t("data.sourcesCol")}</th><th>{t("data.imported")}</th></tr></thead>
+        <tbody>{recentRuns.length === 0 ? <tr><td colSpan={6} className="empty">{t("data.noBundles")}</td></tr> : recentRuns.map((run) => <tr key={run.id}>
+          <td><b>{run.collector ? `Помощник #${run.collectorNumber ?? "—"}` : `GitHub #${run.runNumber ?? "—"}`}</b><small>{run.monitorKey === "social_economic" ? t("data.monitorSocial") : run.monitorName}</small></td>
+          <td><span className={`mode mode-${run.dryRun === true ? "dry" : run.dryRun === false ? "prod" : "unknown"}`}>{formatMode(run.dryRun)}</span></td>
+          <td>{formatDate(run.startedAt)}</td><td>{run.publications}</td><td>{run.sourcesInCoverage}</td><td>{formatDate(run.importedAt)}</td>
+        </tr>)}</tbody>
+      </table></div>
+    </section>
     <section className="panel db-path"><span>{t("data.sqliteShared")}</span><code title={stats?.databasePath}>{stats?.databasePath ?? t("status.initializing")}</code></section>
     {access.profile.isAdmin && <AdminNotebook session={access.session} be={be}/>} 
   </div>;

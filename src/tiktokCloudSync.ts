@@ -1,4 +1,4 @@
-/** TikTok / Сети — shared ADMINISTRATOR-only Supabase archive & moderation.
+/** TikTok / Сети — shared Supabase archive and moderation.
  * GitHub bundles remain the evidence source. The cloud database makes final
  * cards and deletion/flag decisions converge across Windows devices.
  * Transcription drafts remain intentionally device-local.

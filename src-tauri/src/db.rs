@@ -5,7 +5,7 @@ use std::path::Path;
 use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExtension, Row};
 
 use crate::models::{
-    ArchiveFacets, ArchivePage, CountPoint, DashboardOverview, DatabaseStats,
+    ArchiveFacets, ArchivePage, CollectorCountryCount, CountPoint, DashboardOverview, DatabaseStats,
     PublicationSummary, RunPublication, RunSummary, SourceSummary, StorySummary, TopicTrendPoint, SourceDiversitySummary, CoverageHealthSummary,
     ModerationFlagInput, ModerationExclusionInput, EditorialSource, EditorialEntity,
 };
@@ -16,6 +16,8 @@ const MIGRATION_0003: &str = include_str!("../migrations/0003_preview_images.sql
 const MIGRATION_0004: &str = include_str!("../migrations/0004_moderation.sql");
 const MIGRATION_0005: &str = include_str!("../migrations/0005_editorial_sources.sql");
 const MIGRATION_0006: &str = include_str!("../migrations/0006_persistent_settings.sql");
+const MIGRATION_0007: &str = include_str!("../migrations/0007_publication_identity.sql");
+const MIGRATION_0008: &str = include_str!("../migrations/0008_l_monitor_run_identity.sql");
 
 pub fn open_database(path: &Path) -> Result<Connection, String> {
     let conn = Connection::open(path).map_err(|e| format!("Не удалось открыть SQLite: {e}"))?;
@@ -93,6 +95,20 @@ pub fn initialize_database(path: &Path) -> Result<(), String> {
         tx.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (6)", []).map_err(|e| format!("Не удалось записать версию миграции 0006: {e}"))?;
         tx.commit().map_err(|e| format!("Не удалось завершить миграцию 0006: {e}"))?;
     }
+    if current < 7 {
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        tx.execute_batch(MIGRATION_0007).map_err(|e| e.to_string())?;
+        crate::identity::seed_aliases(&tx)?;
+        tx.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (7)", []).map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
+    }
+    if current < 8 {
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        tx.execute_batch(MIGRATION_0008).map_err(|e| e.to_string())?;
+        crate::identity::reconcile_l_monitor_identity(&tx)?;
+        tx.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (8)", []).map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
@@ -140,13 +156,35 @@ pub fn list_runs(path: &Path, monitor_key: &str) -> Result<Vec<RunSummary>, Stri
                 r.dry_run,
                 r.contract_version,
                 r.imported_at,
-                (SELECT COUNT(*) FROM run_items ri WHERE ri.run_id = r.id) AS publications,
+                (SELECT COUNT(*) FROM reported_run_items ri WHERE ri.run_id = r.id) AS publications,
                 (SELECT COUNT(DISTINCT d.source_id)
-                   FROM run_items ri
+                   FROM reported_run_items ri
                    JOIN monitor_items mi ON mi.id = ri.monitor_item_id
                    JOIN documents d ON d.id = mi.document_id
                   WHERE ri.run_id = r.id AND d.source_id IS NOT NULL) AS sources_in_result,
-                (SELECT COUNT(*) FROM source_run_metrics srm WHERE srm.run_id = r.id) AS sources_in_coverage
+                (SELECT COUNT(*) FROM source_run_metrics srm WHERE srm.run_id = r.id) AS sources_in_coverage,
+                json_extract(r.manifest_json,'$.run.collector'),
+                json_extract(r.manifest_json,'$.run.collector_number'),
+                CASE WHEN json_extract(r.manifest_json,'$.run.collector') = 'api_assistant' THEN (
+                    SELECT json_group_array(json_object('country', country, 'sources', source_count))
+                    FROM (
+                        SELECT COALESCE(NULLIF(TRIM(json_extract(srm.metrics_json, '$.source_region')), ''),
+                                        'Не определено') AS country,
+                               COUNT(DISTINCT COALESCE(NULLIF(json_extract(srm.metrics_json, '$.domain'), ''),
+                                                       CAST(srm.source_id AS TEXT))) AS source_count
+                        FROM reported_source_run_metrics srm
+                        WHERE srm.run_id = r.id AND COALESCE(srm.included, srm.results, 0) > 0
+                        GROUP BY country
+                        ORDER BY source_count DESC, country
+                    )
+                ) END,
+                json_extract(r.manifest_json,'$.run.collector_run_id'),
+                (SELECT COUNT(*) FROM reported_run_items ri
+                   JOIN monitor_items mi ON mi.id = ri.monitor_item_id
+                   JOIN documents d ON d.id = mi.document_id
+                  WHERE ri.run_id = r.id AND d.full_text IS NOT NULL
+                    AND UPPER(COALESCE(d.full_text_quality, '')) IN ('FULL_TEXT', 'FULL')),
+                (SELECT COUNT(*) FROM suppressed_l_monitor_run_items WHERE run_id = r.id)
             FROM runs r
             JOIN monitors m ON m.id = r.monitor_id
             WHERE m.monitor_key = ?1
@@ -158,6 +196,14 @@ pub fn list_runs(path: &Path, monitor_key: &str) -> Result<Vec<RunSummary>, Stri
     let rows = stmt
         .query_map(params![monitor_key], |row| {
             let dry: Option<i64> = row.get(7)?;
+            let countries: Option<String> = row.get(15)?;
+            let collector_countries: Vec<CollectorCountryCount> = countries.as_deref()
+                .map(serde_json::from_str)
+                .transpose()
+                .map_err(|error| rusqlite::Error::FromSqlConversionFailure(
+                    15, rusqlite::types::Type::Text, Box::new(error),
+                ))?
+                .unwrap_or_default();
             Ok(RunSummary {
                 id: row.get(0)?,
                 monitor_key: row.get(1)?,
@@ -172,6 +218,12 @@ pub fn list_runs(path: &Path, monitor_key: &str) -> Result<Vec<RunSummary>, Stri
                 publications: row.get(10)?,
                 sources_in_result: row.get(11)?,
                 sources_in_coverage: row.get(12)?,
+                collector: row.get(13)?,
+                collector_number: row.get(14)?,
+                collector_countries,
+                collector_run_id: row.get(16)?,
+                full_text_publications: row.get(17)?,
+                cross_collector_duplicates: row.get(18)?,
             })
         })
         .map_err(|e| format!("Не удалось прочитать список запусков: {e}"))?;
@@ -183,8 +235,9 @@ pub fn list_runs(path: &Path, monitor_key: &str) -> Result<Vec<RunSummary>, Stri
 pub fn l_monitor_run_publications(path: &Path, run_id: i64) -> Result<Vec<RunPublication>, String> {
     let conn = open_database(path)?;
     let mut stmt = conn.prepare(r#"
-        SELECT mi.id, NULLIF(TRIM(s.canonical_name), ''), d.title, d.url
-        FROM run_items ri
+        SELECT mi.id, NULLIF(TRIM(s.canonical_name), ''), d.title, d.url,
+               NULLIF(TRIM(s.configured_region), '')
+        FROM reported_run_items ri
         JOIN runs r ON r.id = ri.run_id
         JOIN monitors m ON m.id = r.monitor_id
         JOIN monitor_items mi ON mi.id = ri.monitor_item_id AND mi.monitor_id = m.id
@@ -204,6 +257,7 @@ pub fn l_monitor_run_publications(path: &Path, run_id: i64) -> Result<Vec<RunPub
             source: row.get(1)?,
             title: row.get(2)?,
             url: row.get(3)?,
+            country: row.get(4)?,
         })
     }).map_err(|e| format!("Не удалось прочитать публикации запуска: {e}"))?;
     rows.collect::<Result<Vec<_>, _>>()
@@ -276,7 +330,8 @@ fn publication_select() -> &'static str {
             mi.score,
             d.preview_image_url,
             CASE WHEN NULLIF(TRIM(d.full_text),'') IS NOT NULL THEN 1 ELSE 0 END AS has_full_text,
-            (SELECT COUNT(*) FROM run_items ri2 WHERE ri2.monitor_item_id = mi.id) AS seen_in_runs
+            (SELECT COUNT(*) FROM reported_run_items ri2 WHERE ri2.monitor_item_id = mi.id) AS seen_in_runs,
+            julianday(d.published_at) AS published_day
         FROM monitor_items mi
         JOIN monitors m ON m.id = mi.monitor_id
         JOIN documents d ON d.id = mi.document_id
@@ -346,6 +401,7 @@ fn coverage_health_summary(conn:&Connection,monitor_key:&str)->Result<CoverageHe
         SELECT r.id, r.run_number FROM runs r
         JOIN monitors m ON m.id=r.monitor_id
         WHERE m.monitor_key=?1 AND r.dry_run=0
+          AND json_extract(r.manifest_json,'$.run.collector') IS NULL
         ORDER BY COALESCE(datetime(r.started_at),datetime(r.imported_at)) DESC, r.id DESC LIMIT 1
     "#,params![monitor_key],|row|Ok((row.get::<_,i64>(0)?,row.get::<_,Option<i64>>(1)?))).optional()
         .map_err(|e|format!("Не удалось определить последний production-запуск: {e}"))?;
@@ -373,6 +429,48 @@ fn coverage_health_summary(conn:&Connection,monitor_key:&str)->Result<CoverageHe
     Ok(CoverageHealthSummary{run_number,total_sources:total,stable_sources:stable,recovery_sources:recovery,limited_sources:limited,attention_sources:attention})
 }
 
+struct StoryHeadline {
+    day: Option<f64>,
+    terms: HashSet<String>,
+}
+
+impl StoryHeadline {
+    fn new(title: &str, day: Option<f64>) -> Self {
+        let common = [
+            "лукаше", "белару", "белору", "презид", "сообщи", "расска", "заявил", "назвал",
+            "объясн", "высказ", "сказал", "новост", "подроб", "заявле", "которы",
+            "после", "почему", "сегодн", "стало", "приэто",
+        ];
+        let normalized = title.to_lowercase().replace('ё', "е");
+        let terms = normalized.split(|character: char| !character.is_alphanumeric())
+            .filter(|word| word.chars().count() >= 4)
+            .map(|word| word.chars().take(6).collect::<String>())
+            .filter(|term| !common.contains(&term.as_str()))
+            .collect();
+        Self { day, terms }
+    }
+
+    fn overlap(&self, other: &Self) -> Option<usize> {
+        let distance = (self.day? - other.day?).abs();
+        if distance > 2.0 {
+            return None;
+        }
+        let shared = self.terms.intersection(&other.terms).count();
+        let smaller = self.terms.len().min(other.terms.len());
+        (shared >= 3 && shared * 5 >= smaller * 3).then_some(shared)
+    }
+
+    fn day_key(&self) -> Option<i64> {
+        self.day.map(|day| day.floor() as i64)
+    }
+}
+
+fn story_publication(row: &Row<'_>) -> rusqlite::Result<(PublicationSummary, StoryHeadline)> {
+    let publication = publication_row(row)?;
+    let headline = StoryHeadline::new(&publication.title, row.get(18)?);
+    Ok((publication, headline))
+}
+
 fn l_monitor_stories(
     conn: &Connection,
     monitor_key: &str,
@@ -398,7 +496,7 @@ fn l_monitor_stories(
         GROUP BY e.id
         HAVING COUNT(DISTINCT mi.id) > 1
         ORDER BY publication_count DESC, latest_at DESC
-        LIMIT 6
+        LIMIT 18
     "#);
     let mut story_stmt = conn.prepare(&story_sql)
         .map_err(|e| format!("Не удалось подготовить сюжеты L-Monitor: {e}"))?;
@@ -407,6 +505,8 @@ fn l_monitor_stories(
     }).map_err(|e| format!("Не удалось прочитать сюжеты L-Monitor: {e}"))?;
 
     let mut stories = Vec::new();
+    let mut headlines = Vec::new();
+    let mut grouped_publications = HashSet::new();
     for story_row in story_rows {
         let (event_id, story_title) = story_row
             .map_err(|e| format!("Не удалось прочитать сюжет L-Monitor: {e}"))?;
@@ -422,18 +522,75 @@ fn l_monitor_stories(
             .map_err(|e| format!("Не удалось подготовить публикации сюжета: {e}"))?;
         let member_rows = member_stmt.query_map(
             params![monitor_key, period_days, event_id, story_title.as_str()],
-            publication_row,
+            story_publication,
         ).map_err(|e| format!("Не удалось прочитать публикации сюжета: {e}"))?;
-        let publications = member_rows.collect::<Result<Vec<_>, _>>()
-            .map_err(|e| format!("Не удалось собрать публикации сюжета: {e}"))?;
+        let (publications, group_headlines): (Vec<_>, Vec<_>) = member_rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Не удалось собрать публикации сюжета: {e}"))?
+            .into_iter().unzip();
         if let Some(representative) = publications.first().cloned() {
+            grouped_publications.extend(publications.iter().map(|item| item.id));
             stories.push(StorySummary {
                 title: if story_title.trim().is_empty() { representative.title.clone() } else { story_title },
                 representative,
                 publications,
             });
+            headlines.push(group_headlines);
         }
     }
+
+    // API cards can also enter the database before a GitHub story has been assigned.
+    // Compare their headlines within a short time window and keep existing groups intact.
+    let existing_count = stories.len();
+    let mut headline_days: HashMap<i64, Vec<(usize, usize)>> = HashMap::new();
+    for (group_index, group) in headlines.iter().enumerate() {
+        for (headline_index, headline) in group.iter().take(8).enumerate() {
+            if let Some(day) = headline.day_key() {
+                headline_days.entry(day).or_default().push((group_index, headline_index));
+            }
+        }
+    }
+    let assistant_sql = format!(
+        r#"{} WHERE m.monitor_key=?1 AND {}
+           AND NOT EXISTS (SELECT 1 FROM moderation_flags mf WHERE mf.monitor_key=m.monitor_key AND mf.document_uid=d.document_uid)
+           AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid)
+           AND EXISTS (SELECT 1 FROM reported_run_items ri JOIN runs r ON r.id=ri.run_id
+                       WHERE ri.monitor_item_id=mi.id AND json_extract(r.manifest_json,'$.run.collector')='api_assistant')
+           ORDER BY datetime(d.published_at) DESC, mi.id DESC"#,
+        publication_select(), period
+    );
+    let mut assistant_stmt = conn.prepare(&assistant_sql)
+        .map_err(|e| format!("Не удалось подготовить публикации помощника для сюжетов: {e}"))?;
+    let assistant_rows = assistant_stmt.query_map(params![monitor_key, period_days], story_publication)
+        .map_err(|e| format!("Не удалось прочитать публикации помощника для сюжетов: {e}"))?;
+    for row in assistant_rows {
+        let (publication, headline) = row.map_err(|e| format!("Не удалось прочитать публикацию сюжета: {e}"))?;
+        if !grouped_publications.insert(publication.id) {
+            continue;
+        }
+        let Some(day) = headline.day_key() else { continue; };
+        let matching_group = (day - 2..=day + 2).filter_map(|key| headline_days.get(&key))
+            .flatten().filter_map(|&(group_index, headline_index)| {
+                headline.overlap(&headlines[group_index][headline_index]).map(|shared| (group_index, shared))
+            }).max_by_key(|(index, shared)| (*shared, std::cmp::Reverse(*index)));
+        if let Some((index, _)) = matching_group {
+            stories[index].publications.push(publication);
+        } else {
+            // Index only the first headline of a new group to avoid chaining matches.
+            headline_days.entry(day).or_default().push((stories.len(), 0));
+            stories.push(StorySummary {
+                title: publication.title.clone(),
+                representative: publication.clone(),
+                publications: vec![publication],
+            });
+            headlines.push(vec![headline]);
+        }
+    }
+    let mut stories: Vec<_> = stories.into_iter().enumerate().filter_map(|(index, story)| {
+        let more_than_one_source = story.publications.iter().any(|item| item.source != story.representative.source);
+        (index < existing_count || more_than_one_source).then_some(story)
+    }).collect();
+    stories.sort_by_key(|story| std::cmp::Reverse(story.publications.len()));
+    stories.truncate(6);
     Ok(stories)
 }
 
@@ -499,12 +656,12 @@ pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i6
         "{} WHERE m.monitor_key=?1 AND {} \
          AND NOT EXISTS (SELECT 1 FROM moderation_flags mf WHERE mf.monitor_key=m.monitor_key AND mf.document_uid=d.document_uid) \
          AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid) \
-         AND EXISTS (SELECT 1 FROM run_items ri WHERE ri.monitor_item_id=mi.id AND (\
+         AND EXISTS (SELECT 1 FROM reported_run_items ri WHERE ri.monitor_item_id=mi.id AND (\
              NULLIF(TRIM(ri.also_covered_by),'') IS NOT NULL OR \
              NULLIF(TRIM(ri.event_echo_sources),'') IS NOT NULL OR \
              LOWER(COALESCE(ri.event_echo,'')) IN ('1','true','yes')\
          )) \
-         ORDER BY (SELECT COUNT(*) FROM run_items ri2 WHERE ri2.monitor_item_id=mi.id AND (\
+         ORDER BY (SELECT COUNT(*) FROM reported_run_items ri2 WHERE ri2.monitor_item_id=mi.id AND (\
              NULLIF(TRIM(ri2.also_covered_by),'') IS NOT NULL OR \
              NULLIF(TRIM(ri2.event_echo_sources),'') IS NOT NULL OR \
              LOWER(COALESCE(ri2.event_echo,'')) IN ('1','true','yes')\
@@ -764,7 +921,7 @@ pub fn list_sources(path: &Path, monitor_key: &str, period_days: Option<i64>) ->
                 AND NOT EXISTS (SELECT 1 FROM moderation_flags mf WHERE mf.monitor_key=m.monitor_key AND mf.document_uid=d.document_uid)
                 AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid)) AS publications,
             COALESCE((SELECT SUM(COALESCE(srm.results,0))
-               FROM source_run_metrics srm
+               FROM reported_source_run_metrics srm
                JOIN runs r ON r.id=srm.run_id
                JOIN monitors m ON m.id=r.monitor_id
               WHERE srm.source_id=s.id AND m.monitor_key=?1
@@ -791,17 +948,15 @@ pub fn list_sources(path: &Path, monitor_key: &str, period_days: Option<i64>) ->
             SELECT 1
             FROM source_run_metrics srm
             WHERE srm.source_id=s.id
-              AND srm.run_id=COALESCE(
-                  (
-                    SELECT r.id FROM runs r JOIN monitors m ON m.id=r.monitor_id
-                    WHERE m.monitor_key=?1 AND r.dry_run=0
-                    ORDER BY COALESCE(r.started_at,r.imported_at) DESC, r.id DESC LIMIT 1
-                  ),
-                  (
-                    SELECT r.id FROM runs r JOIN monitors m ON m.id=r.monitor_id
-                    WHERE m.monitor_key=?1
-                    ORDER BY COALESCE(r.started_at,r.imported_at) DESC, r.id DESC LIMIT 1
-                  )
+              AND srm.run_id IN (
+                SELECT id FROM (
+                  SELECT r.id, ROW_NUMBER() OVER (
+                    PARTITION BY COALESCE(json_extract(r.manifest_json,'$.run.collector'),'github')
+                    ORDER BY CASE WHEN r.dry_run=0 THEN 0 ELSE 1 END,
+                      COALESCE(r.started_at,r.imported_at) DESC,r.id DESC
+                  ) AS position
+                  FROM runs r JOIN monitors m ON m.id=r.monitor_id WHERE m.monitor_key=?1
+                ) WHERE position=1
               )
         )
         ORDER BY LOWER(s.canonical_name), s.id
@@ -887,13 +1042,13 @@ pub fn replace_moderation_snapshot(
     for flag in flags {
         tx.execute(
             "INSERT OR REPLACE INTO moderation_flags(monitor_key,document_uid,user_id,user_name,flagged_at) VALUES (?1,?2,?3,?4,?5)",
-            params![monitor_key, flag.document_uid, flag.user_id, flag.user_name, flag.flagged_at],
+            params![monitor_key, crate::identity::stable_uid(&tx,&flag.document_uid)?, flag.user_id, flag.user_name, flag.flagged_at],
         ).map_err(|e| format!("Не удалось сохранить локальный флаг модерации: {e}"))?;
     }
     for exclusion in exclusions {
         tx.execute(
             "INSERT OR REPLACE INTO moderation_exclusions(monitor_key,document_uid,excluded_by_name,excluded_at) VALUES (?1,?2,?3,?4)",
-            params![monitor_key, exclusion.document_uid, exclusion.excluded_by_name, exclusion.excluded_at],
+            params![monitor_key, crate::identity::stable_uid(&tx,&exclusion.document_uid)?, exclusion.excluded_by_name, exclusion.excluded_at],
         ).map_err(|e| format!("Не удалось сохранить локальное исключение модерации: {e}"))?;
     }
     tx.commit().map_err(|e| format!("Не удалось завершить синхронизацию модерации: {e}"))?;
