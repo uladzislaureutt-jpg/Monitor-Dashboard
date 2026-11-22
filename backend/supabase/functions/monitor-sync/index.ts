@@ -9,6 +9,9 @@ const headers = {
   "Content-Type": "application/json",
 };
 
+// 0.9.0 is the first versioned Windows build that imports the Assistant feed.
+const firstAssistantVersion = "0.9.0";
+
 const monitors: Record<string, { repo: string; prefix: string; secret: string }> = {
   social_economic: {
     repo: "uladzislaureutt-jpg/SE-monitor",
@@ -115,7 +118,8 @@ Deno.serve(async (req: Request) => {
   }
 
   const payload = await req.json().catch(() => ({}));
-  const versionCheck = await enforceVersion(admin, String(payload?.app_version || "0.8.11"));
+  const appVersion = String(payload?.app_version || "0.8.11");
+  const versionCheck = await enforceVersion(admin, appVersion);
   if (!versionCheck.ok) return versionCheck.response;
   const monitorKey = String(payload?.monitor_key ?? "");
   const cfg = monitors[monitorKey];
@@ -205,7 +209,7 @@ Deno.serve(async (req: Request) => {
     let bytes: Uint8Array = new Uint8Array(await zipResponse.arrayBuffer());
     if (bytes.length > 20 * 1024 * 1024) return json({ error: "ARTIFACT_TOO_LARGE" }, 413);
 
-    if (monitorKey === "lukashenko") {
+    if (monitorKey === "lukashenko" && versionAtLeast(appVersion, firstAssistantVersion)) {
       try {
         const filtered = await filterLMonitorBundle(bytes, async (keys, asOf) => {
           const found = new Set<string>();
