@@ -102,6 +102,12 @@ export function day(value: unknown): string | null {
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value ? value : null;
 }
 
+export function eventPublicationWindow(fromValue: unknown, throughValue: unknown): Window | null {
+  const from = day(fromValue);
+  const through = throughValue == null || throughValue === "" ? from : day(throughValue);
+  return from && through && from <= through ? { from, through } : null;
+}
+
 export function publicationDate(value: unknown): string | null {
   const raw = plain(value, 60);
   if (day(raw)) return raw;

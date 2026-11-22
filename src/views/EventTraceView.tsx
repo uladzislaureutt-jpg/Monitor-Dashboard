@@ -16,6 +16,7 @@ export function EventTraceView() {
   const [run, setRun] = useState<EventRun | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [error, setError] = useState("");
   const submitGuard = useRef(false);
   const retryId = useRef<{ fingerprint: string; id: string } | null>(null);
@@ -27,7 +28,7 @@ export function EventTraceView() {
       setRun(value);
       setTask(value.task);
       setFrom(value.options.from || "");
-      setThrough(value.options.through || "");
+      setThrough(value.options.through === value.options.from ? "" : value.options.through || "");
     }).catch((reason) => {
       if (!controller.signal.aborted) setError(String(reason.message || "read_failed"));
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
@@ -36,6 +37,8 @@ export function EventTraceView() {
 
   const runId = run?.id;
   const running = run?.status === "running";
+  const formBusy = loading || submitting || running || clearing;
+  const validPeriod = Boolean(from && (!through || from <= through));
   useEffect(() => {
     if (!runId || !running) return;
     const controller = new AbortController();
@@ -61,7 +64,7 @@ export function EventTraceView() {
 
   async function start(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submitGuard.current || !task.trim() || loading || running || (from && through && from > through)) return;
+    if (submitGuard.current || !task.trim() || !validPeriod || formBusy) return;
     submitGuard.current = true;
     setSubmitting(true);
     setError("");
@@ -74,6 +77,22 @@ export function EventTraceView() {
       retryId.current = null;
     } catch (reason) { setError(reason instanceof Error ? reason.message : "start_failed"); }
     finally { setSubmitting(false); submitGuard.current = false; }
+  }
+
+  async function clearRun() {
+    if (!runId || formBusy || submitGuard.current) return;
+    submitGuard.current = true;
+    setClearing(true);
+    setError("");
+    try {
+      await eventRun({ action: "clear", id: runId });
+      retryId.current = null;
+      setRun(null);
+      setTask("");
+      setFrom("");
+      setThrough("");
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "clear_failed"); }
+    finally { setClearing(false); submitGuard.current = false; }
   }
 
   const result = run?.result;
@@ -109,6 +128,9 @@ export function EventTraceView() {
     access_denied: be ? "Для вашага ўліковага запісу няма доступу да гэтай укладкі." : "У вашей учётной записи нет доступа к этой вкладке.",
     export_failed: be ? "Не ўдалося захаваць DOCX." : "Не удалось сохранить DOCX.",
     open_failed: be ? "Не ўдалося адкрыць спасылку." : "Не удалось открыть ссылку.",
+    date_required: be ? "Пазначце дату публікацый." : "Укажите дату публикаций.",
+    clear_failed: be ? "Не ўдалося ачысціць заданне і вынік." : "Не удалось очистить задачу и результат.",
+    clear_unavailable: be ? "Ачысціць можна завершанае заданне." : "Очистить можно завершённую задачу.",
   };
   const warnings: string[] = (result?.warnings || []).map((warning) => {
     if (warning === "deadline") return be ? "Час пошуку скончыўся. Паказаны сабраныя матэрыялы." : "Время поиска истекло. Показаны собранные материалы.";
@@ -131,21 +153,24 @@ export function EventTraceView() {
     <div className="event-trace-columns">
       <form className="panel event-trace-input" onSubmit={start}>
         <label htmlFor="event-task"><b>{be ? "Заданне" : "Задача"}</b></label>
-        <textarea id="event-task" rows={6} maxLength={LIMIT} value={task} disabled={loading || submitting || running} onChange={(event) => setTask(event.target.value)}
+        <textarea id="event-task" rows={6} maxLength={LIMIT} value={task} disabled={formBusy} onChange={(event) => setTask(event.target.value)}
           placeholder={be ? "Што адбылося і якую інфармацыю трэба прасачыць? Можна ўставіць спасылку." : "Что произошло и какую информацию нужно проследить? Можно вставить ссылку."} />
         <small className="muted event-trace-count">{task.length} / {LIMIT}</small>
-        <fieldset disabled={loading || submitting || running}>
-          <legend>{be ? "Перыяд публікацый (неабавязкова)" : "Период публикаций (необязательно)"}</legend>
+        <fieldset disabled={formBusy}>
+          <legend>{be ? "Перыяд публікацый" : "Период публикаций"}</legend>
           <div className="event-trace-dates">
-            <label>{be ? "Ад" : "С"}<input type="date" value={from} max={through || undefined} onChange={(event) => setFrom(event.target.value)} /></label>
-            <label>{be ? "Па" : "По"}<input type="date" value={through} min={from || undefined} onChange={(event) => setThrough(event.target.value)} /></label>
+            <label>{be ? "Ад (абавязкова)" : "С (обязательно)"}<input type="date" required value={from} max={through || undefined} onChange={(event) => setFrom(event.target.value)} /></label>
+            <label>{be ? "Па (неабавязкова)" : "По (необязательно)"}<input type="date" value={through} min={from || undefined} onChange={(event) => setThrough(event.target.value)} /></label>
           </div>
         </fieldset>
-        <button className="primary-button" disabled={!task.trim() || submitting || running || loading || Boolean(from && through && from > through)}>{be ? "Прасачыць" : "Проследить"}</button>
+        <button className="primary-button" disabled={!task.trim() || !validPeriod || formBusy}>{be ? "Прасачыць" : "Проследить"}</button>
+        {run && !running && <button type="button" className="secondary-button" disabled={formBusy} onClick={() => void clearRun()}>
+          {be ? "Ачысціць заданне і вынік" : "Очистить задачу и результат"}
+        </button>}
       </form>
       <div className="panel event-trace-output">
         <div className="event-trace-output-head"><h2>{be ? "Вынік" : "Результат"}</h2>{report &&
-          <button className="secondary-button small-button" onClick={() => void exportDocx()}>{be ? "Захаваць DOCX" : "Сохранить DOCX"}</button>}</div>
+          <button className="secondary-button small-button" disabled={clearing} onClick={() => void exportDocx()}>{be ? "Захаваць DOCX" : "Сохранить DOCX"}</button>}</div>
         <p role="status" className="muted">{loading ? "Загрузка…" : running || submitting ?
           (run ? `${labels[run.stage]}…` : `${labels.search}…`) : run?.status === "failed" ?
           (be ? "Пошук перарваўся." : "Поиск прервался.") : run?.status === "partial" ?

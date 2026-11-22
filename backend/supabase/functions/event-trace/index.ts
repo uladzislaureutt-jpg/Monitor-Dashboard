@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { day, TASK_LIMIT } from "./core.ts";
+import { eventPublicationWindow, TASK_LIMIT } from "./core.ts";
 import { cloudflareConfigured } from "./providers.ts";
 import { newscatcherConfigured, newsPageLimit, type NewsAccounting } from "./newscatcher.ts";
 import { trace, type TraceInput } from "./trace.ts";
@@ -66,7 +66,7 @@ Deno.serve(async (request: Request) => {
       if (id) select = select.eq("id", id);
       const { data: run, error } = await select.order("created_at", { ascending: false }).limit(1).maybeSingle();
       if (error) return json({ error: "read_failed" }, 503);
-      if (!run) return json({ run: null }, id ? 404 : 200);
+      if (!run || run.options?.cleared === true) return json({ run: null }, id ? 404 : 200);
       if (run.status === "running" && Date.now() - Date.parse(run.created_at) > 115_000) {
         const result = run.result ? { ...run.result, warnings: [...new Set([...(run.result.warnings ?? []), "deadline"])] } : null;
         const status = run.result ? "partial" : "failed";
@@ -77,7 +77,8 @@ Deno.serve(async (request: Request) => {
         if (expired) return json({ run: expired });
         const { data: current, error: currentError } = await admin.from(table).select(columns)
           .eq("owner_id", user.id).eq("id", run.id).maybeSingle();
-        return currentError ? json({ error: "read_failed" }, 503) : json({ run: current });
+        return currentError ? json({ error: "read_failed" }, 503)
+          : json({ run: current?.options?.cleared === true ? null : current });
       }
       return json({ run });
     };
@@ -85,14 +86,24 @@ Deno.serve(async (request: Request) => {
     if (data?.action === "latest") return await readRun();
     if (data?.action === "status") return typeof data.id === "string" && uuid.test(data.id)
       ? await readRun(data.id) : json({ error: "invalid_input" }, 400);
+    if (data?.action === "clear") {
+      if (typeof data.id !== "string" || !uuid.test(data.id)) return json({ error: "invalid_input" }, 400);
+      // Keep the latest run's identity so earlier runs do not reappear and a retry cannot start it again.
+      const { data: cleared, error } = await admin.from(table)
+        .update({ task: " ", result: null, options: { cleared: true }, updated_at: new Date().toISOString() })
+        .eq("owner_id", user.id).eq("id", data.id).in("status", ["complete", "partial", "failed"])
+        .select("id").maybeSingle();
+      if (error) return json({ error: "clear_failed" }, 503);
+      return cleared ? json({ run: null }) : json({ error: "clear_unavailable" }, 409);
+    }
     if (data?.action !== "start" || typeof data.id !== "string" || !uuid.test(data.id) || typeof data.task !== "string")
       return json({ error: "invalid_input" }, 400);
 
     const task = data.task.trim();
-    const from = day(data.from), through = day(data.through);
-    if (!task || [...task].length > TASK_LIMIT || (data.from && !from) || (data.through && !through) ||
-        (from && through && from > through)) return json({ error: "invalid_input" }, 400);
-    const payload: TraceInput = { task, window: { from, through }, locale: data.locale === "be" ? "be" : "ru" };
+    if (data.from == null || data.from === "") return json({ error: "date_required" }, 400);
+    const window = eventPublicationWindow(data.from, data.through);
+    if (!task || [...task].length > TASK_LIMIT || !window) return json({ error: "invalid_input" }, 400);
+    const payload: TraceInput = { task, window, locale: data.locale === "be" ? "be" : "ru" };
     const { data: run, error: insertError } = await admin.from(table)
       .insert({ id: data.id, owner_id: user.id, task, options: payload.window, status: "running", stage: "search" })
       .select(columns).single();

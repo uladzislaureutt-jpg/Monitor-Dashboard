@@ -44,7 +44,7 @@ export type EventRun = {
   updated_at?: string;
 };
 
-type Request = { action: "latest" } | { action: "status"; id: string } |
+type Request = { action: "latest" } | { action: "status" | "clear"; id: string } |
   { action: "start"; id: string; task: string; from: string; through: string; locale: "ru" | "be" };
 
 export async function eventRun(body: Request, signal?: AbortSignal): Promise<EventRun | null> {

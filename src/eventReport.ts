@@ -46,7 +46,8 @@ export function makeEventReport(run: EventRun, locale: Locale): EventReport {
   const named = (entry: EventEntry) => entry.namedSources?.length
     ? [text(" · " + tr("Названный источник", "Названая крыніца") + " — " + entry.namedSources.join(", "))] : [];
   const range = run.options.from || run.options.through
-    ? `${run.options.from ? dateLabel(run.options.from, locale) : "…"} — ${run.options.through ? dateLabel(run.options.through, locale) : "…"}`
+    ? run.options.from === run.options.through ? dateLabel(run.options.from, locale)
+      : `${run.options.from ? dateLabel(run.options.from, locale) : "…"} — ${run.options.through ? dateLabel(run.options.through, locale) : "…"}`
     : tr("По условиям запроса", "Паводле ўмоў запыту");
   const date = (value?: string | null) => dateLabel(value, locale);
   const makeEvidence = (p: typeof evidence[number]): ReportPart[] => [
