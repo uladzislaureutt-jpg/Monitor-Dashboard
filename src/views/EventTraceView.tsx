@@ -110,12 +110,20 @@ export function EventTraceView() {
     export_failed: be ? "Не ўдалося захаваць DOCX." : "Не удалось сохранить DOCX.",
     open_failed: be ? "Не ўдалося адкрыць спасылку." : "Не удалось открыть ссылку.",
   };
-  const warnings = (result?.warnings || []).map((warning) => {
+  const warnings: string[] = (result?.warnings || []).map((warning) => {
     if (warning === "deadline") return be ? "Час пошуку скончыўся. Паказаны сабраныя матэрыялы." : "Время поиска истекло. Показаны собранные материалы.";
     if (warning === "summary_unavailable") return be ? "Рэзюмэ недаступнае. Храналогія захаваная." : "Резюме недоступно. Хронология сохранена.";
     if (warning === "bright_unavailable") return be ? "Рэзервовы пошук Bright Data спрацаваў часткова." : "Резервный поиск Bright Data сработал частично.";
     return be ? "Частка запытаў да Tavily не выкананая." : "Часть запросов Tavily не выполнена.";
   });
+  const newsStatus = result?.search?.newscatcherStatus;
+  const newsNotices = {
+    rate_limit: be ? "Newscatcher дасягнуў ліміту частаты запытаў." : "Newscatcher достиг лимита частоты запросов.",
+    partial: be ? "Вынікі Newscatcher ахопліваюць частку перыяду. Для ранніх публікацый звузьце даты." :
+      "Выдача Newscatcher охватывает часть периода. Для поиска ранних публикаций сузьте даты.",
+    unavailable: be ? "Частка запытаў да Newscatcher не выкананая." : "Часть запросов к Newscatcher не выполнена.",
+  };
+  if (newsStatus) warnings.push(newsNotices[newsStatus]);
 
   return <section className="event-trace-view">
     <h1>{title}</h1>

@@ -19,7 +19,13 @@ export type EventTraceResult = {
   earliestId: string | null;
   citedSourceIds: string[];
   checked: number;
-  search: { tavily: number; brightData: number };
+  search: {
+    tavily: number;
+    brightData: number;
+    newscatcher?: number;
+    newscatcherPages?: number;
+    newscatcherStatus?: "partial" | "rate_limit" | "unavailable";
+  };
   warnings: string[];
   summary: string | null;
   summarySources?: string[];

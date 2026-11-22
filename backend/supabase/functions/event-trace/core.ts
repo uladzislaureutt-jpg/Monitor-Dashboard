@@ -37,7 +37,13 @@ export type TraceResult = {
   earliestId: string | null;
   citedSourceIds: string[];
   checked: number;
-  search: { tavily: number; brightData: number };
+  search: {
+    tavily: number;
+    brightData: number;
+    newscatcher?: number;
+    newscatcherPages?: number;
+    newscatcherStatus?: "partial" | "rate_limit" | "unavailable";
+  };
   warnings: string[];
   summary: string | null;
   observations?: Array<{ sourceId: string; excerpt: string; kind: "statement" | "detail" | "disputed" }>;
@@ -260,7 +266,7 @@ export function readPage(markup: string, fetchedUrl: string, candidate: Candidat
   const url = canon && new URL(canon).hostname.replace(/^www\./, "") === new URL(fetchedUrl).hostname.replace(/^www\./, "")
     ? canon : fetchedUrl;
   const title = plain(schema?.headline || meta("og:title") || $("h1").first().text() || $("title").first().text() || candidate.title);
-  if (/^(?:captcha|just a moment\.*|access denied|forbidden|checking your browser|robot check|проверка браузера|доступ запрещ[её]н|защита от роботов)$/iu.test(title)) {
+  if (/^(?:captcha|just a moment\.*|access denied|forbidden|checking your browser|robot check|ihr browser ist veraltet|your browser is outdated|ваш браузер устарел|проверка браузера|доступ запрещ[её]н|защита от роботов)[.!]?$/iu.test(title)) {
     return metadataPage(candidate, "unavailable");
   }
   const site = schema?.publisher as { name?: unknown } | undefined;

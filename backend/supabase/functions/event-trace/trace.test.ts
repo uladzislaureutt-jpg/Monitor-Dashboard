@@ -1,4 +1,4 @@
-import { day, publicAddress, publicArticleUrl, readPage, timeline, urlKey } from "./core.ts";
+import { day, metadataPage, publicAddress, publicArticleUrl, readPage, timeline, urlKey } from "./core.ts";
 import { organicResults } from "./providers.ts";
 
 function expect(found: unknown, want: unknown) {
@@ -131,6 +131,78 @@ Deno.test("date overlap does not admit an unrelated search result", async () => 
     "Найди ранние сообщения о сильном землетрясении у Камчатки и предупреждении о возможном цунами", []), false);
   expect(matchesEvent("Polish president gave Trump a secret amber throne", "",
     "Освещение истории с янтарным креслом для Дональда Трампа", ["Nawrocki gives Trump an amber throne"]), true);
+  expect(matchesEvent('Конференция «Комплаенс в России» - Мероприятия - Интерфакс', "Место проведения: Москва.",
+    "Президент США в интервью Fox News сказал о небольших российских ракетах в Польше. Трамп.", []), false);
+});
+
+Deno.test("Newscatcher pagination respects the selected Minsk dates and verifies the original page", async () => {
+  const { trace } = await import("./trace.ts");
+  const { makeNewsSearch } = await import("./newscatcher.ts");
+  const task = "Найди, кто первым связал слова Трампа о небольших ракетах в Польше с инцидентом 20 ноября 2026 года.";
+  const terms = [["Трамп", "Трампа"], ["Польша", "Польше"], ["небольших ракет", "маленьких ракет"]];
+  const window = { from: "2026-11-19", through: "2026-11-20" };
+  const plan = makeNewsSearch(task, task, { terms, date: "2026-11-20" }, window);
+  expect([plan?.from, plan?.through], ["2026-11-18T21:00:00.000Z", "2026-11-20T20:59:59.999Z"]);
+  expect(plan?.query, '("Трамп" OR "Трампа") AND ("Польша" OR "Польше") AND ("небольших ракет" OR "маленьких ракет")');
+  const original = "https://eadaily.com/ru/news/earlier";
+  const blocked = "https://vk.ru/wall-123_4";
+  const noArticle = "https://press.example.org/news/no-text";
+  const hits = [original, blocked, noArticle].map(url => ({ url, title: "Трамп о небольших ракетах в Польше",
+    excerpt: "По словам Трампа, небольшие ракеты упали в Польше.", publishedHint: "2026-11-20T12:00:00Z", countryHint: "RU" }));
+  const requested: number[] = [];
+  const opened: string[] = [];
+  const result = await trace({ task, window, locale: "ru" }, async () => {}, {
+    tavily: async () => [],
+    brightSearch: async () => ({ hits: [], failures: 0 }),
+    cloudflareConfigured: () => false,
+    eventModel: async () => ({ country: "ru", news: { terms } }),
+    newscatcherConfigured: () => true,
+    newscatcherPage: async (_plan, number, _deadline, onAttempt) => {
+      onAttempt();
+      requested.push(number);
+      return { hits: number === 1 ? hits.slice(1) : hits.slice(0, 1), more: number === 1, incomplete: number === 1 };
+    },
+    openArticle: async candidate => {
+      expect(Object.keys(candidate), ["url"]);
+      opened.push(candidate.url);
+      return candidate.url === original
+        ? readPage('<article><h1>Трамп о небольших ракетах в Польше</h1><time itemprop="datePublished" datetime="2026-11-20T16:59:00+03:00"></time><p>Трамп назвал ошибкой утренний инцидент в Польше, где упали ракеты.</p></article>',
+          original, candidate)
+        : metadataPage(candidate, "unavailable");
+    },
+  });
+  expect(requested, [1, 2]);
+  expect(opened.sort(), [original, noArticle].sort());
+  expect(result.search.newscatcherPages, 2);
+  expect(result.earliestId, "S01");
+  expect(result.entries.map(entry => [entry.url, entry.published]), [[original, "2026-11-20T13:59:00.000Z"]]);
+});
+
+Deno.test("Newscatcher stops at one page when results fit and leaves other routes available on rate limits", async () => {
+  const { trace } = await import("./trace.ts");
+  const task = "Землетрясение в Камчатке";
+  const adapters = {
+    tavily: async () => [],
+    brightSearch: async () => ({ hits: [], failures: 0 }),
+    cloudflareConfigured: () => false,
+    eventModel: async () => ({ news: { terms: [["землетрясение"], ["Камчатка", "Камчатке"]] } }),
+    openArticle: async (candidate: { url: string }) => metadataPage(candidate),
+    newscatcherConfigured: () => true,
+  };
+  const input = { task, window: { from: null, through: null }, locale: "ru" as const };
+  const one = await trace(input, async () => {}, { ...adapters, newscatcherPage: async (_p, page, _d, attempt) => {
+    expect(page, 1);
+    attempt();
+    return { hits: [], more: false, incomplete: false };
+  } });
+  expect(one.search.newscatcher, 1);
+  const throttled = await trace(input, async () => {}, { ...adapters, newscatcherPage: async (_p, page, _d, attempt) => {
+    expect(page, 1);
+    attempt();
+    throw new Error("newscatcher_rate_limit");
+  } });
+  expect([throttled.search.newscatcher, throttled.search.newscatcherPages, throttled.search.newscatcherStatus,
+    throttled.search.tavily > 0], [1, undefined, "rate_limit", true]);
 });
 
 Deno.test("a direct attribution can restore a previously checked candidate without a second download", async () => {
