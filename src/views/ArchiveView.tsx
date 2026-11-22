@@ -60,8 +60,50 @@ export function ArchiveView({ initialQuery = "" }: { initialQuery?: string }) {
   return <div className="view-stack">
     <section className="view-heading archive-heading"><div><div className="eyebrow dark">{t("archive.eyebrow")}</div><h2>{t("archive.title")}</h2><p>{t("archive.subtitle")}</p></div><PeriodSelector value={period} onChange={(value) => { setPeriod(value); setOffset(0); }} /></section>
     <section className="panel filters-panel">
-      <div className="archive-search-row"><div className="archive-search-box"><span>⌕</span><input value={query} onChange={(event) => { setQuery(event.target.value); setOffset(0); }} placeholder={t("archive.search")} /></div><select value={sort} onChange={(event) => { setSort(event.target.value as typeof sort); setOffset(0); }}><option value="newest">{t("archive.newest")}</option><option value="oldest">{t("archive.oldest")}</option><option value="score">{t("archive.score")}</option></select></div>
-      <div className="filter-row"><select value={category} onChange={(event) => { setCategory(event.target.value); setOffset(0); }}><option value="">{t("archive.allCategories")}</option>{facets.categories.map((value) => <option key={value} value={value}>{localizeDataLabel(value, locale, "category")}</option>)}</select><select value={region} onChange={(event) => { setRegion(event.target.value); setOffset(0); }}><option value="">{t("archive.allRegions")}</option>{facets.regions.map((value) => <option key={value} value={value}>{localizeDataLabel(value, locale, "region")}</option>)}</select><div className="source-multiselect" ref={sourceMenuRef}><button type="button" className={`source-multiselect-trigger ${sources.length ? "has-selection" : ""}`} onClick={() => setSourceMenuOpen((open) => !open)} aria-expanded={sourceMenuOpen}><span>{sourceLabel}</span><b>⌄</b></button>{sourceMenuOpen && <div className="source-multiselect-menu"><div className="source-multiselect-actions"><button type="button" onClick={() => { setSources([...facets.sources]); setOffset(0); }}>{t("archive.selectAllSources")}</button><button type="button" onClick={() => { setSources([]); setOffset(0); }}>{t("archive.clearSources")}</button></div><div className="source-multiselect-search"><span>⌕</span><input autoFocus value={sourceSearch} onChange={(event) => setSourceSearch(event.target.value)} placeholder={t("archive.searchSources")} /></div><div className="source-multiselect-options">{visibleSources.length === 0 ? <p>{t("archive.noSources")}</p> : visibleSources.map((value) => <label key={value}><input type="checkbox" checked={sources.includes(value)} onChange={() => toggleSource(value)} /><span>{value}</span></label>)}</div></div>}</div>{hasFilters && <button className="ghost-button" onClick={reset}>{t("archive.reset")}</button>}</div>
+      <div className="archive-search-row">
+        <div className="archive-search-box"><span>⌕</span><input value={query} onChange={(event) => { setQuery(event.target.value); setOffset(0); }} placeholder={t("archive.search")} /></div>
+        <div className="archive-filter-select">
+          <select value={sort} onChange={(event) => { setSort(event.target.value as typeof sort); setOffset(0); }}>
+            <option value="newest">{t("archive.newest")}</option>
+            <option value="oldest">{t("archive.oldest")}</option>
+            <option value="score">{t("archive.score")}</option>
+          </select>
+        </div>
+      </div>
+      <div className="filter-row">
+        <div className="archive-filter-select">
+          <select value={category} onChange={(event) => { setCategory(event.target.value); setOffset(0); }}>
+            <option value="">{t("archive.allCategories")}</option>
+            {facets.categories.map((value) => <option key={value} value={value}>{localizeDataLabel(value, locale, "category")}</option>)}
+          </select>
+        </div>
+        <div className="archive-filter-select">
+          <select value={region} onChange={(event) => { setRegion(event.target.value); setOffset(0); }}>
+            <option value="">{t("archive.allRegions")}</option>
+            {facets.regions.map((value) => <option key={value} value={value}>{localizeDataLabel(value, locale, "region")}</option>)}
+          </select>
+        </div>
+        <div className="source-multiselect" ref={sourceMenuRef}>
+          <button type="button" className="source-multiselect-trigger" onClick={() => setSourceMenuOpen((open) => !open)} aria-expanded={sourceMenuOpen}>
+            <span>{sourceLabel}</span>
+          </button>
+          {sourceMenuOpen && <div className="source-multiselect-menu">
+            <div className="source-multiselect-actions">
+              <button type="button" onClick={() => { setSources([...facets.sources]); setOffset(0); }}>{t("archive.selectAllSources")}</button>
+              <button type="button" onClick={() => { setSources([]); setOffset(0); }}>{t("archive.clearSources")}</button>
+            </div>
+            <div className="source-multiselect-search">
+              <span>⌕</span><input autoFocus value={sourceSearch} onChange={(event) => setSourceSearch(event.target.value)} placeholder={t("archive.searchSources")} />
+            </div>
+            <div className="source-multiselect-options">
+              {visibleSources.length === 0 ? <p>{t("archive.noSources")}</p> : visibleSources.map((value) =>
+                <label key={value}><input type="checkbox" checked={sources.includes(value)} onChange={() => toggleSource(value)} /><span>{value}</span></label>,
+              )}
+            </div>
+          </div>}
+        </div>
+        {hasFilters && <button className="ghost-button" onClick={reset}>{t("archive.reset")}</button>}
+      </div>
     </section>
     {error && <div className="notice error">{error}</div>}
     <div className="archive-summary"><b>{loading ? t("archive.searching") : page.total}</b> {t("archive.materials")} <span>· {t("archive.page", { page: pageNumber, pages })}</span></div>

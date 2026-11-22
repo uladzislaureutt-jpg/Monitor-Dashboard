@@ -250,13 +250,24 @@ kbd { color: #c4d5df; border: 1px solid #ffffff25; background: #ffffff0e; border
 select, .sync-form input { border: 1px solid #dcd6ce; border-radius: 9px; background: #fff; color: #3f5261; min-height: 38px; padding: 0 10px; font-size: 10px; outline: 0; }
 select { padding-right: 28px; }
 select:focus, input:focus, textarea:focus { border-color: #87b0ca; }
-.filter-row select, .source-multiselect { flex: 1; min-width: 160px; }
-.source-multiselect { position: relative; }
-.source-multiselect-trigger { width: 100%; min-height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid #dcd6ce; border-radius: 10px; background: #fffdfa; color: #263a49; padding: 0 10px; font: inherit; font-size: 11px; text-align: left; cursor: pointer; }
+.filter-row > .archive-filter-select, .filter-row > .source-multiselect { flex: 1; min-width: 160px; }
+.archive-filter-select, .source-multiselect, .source-multiselect-trigger { position: relative; }
+.archive-filter-select select, .source-multiselect-trigger {
+  appearance: none; width: 100%; height: 38px; border: 1px solid #dcd6ce; border-radius: 9px;
+  background: #fff; color: #3f5261; padding: 0 28px 0 10px; font-family: inherit; font-size: 10px;
+  text-align: left; cursor: pointer; outline: 0;
+}
+.archive-filter-select select:focus, .source-multiselect-trigger:focus,
+.source-multiselect-trigger[aria-expanded="true"] { border-color: #87b0ca; }
+.archive-filter-select::after, .source-multiselect-trigger::after {
+  content: ""; position: absolute; top: 50%; right: 10px; width: 6px; height: 6px;
+  border-right: 1.5px solid #3f5261; border-bottom: 1.5px solid #3f5261;
+  transform: translateY(-70%) rotate(45deg); pointer-events: none;
+}
+.source-multiselect-trigger { display: flex; align-items: center; }
 .source-multiselect-trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.source-multiselect-trigger b { color: #7690a2; font-size: 14px; }
-.source-multiselect-trigger.has-selection { border-color: #6e9db7; background: #f2f8fb; }
 .source-multiselect-menu { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; width: min(330px, 80vw); max-height: 360px; display: grid; grid-template-rows: auto auto minmax(0, 1fr); overflow: hidden; border: 1px solid #cdd9df; border-radius: 11px; background: #fffdfa; box-shadow: 0 12px 28px rgba(30, 53, 69, .18); }
+.source-multiselect > .source-multiselect-menu { right: 0; width: auto; border-radius: 9px; background: #fff; }
 .source-multiselect-actions { display: flex; justify-content: space-between; gap: 8px; padding: 9px 10px 7px; border-bottom: 1px solid #eee9e1; }
 .source-multiselect-actions button { border: 0; background: transparent; padding: 0; color: #357594; font: inherit; font-size: 11px; cursor: pointer; }
 .source-multiselect-search { display: grid; grid-template-columns: 18px 1fr; gap: 5px; align-items: center; margin: 8px 10px; padding: 0 7px; min-height: 30px; border: 1px solid #dcd6ce; border-radius: 7px; color: #7690a2; }
