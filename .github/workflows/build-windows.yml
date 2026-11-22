@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - 'src/components/LNewsAssistant.tsx'
+      - 'src/views/ArchiveView.tsx'
       - 'src/views/EventTraceView.tsx'
       - 'src/views/NetworksView.tsx'
       - 'src-tauri/migrations/0008_l_monitor_run_identity.sql'
