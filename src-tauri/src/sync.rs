@@ -537,7 +537,7 @@ pub fn sync_assistant(db_path:&Path,base_url:&str,anon_key:&str,access_token:&st
     let mut imported=0;
     for run in runs.iter().rev(){
         let id=run["id"].as_str().ok_or("Нет UUID запуска помощника")?;
-        let revision=run["revision"].to_string();let key=format!("l-assistant-revision:v2:{base_url}:{id}");
+        let revision=run["revision"].to_string();let key=format!("l-assistant-revision:v3:{base_url}:{id}");
         if db::get_app_setting(db_path,&key)?.as_deref()==Some(&revision){continue;}
         let bundle=post(serde_json::json!({"action":"download","run_id":id}))?;
         // Save the revision actually downloaded, since collection may advance

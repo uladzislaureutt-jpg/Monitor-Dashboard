@@ -8,6 +8,7 @@ on:
       - 'src/views/EventTraceView.tsx'
       - 'src/views/NetworksView.tsx'
       - 'src-tauri/migrations/0008_l_monitor_run_identity.sql'
+      - 'src-tauri/src/importer.rs'
       - '.github/workflows/build-windows.yml'
   push:
     branches: [main]
