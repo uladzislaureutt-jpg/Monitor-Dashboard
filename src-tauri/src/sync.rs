@@ -513,9 +513,9 @@ mod tests {
 
 /// Each feed is attempted even when the other one is temporarily unavailable.
 pub fn sync_server(db_path:&Path,base_url:&str,anon_key:&str,access_token:&str,monitor_key:&str)->Result<SyncResult,String>{
-    let github=sync_server_github(db_path,base_url,anon_key,access_token,monitor_key);
-    if monitor_key!=L_MONITOR_KEY{return github;}
+    if monitor_key!=L_MONITOR_KEY{return sync_server_github(db_path,base_url,anon_key,access_token,monitor_key);}
     let assistant=sync_assistant(db_path,base_url,anon_key,access_token);
+    let github=sync_server_github(db_path,base_url,anon_key,access_token,monitor_key);
     match (github,assistant){
         (Ok(mut result),Ok(n))=>{result.assistant_imported_runs=n;Ok(result)},
         (Ok(mut result),Err(error))=>{result.errors.push(format!("Помощник: {error}"));Ok(result)},
