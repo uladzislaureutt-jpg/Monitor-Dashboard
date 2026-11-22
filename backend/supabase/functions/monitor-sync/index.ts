@@ -43,7 +43,7 @@ async function enforceVersion(admin: any, appVersion: string) {
     .select("minimum_allowed_version,latest_version,update_mode")
     .eq("id", true)
     .maybeSingle();
-  if (error) return { ok: false, response: json({ error: "VERSION_CHECK_FAILED" }, 503) };
+  if (error) return { ok: false, response: json({ error: "VERSION_CHECK_FAILED" }, 503) } as const;
   const minimumSupported = String(data?.minimum_allowed_version || "0.0.0");
   const latest = String(data?.latest_version || minimumSupported);
   const updateMode = data?.update_mode === "required" ? "required" : "optional";
@@ -55,9 +55,9 @@ async function enforceVersion(admin: any, appVersion: string) {
       latest_version: latest,
       update_mode: updateMode,
       effective_minimum_version: effectiveMinimum,
-    }, 426) };
+    }, 426) } as const;
   }
-  return { ok: true, minimumSupported, latest, updateMode, effectiveMinimum };
+  return { ok: true, minimumSupported, latest, updateMode, effectiveMinimum } as const;
 }
 
 function json(body: unknown, status = 200) {
@@ -202,7 +202,7 @@ Deno.serve(async (req: Request) => {
       const body = (await zipResponse.text()).slice(0, 400);
       return json({ error: "GITHUB_DOWNLOAD_FAILED", status: zipResponse.status, detail: body }, 502);
     }
-    let bytes = new Uint8Array(await zipResponse.arrayBuffer());
+    let bytes: Uint8Array = new Uint8Array(await zipResponse.arrayBuffer());
     if (bytes.length > 20 * 1024 * 1024) return json({ error: "ARTIFACT_TOO_LARGE" }, 413);
 
     if (monitorKey === "lukashenko") {
