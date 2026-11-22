@@ -22,7 +22,7 @@ async function worker(){
   results.push({id:job.id,state:patch.state});
  }catch(error){
   const message=error instanceof Error?error.message:'worker_error';
-  const retry=job.kind!=='gdelt_probe'&&job.attempts<4&&/translation_unavailable|relevance_review_unavailable|transport|timeout|search_0$|search_429$|search_50[0234]$/.test(message);
+  const retry=job.kind!=='gdelt_probe'&&job.attempts<4&&/translation_unavailable|relevance_review_unavailable|transport|timeout|search_0$|(?:search|subscription)_(?:429|50[0234])$/.test(message);
   must(await db.from('l_news_jobs').update({state:retry?'waiting':'failed',error:message.slice(0,350),available_at:new Date(Date.now()+60000*job.attempts*job.attempts).toISOString(),lease_until:null,updated_at:new Date().toISOString()}).eq('id',job.id));
   if(!retry&&job.kind==='article')must(await db.from('l_news_items').update({state:'failed',reason:message.slice(0,250)}).eq('id',job.payload.item_id).neq('state','ready'));
   results.push({id:job.id,state:retry?'retry':'failed',error:message});
@@ -34,14 +34,26 @@ async function worker(){
 }
 
 async function status(){
+ const now=Date.now(), dayMs=86400000;
  const [settings,runs,providers,sources,usage]=await Promise.all([
   db.from('l_news_settings').select('*').single(),
   db.from('l_news_runs').select('id,number,status,from_at,to_at,settings,counters,warnings,revision,created_at,completed_at').order('created_at',{ascending:false}).limit(30),
   db.from('l_news_provider_state').select('*'),
   readPages(db.from('l_news_sources').select('country,baseline,coverage').eq('enabled',true).order('domain')),
-  db.from('l_news_usage').select('provider,billable,status,credits,created_at').gte('created_at',new Date(Date.now()-32*86400000).toISOString())
+  readPages<{provider:string;endpoint:string;status:number|null;credits:number|string|null;created_at:string}>(
+   db.from('l_news_usage').select('provider,endpoint,billable,status,credits,created_at')
+    .gte('created_at',new Date(now-32*dayMs).toISOString()).order('id'))
  ]);
- return {version:VERSION,country_names:COUNTRY_NAMES,settings:must(settings),runs:must(runs),providers:must(providers),sources,usage:must(usage)};
+ const newscatcher_usage={days:30,credits:0,assistant:0,event:0,diagnostic:0,unconfirmed:0};
+ for(const row of usage){
+  if(row.provider!=='newscatcher'||Date.parse(row.created_at)<now-newscatcher_usage.days*dayMs)continue;
+  if(row.credits===null){newscatcher_usage.unconfirmed++;continue;}
+  const credits=Number(row.credits);
+  newscatcher_usage.credits+=credits;
+  const category=row.endpoint==='event_articles'?'event':row.endpoint==='articles'?'assistant':'diagnostic';
+  newscatcher_usage[category]+=credits;
+ }
+ return {version:VERSION,country_names:COUNTRY_NAMES,settings:must(settings),runs:must(runs),providers:must(providers),sources,usage,newscatcher_usage};
 }
 return async (req: Request): Promise<Response> => {try{
  if(req.method==='OPTIONS')return new Response(null,{status:204,headers:cors});if(req.method!=='POST')return json({error:'method_not_allowed'},405);

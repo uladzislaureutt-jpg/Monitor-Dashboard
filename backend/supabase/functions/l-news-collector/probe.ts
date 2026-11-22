@@ -3,7 +3,7 @@ import {Job,Runtime,must,newscatcherSubscription,perigonLimits,reserve} from './
 
 export async function probe(rt:Runtime,job:Job){
  const result:any={version:VERSION,configured:{perigon:!!rt.perigonKey,newscatcher:!!rt.newscatcherKey}};
- if(rt.perigonKey){
+ if(rt.perigonKey&&!job.payload.skip_perigon){
   const before:any=await perigonLimits(rt);result.perigon={before,pages:[]};
   const pages=Array.isArray(job.payload.pages)?job.payload.pages.map(Number).filter((p:number)=>p>=0&&p<3).slice(0,2):[];
   for(const page of pages){

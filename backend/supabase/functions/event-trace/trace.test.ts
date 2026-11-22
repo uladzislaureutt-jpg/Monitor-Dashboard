@@ -196,6 +196,11 @@ Deno.test("Newscatcher stops at one page when results fit and leaves other route
     return { hits: [], more: false, incomplete: false };
   } });
   expect(one.search.newscatcher, 1);
+  const broad = await trace(input, async () => {}, { ...adapters, newscatcherPage: async (_p, _page, _d, attempt) => {
+    attempt();
+    return { hits: [], more: true, incomplete: true };
+  } });
+  expect([broad.search.newscatcher, broad.search.newscatcherPages, broad.search.newscatcherStatus], [8, 8, "partial"]);
   const throttled = await trace(input, async () => {}, { ...adapters, newscatcherPage: async (_p, page, _d, attempt) => {
     expect(page, 1);
     attempt();
@@ -203,6 +208,32 @@ Deno.test("Newscatcher stops at one page when results fit and leaves other route
   } });
   expect([throttled.search.newscatcher, throttled.search.newscatcherPages, throttled.search.newscatcherStatus,
     throttled.search.tavily > 0], [1, undefined, "rate_limit", true]);
+});
+
+Deno.test("Newscatcher records a billable HTTP success even when its JSON fails validation", async () => {
+  const { makeNewsSearch, newscatcherPage } = await import("./newscatcher.ts");
+  const plan = makeNewsSearch("Трамп Польша", "Трамп Польша", {}, { from: null, through: null });
+  if (!plan) throw Error("missing search plan");
+  const fetch = globalThis.fetch;
+  const prior = Deno.env.get("NEWSCATCHER_API_KEY");
+  let recorded: unknown;
+  try {
+    Deno.env.set("NEWSCATCHER_API_KEY", "test-key");
+    globalThis.fetch = async (_url, options) => {
+      expect(Object.keys(JSON.parse(String(options?.body))).sort(), [
+        "exclude_duplicates", "from_date", "page", "page_size", "q", "search_in", "sort_by", "to_date",
+      ]);
+      return new Response("bad response", { status: 200 });
+    };
+    await newscatcherPage(plan, 1, Date.now() + 10_000, () => {}, {
+      reserve: async () => 42,
+      record: async (id, row) => { recorded = [id, row.status, row.credits, row.result_count]; },
+    }).catch(() => {});
+    expect(recorded, [42, 200, 5, null]);
+  } finally {
+    globalThis.fetch = fetch;
+    if (prior === undefined) Deno.env.delete("NEWSCATCHER_API_KEY"); else Deno.env.set("NEWSCATCHER_API_KEY", prior);
+  }
 });
 
 Deno.test("a direct attribution can restore a previously checked candidate without a second download", async () => {

@@ -6,7 +6,7 @@ const admin = { id: 'admin', is_admin: true, status: 'active' };
 const operator = { id: 'operator', is_admin: false, status: 'active' };
 const disabled = { id: 'disabled', is_admin: true, status: 'disabled' };
 
-function fixture(hasMonitorAccess = true, monitorEnabled = true, catalog: Record<string,unknown>[] = []) {
+function fixture(hasMonitorAccess = true, monitorEnabled = true, catalog: Record<string,unknown>[] = [], usage: Record<string,unknown>[] = []) {
   const tables: Record<string, Record<string, unknown>[]> = {
     monitor_profiles: [admin, operator, disabled],
     monitor_access: [{ monitor_key: 'lukashenko', enabled: monitorEnabled }],
@@ -20,7 +20,7 @@ function fixture(hasMonitorAccess = true, monitorEnabled = true, catalog: Record
     l_news_sources: catalog,
     l_news_settings: [{ enabled: true, lookback_hours: 26 }],
     l_news_provider_state: [],
-    l_news_usage: [],
+    l_news_usage: usage,
   };
   const db = {
     auth: {
@@ -56,6 +56,22 @@ function fixture(hasMonitorAccess = true, monitorEnabled = true, catalog: Record
   };
   return createCollectorHandler({ db, secret: () => '', perigonKey: '', newscatcherKey: '' });
 }
+
+Deno.test('Newscatcher status counts assistant, event and diagnostic charges separately', async () => {
+  const now = new Date().toISOString();
+  const rows = [
+    { endpoint: 'articles', status: 200, credits: 5 },
+    { endpoint: 'event_articles', status: 200, credits: '5' },
+    { endpoint: 'event_articles', status: 429, credits: 0 },
+    { endpoint: 'event_articles', status: 0, credits: null },
+    { endpoint: 'event_pilot', status: 200, credits: 20 },
+  ].map(row => ({ ...row, provider: 'newscatcher', created_at: now }));
+  const response = await fixture(true, true, [], rows)(post('status', 'operator'));
+  equal(response.status, 200);
+  equal((await response.json()).newscatcher_usage, {
+    days: 30, credits: 30, assistant: 5, event: 5, diagnostic: 20, unconfirmed: 1,
+  });
+});
 
 function equal(actual: unknown, expected: unknown) {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {

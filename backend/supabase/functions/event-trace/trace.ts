@@ -1,6 +1,6 @@
 import { MAX_PAGES, plain, publicArticleUrl, telegramPostKey, timeline, urlKey, type Candidate, type Page, type TraceResult, type Window } from "./core.ts";
 import { brightSearch, cloudflareConfigured, eventModel, openArticle, tavily } from "./providers.ts";
-import { makeNewsSearch, newscatcherConfigured, newscatcherPage, type NewsCandidate, type NewsSearch } from "./newscatcher.ts";
+import { makeNewsSearch, newscatcherConfigured, newscatcherPage, newsPageLimit, type NewsAccounting, type NewsCandidate, type NewsSearch } from "./newscatcher.ts";
 
 export type TraceInput = { task: string; window: Window; locale: "ru" | "be" };
 export type TraceStage = "search" | "sources" | "reserve" | "summary";
@@ -137,7 +137,8 @@ function rankNews(candidates: NewsCandidate[], groups: string[][], topic: string
 }
 
 export async function trace(input: TraceInput,
-    checkpoint: (stage: TraceStage, result: TraceResult) => Promise<void>, adapters: Adapters = providers) {
+    checkpoint: (stage: TraceStage, result: TraceResult) => Promise<void>, adapters: Adapters = providers,
+    accounting?: NewsAccounting) {
   const deadline = Date.now() + 80_000;
   const pages = new Map<string, Page>();
   const unmatched = new Map<string, Page>();
@@ -177,20 +178,18 @@ export async function trace(input: TraceInput,
   async function searchNews(focus: NewsSearch | null) {
     if (!focus || !adapters.newscatcherPage) return [];
     const hits: NewsCandidate[] = [];
-    const budget = Math.min(deadline - 20_000, Date.now() + 15_000);
+    const budget = Math.min(deadline - 20_000, Date.now() + 27_000);
     const attempt = () => { search.newscatcher = (search.newscatcher ?? 0) + 1; };
     try {
-      const first = await adapters.newscatcherPage(focus, 1, budget, attempt);
-      search.newscatcherPages = 1;
-      hits.push(...first.hits);
-      if (!first.more) {
-        if (first.incomplete) search.newscatcherStatus = "partial";
-        return hits;
+      for (let page = 1; page <= newsPageLimit; page++) {
+        const batch = await adapters.newscatcherPage(focus, page, budget, attempt, accounting);
+        search.newscatcherPages = page;
+        hits.push(...batch.hits);
+        if (!batch.more || page === newsPageLimit) {
+          if (batch.incomplete) search.newscatcherStatus = "partial";
+          break;
+        }
       }
-      const second = await adapters.newscatcherPage(focus, 2, budget, attempt);
-      search.newscatcherPages = 2;
-      hits.push(...second.hits);
-      if (second.incomplete) search.newscatcherStatus = "partial";
     } catch (error) {
       const code = error instanceof Error ? error.message : "";
       search.newscatcherStatus = code === "newscatcher_rate_limit" ? "rate_limit"

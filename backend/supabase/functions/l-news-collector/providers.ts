@@ -28,7 +28,8 @@ export async function perigonLimits(rt:Runtime){
 export async function newscatcherSubscription(rt:Runtime){
  const response=await fetch('https://api.newscatcherapi.com/news-api/subscription',{headers:{'x-api-key':rt.newscatcherKey},signal:AbortSignal.timeout(20000)});
  const value=await response.json().catch(()=>({}));
- if(response.ok){const safe=Object.fromEntries(['plan','credits_balance','articles','credits_per_search','requests_per_second','historical_days'].filter(k=>k in value).map(k=>[k,value[k]]));await saveState(rt,'newscatcher',{configured:true,family:'news-api',subscription:safe});return {family:'news-api',subscription:safe};}
+ if(response.ok&&value.credits_balance!=null&&Number.isFinite(Number(value.credits_balance))){const safe=Object.fromEntries(['plan','credits_balance','articles','credits_per_search','requests_per_second','historical_days'].filter(k=>k in value).map(k=>[k,value[k]]));await saveState(rt,'newscatcher',{configured:true,family:'news-api',subscription:safe});return {family:'news-api',subscription:safe};}
+ if(![401,403,404].includes(response.status))throw new Error('newscatcher_subscription_'+response.status);
  const old=await fetch('https://v3-api.newscatcherapi.com/api/subscription',{headers:{'x-api-token':rt.newscatcherKey},signal:AbortSignal.timeout(20000)});const v=await old.json().catch(()=>({}));
  const safe=Object.fromEntries(Object.entries(v).filter(([k])=>/^(active|subscription_plan|plan|remaining_calls|assigned_calls|api_calls|calls|rate_limit|concurrent_calls|max_page_size|historical_days|additional_info)/i.test(k)));
  if(!old.ok)throw new Error('newscatcher_subscription_'+old.status);
