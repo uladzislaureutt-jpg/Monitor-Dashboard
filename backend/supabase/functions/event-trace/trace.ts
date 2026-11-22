@@ -1,18 +1,21 @@
 import { MAX_PAGES, plain, publicArticleUrl, telegramPostKey, timeline, urlKey, type Candidate, type Page, type TraceResult, type Window } from "./core.ts";
 import { brightSearch, cloudflareConfigured, eventModel, openArticle, tavily } from "./providers.ts";
+import { makeNewsSearch, newscatcherConfigured, newscatcherPage, type NewsCandidate, type NewsSearch } from "./newscatcher.ts";
 
 export type TraceInput = { task: string; window: Window; locale: "ru" | "be" };
 export type TraceStage = "search" | "sources" | "reserve" | "summary";
 
 const attributed = { ru: "первоисточник официальное сообщение кто сообщил", be: "першакрыніца афіцыйнае паведамленне хто паведаміў" };
 
-const providers = { tavily, openArticle, brightSearch, cloudflareConfigured, eventModel };
+const providers = { tavily, openArticle, brightSearch, cloudflareConfigured, eventModel, newscatcherConfigured, newscatcherPage };
+type Adapters = Omit<typeof providers, "newscatcherConfigured" | "newscatcherPage"> &
+  Partial<Pick<typeof providers, "newscatcherConfigured" | "newscatcherPage">>;
 
 const queryFiller = new Set(
   ("найди поиск отыщи проследи восстанови проверь сравни когда какой какие первый первые ранний ранние " +
    "публикация публикации публикаций сообщение сообщения сообщений официальный официальное официальные " +
    "предупреждение местный местных издания изданий агентств первоисточник распространение области область " +
-   "года годов утром сведения материал источник история истории освещение освещали пожалуйста мчс " +
+   "года годов утром сведения материал источник история истории освещение освещали пожалуйста мчс интервью " +
    "возможной возможном возможного сильное сильный сильном последствия последствиях причина причины " +
    "find trace search report reports reporting article articles original publication publications " +
    "first early earliest official statement warning sources source media news story").split(" "),
@@ -25,7 +28,8 @@ function searchableWords(value: string) {
 function topicStems(value: string) {
   const words = searchableWords(value.replace(/\b\d{1,2}\s+\p{L}{3,12}\s+\d{4}\b/gu, ""));
   return [...new Set(words.filter((word) => !queryFiller.has(word) && !word.startsWith("предупре")).map((word) =>
-    /^(?:шквал|непогод|ураган|гроз[аыеуо]|шторм)/u.test(word) ? "непогод" : word.slice(0, 5),
+    /^(?:шквал|непогод|ураган|гроз[аыеуо]|шторм)/u.test(word) ? "непогод"
+      : /^(?:польш|польск|poland|polish)/u.test(word) ? "польш" : word.slice(0, 5),
   ))];
 }
 
@@ -103,8 +107,37 @@ export function rankSearch(candidates: Candidate[], topic: string, variants: str
   return [...first, ...extra];
 }
 
+function rankNews(candidates: NewsCandidate[], groups: string[][], topic: string, variants: string[], country: string | null) {
+  const concepts = groups.map(group => group.map(topicStems).filter(words => words.length));
+  const scored = candidates.flatMap(candidate => {
+    const { url } = candidate;
+    const title = candidate.title ?? "";
+    const excerpt = candidate.excerpt ?? "";
+    const host = new URL(url).hostname.replace(/^www\./, "");
+    if (socialListing.test(host) || !matchesEvent(title, excerpt, topic, variants)) return [];
+    const titleWords = new Set(topicStems(title));
+    const allWords = new Set([...titleWords, ...topicStems(excerpt)]);
+    const count = (words: Set<string>) => concepts.filter(group => group.some(terms => terms.every(term => words.has(term)))).length;
+    const matches = count(allWords);
+    if (matches < 2) return [];
+    const headingMatches = count(titleWords);
+    const score = (matches === concepts.length ? 4 : 0) + Math.min(headingMatches, 2) +
+      (country && candidate.countryHint.toLowerCase() === country ? 2 : 0);
+    return [{ candidate, host, score }];
+  }).sort((a, b) => b.score - a.score ||
+    (a.candidate.publishedHint ?? "~").localeCompare(b.candidate.publishedHint ?? "~"));
+  const hosts = new Set<string>();
+  const first: NewsCandidate[] = [];
+  const remaining: NewsCandidate[] = [];
+  for (const item of scored) {
+    (hosts.has(item.host) ? remaining : first).push(item.candidate);
+    hosts.add(item.host);
+  }
+  return [...first, ...remaining];
+}
+
 export async function trace(input: TraceInput,
-    checkpoint: (stage: TraceStage, result: TraceResult) => Promise<void>, adapters = providers) {
+    checkpoint: (stage: TraceStage, result: TraceResult) => Promise<void>, adapters: Adapters = providers) {
   const deadline = Date.now() + 80_000;
   const pages = new Map<string, Page>();
   const unmatched = new Map<string, Page>();
@@ -112,7 +145,7 @@ export async function trace(input: TraceInput,
   const seen = new Set<string>();
   const resolved = new Map<string, string>();
   const warnings = new Set<string>();
-  const search = { tavily: 0, brightData: 0 };
+  const search: TraceResult["search"] = { tavily: 0, brightData: 0 };
   let summary: string | null = null;
   let summarySources: string[] = [];
   let observations: NonNullable<TraceResult["observations"]> = [];
@@ -125,7 +158,7 @@ export async function trace(input: TraceInput,
     allowReadability: () => parseMillis < 720,
     record: (milliseconds: number) => { parseMillis += milliseconds; },
   };
-  type InputCandidate = Candidate & { linked?: boolean; supplied?: boolean };
+  type InputCandidate = Candidate & { linked?: boolean; supplied?: boolean; indexed?: boolean };
 
   function snapshot(): TraceResult & { summarySources: string[] } {
     return { ...timeline([...pages.values()], resolved, input.window), checked, search: { ...search },
@@ -140,6 +173,30 @@ export async function trace(input: TraceInput,
       warnings.add(/^tavily_(not_configured|format|http_\d{3})$/.test(code) ? code : "tavily_unavailable");
       return [];
     }
+  }
+  async function searchNews(focus: NewsSearch | null) {
+    if (!focus || !adapters.newscatcherPage) return [];
+    const hits: NewsCandidate[] = [];
+    const budget = Math.min(deadline - 20_000, Date.now() + 15_000);
+    const attempt = () => { search.newscatcher = (search.newscatcher ?? 0) + 1; };
+    try {
+      const first = await adapters.newscatcherPage(focus, 1, budget, attempt);
+      search.newscatcherPages = 1;
+      hits.push(...first.hits);
+      if (!first.more) {
+        if (first.incomplete) search.newscatcherStatus = "partial";
+        return hits;
+      }
+      const second = await adapters.newscatcherPage(focus, 2, budget, attempt);
+      search.newscatcherPages = 2;
+      hits.push(...second.hits);
+      if (second.incomplete) search.newscatcherStatus = "partial";
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      search.newscatcherStatus = code === "newscatcher_rate_limit" ? "rate_limit"
+        : code === "newscatcher_window_partial" ? "partial" : "unavailable";
+    }
+    return hits;
   }
   function remember(requested: string, page: Page) {
     const key = urlKey(page.url);
@@ -176,7 +233,8 @@ export async function trace(input: TraceInput,
       const group = selected.slice(start, start + 3);
       await Promise.all(group.map(async (candidate) => {
         checked++;
-        const page = await adapters.openArticle(candidate, deadline, parseBudget);
+        // An indexed headline/snippet only selects the URL. Verify the publisher's own page.
+        const page = await adapters.openArticle(candidate.indexed ? { url: candidate.url } : candidate, deadline, parseBudget);
         const requested = urlKey(candidate.url);
         if (page.listing) {
           for (const link of page.links) {
@@ -190,6 +248,7 @@ export async function trace(input: TraceInput,
         }
         if (!candidate.supplied && (conflictsWithPlace(page.title, topic) ||
             (!candidate.linked && page.published && !insideWindow(page.published)))) return;
+        if (candidate.indexed && (page.access === "metadata" || !page.excerpt)) return;
         if (candidate.linked || matchesEvent(page.title, page.excerpt, topic, variants)) remember(requested, page);
         else unmatched.set(requested, page);
       }));
@@ -223,12 +282,18 @@ export async function trace(input: TraceInput,
   topic = base;
   const compact = compactQuery(base);
   const statedDate = /\b\d{4}\b|\b\d{1,2}[./]\d{1,2}\b/u.test(compact);
+  const newsEnabled = adapters.newscatcherConfigured?.() === true;
   const initial = base ? searchTavily(base) : Promise.resolve([]);
   const planned = base ? await adapters.eventModel(
     "Prepare search strings only. Return JSON {queries:[string,string,string],country:string|null}. " +
     "Use the original event language and a useful second language. Find early reporting, official source and attribution. " +
-    "Use supplied facts only. Include known publisher names only if provided. Country is a two-letter lowercase code or null.",
-    { task: base, window: input.window, operatorLanguage: input.locale }, deadline, 8500, 550,
+    "Use supplied facts only. Include known publisher names only if provided. Country is a two-letter lowercase code or null." +
+    (newsEnabled ? " Also return news:{terms:string[][],date:string|null} for a global news index. " +
+      "Provide 2–4 AND groups of distinct anchors, with up to 6 short OR alternatives in each. " +
+      "Use the names, location and distinctive quote or event details. Include natural inflections and translations where helpful. " +
+      "Omit publication instructions, dates and country of the requested press from terms. " +
+      "Set date to YYYY-MM-DD only for an explicitly dated target event." : ""),
+    { task: base, window: input.window, operatorLanguage: input.locale }, deadline, 8500, newsEnabled ? 900 : 550,
   ) : null;
   const country = typeof planned?.country === "string" && /^[a-z]{2}$/.test(planned.country)
     ? planned.country : countryHint(base);
@@ -236,11 +301,18 @@ export async function trace(input: TraceInput,
   const alternative = statedDate || topicStems(compact).length >= 2 ? compact : "";
   const queries = [...new Set([alternative, ...variants, base && `${compact.slice(0, 235)} ${attributed[input.locale]}`].filter(Boolean))]
     .filter(query => query !== base || statedDate).slice(0, 3);
+  const searchFocus = newsEnabled ? makeNewsSearch(base, compact, planned?.news, input.window) : null;
+  const newsSearch = searchNews(searchFocus);
   const matches = await Promise.all([initial, ...queries.map(query => searchTavily(query,
     query === compact && statedDate ? { from: null, through: null } : input.window))]);
   await open(rankSearch(interleave(matches), topic, variants, country), 8);
   await checkpoint("sources", snapshot());
 
+  const newsHits = await newsSearch;
+  if (searchFocus && newsHits.length) {
+    const incoming = rankNews(newsHits, searchFocus.groups, topic, variants, country);
+    await open(incoming.map(candidate => ({ url: candidate.url, indexed: true })), 5);
+  }
   const beforeLinks = new Set(pages.keys());
   await open(follow([...pages.values()]), 5);
   // A newly opened dossier may expose the previous day's notice as a plain navigational link.

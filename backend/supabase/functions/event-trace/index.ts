@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { day, TASK_LIMIT } from "./core.ts";
 import { cloudflareConfigured } from "./providers.ts";
+import { newscatcherConfigured } from "./newscatcher.ts";
 import { trace, type TraceInput } from "./trace.ts";
 
 const cors = {
@@ -56,6 +57,7 @@ Deno.serve(async (request: Request) => {
     if (data?.action === "health" && profile.is_admin) return json({
       tavily: Boolean(Deno.env.get("TAVILY_API_KEY") || Deno.env.get("EVENT_TAVILY_API_KEY")),
       brightData: Boolean(Deno.env.get("BRIGHT_DATA_API_KEY") || Deno.env.get("EVENT_BRIGHT_DATA_API_KEY")),
+      newscatcher: newscatcherConfigured(),
       cloudflare: cloudflareConfigured(),
     });
 
