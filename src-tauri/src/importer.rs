@@ -591,6 +591,9 @@ fn ingest_publications(
         if let Some(values)=item.provenance.as_ref().and_then(|v|v.get("url_aliases")).and_then(Value::as_array){
             aliases.extend(values.iter().filter_map(Value::as_str).map(str::to_string));
         }
+        if monitor_key == "lukashenko" {
+            aliases.extend(crate::identity::l_monitor_aliases(&aliases));
+        }
         let existing_by_url=crate::identity::find_document(tx,&item.document_id,&aliases)?;
 
         let document_db_id = if let Some(existing_id) = existing_by_url {
@@ -939,12 +942,12 @@ fn build_result(
     status: &str,
 ) -> Result<ImportResult, String> {
     let publications: i64 = tx
-        .query_row("SELECT COUNT(*) FROM run_items WHERE run_id=?1", params![run_id], |row| row.get(0))
+        .query_row("SELECT COUNT(*) FROM reported_run_items WHERE run_id=?1", params![run_id], |row| row.get(0))
         .map_err(|e| format!("Не удалось посчитать публикации run: {e}"))?;
     let sources_in_result: i64 = tx
         .query_row(
             r#"SELECT COUNT(DISTINCT d.source_id)
-               FROM run_items ri
+               FROM reported_run_items ri
                JOIN monitor_items mi ON mi.id=ri.monitor_item_id
                JOIN documents d ON d.id=mi.document_id
                WHERE ri.run_id=?1 AND d.source_id IS NOT NULL"#,
@@ -1043,6 +1046,10 @@ mod identity_integration_tests {
  use serde_json::json;
  use std::sync::atomic::{AtomicUsize,Ordering};
  static N:AtomicUsize=AtomicUsize::new(0);
+ fn test_directory(label: &str) -> std::path::PathBuf {
+     let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+     std::env::temp_dir().join(format!("{label}-{}-{stamp}-{}", std::process::id(), N.fetch_add(1, Ordering::SeqCst)))
+ }
  fn bundle(api:bool,uid:&str,url:&str,body:&str,quality:&str)->Value{
   let mut run=json!({"run_number":165,"github_run_id":"github-165","started_at":"2026-11-19T12:07:00Z","lookback_hours":26,"dry_run":false});
   if api {run=json!({"run_number":null,"collector":"api_assistant","collector_run_id":"pilot-uuid","collector_number":1,"started_at":"2026-11-19T12:07:00Z","lookback_hours":26,"dry_run":false});}
@@ -1060,7 +1067,7 @@ mod identity_integration_tests {
   validate_and_ingest(db,Path::new("test"),parsed).unwrap();
  }
  fn check_order(api_first:bool){
-  let dir=std::env::temp_dir().join(format!("monitor-identity-test-{}-{}",std::process::id(),N.fetch_add(1,Ordering::SeqCst)));std::fs::create_dir_all(&dir).unwrap();let path=dir.join("test.sqlite");crate::db::initialize_database(&path).unwrap();
+  let dir=test_directory("monitor-identity-test");std::fs::create_dir_all(&dir).unwrap();let path=dir.join("test.sqlite");crate::db::initialize_database(&path).unwrap();
   let long="Full original publication body. ".repeat(100);
   let first=bundle(api_first,if api_first{"api-doc"}else{"gh-doc"},"https://www.example.com/News/A?utm_source=first&id=7",&long,"FULL_TEXT");
   import(&path,first.clone());let conn=crate::db::open_database(&path).unwrap();let uid:String=conn.query_row("select document_uid from documents",[],|r|r.get(0)).unwrap();
@@ -1076,7 +1083,16 @@ mod identity_integration_tests {
   assert_eq!(conn.query_row("select count(*) from moderation_exclusions where document_uid=?1",params![uid],|r|r.get::<_,i64>(0)).unwrap(),1);
   assert_eq!(conn.query_row("select count(*) from moderation_flags where document_uid=?1",params![uid],|r|r.get::<_,i64>(0)).unwrap(),1);
   let runs=crate::db::list_runs(&path,"lukashenko").unwrap();assert!(runs.iter().any(|r|r.collector.as_deref()==Some("api_assistant")));
+  assert_eq!(runs.iter().map(|run| run.publications).sum::<i64>(), 1);
+  assert_eq!(runs.iter().map(|run| run.full_text_publications).sum::<i64>(), 1);
+  assert_eq!(runs.iter().map(|run| run.cross_collector_duplicates).sum::<i64>(), 1);
+  conn.execute("DELETE FROM moderation_exclusions WHERE document_uid=?1", params![uid]).unwrap();
+  for run in &runs {
+      let expected = usize::from(run.collector.as_deref() == Some("api_assistant"));
+      assert_eq!(crate::db::l_monitor_run_publications(&path, run.id).unwrap().len(), expected);
+  }
   let sources=crate::db::list_sources(&path,"lukashenko",None).unwrap();assert_eq!(sources.len(),1);
+  assert_eq!(sources[0].total_results, 1);
   // A different article ID remains a separate publication.
   import(&path,bundle(true,"another-doc","https://example.com/News/A?id=8","Different article","SNIPPET"));
   assert_eq!(conn.query_row("select count(*) from documents",[],|r|r.get::<_,i64>(0)).unwrap(),2);
@@ -1086,10 +1102,35 @@ mod identity_integration_tests {
  #[test] fn api_then_github_preserves_moderation_and_body(){check_order(true);}
 
  #[test]
+ fn migration_merges_already_imported_publisher_editions() {
+     let dir = test_directory("monitor-identity-migration");
+     let path = dir.join("test.sqlite");
+     crate::db::initialize_database(&path).unwrap();
+     let mut github = bundle(false, "gh-edition", "https://www.pravda.com.ua/rus/news/2026/11/19/8063865/", "GitHub lead", "SNIPPET");
+     github["manifest"]["run"]["started_at"] = json!("2026-11-19T11:00:00Z");
+     import(&path, github);
+     let conn = crate::db::open_database(&path).unwrap();
+     conn.execute("DELETE FROM document_url_aliases WHERE url_key LIKE 'edition:%'", []).unwrap();
+     let full_text = "A complete publication that should survive the migration. ".repeat(100);
+     import(&path, bundle(true, "api-edition", "https://www.pravda.com.ua/news/2026/11/19/8063865/", &full_text, "FULL_TEXT"));
+     conn.execute("INSERT INTO moderation_flags VALUES ('lukashenko','api-edition','u1','Editor','2026-11-19')", []).unwrap();
+     assert_eq!(conn.query_row("SELECT COUNT(*) FROM monitor_items", [], |r| r.get::<_, i64>(0)).unwrap(), 2);
+     conn.execute("DELETE FROM schema_migrations WHERE version=8", []).unwrap();
+     crate::db::initialize_database(&path).unwrap();
+     assert_eq!(conn.query_row("SELECT COUNT(*) FROM monitor_items", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+     assert_eq!(conn.query_row("SELECT full_text FROM documents WHERE document_uid='gh-edition'", [], |r| r.get::<_, String>(0)).unwrap(), full_text);
+     assert_eq!(crate::identity::stable_uid(&conn, "api-edition").unwrap(), "gh-edition");
+     assert_eq!(conn.query_row("SELECT COUNT(*) FROM moderation_flags WHERE document_uid='gh-edition'", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+     let runs = crate::db::list_runs(&path, "lukashenko").unwrap();
+     assert_eq!(runs.iter().find(|run| run.collector.is_none()).unwrap().publications, 1);
+     assert_eq!(runs.iter().find(|run| run.collector.is_some()).unwrap().publications, 0);
+     drop(conn);
+     let _ = std::fs::remove_dir_all(dir);
+ }
+
+ #[test]
  fn assistant_package_updates_dashboard_and_country_counts() {
-     let dir = std::env::temp_dir().join(format!(
-         "monitor-assistant-dashboard-{}-{}", std::process::id(), N.fetch_add(1, Ordering::SeqCst)
-     ));
+     let dir = test_directory("monitor-assistant-dashboard");
      let path = dir.join("dashboard.sqlite");
      crate::db::initialize_database(&path).unwrap();
      let mut package = bundle(true, "unused", "https://example.org/unused", "Preview", "SNIPPET");

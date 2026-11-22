@@ -17,6 +17,7 @@ const MIGRATION_0004: &str = include_str!("../migrations/0004_moderation.sql");
 const MIGRATION_0005: &str = include_str!("../migrations/0005_editorial_sources.sql");
 const MIGRATION_0006: &str = include_str!("../migrations/0006_persistent_settings.sql");
 const MIGRATION_0007: &str = include_str!("../migrations/0007_publication_identity.sql");
+const MIGRATION_0008: &str = include_str!("../migrations/0008_l_monitor_run_identity.sql");
 
 pub fn open_database(path: &Path) -> Result<Connection, String> {
     let conn = Connection::open(path).map_err(|e| format!("Не удалось открыть SQLite: {e}"))?;
@@ -101,6 +102,13 @@ pub fn initialize_database(path: &Path) -> Result<(), String> {
         tx.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (7)", []).map_err(|e| e.to_string())?;
         tx.commit().map_err(|e| e.to_string())?;
     }
+    if current < 8 {
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        tx.execute_batch(MIGRATION_0008).map_err(|e| e.to_string())?;
+        crate::identity::reconcile_l_monitor_identity(&tx)?;
+        tx.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (8)", []).map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
@@ -148,9 +156,9 @@ pub fn list_runs(path: &Path, monitor_key: &str) -> Result<Vec<RunSummary>, Stri
                 r.dry_run,
                 r.contract_version,
                 r.imported_at,
-                (SELECT COUNT(*) FROM run_items ri WHERE ri.run_id = r.id) AS publications,
+                (SELECT COUNT(*) FROM reported_run_items ri WHERE ri.run_id = r.id) AS publications,
                 (SELECT COUNT(DISTINCT d.source_id)
-                   FROM run_items ri
+                   FROM reported_run_items ri
                    JOIN monitor_items mi ON mi.id = ri.monitor_item_id
                    JOIN documents d ON d.id = mi.document_id
                   WHERE ri.run_id = r.id AND d.source_id IS NOT NULL) AS sources_in_result,
@@ -164,13 +172,19 @@ pub fn list_runs(path: &Path, monitor_key: &str) -> Result<Vec<RunSummary>, Stri
                                         'Не определено') AS country,
                                COUNT(DISTINCT COALESCE(NULLIF(json_extract(srm.metrics_json, '$.domain'), ''),
                                                        CAST(srm.source_id AS TEXT))) AS source_count
-                        FROM source_run_metrics srm
+                        FROM reported_source_run_metrics srm
                         WHERE srm.run_id = r.id AND COALESCE(srm.included, srm.results, 0) > 0
                         GROUP BY country
                         ORDER BY source_count DESC, country
                     )
                 ) END,
-                json_extract(r.manifest_json,'$.run.collector_run_id')
+                json_extract(r.manifest_json,'$.run.collector_run_id'),
+                (SELECT COUNT(*) FROM reported_run_items ri
+                   JOIN monitor_items mi ON mi.id = ri.monitor_item_id
+                   JOIN documents d ON d.id = mi.document_id
+                  WHERE ri.run_id = r.id AND d.full_text IS NOT NULL
+                    AND UPPER(COALESCE(d.full_text_quality, '')) IN ('FULL_TEXT', 'FULL')),
+                (SELECT COUNT(*) FROM suppressed_l_monitor_run_items WHERE run_id = r.id)
             FROM runs r
             JOIN monitors m ON m.id = r.monitor_id
             WHERE m.monitor_key = ?1
@@ -208,6 +222,8 @@ pub fn list_runs(path: &Path, monitor_key: &str) -> Result<Vec<RunSummary>, Stri
                 collector_number: row.get(14)?,
                 collector_countries,
                 collector_run_id: row.get(16)?,
+                full_text_publications: row.get(17)?,
+                cross_collector_duplicates: row.get(18)?,
             })
         })
         .map_err(|e| format!("Не удалось прочитать список запусков: {e}"))?;
@@ -221,7 +237,7 @@ pub fn l_monitor_run_publications(path: &Path, run_id: i64) -> Result<Vec<RunPub
     let mut stmt = conn.prepare(r#"
         SELECT mi.id, NULLIF(TRIM(s.canonical_name), ''), d.title, d.url,
                NULLIF(TRIM(s.configured_region), '')
-        FROM run_items ri
+        FROM reported_run_items ri
         JOIN runs r ON r.id = ri.run_id
         JOIN monitors m ON m.id = r.monitor_id
         JOIN monitor_items mi ON mi.id = ri.monitor_item_id AND mi.monitor_id = m.id
@@ -314,7 +330,7 @@ fn publication_select() -> &'static str {
             mi.score,
             d.preview_image_url,
             CASE WHEN NULLIF(TRIM(d.full_text),'') IS NOT NULL THEN 1 ELSE 0 END AS has_full_text,
-            (SELECT COUNT(*) FROM run_items ri2 WHERE ri2.monitor_item_id = mi.id) AS seen_in_runs,
+            (SELECT COUNT(*) FROM reported_run_items ri2 WHERE ri2.monitor_item_id = mi.id) AS seen_in_runs,
             julianday(d.published_at) AS published_day
         FROM monitor_items mi
         JOIN monitors m ON m.id = mi.monitor_id
@@ -537,7 +553,7 @@ fn l_monitor_stories(
         r#"{} WHERE m.monitor_key=?1 AND {}
            AND NOT EXISTS (SELECT 1 FROM moderation_flags mf WHERE mf.monitor_key=m.monitor_key AND mf.document_uid=d.document_uid)
            AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid)
-           AND EXISTS (SELECT 1 FROM run_items ri JOIN runs r ON r.id=ri.run_id
+           AND EXISTS (SELECT 1 FROM reported_run_items ri JOIN runs r ON r.id=ri.run_id
                        WHERE ri.monitor_item_id=mi.id AND json_extract(r.manifest_json,'$.run.collector')='api_assistant')
            ORDER BY datetime(d.published_at) DESC, mi.id DESC"#,
         publication_select(), period
@@ -640,12 +656,12 @@ pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i6
         "{} WHERE m.monitor_key=?1 AND {} \
          AND NOT EXISTS (SELECT 1 FROM moderation_flags mf WHERE mf.monitor_key=m.monitor_key AND mf.document_uid=d.document_uid) \
          AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid) \
-         AND EXISTS (SELECT 1 FROM run_items ri WHERE ri.monitor_item_id=mi.id AND (\
+         AND EXISTS (SELECT 1 FROM reported_run_items ri WHERE ri.monitor_item_id=mi.id AND (\
              NULLIF(TRIM(ri.also_covered_by),'') IS NOT NULL OR \
              NULLIF(TRIM(ri.event_echo_sources),'') IS NOT NULL OR \
              LOWER(COALESCE(ri.event_echo,'')) IN ('1','true','yes')\
          )) \
-         ORDER BY (SELECT COUNT(*) FROM run_items ri2 WHERE ri2.monitor_item_id=mi.id AND (\
+         ORDER BY (SELECT COUNT(*) FROM reported_run_items ri2 WHERE ri2.monitor_item_id=mi.id AND (\
              NULLIF(TRIM(ri2.also_covered_by),'') IS NOT NULL OR \
              NULLIF(TRIM(ri2.event_echo_sources),'') IS NOT NULL OR \
              LOWER(COALESCE(ri2.event_echo,'')) IN ('1','true','yes')\
@@ -905,7 +921,7 @@ pub fn list_sources(path: &Path, monitor_key: &str, period_days: Option<i64>) ->
                 AND NOT EXISTS (SELECT 1 FROM moderation_flags mf WHERE mf.monitor_key=m.monitor_key AND mf.document_uid=d.document_uid)
                 AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid)) AS publications,
             COALESCE((SELECT SUM(COALESCE(srm.results,0))
-               FROM source_run_metrics srm
+               FROM reported_source_run_metrics srm
                JOIN runs r ON r.id=srm.run_id
                JOIN monitors m ON m.id=r.monitor_id
               WHERE srm.source_id=s.id AND m.monitor_key=?1
