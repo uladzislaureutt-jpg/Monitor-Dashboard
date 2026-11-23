@@ -12,7 +12,7 @@
     "tauri": "tauri",
     "precheck": "node scripts/prepare-readability.mjs",
     "check": "tsc --noEmit",
-    "test:event-period": "node --test scripts/event-period.test.mjs"
+    "test:event-period": "node --experimental-strip-types --test scripts/event-period.test.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",

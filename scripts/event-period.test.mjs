@@ -1,14 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import ts from "typescript";
-
-const original = readFileSync(new URL("../src/eventPeriod.ts", import.meta.url), "utf8");
-const compiled = ts.transpileModule(original, {
-  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
-}).outputText;
-const { todayInMinsk, quickEventRange, formatEventDate, QUICK_EVENT_PERIODS } =
-  await import("data:text/javascript;base64," + Buffer.from(compiled).toString("base64"));
+import { todayInMinsk, quickEventRange, formatEventDate, QUICK_EVENT_PERIODS } from "../src/eventPeriod.ts";
 
 test("Minsk calendar is independent of browser timezone at local midnight", () => {
   assert.equal(todayInMinsk(new Date("2026-11-22T20:59:59Z")), "2026-11-22");
