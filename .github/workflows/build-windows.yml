@@ -43,6 +43,9 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      - name: Test event-period presets
+        run: npm run test:event-period
+
       - name: Prepare pinned yt-dlp
         shell: pwsh
         run: |

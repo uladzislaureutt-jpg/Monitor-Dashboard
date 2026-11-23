@@ -1582,3 +1582,23 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
   gap: 6px 12px;
   margin-top: 8px;
 }
+
+/* Event trace / compact presets and a focused custom date range (0.9.40). */
+.event-trace-period { min-width:0; }
+.event-trace-period legend { margin-bottom:10px; padding:0; color:#1f4057; font-size:12px; font-weight:750; }
+.event-trace-presets { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:5px; }
+.event-trace-preset { min-width:0; min-height:37px; border:1px solid #dcd6ce; border-radius:9px; background:#fffdfa; color:#466073; padding:7px 3px; font-family:inherit; font-size:10px; font-weight:650; line-height:1.15; white-space:nowrap; cursor:pointer; }
+.event-trace-preset:hover:not(:disabled) { border-color:#90b8d0; background:#f1f7fa; }
+.event-trace-preset.active { border-color:#2f6f98; background:#2f6f98; color:white; box-shadow:0 2px 7px #2f6f9827; }
+.event-trace-preset:focus-visible { outline:2px solid #5b9cbf; outline-offset:2px; }
+.event-trace-date-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; margin-top:12px; }
+.event-trace-date-fields label { display:grid; min-width:0; gap:5px; color:#536b7b; font-size:10px; font-weight:700; }
+.event-trace-date-fields input { box-sizing:border-box; width:100%; min-width:0; height:39px; border:1px solid #dcd6ce; border-radius:9px; padding:0 7px; background:#fff; color:#263a49; font-size:11px; }
+.event-trace-date-fields input:focus-visible { outline:2px solid #87b0ca; outline-offset:1px; }
+.event-trace-period-note { display:block; color:#73808c; font-size:9px; line-height:1.45; margin-top:9px; }
+.event-trace-period-summary { margin-top:11px; padding:9px 10px; border:1px solid #dae8ef; border-radius:9px; background:#f2f7fa; color:#456275; font-size:10px; line-height:1.5; }
+.event-trace-period-summary strong { color:#183f5a; }
+.event-trace-form-actions { display:flex; align-items:stretch; gap:8px; }
+.event-trace-form-actions .primary-button { flex:1 1 auto; min-width:0; min-height:39px; font-size:11px; }
+.event-trace-form-actions .secondary-button { flex:0 0 auto; min-height:39px; font-size:10px; }
+@media (max-width:1080px) { .event-trace-presets { display:flex; flex-wrap:wrap; } .event-trace-preset { flex:1 1 30%; } }
