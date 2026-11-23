@@ -211,7 +211,7 @@ export function EventTraceView() {
             title={be ? "Ачысціць завершанае заданне і вынік" : "Очистить завершённую задачу и результат"} onClick={() => void clearRun()}>
             {be ? "Ачысціць" : "Очистить"}
           </button>}
-        </div>}
+        </div>
       </form>
       <div className="panel event-trace-output">
         <div className="event-trace-output-head"><h2>{be ? "Вынік" : "Результат"}</h2>{report &&
