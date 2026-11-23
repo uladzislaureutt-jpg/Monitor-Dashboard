@@ -3,9 +3,11 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { desktopApi } from "../api";
 import { eventRun, type EventRun } from "../eventTrace";
 import { makeEventReport, type ReportPart } from "../eventReport";
+import { formatEventDate, QUICK_EVENT_PERIODS, quickEventRange, type QuickEventPeriodDays } from "../eventPeriod";
 import { useI18n } from "../i18n";
 
 const LIMIT = 500;
+type PeriodMode = QuickEventPeriodDays | "custom" | null;
 
 export function EventTraceView() {
   const { locale } = useI18n();
@@ -13,6 +15,7 @@ export function EventTraceView() {
   const [task, setTask] = useState("");
   const [from, setFrom] = useState("");
   const [through, setThrough] = useState("");
+  const [periodMode, setPeriodMode] = useState<PeriodMode>(null);
   const [run, setRun] = useState<EventRun | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -29,6 +32,7 @@ export function EventTraceView() {
       setTask(value.task);
       setFrom(value.options.from || "");
       setThrough(value.options.through === value.options.from ? "" : value.options.through || "");
+      setPeriodMode("custom");
     }).catch((reason) => {
       if (!controller.signal.aborted) setError(String(reason.message || "read_failed"));
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
@@ -91,8 +95,16 @@ export function EventTraceView() {
       setTask("");
       setFrom("");
       setThrough("");
+      setPeriodMode(null);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "clear_failed"); }
     finally { setClearing(false); submitGuard.current = false; }
+  }
+
+  function choosePreset(days: QuickEventPeriodDays) {
+    const dates = quickEventRange(days);
+    setFrom(dates.from);
+    setThrough(dates.through);
+    setPeriodMode(days);
   }
 
   const result = run?.result;
@@ -156,17 +168,50 @@ export function EventTraceView() {
         <textarea id="event-task" rows={6} maxLength={LIMIT} value={task} disabled={formBusy} onChange={(event) => setTask(event.target.value)}
           placeholder={be ? "Што адбылося і якую інфармацыю трэба прасачыць? Можна ўставіць спасылку." : "Что произошло и какую информацию нужно проследить? Можно вставить ссылку."} />
         <small className="muted event-trace-count">{task.length} / {LIMIT}</small>
-        <fieldset disabled={formBusy}>
+        <fieldset className="event-trace-period" disabled={formBusy}>
           <legend>{be ? "Перыяд публікацый" : "Период публикаций"}</legend>
-          <div className="event-trace-dates">
-            <label>{be ? "Ад (абавязкова)" : "С (обязательно)"}<input type="date" required value={from} max={through || undefined} onChange={(event) => setFrom(event.target.value)} /></label>
-            <label>{be ? "Па (неабавязкова)" : "По (необязательно)"}<input type="date" value={through} min={from || undefined} onChange={(event) => setThrough(event.target.value)} /></label>
+          <div className="event-trace-presets" role="group" aria-label={be ? "Хуткі выбар перыяду" : "Быстрый выбор периода"}>
+            {QUICK_EVENT_PERIODS.map((days) => <button key={days} type="button"
+              className={`event-trace-preset${periodMode === days ? " active" : ""}`}
+              aria-pressed={periodMode === days} onClick={() => choosePreset(days)}>
+              {days} {be ? (days === 1 ? "дзень" : "дзён") : (days === 1 ? "день" : days === 3 ? "дня" : "дней")}
+            </button>)}
+            <button type="button" className={`event-trace-preset${periodMode === "custom" ? " active" : ""}`}
+              aria-pressed={periodMode === "custom"} onClick={() => setPeriodMode("custom")}>
+              {be ? "Свой" : "Свой"}
+            </button>
           </div>
+          {periodMode === "custom" ? <>
+            <div className="event-trace-date-fields">
+              <label htmlFor="event-from">{be ? "Ад *" : "От *"}
+                <input id="event-from" type="date" required value={from} max={through || undefined} onChange={(event) => setFrom(event.target.value)} />
+              </label>
+              <label htmlFor="event-through">{be ? "Да" : "До"}
+                <input id="event-through" type="date" value={through} min={from || undefined} onChange={(event) => setThrough(event.target.value)} />
+              </label>
+            </div>
+            <small className="event-trace-period-note">{be
+              ? "Дата «Ад» абавязковая. Без даты «Да» пошук ідзе толькі за выбраны дзень."
+              : "Дата «От» обязательна. Без даты «До» поиск идёт только за выбранный день."}</small>
+          </> : periodMode !== null ? <>
+            <div className="event-trace-period-summary" aria-live="polite">
+              {be ? "Абраны перыяд: " : "Выбранный период: "}
+              <strong>{formatEventDate(from)}{from !== through ? ` — ${formatEventDate(through)}` : ""}</strong>
+            </div>
+            <small className="event-trace-period-note">{be
+              ? "Хуткія перыяды ўключаюць сённяшні дзень па Мінску. Для мінулых падзей абярыце «Свой»."
+              : "Быстрые периоды включают сегодняшний день по Минску. Для прошлых событий выберите «Свой»."}</small>
+          </> : <small className="event-trace-period-note">{be
+            ? "Абярыце хуткі перыяд або ўкажыце свае даты."
+            : "Выберите быстрый период или укажите свои даты."}</small>}
         </fieldset>
-        <button className="primary-button" disabled={!task.trim() || !validPeriod || formBusy}>{be ? "Прасачыць" : "Проследить"}</button>
-        {run && !running && <button type="button" className="secondary-button" disabled={formBusy} onClick={() => void clearRun()}>
-          {be ? "Ачысціць заданне і вынік" : "Очистить задачу и результат"}
-        </button>}
+        <div className="event-trace-form-actions">
+          <button className="primary-button" disabled={!task.trim() || !validPeriod || formBusy}>{be ? "Прасачыць" : "Проследить"}</button>
+          {run && !running && <button type="button" className="secondary-button" disabled={formBusy}
+            title={be ? "Ачысціць завершанае заданне і вынік" : "Очистить завершённую задачу и результат"} onClick={() => void clearRun()}>
+            {be ? "Ачысціць" : "Очистить"}
+          </button>}
+        </div>}
       </form>
       <div className="panel event-trace-output">
         <div className="event-trace-output-head"><h2>{be ? "Вынік" : "Результат"}</h2>{report &&

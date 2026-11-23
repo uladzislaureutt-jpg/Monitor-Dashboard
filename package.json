@@ -1,7 +1,7 @@
 {
   "name": "monitor-dashboard",
   "private": true,
-  "version": "0.9.39",
+  "version": "0.9.40",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,7 +11,8 @@
     "pretauri": "node scripts/prepare-readability.mjs",
     "tauri": "tauri",
     "precheck": "node scripts/prepare-readability.mjs",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "test:event-period": "node --test scripts/event-period.test.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
