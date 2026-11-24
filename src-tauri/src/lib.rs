@@ -3,6 +3,7 @@ mod fulltext;
 mod importer;
 mod identity;
 mod models;
+mod perf;
 mod networks_sync;
 mod report;
 mod sync;
@@ -50,12 +51,12 @@ struct TikTokTranscriptResult {
 
 #[tauri::command]
 fn get_database_stats(state: State<'_, AppState>, monitor_key: String) -> Result<DatabaseStats, String> {
-    db::database_stats(&state.db_path, &monitor_key)
+    perf::measure(&state.db_path, "database_stats", &monitor_key, || db::database_stats(&state.db_path, &monitor_key))
 }
 
 #[tauri::command]
 fn list_runs(state: State<'_, AppState>, monitor_key: String) -> Result<Vec<RunSummary>, String> {
-    db::list_runs(&state.db_path, &monitor_key)
+    perf::measure(&state.db_path, "list_runs", &monitor_key, || db::list_runs(&state.db_path, &monitor_key))
 }
 
 #[tauri::command]
@@ -108,7 +109,7 @@ fn read_networks_jsonl(path: String) -> Result<String, String> {
 #[tauri::command]
 fn import_dashboard_bundle(path: String, state: State<'_, AppState>) -> Result<ImportResult, String> {
     let path = PathBuf::from(path);
-    importer::import_bundle(&state.db_path, &path)
+    perf::measure(&state.db_path, "manual_import", "all", || importer::import_bundle(&state.db_path, &path))
 }
 
 #[tauri::command]
@@ -117,7 +118,7 @@ fn get_dashboard_overview(
     period_days: Option<i64>,
     state: State<'_, AppState>,
 ) -> Result<DashboardOverview, String> {
-    db::dashboard_overview(&state.db_path, &monitor_key, period_days)
+    perf::measure(&state.db_path, "dashboard", &monitor_key, || db::dashboard_overview(&state.db_path, &monitor_key, period_days))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -135,7 +136,7 @@ fn list_publications(
     offset: i64,
     state: State<'_, AppState>,
 ) -> Result<ArchivePage, String> {
-    db::list_publications(
+    perf::measure(&state.db_path, "archive", &monitor_key, || db::list_publications(
         &state.db_path,
         &monitor_key,
         &query,
@@ -147,7 +148,7 @@ fn list_publications(
         &sort,
         limit,
         offset,
-    )
+    ))
 }
 
 #[tauri::command]
@@ -172,7 +173,7 @@ fn get_archive_facets(
     monitor_key: String,
     state: State<'_, AppState>,
 ) -> Result<ArchiveFacets, String> {
-    db::archive_facets(&state.db_path, &monitor_key)
+    perf::measure(&state.db_path, "archive_facets", &monitor_key, || db::archive_facets(&state.db_path, &monitor_key))
 }
 
 #[tauri::command]
@@ -181,7 +182,7 @@ fn list_sources(
     period_days: Option<i64>,
     state: State<'_, AppState>,
 ) -> Result<Vec<SourceSummary>, String> {
-    db::list_sources(&state.db_path, &monitor_key, period_days)
+    perf::measure(&state.db_path, "list_sources", &monitor_key, || db::list_sources(&state.db_path, &monitor_key, period_days))
 }
 
 #[tauri::command]
@@ -608,7 +609,7 @@ fn sync_tiktok_network_bundles(
 #[tauri::command]
 async fn sync_l_news_assistant(base_url:String,anon_key:String,access_token:String,state:State<'_,AppState>)->Result<usize,String>{
     let path=state.db_path.clone();
-    tauri::async_runtime::spawn_blocking(move||sync::sync_assistant(&path,&base_url,&anon_key,&access_token)).await.map_err(|e|e.to_string())?
+    tauri::async_runtime::spawn_blocking(move||perf::measure(&path,"sync_assistant","lukashenko",||sync::sync_assistant(&path,&base_url,&anon_key,&access_token))).await.map_err(|e|e.to_string())?
 }
 
 #[tauri::command]
@@ -619,7 +620,7 @@ fn sync_server_artifacts(
     monitor_key: String,
     state: State<'_, AppState>,
 ) -> Result<sync::SyncResult, String> {
-    sync::sync_server(&state.db_path, &base_url, &anon_key, &access_token, &monitor_key)
+    perf::measure(&state.db_path, "sync_server", &monitor_key, || sync::sync_server(&state.db_path, &base_url, &anon_key, &access_token, &monitor_key))
 }
 
 #[tauri::command]

@@ -140,6 +140,21 @@ pub fn database_stats(path: &Path, monitor_key: &str) -> Result<DatabaseStats, S
     })
 }
 
+/// Cheap synchronization cursor; intentionally avoids the expensive reported_run_items
+/// views and per-run aggregation used by the operator's history screen.
+pub fn sync_run_numbers(path: &Path, monitor_key: &str) -> Result<Vec<(i64, bool)>, String> {
+    let conn = open_database(path)?;
+    let mut stmt = conn.prepare(
+        "SELECT r.run_number, COALESCE(r.dry_run,0) FROM runs r
+         JOIN monitors m ON m.id=r.monitor_id
+         WHERE m.monitor_key=?1 AND r.run_number IS NOT NULL"
+    ).map_err(|e| e.to_string())?;
+    let rows = stmt.query_map(params![monitor_key], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)? != 0))
+    }).map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
 pub fn list_runs(path: &Path, monitor_key: &str) -> Result<Vec<RunSummary>, String> {
     let conn = open_database(path)?;
     let mut stmt = conn

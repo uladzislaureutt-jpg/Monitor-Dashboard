@@ -151,10 +151,9 @@ pub fn sync_github(db_path: &Path, repository: &str, token: &str, monitor_key: &
     let checked_artifacts = artifacts.len();
     let latest_remote_run = artifacts.iter().map(|(run, _)| *run).max();
 
-    let existing_runs: HashSet<i64> = db::list_runs(db_path, monitor_key)?
+    let existing_runs: HashSet<i64> = db::sync_run_numbers(db_path, monitor_key)?
         .into_iter()
-        .filter(|run| run.monitor_key == monitor_key)
-        .filter_map(|run| run.run_number)
+        .map(|(number, _dry)| number)
         .collect();
     let latest_imported_run = existing_runs.iter().copied().max();
     let known_dry_artifacts = db::sync_dry_artifacts(db_path, monitor_key)?;
@@ -245,10 +244,10 @@ pub fn sync_github(db_path: &Path, repository: &str, token: &str, monitor_key: &
         }
     }
 
-    let latest_imported_run = db::list_runs(db_path, monitor_key)?
+    let latest_imported_run = db::sync_run_numbers(db_path, monitor_key)?
         .into_iter()
-        .filter(|run| run.monitor_key == monitor_key && run.dry_run != Some(true))
-        .filter_map(|run| run.run_number)
+        .filter(|(_, dry)| !dry)
+        .map(|(number, _)| number)
         .max();
     let latest_available_run = latest_imported_run;
 
@@ -358,10 +357,9 @@ fn sync_server_github(
     let checked_artifacts = artifacts.len();
     let latest_remote_run = payload.latest_remote_run.or_else(|| artifacts.iter().map(|(run, _)| *run).max());
 
-    let existing_runs: HashSet<i64> = db::list_runs(db_path, monitor_key)?
+    let existing_runs: HashSet<i64> = db::sync_run_numbers(db_path, monitor_key)?
         .into_iter()
-        .filter(|run| run.monitor_key == monitor_key)
-        .filter_map(|run| run.run_number)
+        .map(|(number, _dry)| number)
         .collect();
     let latest_imported_run = existing_runs.iter().copied().max();
     let known_dry_artifacts = db::sync_dry_artifacts(db_path, monitor_key)?;
