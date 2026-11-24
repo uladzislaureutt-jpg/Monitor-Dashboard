@@ -5,7 +5,7 @@ import {Job,Run,Runtime,must,reserve} from './providers.ts';
 function parseOutput(text:string):any {try{return JSON.parse(text.replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,''));}catch{const a=text.indexOf('{'),b=text.lastIndexOf('}');if(a>=0&&b>a)return JSON.parse(text.slice(a,b+1));throw new Error('translation_not_json');}}
 export function validRussianCard(original:string,output:any):boolean {
  if(typeof output?.title_ru!=='string'||output.title_ru.trim().length<4||output.title_ru.length>800||typeof output?.excerpt_ru!=='string'||output.excerpt_ru.length>3500)return false;
- if(!/[А-Яа-яЁё]{2,}/.test(output.title_ru))return false;
+ if(!/[А-Яа-яЁё]{2,}/.test(output.title_ru)||/[јљњћђџЈЉЊЋЂЏ]/.test(output.title_ru))return false;
  const nums=(s:string)=>new Set((s.match(/\d+(?:[.,]\d+)*/g)||[]).map(x=>x.replace(/,/g,'.')));
  const a=nums(original),b=nums(output.title_ru+' '+output.excerpt_ru);return [...a].every(n=>b.has(n));
 }
@@ -38,8 +38,9 @@ export async function translateCard(rt:Runtime,job:Job,run:Run|null,c:Candidate,
  const prompt=review
   ? [
     'Какую самостоятельную новость о Лукашенко можно написать по этой публикации? Если она есть, верни verdict="substantive", изложи её одним русским предложением в excerpt_ru и укажи evidence_index — индекс с нуля подтверждающего фрагмента quote. Это может быть конкретное действие, заявление, роль в событии или содержательный вывод о его политике, в том числе в отдельной части интервью.',
-    'Если фамилия служит только для справки, сравнения, характеристики другого человека или встретилась в отдельной ссылке «Читайте также», верни verdict="passing_reference". Если фрагментов недостаточно, верни verdict="insufficient_context".',
-    isRussian?'Оставь оригинальный заголовок.':'При substantive верни также title_ru — перевод исходного заголовка.',
+    'Самостоятельный инфоповод о Лукашенко должен быть актуальным действием, заявлением или новым содержательным анализом непосредственно его политики. Не превращай одну фразу в статье о другом лице или событии в отдельную новость.',
+    'Если Лукашенко упомянут только как исторический пример, иллюстрация правовой нормы (в том числе юрисдикции МУС), прежняя цитата, сравнение, «как сообщали ранее» или отдельная ссылка «Читайте также», верни verdict="passing_reference", даже если эта фраза сама по себе содержательна. Если контекста недостаточно, верни verdict="insufficient_context".',
+    isRussian?'Оставь оригинальный заголовок.':'При substantive верни также title_ru — перевод исходного заголовка именно на русский язык; сербская кириллица не является русским переводом.',
     translation+' Ответь одним JSON-объектом. Данные:',
     JSON.stringify({title:c.title,lead:clean(c.lead).slice(0,600),passages:review}),
    ].join('\n')

@@ -39,8 +39,16 @@ export function urlKey(value:string):string {
 export function domainOf(value:string):string {try{return new URL(value).hostname.toLowerCase().replace(/^www\./,'');}catch{return '';}}
 export function publisherArticleKey(value: string): string | null {
  const domain = domainOf(value);
- if (!['tsn.ua', 'pravda.com.ua', 'rbc.ua'].includes(domain)) return null;
+ if (!['tsn.ua', 'pravda.com.ua', 'rbc.ua', 'iz.ru', 'politika.rs'].includes(domain)) return null;
  const path = new URL(value).pathname.replace(/\/+$/, '');
+ if(domain==='iz.ru'){
+  const id=path.match(/^\/(?:en\/node\/)?([0-9]{5,12})(?:\/|$)/i)?.[1];
+  return id?`edition:iz.ru:${id}`:null;
+ }
+ if(domain==='politika.rs'){
+  const id=path.match(/^\/(?:sr|scc|en)\/clanak\/([0-9]{4,12})(?:\/|$)/i)?.[1];
+  return id?`edition:politika.rs:${id}`:null;
+ }
  if (domain === 'rbc.ua') {
   const articlePath = path.match(/^\/(?:(?:rus|ukr|eng)\/)?(news\/[^/]+-[0-9]{10}\.html)(?:\/amp)?$/i)?.[1];
   return articlePath ? `edition:https://rbc.ua/${articlePath}` : null;
