@@ -1,6 +1,6 @@
 // One display story per source-independent event; source URLs and identities remain distinct.
 type Card={publication?:{title?:string;excerpt?:string;published_at?:string};event?:Record<string,unknown>;provenance?:{title_original?:string};source?:{name?:string}};
-const norm=(s:string)=>s.toLowerCase().replace(/ё/g,'е').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+const norm=(s:string)=>s.toLowerCase().replace(/ё/g,'е').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
 function storyType(card:Card):string|null {
  const s=norm([card.publication?.title,card.publication?.excerpt].filter(Boolean).join(' '));
  if(/(?:конкурир|дублиру|дуплиру|защит[а-я]* общ[а-я]* рынк|защит[а-я]* союзн[а-я]* рынк|заштит[а-я]* заједничк)/.test(s)&&/(?:предприяти|производств|рынк|тржишт)/.test(s)&&/(?:лукаш|беларус|белорус|росси)/.test(s))return 'russia-belarus-noncompeting-manufacturing';

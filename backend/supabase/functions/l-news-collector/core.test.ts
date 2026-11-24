@@ -3,6 +3,7 @@ import {extractPage,ukrainianEdition} from './extraction.ts';
 import {translateCard,validRussianCard} from './translation.ts';
 import type {Job,Runtime} from './providers.ts';
 import {githubPublications} from './github.ts';
+import {groupStoryCards} from './story.ts';
 import {zipSync,strToU8} from 'npm:fflate@0.8.2';
 function assert(x:unknown):asserts x{if(!x)throw new Error('assertion failed');}
 function equal(a:unknown,b:unknown){assert(JSON.stringify(a)===JSON.stringify(b));}
@@ -179,4 +180,36 @@ Deno.test('other Ukrainian publishers require an article and a same-host languag
  equal(ukrainianEdition(ru,alternatives,true),{primary:uk,aliases:[uk,ru]});
  equal(ukrainianEdition(ru,[{language:'uk',url:'https://example.ua/uk'},alternatives[1]],true),null);
  equal(ukrainianEdition(ru,[{language:'uk',url:'https://other.ua/news/another-topic-article'},alternatives[1]],true),null);
+});
+
+Deno.test('Izvestia and Politika language editions resolve to the same article',()=>{
+ equal(publisherArticleKey('https://iz.ru/en/node/2206827'),'edition:iz.ru:2206827');
+ equal(publisherArticleKey('https://iz.ru/2206827/lukashenko-zaiavil'),'edition:iz.ru:2206827');
+ equal(publisherArticleKey('https://iz.ru/2206889/2026-11-23/china'),'edition:iz.ru:2206889');
+ equal(publisherArticleKey('https://politika.rs/sr/clanak/805403/lukasenko'),'edition:politika.rs:805403');
+ equal(publisherArticleKey('https://politika.rs/scc/clanak/805403/lukasenko'),'edition:politika.rs:805403');
+});
+Deno.test('same news fact forms one story without losing unrelated news',()=>{
+ const cases=[
+  ['Известия','Лукашенко выступил против конкуренции между предприятиями России и Белоруссии','Лукашенко призвал не создавать конкурирующие производства и защищать общий рынок'],
+  ['Politika','Лукашенко требует защиты общего рынка России и Белоруссии','Лукашенко призвал отказаться от дублирующих производств и защитить общий рынок'],
+  ['РБК','Лукашенко предложил укрепить защиту общего рынка Белоруссии и России','Лукашенко призвал защитить союзный рынок'],
+  ['РИА','Лукашенко рассказал, какой совет ему дал Си Цзиньпин','Не разрушать прежний опыт, а совершенствовать его'],
+  ['МК','Лукашенко заявил, что нужно работать по-китайски','Президент призвал сохранять опыт и развивать экономику'],
+  ['РИА','Лукашенко одобрил поправки в соглашение о драгоценных металлах','Поправки касаются торговли драгоценными металлами'],
+  ['МК','Лукашенко одобрил поправки в соглашение с РФ о драгметаллах','Поправки к соглашению о драгметаллах'],
+ ] as const;
+ const cards=cases.map(([name,title,excerpt])=>({source:{name},publication:{title,excerpt,published_at:'2026-11-23T13:00:00Z'},event:{signature:null as string|null,object:null as string|null},provenance:{title_original:title}}));
+ const result=groupStoryCards(cards);
+ equal(result.length,7);
+ assert(result[0].event.signature);
+ equal(result[0].event.signature,result[1].event.signature);
+ equal(result[0].event.signature,result[2].event.signature);
+ assert(result[0].event.signature!==result[3].event.signature);
+ equal(result[3].event.signature,result[4].event.signature);
+ assert(result[5].event.signature!==result[3].event.signature);
+ equal(result[5].event.signature,result[6].event.signature);
+});
+Deno.test('Serbian-specific Cyrillic is rejected as an untranslated Russian card',()=>{
+ assert(!validRussianCard('Lukashenko calls for protection',{title_ru:'Лукашенко тражи заштиту заједничког тржишта',excerpt_ru:'Заявление о защите рынка'}));
 });
