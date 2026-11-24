@@ -27,7 +27,9 @@ export const desktopApi = {
   setActiveMonitorKey: (monitorKey: string) => { activeMonitorKey = monitorKey; },
   activeMonitorKey: () => activeMonitorKey,
   stats: () => invoke<DatabaseStats>("get_database_stats", { monitorKey: activeMonitorKey }),
+  statsFor: (monitorKey: string) => invoke<DatabaseStats>("get_database_stats", { monitorKey }),
   runs: () => invoke<RunSummary[]>("list_runs", { monitorKey: activeMonitorKey }),
+  runsFor: (monitorKey: string) => invoke<RunSummary[]>("list_runs", { monitorKey }),
   lMonitorRunPublications: (runId: number) =>
     invoke<RunPublication[]>("list_l_monitor_run_publications", { runId }),
   importBundle: (path: string) =>
@@ -38,11 +40,13 @@ export const desktopApi = {
       checkedArtifacts: number; alreadyPresent: number; errors: string[] }>(
       "sync_tiktok_network_bundles", { baseUrl, anonKey, accessToken, knownRuns }),
 
+  dashboardFor: (monitorKey: string, periodDays: number | null) => invoke<DashboardOverview>("get_dashboard_overview", { monitorKey, periodDays }),
   dashboard: (periodDays: number | null) =>
     invoke<DashboardOverview>("get_dashboard_overview", {
       monitorKey: activeMonitorKey,
       periodDays,
     }),
+  archiveFacetsFor: (monitorKey: string) => invoke<ArchiveFacets>("get_archive_facets", { monitorKey }),
   archiveFacets: () =>
     invoke<ArchiveFacets>("get_archive_facets", { monitorKey: activeMonitorKey }),
   archive: (options: ArchiveQuery = {}) =>
@@ -78,6 +82,7 @@ export const desktopApi = {
       limit,
       offset: 0,
     }),
+  sourcesFor: (monitorKey: string, periodDays: number | null = 30) => invoke<SourceSummary[]>("list_sources", { monitorKey, periodDays }),
   sources: (periodDays: number | null = 30) =>
     invoke<SourceSummary[]>("list_sources", { monitorKey: activeMonitorKey, periodDays }),
   editorialSource: (documentUid: string) =>
