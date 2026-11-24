@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { desktopApi } from "../api";
-import { cachedFacets, cachedPage, invalidateArchiveCache, saveFacets, savePage } from "../archiveCache";
+import { cachedFacets, cachedPage, facetsFresh, pageFresh, invalidateArchiveCache, saveFacets, savePage } from "../archiveCache";
 import type { ArchiveFacets, ArchivePage, PeriodDays } from "../types";
 import { useI18n } from "../i18n";
 import { PublicationCard } from "../components/PublicationCard";
@@ -30,9 +30,12 @@ export function ArchiveView({ initialQuery = "", monitorKey }: { initialQuery?: 
 
   useEffect(() => { setQuery(initialQuery); setOffset(0); }, [initialQuery]);
   useEffect(() => {
-    const changed = () => { invalidateArchiveCache(monitorKey); setModerationVersion((value) => value + 1); };
+    const changed = () => { invalidateArchiveCache(monitorKey, true); setModerationVersion((value) => value + 1); };
     const updated = (event: Event) => {
-      if ((event as CustomEvent<{ monitorKey: string }>).detail?.monitorKey === monitorKey) changed();
+      if ((event as CustomEvent<{ monitorKey: string }>).detail?.monitorKey === monitorKey) {
+        invalidateArchiveCache(monitorKey);
+        setModerationVersion((value) => value + 1);
+      }
     };
     window.addEventListener("monitor:moderation-changed", changed);
     window.addEventListener("monitor:data-updated", updated);
@@ -43,7 +46,7 @@ export function ArchiveView({ initialQuery = "", monitorKey }: { initialQuery?: 
   }, [monitorKey]);
   useEffect(() => {
     const saved = cachedFacets(monitorKey);
-    if (saved) { setFacets(saved); return; }
+    if (saved) { setFacets(saved); if (facetsFresh(monitorKey)) return; }
     let cancelled = false;
     desktopApi.archiveFacetsFor(monitorKey)
       .then((result) => { if (!cancelled) { saveFacets(monitorKey, result); setFacets(result); } })
@@ -53,9 +56,9 @@ export function ArchiveView({ initialQuery = "", monitorKey }: { initialQuery?: 
   useEffect(() => {
     const options = { monitorKey, query, periodDays: period, category, region, sources, sort, limit: pageSize, offset };
     const saved = cachedPage(monitorKey, options);
-    if (saved) { setPage(saved); setLoading(false); return; }
+    if (saved) { setPage(saved); if (pageFresh(monitorKey, options)) { setLoading(false); return; } }
     let cancelled = false;
-    setLoading(true);
+    setLoading(!saved);
     const timer = window.setTimeout(() => {
       desktopApi.archive(options)
         .then((result) => { if (!cancelled) { savePage(monitorKey, options, result); setPage(result); setError(""); } })

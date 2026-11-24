@@ -233,7 +233,7 @@ export default function App() {
   }, [monitorKey, syncSettings.repository]);
   useEffect(() => { void refreshDashboard(period, false, monitorKey); }, [period, monitorKey, refreshDashboard]);
   useEffect(() => {
-    const onModeration = () => { invalidateOverview(activeMonitorRef.current); invalidateArchiveCache(activeMonitorRef.current); void refreshDashboard(activePeriodRef.current, true); };
+    const onModeration = () => { invalidateOverview(activeMonitorRef.current); invalidateArchiveCache(activeMonitorRef.current, true); void refreshDashboard(activePeriodRef.current, true); };
     window.addEventListener("monitor:moderation-changed", onModeration);
     return () => window.removeEventListener("monitor:moderation-changed", onModeration);
   }, [period, refreshDashboard]);

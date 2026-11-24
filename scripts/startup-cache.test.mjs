@@ -18,7 +18,7 @@ test("archive pages stay separate by monitor and filter and invalidate precisely
   assert.equal(cachedPage("social_economic", { ...options, query: "other" }), null);
   const other = { total: 2, items: [] };
   savePage("lukashenko", options, other);
-  invalidateArchiveCache("social_economic");
+  invalidateArchiveCache("social_economic", true);
   assert.equal(cachedPage("social_economic", options), null);
   assert.deepEqual(cachedPage("lukashenko", options), other);
 });
@@ -29,7 +29,7 @@ test("source catalogue and facets stay scoped to the monitoring key", () => {
   assert.deepEqual(cachedFacets("social_economic"), f);
   assert.deepEqual(cachedSources("social_economic", 30), []);
   assert.equal(cachedSources("lukashenko", 30), null);
-  invalidateArchiveCache("social_economic");
+  invalidateArchiveCache("social_economic", true);
   assert.equal(cachedFacets("social_economic"), null);
   assert.equal(cachedSources("social_economic", 30), null);
 });
@@ -41,4 +41,15 @@ test("core snapshot persists and invalidates per monitor", () => {
   invalidateCore("social_economic");
   assert.equal(peekCore("social_economic"), null);
   assert.equal(peekCore("lukashenko")?.stats.documents, 47);
+});
+
+test("expired first page remains visible and is marked for background refresh", async () => {
+  const options = { periodDays: 30, query: "", limit: 30, offset: 0 };
+  const sample = { total: 19, items: [{ id: 19, title: "Last saved" }] };
+  savePage("social_economic", options, sample);
+  assert.deepEqual(cachedPage("social_economic", options), sample);
+  invalidateArchiveCache("social_economic"); // a new bundle makes the snapshot stale, not invisible
+  const freshModule = await import("../src/archiveCache.ts?stale=1");
+  assert.deepEqual(freshModule.cachedPage("social_economic", options), sample);
+  assert.equal(freshModule.pageFresh("social_economic", options), false);
 });

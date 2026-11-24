@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { desktopApi } from "../api";
-import { cachedSources, invalidateArchiveCache, saveSources } from "../archiveCache";
+import { cachedSources, sourcesFresh, invalidateArchiveCache, saveSources } from "../archiveCache";
 import type { PeriodDays, SourceSummary } from "../types";
 import { useI18n } from "../i18n";
 import { localizeDataLabel } from "../dataLabels";
@@ -24,17 +24,17 @@ export function SourcesView({ monitorKey }: { monitorKey: string }){
   const isLMonitor=monitorKey==="lukashenko";
   const[items,setItems]=useState<SourceSummary[]>(()=>cachedSources(monitorKey,30)??[]),[query,setQuery]=useState(""),[error,setError]=useState(""),[moderationVersion,setModerationVersion]=useState(0),[period,setPeriod]=useState<PeriodDays>(30),[loading,setLoading]=useState(false),[sort,setSort]=useState<SourceSort>("default");
   useEffect(() => {
-    const changed = () => { invalidateArchiveCache(monitorKey); setModerationVersion((value) => value + 1); };
-    const updated = (event: Event) => { if ((event as CustomEvent<{ monitorKey: string }>).detail?.monitorKey === monitorKey) changed(); };
+    const changed = () => { invalidateArchiveCache(monitorKey, true); setModerationVersion((value) => value + 1); };
+    const updated = (event: Event) => { if ((event as CustomEvent<{ monitorKey: string }>).detail?.monitorKey === monitorKey) { invalidateArchiveCache(monitorKey); setModerationVersion((value) => value + 1); } };
     window.addEventListener("monitor:moderation-changed", changed);
     window.addEventListener("monitor:data-updated", updated);
     return () => { window.removeEventListener("monitor:moderation-changed", changed); window.removeEventListener("monitor:data-updated", updated); };
   }, [monitorKey]);
   useEffect(() => {
     const saved = cachedSources(monitorKey, period);
-    if (saved) { setItems(saved); setLoading(false); return; }
+    if (saved) { setItems(saved); if (sourcesFresh(monitorKey, period)) { setLoading(false); return; } }
     let cancelled = false;
-    setLoading(true);
+    setLoading(!saved);
     desktopApi.sourcesFor(monitorKey, period)
       .then((result) => { if (!cancelled) { saveSources(monitorKey, period, result); setItems(result); setError(""); } })
       .catch((reason) => { if (!cancelled) setError(String(reason)); })
