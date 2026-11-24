@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { desktopApi } from "../api";
+import { cachedSources, sourcesFresh, invalidateArchiveCache, saveSources } from "../archiveCache";
 import type { PeriodDays, SourceSummary } from "../types";
 import { useI18n } from "../i18n";
 import { localizeDataLabel } from "../dataLabels";
@@ -18,12 +19,28 @@ function priorityRank(value: string | null) {
   return 1000;
 }
 
-export function SourcesView(){
+export function SourcesView({ monitorKey }: { monitorKey: string }){
   const{t,locale}=useI18n();
-  const isLMonitor=desktopApi.activeMonitorKey()==="lukashenko";
-  const[items,setItems]=useState<SourceSummary[]>([]),[query,setQuery]=useState(""),[error,setError]=useState(""),[moderationVersion,setModerationVersion]=useState(0),[period,setPeriod]=useState<PeriodDays>(30),[loading,setLoading]=useState(false),[sort,setSort]=useState<SourceSort>("default");
-  useEffect(()=>{const handler=()=>setModerationVersion(value=>value+1);window.addEventListener("monitor:moderation-changed",handler);return()=>window.removeEventListener("monitor:moderation-changed",handler)},[]);
-  useEffect(()=>{setLoading(true);desktopApi.sources(period).then((result)=>{setItems(result);setError("")}).catch(r=>setError(String(r))).finally(()=>setLoading(false))},[moderationVersion,period]);
+  const isLMonitor=monitorKey==="lukashenko";
+  const[items,setItems]=useState<SourceSummary[]>(()=>cachedSources(monitorKey,30)??[]),[query,setQuery]=useState(""),[error,setError]=useState(""),[moderationVersion,setModerationVersion]=useState(0),[period,setPeriod]=useState<PeriodDays>(30),[loading,setLoading]=useState(false),[sort,setSort]=useState<SourceSort>("default");
+  useEffect(() => {
+    const changed = () => { invalidateArchiveCache(monitorKey, true); setModerationVersion((value) => value + 1); };
+    const updated = (event: Event) => { if ((event as CustomEvent<{ monitorKey: string }>).detail?.monitorKey === monitorKey) { invalidateArchiveCache(monitorKey); setModerationVersion((value) => value + 1); } };
+    window.addEventListener("monitor:moderation-changed", changed);
+    window.addEventListener("monitor:data-updated", updated);
+    return () => { window.removeEventListener("monitor:moderation-changed", changed); window.removeEventListener("monitor:data-updated", updated); };
+  }, [monitorKey]);
+  useEffect(() => {
+    const saved = cachedSources(monitorKey, period);
+    if (saved) { setItems(saved); if (sourcesFresh(monitorKey, period)) { setLoading(false); return; } }
+    let cancelled = false;
+    setLoading(!saved);
+    desktopApi.sourcesFor(monitorKey, period)
+      .then((result) => { if (!cancelled) { saveSources(monitorKey, period, result); setItems(result); setError(""); } })
+      .catch((reason) => { if (!cancelled) setError(String(reason)); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [monitorKey, moderationVersion, period]);
   const filtered=useMemo(()=>{
     const n=query.trim().toLocaleLowerCase(locale==="be"?"be-BY":"ru-RU");
     const base=n?items.filter(item=>[item.name,item.domain??"",item.region??"",localizeDataLabel(item.region,locale,"region"),item.locality??"",item.sourceType??"",localizeDataLabel(item.sourceType,locale,"sourceType")].some(v=>v.toLocaleLowerCase(locale==="be"?"be-BY":"ru-RU").includes(n))):items;

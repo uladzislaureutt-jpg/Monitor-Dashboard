@@ -140,6 +140,21 @@ pub fn database_stats(path: &Path, monitor_key: &str) -> Result<DatabaseStats, S
     })
 }
 
+/// Cheap synchronization cursor; intentionally avoids the expensive reported_run_items
+/// views and per-run aggregation used by the operator's history screen.
+pub fn sync_run_numbers(path: &Path, monitor_key: &str) -> Result<Vec<(i64, bool)>, String> {
+    let conn = open_database(path)?;
+    let mut stmt = conn.prepare(
+        "SELECT r.run_number, COALESCE(r.dry_run,0) FROM runs r
+         JOIN monitors m ON m.id=r.monitor_id
+         WHERE m.monitor_key=?1 AND r.run_number IS NOT NULL"
+    ).map_err(|e| e.to_string())?;
+    let rows = stmt.query_map(params![monitor_key], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)? != 0))
+    }).map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
 pub fn list_runs(path: &Path, monitor_key: &str) -> Result<Vec<RunSummary>, String> {
     let conn = open_database(path)?;
     let mut stmt = conn
@@ -680,7 +695,7 @@ pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i6
         "SELECT COALESCE(NULLIF(TRIM(mi.category),''),'Без категории') AS label, COUNT(DISTINCT mi.id) AS count {base} GROUP BY label ORDER BY count DESC, label LIMIT 12"
     );
     let category_breakdown = count_points(&conn, &category_sql, monitor_key, period_days)?;
-    let topic_trend = topic_trend_points(&conn, &base, monitor_key, period_days, trend_bucket, &category_breakdown)?;
+    let topic_trend = crate::perf::measure(path, "dashboard_topics", monitor_key, || topic_trend_points(&conn, &base, monitor_key, period_days, trend_bucket, &category_breakdown))?;
 
     let source_sql = format!(
         "SELECT COALESCE(NULLIF(TRIM(s.canonical_name),''),'Неизвестный источник') AS label, COUNT(DISTINCT mi.id) AS count {base} GROUP BY label ORDER BY count DESC, label LIMIT 16"
@@ -698,8 +713,8 @@ pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i6
     };
     let concept_sql = format!("SELECT {concept_expr} AS label, COUNT(DISTINCT mi.id) AS count {base} AND {concept_expr} IS NOT NULL GROUP BY label ORDER BY count DESC, label LIMIT 12");
     let concept_breakdown = count_points(&conn, &concept_sql, monitor_key, period_days)?;
-    let person_breakdown = person_breakdown(&conn, &base, monitor_key, period_days)?;
-    let stories = l_monitor_stories(&conn, monitor_key, period_days)?;
+    let person_breakdown = crate::perf::measure(path, "dashboard_people", monitor_key, || person_breakdown(&conn, &base, monitor_key, period_days))?;
+    let stories = crate::perf::measure(path, "dashboard_stories", monitor_key, || l_monitor_stories(&conn, monitor_key, period_days))?;
     let story_ids = stories.iter().flat_map(|story| story.publications.iter()
         .map(move |publication| (publication.id, story.representative.id)))
         .collect::<HashMap<_, _>>();
@@ -748,20 +763,20 @@ pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i6
             .map_err(|e| format!("Не удалось собрать fallback резонансных сюжетов: {e}"))?;
     }
 
-    let source_diversity = source_diversity_summary(&conn, &base, monitor_key, period_days)?;
-    let coverage_health = coverage_health_summary(&conn, monitor_key)?;
+    let source_diversity = crate::perf::measure(path, "dashboard_diversity", monitor_key, || source_diversity_summary(&conn, &base, monitor_key, period_days))?;
+    let coverage_health = crate::perf::measure(path, "dashboard_coverage", monitor_key, || coverage_health_summary(&conn, monitor_key))?;
 
     let visuals_sql = format!(
         "{} WHERE m.monitor_key=?1 AND {} AND NOT EXISTS (SELECT 1 FROM moderation_flags mf WHERE mf.monitor_key=m.monitor_key AND mf.document_uid=d.document_uid) AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid) AND NULLIF(TRIM(d.preview_image_url),'') IS NOT NULL ORDER BY COALESCE(datetime(d.published_at), datetime(d.last_seen_at), datetime(d.first_seen_at)) DESC, mi.id DESC {card_limit}",
         publication_select(), period
     );
-    let visuals = latest_overview_cards(&conn, &visuals_sql, monitor_key, period_days, &story_ids)?;
+    let visuals = crate::perf::measure(path, "dashboard_visuals", monitor_key, || latest_overview_cards(&conn, &visuals_sql, monitor_key, period_days, &story_ids))?;
 
     let recent_sql = format!(
         "{} WHERE m.monitor_key=?1 AND {} AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid) ORDER BY COALESCE(datetime(d.published_at), datetime(d.last_seen_at), datetime(d.first_seen_at)) DESC, mi.id DESC {card_limit}",
         publication_select(), period
     );
-    let recent = latest_overview_cards(&conn, &recent_sql, monitor_key, period_days, &story_ids)?;
+    let recent = crate::perf::measure(path, "dashboard_recent", monitor_key, || latest_overview_cards(&conn, &recent_sql, monitor_key, period_days, &story_ids))?;
 
     Ok(DashboardOverview {
         period_days,

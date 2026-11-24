@@ -46,6 +46,9 @@ jobs:
       - name: Test event-period presets
         run: npm run test:event-period
 
+      - name: Test startup and archive caches
+        run: npm run test:startup-cache
+
       - name: Prepare pinned yt-dlp
         shell: pwsh
         run: |

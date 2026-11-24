@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { desktopApi } from "../api";
+import { cachedFacets, cachedPage, facetsFresh, pageFresh, invalidateArchiveCache, saveFacets, savePage } from "../archiveCache";
 import type { ArchiveFacets, ArchivePage, PeriodDays } from "../types";
 import { useI18n } from "../i18n";
 import { PublicationCard } from "../components/PublicationCard";
@@ -8,7 +9,7 @@ import { localizeDataLabel } from "../dataLabels";
 
 const EMPTY_FACETS: ArchiveFacets = { categories: [], regions: [], sources: [] };
 
-export function ArchiveView({ initialQuery = "" }: { initialQuery?: string }) {
+export function ArchiveView({ initialQuery = "", monitorKey }: { initialQuery?: string; monitorKey: string }) {
   const { t, locale } = useI18n();
   const [query, setQuery] = useState(initialQuery);
   const [period, setPeriod] = useState<PeriodDays>(30);
@@ -19,8 +20,8 @@ export function ArchiveView({ initialQuery = "" }: { initialQuery?: string }) {
   const [sourceSearch, setSourceSearch] = useState("");
   const sourceMenuRef = useRef<HTMLDivElement>(null);
   const [sort, setSort] = useState<"newest" | "oldest" | "score">("newest");
-  const [facets, setFacets] = useState<ArchiveFacets>(EMPTY_FACETS);
-  const [page, setPage] = useState<ArchivePage>({ total: 0, items: [] });
+  const [facets, setFacets] = useState<ArchiveFacets>(() => cachedFacets(monitorKey) ?? EMPTY_FACETS);
+  const [page, setPage] = useState<ArchivePage>(() => cachedPage(monitorKey, { query: initialQuery, periodDays: 30, limit: 30, offset: 0 }) ?? { total: 0, items: [] });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [offset, setOffset] = useState(0);
@@ -28,15 +29,44 @@ export function ArchiveView({ initialQuery = "" }: { initialQuery?: string }) {
   const pageSize = 30;
 
   useEffect(() => { setQuery(initialQuery); setOffset(0); }, [initialQuery]);
-  useEffect(() => { const handler = () => setModerationVersion((value) => value + 1); window.addEventListener("monitor:moderation-changed", handler); return () => window.removeEventListener("monitor:moderation-changed", handler); }, []);
-  useEffect(() => { desktopApi.archiveFacets().then(setFacets).catch((reason) => setError(String(reason))); }, []);
   useEffect(() => {
-    setLoading(true);
-    desktopApi.archive({ query, periodDays: period, category, region, sources, sort, limit: pageSize, offset })
-      .then((result) => { setPage(result); setError(""); })
-      .catch((reason) => setError(String(reason)))
-      .finally(() => setLoading(false));
-  }, [query, period, category, region, sources, sort, offset, moderationVersion]);
+    const changed = () => { invalidateArchiveCache(monitorKey, true); setModerationVersion((value) => value + 1); };
+    const updated = (event: Event) => {
+      if ((event as CustomEvent<{ monitorKey: string }>).detail?.monitorKey === monitorKey) {
+        invalidateArchiveCache(monitorKey);
+        setModerationVersion((value) => value + 1);
+      }
+    };
+    window.addEventListener("monitor:moderation-changed", changed);
+    window.addEventListener("monitor:data-updated", updated);
+    return () => {
+      window.removeEventListener("monitor:moderation-changed", changed);
+      window.removeEventListener("monitor:data-updated", updated);
+    };
+  }, [monitorKey]);
+  useEffect(() => {
+    const saved = cachedFacets(monitorKey);
+    if (saved) { setFacets(saved); if (facetsFresh(monitorKey)) return; }
+    let cancelled = false;
+    desktopApi.archiveFacetsFor(monitorKey)
+      .then((result) => { if (!cancelled) { saveFacets(monitorKey, result); setFacets(result); } })
+      .catch((reason) => { if (!cancelled) setError(String(reason)); });
+    return () => { cancelled = true; };
+  }, [monitorKey, moderationVersion]);
+  useEffect(() => {
+    const options = { monitorKey, query, periodDays: period, category, region, sources, sort, limit: pageSize, offset };
+    const saved = cachedPage(monitorKey, options);
+    if (saved) { setPage(saved); if (pageFresh(monitorKey, options)) { setLoading(false); return; } }
+    let cancelled = false;
+    setLoading(!saved);
+    const timer = window.setTimeout(() => {
+      desktopApi.archive(options)
+        .then((result) => { if (!cancelled) { savePage(monitorKey, options, result); setPage(result); setError(""); } })
+        .catch((reason) => { if (!cancelled) setError(String(reason)); })
+        .finally(() => { if (!cancelled) setLoading(false); });
+    }, query.trim() ? 250 : 0);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [monitorKey, query, period, category, region, sources, sort, offset, moderationVersion]);
 
   useEffect(() => {
     const close = (event: MouseEvent) => {

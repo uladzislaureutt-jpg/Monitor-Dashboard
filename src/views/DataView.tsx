@@ -154,7 +154,14 @@ export function DataView({
         </tr>)}</tbody>
       </table></div>
     </section>
-    <section className="panel db-path"><span>{t("data.sqliteShared")}</span><code title={stats?.databasePath}>{stats?.databasePath ?? t("status.initializing")}</code></section>
+    <section className="panel db-path">
+      <span>{t("data.sqliteShared")}</span><code title={stats?.databasePath}>{stats?.databasePath ?? t("status.initializing")}</code>
+      {stats?.databasePath && <details className="sync-note">
+        <summary>{be ? "Журнал павольных аперацый" : "Журнал медленных операций"}</summary>
+        <p>{be ? "Лакальны файл побач з SQLite. Запісваюцца толькі назвы аперацый і працягласць ад 150 мс; памер абмежаваны 1 МБ." : "Локальный файл рядом с SQLite. Записываются только названия операций и длительность от 150 мс; размер ограничен 1 МБ."}</p>
+        <code>{stats.databasePath.replace(/[^/\\]+$/, "monitor-performance.log")}</code>
+      </details>}
+    </section>
     {access.profile.isAdmin && <AdminNotebook session={access.session} be={be}/>} 
   </div>;
 }
