@@ -20,6 +20,7 @@ import { useReportWorkspace } from "./reportWorkspace";
 import { useMonitorAccess } from "./access";
 import { getRuntimeConfig, loadWorkroomConfig } from "./workroom";
 import { invalidateOverview, loadOverview, peekOverview } from "./overviewCache";
+import { invalidateArchiveCache } from "./archiveCache";
 
 const SYNC_STORAGE_KEY = "monitor-dashboard-github-sync-v2";
 const SYNC_PERSIST_KEY = "github.sync.v2";
@@ -170,6 +171,7 @@ export default function App() {
       }
       if (result.importedRuns.length || result.assistantImportedRuns) {
         invalidateOverview(syncKey);
+        invalidateArchiveCache(syncKey);
         window.dispatchEvent(new CustomEvent("monitor:data-updated", { detail: { monitorKey: syncKey } }));
         if (activeMonitorRef.current === syncKey) {
           setMessage([result.importedRuns.length ? t("sync.added", { runs: result.importedRuns.join(", ") }) : "", result.assistantImportedRuns ? `Помощник: обновлено сборов ${result.assistantImportedRuns}` : ""].filter(Boolean).join(". "));
@@ -222,7 +224,7 @@ export default function App() {
   }, [monitorKey, syncSettings.repository]);
   useEffect(() => { void refreshDashboard(period, false, monitorKey); }, [period, monitorKey, refreshDashboard]);
   useEffect(() => {
-    const onModeration = () => { invalidateOverview(activeMonitorRef.current); void refreshDashboard(activePeriodRef.current, true); };
+    const onModeration = () => { invalidateOverview(activeMonitorRef.current); invalidateArchiveCache(activeMonitorRef.current); void refreshDashboard(activePeriodRef.current, true); };
     window.addEventListener("monitor:moderation-changed", onModeration);
     return () => window.removeEventListener("monitor:moderation-changed", onModeration);
   }, [period, refreshDashboard]);
@@ -287,6 +289,7 @@ export default function App() {
         const count = await desktopApi.syncLNewsAssistant(config.url, config.anonKey, access.session.accessToken);
         if (count && !stopped) {
           invalidateOverview("lukashenko");
+          invalidateArchiveCache("lukashenko");
           window.dispatchEvent(new CustomEvent("monitor:data-updated", { detail: { monitorKey: "lukashenko" } }));
           if (activeMonitorRef.current === "lukashenko") {
             await Promise.all([refreshCore("lukashenko"), refreshDashboard(activePeriodRef.current, true, "lukashenko")]);
@@ -346,6 +349,7 @@ export default function App() {
       const prefix = result.status === "already_imported" ? t("import.already") : result.status === "replaced" ? t("import.replaced") : t("import.done");
       setMessage(t("import.summary", { prefix, run: result.runNumber ?? "—", pubs: result.publications, sources: result.sourcesInCoverage }));
       invalidateOverview(monitorKey);
+      invalidateArchiveCache(monitorKey);
       window.dispatchEvent(new CustomEvent("monitor:data-updated", { detail: { monitorKey } }));
       await Promise.all([refreshCore(), refreshDashboard(activePeriodRef.current, true)]);
     } catch (reason) { setError(String(reason)); }
@@ -433,10 +437,10 @@ export default function App() {
       </section>
     ) : <>
       {view === "dashboard" && <DashboardView key={monitorKey} monitorKey={monitorKey} data={dashboard} period={period} onPeriodChange={setPeriod} loading={dashboardLoading} onOpenArchive={() => navigate("archive")} latestRun={latestLMonitorRun} latestAssistantRun={latestAssistantRun} />}
-      {view === "archive" && <ArchiveView key={monitorKey} initialQuery={archiveSeed} />}
+      {view === "archive" && <ArchiveView key={monitorKey} initialQuery={archiveSeed} monitorKey={monitorKey} />}
       {view === "report" && <ReportView key={monitorKey} />}
       {view === "analytics" && <AnalyticsView key={monitorKey} data={dashboard} period={period} onPeriodChange={setPeriod} />}
-      {view === "sources" && access.profile.isAdmin && <SourcesView key={monitorKey} />}
+      {view === "sources" && access.profile.isAdmin && <SourcesView key={monitorKey} monitorKey={monitorKey} />}
       {view === "data" && access.profile.isAdmin && <DataView key={monitorKey} monitorKey={monitorKey} stats={stats} runs={runs.filter((run) => run.monitorKey === monitorKey)} busy={busy} onImport={importBundle} syncSettings={syncSettings} onSaveSyncSettings={saveSyncSettings} onSyncNow={(value) => performSync(value)} syncBusy={syncBusy} syncStatus={syncStatusText} />}
     </>}
   </>;
