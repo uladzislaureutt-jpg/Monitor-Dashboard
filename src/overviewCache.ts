@@ -58,7 +58,7 @@ export function loadOverview(monitor: string, period: PeriodDays, force = false)
   const cached = peekOverview(monitor, period);
   if (!force && cached && overviewIsFresh(monitor, period)) return Promise.resolve(cached.data);
   const existing = pending.get(key);
-  if (existing) return existing;
+  if (existing && !force) return existing;
   const generation = generations.get(monitor) || 0;
   const started = desktopApi.dashboardFor(monitor, period).then((data) => {
     if ((generations.get(monitor) || 0) === generation) saveOverview(monitor, period, data);

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { desktopApi } from "../api";
+import { loadOverview, peekOverview } from "../overviewCache";
 import type { DashboardOverview, PeriodDays, PublicationSummary, RunSummary } from "../types";
 import { useI18n } from "../i18n";
 import { PeriodSelector } from "../components/PeriodSelector";
@@ -16,7 +17,7 @@ type TrendMode = "volume" | "line" | "topics" | "topics3d";
 type MonitorKey = "social_economic" | "lukashenko";
 type TopicPoint = { category: string; bucket: string };
 
-function useSectionOverview(period: PeriodDays, basePeriod: PeriodDays, baseData: DashboardOverview | null) {
+function useSectionOverview(monitorKey: MonitorKey, period: PeriodDays, basePeriod: PeriodDays, baseData: DashboardOverview | null) {
   const [data, setData] = useState<DashboardOverview | null>(baseData);
   useEffect(() => {
     let cancelled = false;
@@ -27,11 +28,13 @@ function useSectionOverview(period: PeriodDays, basePeriod: PeriodDays, baseData
       setData(baseData);
       return () => { cancelled = true; };
     }
-    desktopApi.dashboard(period).then((next) => {
+    const cached = peekOverview(monitorKey, period);
+    setData(cached?.data ?? null);
+    loadOverview(monitorKey, period).then((next) => {
       if (!cancelled) setData(next);
     }).catch(() => undefined);
     return () => { cancelled = true; };
-  }, [period, basePeriod, baseData]);
+  }, [monitorKey, period, basePeriod, baseData]);
   return data;
 }
 
@@ -66,11 +69,11 @@ export function DashboardView({
   const [sourcesPeriod, setSourcesPeriod] = useState<PeriodDays>(30);
   const [resonancePeriod, setResonancePeriod] = useState<PeriodDays>(30);
 
-  const summaryData = useSectionOverview(summaryPeriod, period, data);
-  const topicsData = useSectionOverview(topicsPeriod, period, data);
-  const geoData = useSectionOverview(geoPeriod, period, data);
-  const sourcesData = useSectionOverview(sourcesPeriod, period, data);
-  const resonanceData = useSectionOverview(resonancePeriod, period, data);
+  const summaryData = useSectionOverview(monitorKey, summaryPeriod, period, data);
+  const topicsData = useSectionOverview(monitorKey, topicsPeriod, period, data);
+  const geoData = useSectionOverview(monitorKey, geoPeriod, period, data);
+  const sourcesData = useSectionOverview(monitorKey, sourcesPeriod, period, data);
+  const resonanceData = useSectionOverview(monitorKey, resonancePeriod, period, data);
 
   const summaryLoading = loading && summaryPeriod === period;
   const selectTopicPoint = useCallback((point: TopicPoint) => setSelectedTopicPoint(point), []);

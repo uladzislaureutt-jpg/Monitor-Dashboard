@@ -19,6 +19,7 @@ import { NetworksView, type NetworkPage, type NetworkPlatform } from "./views/Ne
 import { useReportWorkspace } from "./reportWorkspace";
 import { useMonitorAccess } from "./access";
 import { getRuntimeConfig, loadWorkroomConfig } from "./workroom";
+import { invalidateOverview, loadOverview, peekOverview } from "./overviewCache";
 
 const SYNC_STORAGE_KEY = "monitor-dashboard-github-sync-v2";
 const SYNC_PERSIST_KEY = "github.sync.v2";
@@ -93,7 +94,7 @@ export default function App() {
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const latestLMonitorRun = runs.find((run) => run.monitorKey === "lukashenko" && !run.collector && run.dryRun !== true);
   const latestAssistantRun = runs.find((run) => run.monitorKey === "lukashenko" && run.collector === "api_assistant" && run.publications > 0);
-  const [dashboard, setDashboard] = useState<DashboardOverview | null>(null);
+  const [dashboard, setDashboard] = useState<DashboardOverview | null>(() => peekOverview("social_economic", 30)?.data ?? null);
   const [period, setPeriod] = useState<PeriodDays>(30);
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -111,24 +112,47 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState<SyncUiStatus>({ kind: "none" });
   const syncBusyRef = useRef(false);
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const activeMonitorRef = useRef<MonitorKey>("social_economic");
+  const activePeriodRef = useRef<PeriodDays>(30);
+  const dashboardSeq = useRef(0);
+  const coreSeq = useRef(0);
+  activePeriodRef.current = period;
 
-  const refreshCore = useCallback(async () => {
-    const [nextStats, nextRuns] = await Promise.all([desktopApi.stats(), desktopApi.runs()]);
+  const refreshCore = useCallback(async (key: MonitorKey = activeMonitorRef.current) => {
+    const request = ++coreSeq.current;
+    const [nextStats, nextRuns] = await Promise.all([desktopApi.statsFor(key), desktopApi.runsFor(key)]);
+    if (request !== coreSeq.current || key !== activeMonitorRef.current) return;
     setStats(nextStats); setRuns(nextRuns);
-  }, [monitorKey]);
-  const refreshDashboard = useCallback(async (nextPeriod: PeriodDays) => {
-    setDashboardLoading(true);
-    try { setDashboard(await desktopApi.dashboard(nextPeriod)); }
-    catch (reason) { setError(String(reason)); }
-    finally { setDashboardLoading(false); }
+  }, []);
+  const refreshDashboard = useCallback(async (
+    nextPeriod: PeriodDays, force = false, key: MonitorKey = activeMonitorRef.current,
+  ) => {
+    const request = ++dashboardSeq.current;
+    const stillCurrent = () => request === dashboardSeq.current && key === activeMonitorRef.current && nextPeriod === activePeriodRef.current;
+    const cached = peekOverview(key, nextPeriod);
+    if (stillCurrent()) {
+      if (!force) setDashboard(cached?.data ?? null);
+      setDashboardLoading(!cached && !force);
+    }
+    try {
+      const next = await loadOverview(key, nextPeriod, force);
+      if (stillCurrent()) setDashboard(next);
+    } catch (reason) {
+      if (stillCurrent() && !cached) setError(String(reason));
+    } finally {
+      if (stillCurrent()) setDashboardLoading(false);
+    }
   }, []);
 
-  const performSync = useCallback(async (settings: SyncSettings, silent = false) => {
+  const performSync = useCallback(async (
+    settings: SyncSettings, silent = false, syncKey: MonitorKey = activeMonitorRef.current,
+  ) => {
     if (syncBusyRef.current) return;
-    syncBusyRef.current = true; setSyncBusy(true); if (!silent) { setError(""); setSyncWarning(""); }
+    syncBusyRef.current = true; setSyncBusy(true);
+    if (!silent) { setError(""); setSyncWarning(""); }
     try {
       const workroomConfig = loadWorkroomConfig();
-      const result = await desktopApi.syncServer(workroomConfig.url, workroomConfig.anonKey, access.session.accessToken);
+      const result = await desktopApi.syncServerFor(syncKey, workroomConfig.url, workroomConfig.anonKey, access.session.accessToken);
       const latestImported = result.latestImportedRun ?? result.latestAvailableRun;
       const latestRemote = result.latestRemoteRun;
       const remoteIsSkippedDryRun = latestRemote != null && result.skippedDryRuns.includes(latestRemote);
@@ -139,18 +163,24 @@ export default function App() {
           ? `На GitHub даступны запуск #${latestRemote}, лакальна імпартаваны #${latestImported}.`
           : `На GitHub доступен запуск #${latestRemote}, локально импортирован #${latestImported}.`);
       }
-      if (latestImported != null && (latestRemote == null || latestImported >= latestRemote || remoteIsSkippedDryRun)) setSyncStatus({ kind: "upToDate", run: latestImported });
-      else if (latestRemote != null || result.errors.length) setSyncStatus({ kind: "configured" });
-      else setSyncStatus({ kind: "notFound" });
+      if (activeMonitorRef.current === syncKey) {
+        if (latestImported != null && (latestRemote == null || latestImported >= latestRemote || remoteIsSkippedDryRun)) setSyncStatus({ kind: "upToDate", run: latestImported });
+        else if (latestRemote != null || result.errors.length) setSyncStatus({ kind: "configured" });
+        else setSyncStatus({ kind: "notFound" });
+      }
       if (result.importedRuns.length || result.assistantImportedRuns) {
-        setMessage([result.importedRuns.length ? t("sync.added", { runs: result.importedRuns.join(", ") }) : "", result.assistantImportedRuns ? `Помощник: обновлено сборов ${result.assistantImportedRuns}` : ""].filter(Boolean).join(". "));
-        await Promise.all([refreshCore(), refreshDashboard(period)]);
+        invalidateOverview(syncKey);
+        window.dispatchEvent(new CustomEvent("monitor:data-updated", { detail: { monitorKey: syncKey } }));
+        if (activeMonitorRef.current === syncKey) {
+          setMessage([result.importedRuns.length ? t("sync.added", { runs: result.importedRuns.join(", ") }) : "", result.assistantImportedRuns ? `Помощник: обновлено сборов ${result.assistantImportedRuns}` : ""].filter(Boolean).join(". "));
+          await Promise.all([refreshCore(syncKey), refreshDashboard(activePeriodRef.current, true, syncKey)]);
+        }
       }
     } catch (reason) {
-      setSyncStatus({ kind: "configured" });
+      if (activeMonitorRef.current === syncKey) setSyncStatus({ kind: "configured" });
       if (!silent) setSyncWarning(String(reason));
     } finally { syncBusyRef.current = false; setSyncBusy(false); }
-  }, [period, refreshCore, refreshDashboard, t, locale, monitorKey, access.session.accessToken]);
+  }, [refreshCore, refreshDashboard, t, locale, access.session.accessToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -186,13 +216,13 @@ export default function App() {
     const timer = window.setTimeout(() => setSyncWarning(""), 12_000);
     return () => window.clearTimeout(timer);
   }, [syncWarning]);
-  useEffect(() => { refreshCore().catch((reason) => setError(String(reason))); }, [refreshCore]);
+  useEffect(() => { void refreshCore(monitorKey).catch((reason) => setError(String(reason))); }, [monitorKey, refreshCore]);
   useEffect(() => {
     setSyncStatus({ kind: "configured" });
   }, [monitorKey, syncSettings.repository]);
-  useEffect(() => { refreshDashboard(period); }, [period, monitorKey, refreshDashboard]);
+  useEffect(() => { void refreshDashboard(period, false, monitorKey); }, [period, monitorKey, refreshDashboard]);
   useEffect(() => {
-    const onModeration = () => refreshDashboard(period);
+    const onModeration = () => { invalidateOverview(activeMonitorRef.current); void refreshDashboard(activePeriodRef.current, true); };
     window.addEventListener("monitor:moderation-changed", onModeration);
     return () => window.removeEventListener("monitor:moderation-changed", onModeration);
   }, [period, refreshDashboard]);
@@ -231,7 +261,7 @@ export default function App() {
         }
         if (!cancelled) {
           setMessage(locale === "be" ? "Першасная сінхранізацыя завершана." : "Первичная синхронизация завершена.");
-          await Promise.all([refreshCore(), refreshDashboard(period)]);
+          await Promise.all([refreshCore(), refreshDashboard(activePeriodRef.current, true)]);
         }
       } catch (reason) {
         if (!cancelled) setSyncWarning(String(reason));
@@ -241,35 +271,60 @@ export default function App() {
       }
     })();
     return () => { cancelled = true; };
-  }, [access.profile.isAdmin, access.session?.userId, access.session.accessToken, access.monitors, locale, period, refreshCore, refreshDashboard]);
+  }, [access.profile.isAdmin, access.session?.userId, access.session.accessToken, access.monitors, locale, refreshCore, refreshDashboard]);
 
   // The independent feed checks for already collected cards without starting
   // paid searches or changing the user's GitHub auto-sync preference.
+  // Assistant updates are independent of which monitor the operator is viewing.
   useEffect(() => {
-    if(monitorKey!=="lukashenko")return;
-    let stopped=false;
-    const timer=window.setInterval(async()=>{
-      if(syncBusyRef.current)return;
-      syncBusyRef.current=true;
-      try{const config=loadWorkroomConfig();const count=await desktopApi.syncLNewsAssistant(config.url,config.anonKey,access.session.accessToken);
-        if(count&&!stopped)await Promise.all([refreshCore(),refreshDashboard(period)]);
-      }catch(reason){if(!stopped)setSyncWarning(`Помощник: ${String(reason)}`);}
-      finally{syncBusyRef.current=false;}
-    },5*60_000);
-    return()=>{stopped=true;window.clearInterval(timer);};
-  },[monitorKey,access.session.accessToken,period,refreshCore,refreshDashboard]);
+    if (!access.session.accessToken) return;
+    let stopped = false;
+    const timer = window.setInterval(async () => {
+      if (syncBusyRef.current) return;
+      syncBusyRef.current = true;
+      try {
+        const config = loadWorkroomConfig();
+        const count = await desktopApi.syncLNewsAssistant(config.url, config.anonKey, access.session.accessToken);
+        if (count && !stopped) {
+          invalidateOverview("lukashenko");
+          window.dispatchEvent(new CustomEvent("monitor:data-updated", { detail: { monitorKey: "lukashenko" } }));
+          if (activeMonitorRef.current === "lukashenko") {
+            await Promise.all([refreshCore("lukashenko"), refreshDashboard(activePeriodRef.current, true, "lukashenko")]);
+          }
+        }
+      } catch (reason) { if (!stopped) setSyncWarning(`Помощник: ${String(reason)}`); }
+      finally { syncBusyRef.current = false; }
+    }, 5 * 60_000);
+    return () => { stopped = true; window.clearInterval(timer); };
+  }, [access.session.accessToken, refreshCore, refreshDashboard]);
 
+  // One background scheduler per signed-in session, never per tab switch.
+  const canSyncSep = access.profile.isAdmin || access.monitors.some((m) => m.monitorKey === "social_economic" && m.enabled);
+  const canSyncL = access.profile.isAdmin || access.monitors.some((m) => m.monitorKey === "lukashenko" && m.enabled);
   useEffect(() => {
-    const checkOnOpen = monitorKey === "lukashenko" || syncSettings.autoSync;
-    const start = checkOnOpen ? window.setTimeout(() => performSync(syncSettings, true), 900) : undefined;
-    const interval = syncSettings.autoSync
-      ? window.setInterval(() => performSync(syncSettings, true), syncSettings.intervalMinutes * 60_000)
-      : undefined;
-    return () => {
-      if (start !== undefined) window.clearTimeout(start);
-      if (interval !== undefined) window.clearInterval(interval);
+    if (!access.session?.userId || !access.session.accessToken) return;
+    let stopped = false;
+    let ticking = false;
+    const lastChecked: Partial<Record<MonitorKey, number>> = {};
+    const poll = async () => {
+      if (stopped || ticking || syncBusyRef.current) return;
+      ticking = true;
+      try {
+        for (const key of ["lukashenko", "social_economic"] as MonitorKey[]) {
+          if (stopped || syncBusyRef.current) break;
+          const settings = syncSettingsByMonitor[key];
+          if (key === "lukashenko" ? !canSyncL : !canSyncSep || !settings.autoSync) continue;
+          const intervalMs = Math.max(5, key === "lukashenko" && !settings.autoSync ? 30 : settings.intervalMinutes) * 60_000;
+          if (Date.now() - (lastChecked[key] || 0) < intervalMs) continue;
+          lastChecked[key] = Date.now();
+          await performSync(settings, true, key);
+        }
+      } finally { ticking = false; }
     };
-  }, [monitorKey, syncSettings, performSync]);
+    const start = window.setTimeout(() => { void poll(); }, 2500);
+    const ticker = window.setInterval(() => { void poll(); }, 60_000);
+    return () => { stopped = true; window.clearTimeout(start); window.clearInterval(ticker); };
+  }, [access.session?.userId, access.session.accessToken, canSyncSep, canSyncL, syncSettingsByMonitor, performSync]);
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") { event.preventDefault(); setSearchOpen(true); window.setTimeout(() => searchRef.current?.focus(), 0); }
@@ -290,7 +345,9 @@ export default function App() {
       const result: ImportResult = await desktopApi.importBundle(selected);
       const prefix = result.status === "already_imported" ? t("import.already") : result.status === "replaced" ? t("import.replaced") : t("import.done");
       setMessage(t("import.summary", { prefix, run: result.runNumber ?? "—", pubs: result.publications, sources: result.sourcesInCoverage }));
-      await Promise.all([refreshCore(), refreshDashboard(period)]);
+      invalidateOverview(monitorKey);
+      window.dispatchEvent(new CustomEvent("monitor:data-updated", { detail: { monitorKey } }));
+      await Promise.all([refreshCore(), refreshDashboard(activePeriodRef.current, true)]);
     } catch (reason) { setError(String(reason)); }
     finally { setBusy(false); }
   }
@@ -322,6 +379,13 @@ export default function App() {
     setEventOpen(false);
     setTranscriptionOpen(false);
     setNetworksOpen(false);
+    activeMonitorRef.current = next;
+    dashboardSeq.current++;
+    coreSeq.current++;
+    setDashboard(peekOverview(next, activePeriodRef.current)?.data ?? null);
+    setDashboardLoading(false);
+    setStats(null);
+    setRuns([]);
     desktopApi.setActiveMonitorKey(next);
     setMonitorKey(next);
     setGlobalQuery(""); setArchiveSeed(""); setView("dashboard");
