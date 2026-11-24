@@ -128,8 +128,9 @@ export default function App() {
     }
     if (!force && cached && coreFresh(key)) return;
     const [nextStats, nextRuns] = await Promise.all([desktopApi.statsFor(key), desktopApi.runsFor(key)]);
+    if (request !== coreSeq.current) return;
     saveCore(key, nextStats, nextRuns);
-    if (request !== coreSeq.current || key !== activeMonitorRef.current) return;
+    if (key !== activeMonitorRef.current) return;
     setStats(nextStats); setRuns(nextRuns);
   }, []);
   const refreshDashboard = useCallback(async (

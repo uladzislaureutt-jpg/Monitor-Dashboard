@@ -613,14 +613,20 @@ async fn sync_l_news_assistant(base_url:String,anon_key:String,access_token:Stri
 }
 
 #[tauri::command]
-fn sync_server_artifacts(
+async fn sync_server_artifacts(
     base_url: String,
     anon_key: String,
     access_token: String,
     monitor_key: String,
     state: State<'_, AppState>,
 ) -> Result<sync::SyncResult, String> {
-    perf::measure(&state.db_path, "sync_server", &monitor_key, || sync::sync_server(&state.db_path, &base_url, &anon_key, &access_token, &monitor_key))
+    let path = state.db_path.clone();
+    // The HTTP/download/import chain may take minutes; never tie it to the UI executor.
+    tauri::async_runtime::spawn_blocking(move || {
+        perf::measure(&path, "sync_server", &monitor_key, || {
+            sync::sync_server(&path, &base_url, &anon_key, &access_token, &monitor_key)
+        })
+    }).await.map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
