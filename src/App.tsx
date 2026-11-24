@@ -21,6 +21,7 @@ import { useMonitorAccess } from "./access";
 import { getRuntimeConfig, loadWorkroomConfig } from "./workroom";
 import { invalidateOverview, loadOverview, peekOverview } from "./overviewCache";
 import { invalidateArchiveCache } from "./archiveCache";
+import { coreFresh, invalidateCore, peekCore, saveCore } from "./coreCache";
 
 const SYNC_STORAGE_KEY = "monitor-dashboard-github-sync-v2";
 const SYNC_PERSIST_KEY = "github.sync.v2";
@@ -91,8 +92,8 @@ export default function App() {
   const [networksOpen, setNetworksOpen] = useState(false);
   const [networksPage, setNetworksPage] = useState<NetworkPage>("home");
   const [networksPlatform, setNetworksPlatform] = useState<NetworkPlatform>("tiktok");
-  const [stats, setStats] = useState<DatabaseStats | null>(null);
-  const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [stats, setStats] = useState<DatabaseStats | null>(() => peekCore("social_economic")?.stats ?? null);
+  const [runs, setRuns] = useState<RunSummary[]>(() => peekCore("social_economic")?.runs ?? []);
   const latestLMonitorRun = runs.find((run) => run.monitorKey === "lukashenko" && !run.collector && run.dryRun !== true);
   const latestAssistantRun = runs.find((run) => run.monitorKey === "lukashenko" && run.collector === "api_assistant" && run.publications > 0);
   const [dashboard, setDashboard] = useState<DashboardOverview | null>(() => peekOverview("social_economic", 30)?.data ?? null);
@@ -119,9 +120,15 @@ export default function App() {
   const coreSeq = useRef(0);
   activePeriodRef.current = period;
 
-  const refreshCore = useCallback(async (key: MonitorKey = activeMonitorRef.current) => {
+  const refreshCore = useCallback(async (key: MonitorKey = activeMonitorRef.current, force = false) => {
     const request = ++coreSeq.current;
+    const cached = peekCore(key);
+    if (cached && key === activeMonitorRef.current) {
+      setStats(cached.stats); setRuns(cached.runs);
+    }
+    if (!force && cached && coreFresh(key)) return;
     const [nextStats, nextRuns] = await Promise.all([desktopApi.statsFor(key), desktopApi.runsFor(key)]);
+    saveCore(key, nextStats, nextRuns);
     if (request !== coreSeq.current || key !== activeMonitorRef.current) return;
     setStats(nextStats); setRuns(nextRuns);
   }, []);
@@ -172,10 +179,11 @@ export default function App() {
       if (result.importedRuns.length || result.assistantImportedRuns) {
         invalidateOverview(syncKey);
         invalidateArchiveCache(syncKey);
+        invalidateCore(syncKey);
         window.dispatchEvent(new CustomEvent("monitor:data-updated", { detail: { monitorKey: syncKey } }));
         if (activeMonitorRef.current === syncKey) {
           setMessage([result.importedRuns.length ? t("sync.added", { runs: result.importedRuns.join(", ") }) : "", result.assistantImportedRuns ? `Помощник: обновлено сборов ${result.assistantImportedRuns}` : ""].filter(Boolean).join(". "));
-          await Promise.all([refreshCore(syncKey), refreshDashboard(activePeriodRef.current, true, syncKey)]);
+          await Promise.all([refreshCore(syncKey, true), refreshDashboard(activePeriodRef.current, true, syncKey)]);
         }
       }
     } catch (reason) {
@@ -263,7 +271,7 @@ export default function App() {
         }
         if (!cancelled) {
           setMessage(locale === "be" ? "Першасная сінхранізацыя завершана." : "Первичная синхронизация завершена.");
-          await Promise.all([refreshCore(), refreshDashboard(activePeriodRef.current, true)]);
+          await Promise.all([refreshCore(activeMonitorRef.current, true), refreshDashboard(activePeriodRef.current, true)]);
         }
       } catch (reason) {
         if (!cancelled) setSyncWarning(String(reason));
@@ -290,9 +298,10 @@ export default function App() {
         if (count && !stopped) {
           invalidateOverview("lukashenko");
           invalidateArchiveCache("lukashenko");
+          invalidateCore("lukashenko");
           window.dispatchEvent(new CustomEvent("monitor:data-updated", { detail: { monitorKey: "lukashenko" } }));
           if (activeMonitorRef.current === "lukashenko") {
-            await Promise.all([refreshCore("lukashenko"), refreshDashboard(activePeriodRef.current, true, "lukashenko")]);
+            await Promise.all([refreshCore("lukashenko", true), refreshDashboard(activePeriodRef.current, true, "lukashenko")]);
           }
         }
       } catch (reason) { if (!stopped) setSyncWarning(`Помощник: ${String(reason)}`); }
@@ -350,8 +359,9 @@ export default function App() {
       setMessage(t("import.summary", { prefix, run: result.runNumber ?? "—", pubs: result.publications, sources: result.sourcesInCoverage }));
       invalidateOverview(monitorKey);
       invalidateArchiveCache(monitorKey);
+      invalidateCore(monitorKey);
       window.dispatchEvent(new CustomEvent("monitor:data-updated", { detail: { monitorKey } }));
-      await Promise.all([refreshCore(), refreshDashboard(activePeriodRef.current, true)]);
+      await Promise.all([refreshCore(activeMonitorRef.current, true), refreshDashboard(activePeriodRef.current, true)]);
     } catch (reason) { setError(String(reason)); }
     finally { setBusy(false); }
   }
@@ -388,8 +398,8 @@ export default function App() {
     coreSeq.current++;
     setDashboard(peekOverview(next, activePeriodRef.current)?.data ?? null);
     setDashboardLoading(false);
-    setStats(null);
-    setRuns([]);
+    setStats(peekCore(next)?.stats ?? null);
+    setRuns(peekCore(next)?.runs ?? []);
     desktopApi.setActiveMonitorKey(next);
     setMonitorKey(next);
     setGlobalQuery(""); setArchiveSeed(""); setView("dashboard");

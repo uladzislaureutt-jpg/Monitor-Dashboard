@@ -2,7 +2,7 @@ import type { ArchiveFacets, ArchivePage, ArchiveQuery, PeriodDays, SourceSummar
 
 /** Short-lived in-process LRU only: never re-fetch unchanged archive pages on tab switches. */
 type Entry<T> = { at: number; value: T };
-const TTL_MS = 5 * 60_000;
+const TTL_MS = 30 * 60_000;
 const facets = new Map<string, Entry<ArchiveFacets>>();
 const pages = new Map<string, Entry<ArchivePage>>();
 const sources = new Map<string, Entry<SourceSummary[]>>();
