@@ -140,7 +140,7 @@ export function LNewsAssistant({
         {newscatcher?.updated_at && newsBalance != null && <small>Проверено {new Date(newscatcher.updated_at).toLocaleString("ru-RU", { timeZone: "Europe/Minsk" })} по Минску</small>}
       </article>
     </div>
-    <p>Perigon: одна страница — один запрос, до {limits.maxPageSize ?? 100} результатов. Лимит пилота — до 4 поисковых запросов в день, резерв — 10 в месяц. Сброс: {limits.resetAt ? new Date(limits.resetAt).toLocaleString("ru-RU", { timeZone: "Europe/Minsk" }) : "—"}.</p>
+    <p>Perigon: одна страница — один запрос, до {limits.maxPageSize ?? 100} результатов. Лимит — до {data?.settings.perigon_per_run ?? 8} запросов на сбор и 16 в сутки по Минску, резерв — 10 в месяц. Сброс: {limits.resetAt ? new Date(limits.resetAt).toLocaleString("ru-RU", { timeZone: "Europe/Minsk" }) : "—"}.</p>
     <p>Perigon за последние {data?.runs.length ?? 0} сборов — {perigonTotal ?? 0} запросов.</p>
     {newsUsage && <p>Newscatcher за последние {newsUsage.days} дней — <strong>{newsUsage.credits} кр.</strong> · Помощник {newsUsage.assistant} кр. · Событие {newsUsage.event} кр.
       {newsUsage.diagnostic > 0 && <> · Диагностика {newsUsage.diagnostic} кр.</>}
