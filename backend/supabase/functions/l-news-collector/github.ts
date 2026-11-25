@@ -30,6 +30,9 @@ async function registerKnown(rt:Runtime,rows:any[]){
     const existing=must(await rt.db.from('l_news_known_urls').select('canonical_url,document_uid').in('canonical_url',batch.map(r=>r.canonical_url)));
     const map=new Map(existing.map((x:any)=>[x.canonical_url,x.document_uid]));
     must(await rt.db.from('l_news_known_urls').upsert(batch.map(r=>({...r,document_uid:map.get(r.canonical_url)||r.document_uid})),{onConflict:'canonical_url'}));
+    // If GitHub was temporarily unreachable, the API assistant may already
+    // have published these exact URLs. Revoke its redundant cards on recovery.
+    must(await rt.db.rpc('l_news_reconcile_github_urls',{p_urls:batch.map(r=>r.canonical_url)}));
     ok=true;
    }catch(error){
     if(attempt===2)throw error;
