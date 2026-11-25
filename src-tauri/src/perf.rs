@@ -85,7 +85,8 @@ pub fn recent_summary(db_path: &Path) -> String {
     let now = SystemTime::now().duration_since(UNIX_EPOCH)
         .unwrap_or_default().as_secs();
     let mut combined = String::new();
-    for file in [&log_path, &log_path.with_extension("log.old")] {
+    let rotated_path = log_path.with_extension("log.old");
+    for file in [&log_path, &rotated_path] {
         if let Ok(content) = fs::read_to_string(file) {
             combined.push_str(&content);
             combined.push('\n');
