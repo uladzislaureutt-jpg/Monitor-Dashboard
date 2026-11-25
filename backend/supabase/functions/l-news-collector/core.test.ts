@@ -213,3 +213,9 @@ Deno.test('same news fact forms one story without losing unrelated news',()=>{
 Deno.test('Serbian-specific Cyrillic is rejected as an untranslated Russian card',()=>{
  assert(!validRussianCard('Lukashenko calls for protection',{title_ru:'Лукашенко тражи заштиту заједничког тржишта',excerpt_ru:'Заявление о защите рынка'}));
 });
+
+Deno.test('Perigon per-run ceiling of eight respects reserve and billing month',()=>{
+ equal(perigonBudget({requestLimit:150,requestsUsed:15},8,10),8);
+ equal(perigonBudget({requestLimit:150,requestsUsed:135},8,10),5);
+ equal(perigonBudget({requestLimit:150,requestsUsed:140},8,10),0);
+});

@@ -24,7 +24,10 @@ function cardDraft(value:any,c:Candidate,excerpt:string,route:string,isRussian:b
  }
  const title=isRussian?c.title:clean(value?.title_ru);
  const lead=clean(value?.excerpt_ru);
- if(typeof value?.excerpt_ru!=='string'||!lead||!validRussianCard(c.title+' '+excerpt,{title_ru:title,excerpt_ru:lead}))return null;
+ // For independent news-lead drafting, only title numerals are obligatory.
+ // The evidence excerpt can contain unrelated figures from nearby sentences.
+ const validationSource=review?c.title:c.title+' '+excerpt;
+ if(typeof value?.excerpt_ru!=='string'||!lead||!validRussianCard(validationSource,{title_ru:title,excerpt_ru:lead}))return null;
  return {accepted:true,title,lead,route,evidence};
 }
 
@@ -53,8 +56,12 @@ export async function translateCard(rt:Runtime,job:Job,run:Run|null,c:Candidate,
  for(const route of routes){
   const remaining=deadline-Date.now();if(remaining<5000)break;
   if(!route.key||route.name!=='gemini'&&!route.account)continue;
+  if(route.name==='gemini'){
+   const cooldown=await rt.db.from('l_news_provider_state').select('info').eq('provider','gemini_review_cooldown').maybeSingle();
+   if(!cooldown.error&&Date.parse(String(cooldown.data?.info?.until||''))>Date.now())continue;
+  }
   const id=await reserve(rt,job,run,route.name,review?'review_card_relevance':'translate_card',0,600,15000);if(!id)continue;
-  const start=Date.now();let status=0,usage:any={},accepted=false;
+  const start=Date.now();let status=0,usage:any={},accepted=false,failure_reason='not_accepted',output_chars=0;
   try{
    const response=route.name==='gemini'?await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent',{
     method:'POST',headers:{'content-type':'application/json','x-goog-api-key':route.key},body:JSON.stringify({contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:{temperature:.1,responseMimeType:'application/json',maxOutputTokens:1800}}),signal:AbortSignal.timeout(Math.min(28000,remaining))
@@ -62,13 +69,27 @@ export async function translateCard(rt:Runtime,job:Job,run:Run|null,c:Candidate,
     method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+route.key},body:JSON.stringify({messages:[{role:'user',content:prompt}],temperature:.1,max_tokens:2000,reasoning_effort:'low'}),signal:AbortSignal.timeout(Math.min(35000,remaining))
    });
    status=response.status;const data=await response.json().catch(()=>({}));usage=data.usageMetadata||data.result?.usage||data.usage||{};
+   if(route.name==='gemini'&&(status===429||status===503)){
+    // Back off across concurrent workers; Cloudflare is attempted immediately.
+    await rt.db.from('l_news_provider_state').upsert({
+     provider:'gemini_review_cooldown',
+     info:{until:new Date(Date.now()+(status===429?60000:35000)).toISOString(),last_status:status},
+     updated_at:new Date().toISOString(),
+    });
+   }
    if(response.ok){const text=route.name==='gemini'?(data.candidates?.[0]?.content?.parts||[]).filter((p:any)=>!p.thought).map((p:any)=>p.text||'').join(''):
      data.result?.response||data.result?.choices?.[0]?.message?.content||data.result?.output_text||'';
-    const draft=cardDraft(parseOutput(text),c,input.excerpt,route.name,isRussian,review);
-    if(draft){accepted=true;must(await rt.db.from('l_news_usage').update({status,elapsed_ms:Date.now()-start,details:{accepted:true,usage,input_chars:prompt.length,output_chars:text.length,...(review?{relevant:draft.accepted}:{})}}).eq('id',id));return draft;}
-   }
-  }catch{/* an independent provider is tried with the same original */}
-  must(await rt.db.from('l_news_usage').update({status,elapsed_ms:Date.now()-start,details:{accepted,usage,input_chars:prompt.length}}).eq('id',id));
+    output_chars=text.length;
+    let parsed:any=null;
+    try{parsed=parseOutput(text);}catch{failure_reason='invalid_json';}
+    if(parsed){
+     const draft=cardDraft(parsed,c,input.excerpt,route.name,isRussian,review);
+     if(draft){accepted=true;must(await rt.db.from('l_news_usage').update({status,elapsed_ms:Date.now()-start,details:{accepted:true,usage,input_chars:prompt.length,output_chars:text.length,...(review?{relevant:draft.accepted}:{})}}).eq('id',id));return draft;}
+     failure_reason='invalid_card_schema_or_evidence';
+    }
+   }else failure_reason='http_'+status;
+  }catch{failure_reason='transport_or_parse_error';}
+  must(await rt.db.from('l_news_usage').update({status,elapsed_ms:Date.now()-start,details:{accepted,usage,input_chars:prompt.length,output_chars,failure_reason}}).eq('id',id));
  }
  throw new Error(review?'relevance_review_unavailable':'translation_unavailable');
 }

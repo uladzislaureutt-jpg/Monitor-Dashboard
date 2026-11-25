@@ -131,9 +131,10 @@ export function batches<T>(values:T[],size=100):T[][] {const out:T[][]=[];for(le
 export async function sha(value:string):Promise<string>{return [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))].map(x=>x.toString(16).padStart(2,'0')).join('');}
 export function perigonBudget(info:Record<string,unknown>,max=4,reserve=10):number {
  const limit=Math.min(150,Number(info.requestLimit??150)),used=Number(info.requestsUsed??0);
- const remaining=Math.max(0,limit-used-reserve);const reset=Date.parse(String(info.resetAt||''));
- const days=Number.isFinite(reset)?Math.max(1,Math.ceil((reset-Date.now())/86400000)):30;
- return Math.max(0,Math.min(max,remaining,Math.floor(remaining/days)));
+ // A per-run allowance is a ceiling, not a daily pacing quota.
+ // Preserve the hard monthly entitlement and the configured reserve.
+ const remaining=Math.max(0,limit-used-reserve);
+ return Math.max(0,Math.min(max,remaining));
 }
 
 export function buildCard(c:Candidate,s:Source,uid:string,titleRu:string,leadRu:string,level:string,evidence:string,runId:string) {

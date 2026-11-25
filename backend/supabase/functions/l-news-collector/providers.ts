@@ -41,11 +41,18 @@ export async function reserve(rt:Runtime,job:Job,run:Run|null,provider:string,en
 export async function apiRequest(rt:Runtime,job:Job,run:Run,provider:string,url:string,options:RequestInit,page:number,limit:number,credits:number){
  const id=await reserve(rt,job,run,provider,provider==='newscatcher'?'articles':'articles_all',page,limit,provider==='perigon'?150:1800);
  if(!id)return {capped:true,data:null,status:0};
+ // All concurrent workers share a database-backed start-time slot. Provider
+ // permits one request/second; 1250 ms gives margin for clock jitter.
+ let rate_wait_ms=0;
+ if(provider==='newscatcher'){
+  rate_wait_ms=Number(must(await rt.db.rpc('l_news_newscatcher_rate_slot')))||0;
+  if(rate_wait_ms>0)await new Promise(resolve=>setTimeout(resolve,rate_wait_ms));
+ }
  const started=Date.now();let status=0,data:any=null;
  try{const response=await fetch(url,{...options,signal:AbortSignal.timeout(30000)});status=response.status;data=await response.json().catch(()=>({}));}
  catch{data={error:'transport_or_timeout'};}
  const returned=(data?.articles||data?.results||[]).length;
- must(await rt.db.from('l_news_usage').update({status,result_count:returned,credits:status===200?credits:0,elapsed_ms:Date.now()-started,details:{attempt:job.attempts,total_hits:data?.total_hits??data?.numResults??null}}).eq('id',id));
+ must(await rt.db.from('l_news_usage').update({status,result_count:returned,credits:status===200?credits:0,elapsed_ms:Date.now()-started,details:{attempt:job.attempts,total_hits:data?.total_hits??data?.numResults??null,...(provider==='newscatcher'?{rate_wait_ms}:{})}}).eq('id',id));
  return {capped:false,data,status};
 }
 export async function searchPerigon(rt:Runtime,job:Job,run:Run){
