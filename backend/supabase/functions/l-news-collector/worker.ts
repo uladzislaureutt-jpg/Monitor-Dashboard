@@ -1,4 +1,4 @@
-import {Candidate,Source,batches,buildCard,contentLevel,containsName,domainOf,publisherArticleKey,relevant,sha,sourceFor,urlKey,validDate} from './core.ts';
+import {Candidate,Source,batches,buildCard,contentLevel,containsName,domainOf,publisherArticleKey,relevant,samePublisherHeadlineKey,sha,sourceFor,urlKey,validDate} from './core.ts';
 import {Job,Run,Runtime,must,newscatcherSubscription,perigonLimits,readPages,searchNewscatcher,searchPerigon} from './providers.ts';
 import {searchGdelt} from './gdelt.ts';
 import {recoverArticle} from './extraction.ts';
@@ -130,13 +130,14 @@ async function article(rt:Runtime,job:Job,run:Run,sources:Source[]){
   return {rejected:true,reason:translated.reason};
  }
  const uid=item.document_uid;
+ const publicationEdition=edition||await samePublisherHeadlineKey(source.domain,translated.title,published);
  const card=buildCard(c,source,uid,translated.title,translated.lead,level,translated.evidence??rel.evidence,run.id);
  (card.provenance as any).translation_provider=translated.route;(card.provenance as any).extraction_strategy=strategy;
  (card.provenance as any).relevance_reason=rel.review?'context_confirmed':rel.reason;
  const full=c.body.length>=350?{schema_version:'0.3',monitor_key:'lukashenko',document_id:uid,text:c.body,text_sha256:await sha(c.body),text_length:c.body.length,quality:level,extraction_strategy:strategy,transport:c.provider}:null;
- if(edition){
+ if(publicationEdition){
   const result=must(await rt.db.rpc('l_news_publish_edition',{
-   p_key:edition,p_item:item.id,p_run:run.id,p_canonical:canonical,
+   p_key:publicationEdition,p_item:item.id,p_run:run.id,p_canonical:canonical,
    p_aliases:[...new Set([canonical,item.canonical_url,...(c.aliases??[]).map(urlKey)])],
    p_card:card,p_full_text:full,p_level:level,p_published:published,
   }));
