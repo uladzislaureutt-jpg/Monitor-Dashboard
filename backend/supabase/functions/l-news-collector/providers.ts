@@ -58,7 +58,13 @@ export async function apiRequest(rt:Runtime,job:Job,run:Run,provider:string,url:
 export async function searchPerigon(rt:Runtime,job:Job,run:Run){
  const info=job.payload.quota||await perigonLimits(rt);const page=Number(job.payload.page||0),size=Math.min(100,Number(info.maxPageSize)||100);
  const maxCalls=perigonBudget(info,run.settings.perigon_per_run,run.settings.perigon_reserve);
- if(maxCalls<1||page*size>=Number(info.paginationLimit||300))return {capped:true,candidates:[] as Candidate[],next:false};
+ if(maxCalls<1)return {capped:true,candidates:[] as Candidate[],next:false};
+ const providerPageCap=Math.max(1,Number(info.paginationLimit||300));
+ // Provider pagination is separate from per-run and daily request quotas.
+ if(page*size>=providerPageCap)return {
+  capped:false,candidates:[] as Candidate[],next:false,
+  warnings:['Perigon: достигнут предел выдачи — '+providerPageCap+' результатов на одно поисковое направление. Разовый лимит API не исчерпан.']
+ };
  const q=new URLSearchParams({q:job.payload.layer==='role'?ROLE_QUERY:QUERY,searchTranslation:'true',from:run.from_at,to:run.to_at,sortBy:'date',showReprints:'true',page:String(page),size:String(size)});
  const sources:string[]=job.payload.source_domains??[];
  const exclusions:string[]=job.payload.excluded_domains??[];
@@ -73,7 +79,11 @@ export async function searchPerigon(rt:Runtime,job:Job,run:Run){
  if(response.status!==200)throw new Error('perigon_search_'+response.status);
  const data=response.data;if(!Array.isArray(data.articles))throw new Error('perigon_invalid_response');const list=data.articles;
  return {capped:false,candidates:list.map((a:any):Candidate=>({url:a.url,title:clean(a.title),title_en:clean(a.translatedTitle),lead:clean(a.description||a.summary),body:String(a.content||''),language:a.language||'',published_at:a.pubDate||null,country:String(a.source?.location?.country||'').toUpperCase(),domain:domainOf(a.url),provider:'perigon',provider_id:a.articleId||a.url,image:a.imageUrl,paywall:a.source?.paywall===true,content_truncated:info.articleContentTruncation!=null&&String(a.content||'').length>=Number(info.articleContentTruncation)})),
-  next:(page+1)*size<Number(data.numResults||0),page,page_size:size,quota:info,total:Number(data.numResults||0)};
+  next:(page+1)*size<Number(data.numResults||0)&&(page+1)*size<providerPageCap,
+  warnings:((page+1)*size>=providerPageCap&&(page+1)*size<Number(data.numResults||0))
+   ?['Perigon: достигнут предел выдачи — '+providerPageCap+' результатов на одно поисковое направление. Разовый лимит API не исчерпан.']
+   :[],
+  page,page_size:size,quota:info,total:Number(data.numResults||0)};
 }
 export async function searchNewscatcher(rt:Runtime,job:Job,run:Run){
  const family=job.payload.family||'news-api',page=Number(job.payload.page||1),size=100;
