@@ -39,8 +39,41 @@ export function urlKey(value:string):string {
 export function domainOf(value:string):string {try{return new URL(value).hostname.toLowerCase().replace(/^www\./,'');}catch{return '';}}
 export function publisherArticleKey(value: string): string | null {
  const domain = domainOf(value);
- if (!['tsn.ua', 'pravda.com.ua', 'rbc.ua', 'iz.ru', 'politika.rs'].includes(domain)) return null;
+ const host=(site:string)=>domain===site||domain.endsWith('.'+site);
+ const exact=['tsn.ua','pravda.com.ua','rbc.ua','iz.ru','politika.rs'];
+ const multiHost=['fakti.bg','novosti.rs','censor.net','diena.lt','reuters.com','yahoo.com','obozrevatel.com'];
+ if(!exact.includes(domain)&&!multiHost.some(host))return null;
  const path = new URL(value).pathname.replace(/\/+$/, '');
+ if(host('fakti.bg')){
+  const id=path.match(/^\/(?:en\/)?[^/]+\/([0-9]{5,12})-[^/]+$/i)?.[1];
+  return id?'edition:fakti.bg:'+id:null;
+ }
+ if(host('novosti.rs')){
+  const id=path.match(/^\/(?:c\/)?[^/]+\/[^/]+\/([0-9]{5,12})(?:\/|$)/i)?.[1];
+  return id?'edition:novosti.rs:'+id:null;
+ }
+ if(host('diena.lt')){
+  const id=path.match(/-([0-9]{5,12})$/)?.[1];
+  return id?'edition:diena.lt:'+id:null;
+ }
+ if(host('censor.net')){
+  const id=path.match(/^\/(?:(?:ru|en|ua|uk)\/)?news\/([0-9]{5,12})(?:\/|$)/i)?.[1];
+  return id?'edition:censor.net:'+id:null;
+ }
+ if(host('yahoo.com')){
+  const id=path.match(/-([0-9]{8,12})\.html$/i)?.[1];
+  return id?'edition:yahoo.com:'+id:null;
+ }
+ if(host('reuters.com')){
+  const id=path.match(/\/([A-Z0-9]{18,32})-20[0-9]{2}-[0-9]{2}-[0-9]{2}$/)?.[1];
+  if(id)return 'edition:reuters.com:'+id;
+  const route=path.match(/^\/(?:world|business|markets|technology|politics|legal)\/(.+-20[0-9]{2}-[0-9]{2}-[0-9]{2})$/i)?.[1];
+  return route?'edition:reuters.com:'+route:null;
+ }
+ if(host('obozrevatel.com')){
+  const slug=path.replace(/^\/(?:ukr|rus)\//i,'/').replace(/\/newsamp-/i,'/news-');
+  return /^\/section-[^/]+\/news-[a-z0-9-]+\.html$/i.test(slug)?'edition:obozrevatel.com:'+slug.toLowerCase():null;
+ }
  if(domain==='iz.ru'){
   const id=path.match(/^\/(?:en\/node\/)?([0-9]{5,12})(?:\/|$)/i)?.[1];
   return id?`edition:iz.ru:${id}`:null;
@@ -92,6 +125,10 @@ export function relevant(candidate:Candidate,body=candidate.body):Relevance {
  const title=clean(candidate.title),lead=clean(candidate.lead);
  const calendar=/^(?:(?:тақвими|календарь|calendar)\s+(?:амит|ниат|niat)|(?:этот день в истории|цей день в історії|on this day in history)\s*[:—–-])/iu;
  const namedInTitle=containsName(title);
+ // A multi-topic roundup is not an independent article about Lukashenko.
+ const roundup=/(?:^|[\s:—-])(?:live|liveblog|ticker|chronologie|chronology|хронология|дайджест|сводка за день|r[eé]veil|informations de la nuit|ukraine war briefing|новости сво|новости украины)(?:[\s:—-]|$)/iu;
+ const explicitLive=/^\s*\/?\s*(?:live\s*(?:text|blog|updates)|war\s+live\s+updates|ukraine\s+war\s+briefing)\b/i;
+ if(explicitLive.test(title)||(!namedInTitle&&roundup.test(title)))return {pass:false,reason:'roundup_not_standalone',evidence:title};
  if(!namedInTitle&&calendar.test(title))return {pass:false,reason:'historical_calendar_roundup',evidence:title};
 
  const passages=new Map<string,RelevancePassage>();
@@ -104,6 +141,9 @@ export function relevant(candidate:Candidate,body=candidate.body):Relevance {
   const sentences=text.split(/(?<=[.!?])\s+|(?<=[。！？])\s*|\n+/u).map(clean).filter(Boolean);
   for(const [index,sentence] of sentences.entries()){
    if(!containsName(sentence))continue;
+   // Editorial recommendations and cross-links are not article content.
+   const related=/(?:^|[\s\[({])(?:читайте\s+также|также\s+читайте|ещ[её]\s*[:—-]|още\s*[:—-]|read\s+(?:more|also)|related\s+(?:news|articles)|see\s+also|a\s+lire\s+aussi|zobacz\s+także)(?:\s|[:—-])/iu;
+   if(!namedInTitle&&related.test(sentence))continue;
    const previous=sentences[index-1]?.slice(-300)??'';
    const next=sentences[index+1]?.slice(0,300)??'';
    const context=[previous,next].filter(Boolean).join('\n');
@@ -129,6 +169,18 @@ export function contentLevel(text:string,paywall=false,truncated=false):string {
 }
 export function batches<T>(values:T[],size=100):T[][] {const out:T[][]=[];for(let i=0;i<values.length;i+=size)out.push(values.slice(i,i+size));return out;}
 export async function sha(value:string):Promise<string>{return [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))].map(x=>x.toString(16).padStart(2,'0')).join('');}
+// A conservative cross-language fallback when a publisher does not expose a
+// stable article ID. Merge only one outlet, one UTC publication day and nearly
+// identical translated headlines; never merge on subject names alone.
+export async function samePublisherHeadlineKey(source:string,title:string,published:string):Promise<string|null>{
+ const normalized=title.normalize('NFKC').toLowerCase().replace(/ё/g,'е').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+ if(normalized.length<48||!/^20\d{2}-\d\d-\d\d/.test(published))return null;
+ const stop=new Set(['и','в','во','на','к','ко','от','для','из','за','с','со','по','о','об','а','но','это','что','как','у','при','или','the','a','an','and','of','to','for','in']);
+ const words=normalized.split(/\s+/).filter(w=>w.length>=2&&!stop.has(w)).sort();
+ if(words.length<6)return null;
+ return 'edition:headline:'+source+':'+published.slice(0,10)+':'+(await sha(words.join('|'))).slice(0,30);
+}
+
 export function perigonBudget(info:Record<string,unknown>,max=4,reserve=10):number {
  const limit=Math.min(150,Number(info.requestLimit??150)),used=Number(info.requestsUsed??0);
  // A per-run allowance is a ceiling, not a daily pacing quota.
