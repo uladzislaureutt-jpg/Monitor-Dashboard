@@ -55,6 +55,11 @@ fn get_database_stats(state: State<'_, AppState>, monitor_key: String) -> Result
 }
 
 #[tauri::command]
+fn get_performance_report(state: State<'_, AppState>) -> String {
+    perf::recent_summary(&state.db_path)
+}
+
+#[tauri::command]
 fn list_runs(state: State<'_, AppState>, monitor_key: String) -> Result<Vec<RunSummary>, String> {
     perf::measure(&state.db_path, "list_runs", &monitor_key, || db::list_runs(&state.db_path, &monitor_key))
 }
@@ -693,6 +698,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_database_stats,
+            get_performance_report,
             list_runs,
             list_l_monitor_run_publications,
             import_dashboard_bundle,
