@@ -3,6 +3,7 @@ import type { AdminSnapshot, DatabaseStats, RunSummary, SyncSettings } from "../
 import { useI18n } from "../i18n";
 import { useMonitorAccess } from "../access";
 import { LNewsAssistant } from "../components/LNewsAssistant";
+import { desktopApi } from "../api";
 import { AdminNotebook } from "../components/AdminNotebook";
 import { adminAccessAction, getAdminSnapshot, loadWorkroomConfig } from "../workroom";
 
@@ -34,6 +35,15 @@ export function DataView({
   const [adminSnapshot, setAdminSnapshot] = useState<AdminSnapshot | null>(null);
   const [adminBusy, setAdminBusy] = useState(false);
   const [adminError, setAdminError] = useState("");
+  const [performanceText, setPerformanceText] = useState<string | null>(null);
+  const [performanceError, setPerformanceError] = useState("");
+  const [performanceBusy, setPerformanceBusy] = useState(false);
+  const loadPerformance = () => {
+    setPerformanceBusy(true); setPerformanceError("");
+    void desktopApi.performanceReport().then(setPerformanceText)
+      .catch((reason) => setPerformanceError(String(reason)))
+      .finally(() => setPerformanceBusy(false));
+  };
   const be = locale === "be";
   const atx = {
     title: be ? "Карыстальнікі і доступ" : "Пользователи и доступ",
@@ -141,7 +151,7 @@ export function DataView({
       <div className="panel-head">
         <div>
           <h3>{t("data.runsTitle")}</h3>
-          {recentRuns.length > 0 && <p>{t("data.runsShown", { shown: recentRuns.length, total: runs.length })}</p>}
+          {recentRuns.length > 0 && <p>{t("data.runsShown", { shown: recentRuns.length, total: stats?.runs ?? runs.length })}</p>}
         </div>
         <span className="badge">{t("data.contract")}</span>
       </div>
@@ -160,6 +170,16 @@ export function DataView({
         <summary>{be ? "Журнал павольных аперацый" : "Журнал медленных операций"}</summary>
         <p>{be ? "Лакальны файл побач з SQLite. Запісваюцца толькі назвы аперацый і працягласць ад 150 мс; памер абмежаваны 1 МБ." : "Локальный файл рядом с SQLite. Записываются только названия операций и длительность от 150 мс; размер ограничен 1 МБ."}</p>
         <code>{stats.databasePath.replace(/[^/\\]+$/, "monitor-performance.log")}</code>
+        <div className="sync-form">
+          <button type="button" className="secondary-button" disabled={performanceBusy} onClick={loadPerformance}>
+            {performanceBusy ? (be ? "Загрузка…" : "Загрузка…") : (be ? "Паказаць вынікі за 24 гадзіны" : "Показать задержки за 24 часа")}
+          </button>
+          {performanceText && <button type="button" className="secondary-button" onClick={() => {
+            void desktopApi.writeClipboardText(performanceText);
+          }}>{be ? "Скапіяваць зводку" : "Скопировать сводку"}</button>}
+        </div>
+        {performanceError && <p role="alert" className="error-text">{performanceError}</p>}
+        {performanceText && <pre className="performance-summary" style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{performanceText}</pre>}
       </details>}
     </section>
     {access.profile.isAdmin && <AdminNotebook session={access.session} be={be}/>} 
