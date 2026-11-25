@@ -3,7 +3,9 @@ import type { DatabaseStats, RunSummary } from "./types";
 type Snapshot = { savedAt: number; stats: DatabaseStats; runs: RunSummary[] };
 const PREFIX = "monitor-core-v1:";
 const MAX_JSON = 700_000;
-const TTL = 60 * 60_000;
+// Imports and moderation invalidate this snapshot, so an idle application
+// should not rescan run history every hour without new local data.
+const TTL = 4 * 60 * 60_000;
 const memory = new Map<string, Snapshot>();
 
 export function peekCore(monitor: string): Snapshot | null {
