@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useMonitorAccess } from "../access";
 import type { RunSummary } from "../types";
 import { loadWorkroomConfig } from "../workroom";
@@ -53,9 +53,7 @@ export function LNewsAssistant({
   const [notice, setNotice] = useState("");
   const [countries, setCountries] = useState<string[]>([]);
   const token = session.accessToken;
-  const onSyncRef = useRef(onSync);
-  onSyncRef.current = onSync;
-  const revisionRef = useRef("");
+  // Automatic assistant synchronization is handled by the application-wide\n  // five-minute scheduler, not by each 20-second status refresh.
 
   const call = useCallback(async (action: string, extra: Record<string, unknown> = {}) => {
     const config = loadWorkroomConfig();
@@ -74,9 +72,9 @@ export function LNewsAssistant({
     const snapshot: Snapshot = await call("status");
     setData(snapshot);
     setError("");
-    const signature = snapshot.runs.map(run => `${run.id}:${run.revision ?? run.counters.ready ?? 0}`).join("|");
-    if (revisionRef.current && signature !== revisionRef.current) onSyncRef.current();
-    revisionRef.current = signature;
+    // Status polling only updates the table. Do not trigger expensive GitHub +
+    // assistant imports every time a live run increments its revision.
+    // The manual "Получить карточки" action remains available.
   }, [call]);
 
   useEffect(() => {
