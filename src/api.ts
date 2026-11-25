@@ -27,6 +27,7 @@ export const desktopApi = {
   setActiveMonitorKey: (monitorKey: string) => { activeMonitorKey = monitorKey; },
   activeMonitorKey: () => activeMonitorKey,
   stats: () => invoke<DatabaseStats>("get_database_stats", { monitorKey: activeMonitorKey }),
+  performanceReport: () => invoke<string>("get_performance_report"),
   statsFor: (monitorKey: string) => invoke<DatabaseStats>("get_database_stats", { monitorKey }),
   runs: () => invoke<RunSummary[]>("list_runs", { monitorKey: activeMonitorKey }),
   runsFor: (monitorKey: string) => invoke<RunSummary[]>("list_runs", { monitorKey }),
