@@ -15,7 +15,7 @@ type Run = {
 };
 
 type Snapshot = {
-  settings: { enabled: boolean; lookback_hours: number };
+  settings: { enabled: boolean; lookback_hours: number; perigon_per_run?: number; newscatcher_per_run?: number };
   runs: Run[];
   providers: { provider: string; info: Record<string, any>; updated_at?: string }[];
   country_names?: Record<string, string>;
