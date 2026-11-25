@@ -16,6 +16,6 @@ Deno.test('Perigon page 4 is a provider pagination ceiling, not an exhausted run
  };
  const result=await searchPerigon(rt as never,job,run as never);
  if(result.capped||result.next||result.candidates.length)throw Error('Unexpected fourth Perigon page');
- if(!result.warnings?.some((value:string)=>value.includes('300 результатов')))throw Error('Pagination warning missing');
+ if(!('warnings' in result)||!result.warnings?.some((value:string)=>value.includes('300 результатов')))throw Error('Pagination warning missing');
  if(reserved!==0)throw Error('Fourth page reserved API quota');
 });
