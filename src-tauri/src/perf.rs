@@ -31,6 +31,26 @@ pub fn measure<T>(db_path: &Path, operation: &str, monitor: &str, work: impl FnO
 }
 
 
+// UI thread stall timing from WebView's Long Tasks API, when supported.
+// Use the same bounded, private log as SQLite timings; never accept article,
+// tab titles, URLs, input text, or other user-controlled content here.
+pub fn record_ui_longtask(db_path: &Path, monitor: &str, elapsed_ms: u64) {
+    if !(150..=120_000).contains(&elapsed_ms) ||
+       !matches!(monitor, "social_economic" | "lukashenko") { return; }
+    let lock = LOG_LOCK.get_or_init(|| Mutex::new(()));
+    if let Ok(_guard) = lock.lock() {
+        let path = db_path.with_file_name("monitor-performance.log");
+        if fs::metadata(&path).is_ok_and(|m| m.len() > MAX_FILE_BYTES) {
+            let _ = fs::rename(&path, path.with_extension("log.old"));
+        }
+        let epoch = SystemTime::now().duration_since(UNIX_EPOCH)
+            .unwrap_or_default().as_secs();
+        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+            let _ = writeln!(file, "{epoch}\tui_longtask\t{monitor}\t{elapsed_ms}ms\tok");
+        }
+    }
+}
+
 // Local-only aggregate from the two bounded log generations. The report never
 // includes content, network addresses, account identifiers or SQL parameters.
 // Logs contain slow operations (>=150ms), not every invocation, so percentile
