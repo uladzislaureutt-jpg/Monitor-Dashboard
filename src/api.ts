@@ -28,6 +28,7 @@ export const desktopApi = {
   activeMonitorKey: () => activeMonitorKey,
   stats: () => invoke<DatabaseStats>("get_database_stats", { monitorKey: activeMonitorKey }),
   performanceReport: () => invoke<string>("get_performance_report"),
+  recordUiLongtask: (monitorKey: string, elapsedMs: number) => invoke<void>("record_ui_longtask", { monitorKey, elapsedMs }),
   statsFor: (monitorKey: string) => invoke<DatabaseStats>("get_database_stats", { monitorKey }),
   runs: () => invoke<RunSummary[]>("list_runs", { monitorKey: activeMonitorKey }),
   runsFor: (monitorKey: string) => invoke<RunSummary[]>("list_runs", { monitorKey }),
