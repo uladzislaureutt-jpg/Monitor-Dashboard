@@ -2,7 +2,19 @@
 type Card={publication?:{title?:string;excerpt?:string;published_at?:string};event?:Record<string,unknown>;provenance?:{title_original?:string};source?:{name?:string}};
 const norm=(s:string)=>s.toLowerCase().replace(/ё/g,'е').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
 function storyType(card:Card):string|null {
+ const headline=norm(String(card.publication?.title||''));
  const s=norm([card.publication?.title,card.publication?.excerpt].filter(Boolean).join(' '));
+ // One Le Point-related news day produced many publisher reports and syndicated
+ // mirrors. Keep the proposal and Zelensky's answer as DIFFERENT stories.
+ if(/зеленск/.test(headline)&&/лукаш/.test(s)&&
+   /(?:ответ|отверг|отказ|высме|несерьезн|чемодан|путина? в киев|путин.*киев)/.test(headline))
+   return 'zelensky-response-to-lukashenko-flight-offer';
+ if(/лукаш/.test(s)&&/зеленск/.test(s)&&/(?:москв|путин|гарант.*безопас)/.test(s)&&
+   /(?:предлож|сопров|гарант.*безопас|вместе.*полет|лететь вместе|прилететь.*москв|отвез|взять.*самолет|встретиться.*(?:москв|зеленск))/.test(headline))
+   return 'lukashenko-offer-to-accompany-zelensky-to-moscow';
+ if(/лукаш/.test(headline)&&/европ/.test(headline)&&/участи/.test(headline)&&
+   /переговор/.test(headline)&&/прогресс/.test(headline))
+   return 'lukashenko-europe-participation-in-ukraine-negotiations';
  if(/(?:конкурир|дублиру|дуплиру|защит[а-я]* общ[а-я]* рынк|защит[а-я]* союзн[а-я]* рынк|заштит[а-я]* заједничк)/.test(s)&&/(?:предприяти|производств|рынк|тржишт)/.test(s)&&/(?:лукаш|беларус|белорус|росси)/.test(s))return 'russia-belarus-noncompeting-manufacturing';
  if(/(?:си цзиньпин|по китайски|китайск[а-я]* опыт|опыт китая|xi jinping)/.test(s)&&/(?:совет|опыт|развит|совершенств|сохран)/.test(s))return 'xi-development-advice';
  if(/(?:драгметалл|драгоценн[а-я]* металл|драгоценн[а-я]* камн)/.test(s)&&/(?:поправк|соглашен|одобр)/.test(s))return 'precious-metals-agreement';
