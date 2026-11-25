@@ -4,7 +4,9 @@ import type { DashboardOverview, PeriodDays } from "./types";
 /** Small, local, disposable snapshots. The SQLite database remains authoritative. */
 type Snapshot = { savedAt: number; data: DashboardOverview };
 const PREFIX = "monitor-dashboard-overview-v1:";
-const FRESH_MS = 60 * 60_000;
+// Local writes explicitly invalidate the cache; avoid rebuilding the full
+// overview after each idle hour if nothing in SQLite has changed.
+const FRESH_MS = 4 * 60 * 60_000;
 const MAX_SAVED_BYTES = 600_000;
 const memory = new Map<string, Snapshot>();
 const pending = new Map<string, Promise<DashboardOverview>>();
