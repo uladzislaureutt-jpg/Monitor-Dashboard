@@ -174,7 +174,7 @@ export async function workOne(rt:Runtime,job:Job){
   const result=await ingest(rt,job,run,found.candidates,sources);
   if(found.next){const next=Number(found.page)+1;await enqueue(rt,run.id,job.kind,{...job.payload,page:next,quota:found.quota||job.payload.quota},run.id+':'+job.kind+':'+(job.payload.layer||job.payload.group)+':'+next);}
   if(found.split){const middle=new Date(Math.floor((Date.parse(found.from)+Date.parse(found.to))/2)).toISOString();for(const [from,to] of [[found.from,middle],[middle,found.to]])await enqueue(rt,run.id,'gdelt',{from,to},run.id+':gdelt:'+from+':'+to);}
-  return result;
+  return found.warnings?.length?{...result,warnings:found.warnings}:result;
  }
  throw new Error('unknown_job_kind');
 }
