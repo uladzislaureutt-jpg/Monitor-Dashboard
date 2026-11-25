@@ -53,7 +53,8 @@ export function LNewsAssistant({
   const [notice, setNotice] = useState("");
   const [countries, setCountries] = useState<string[]>([]);
   const token = session.accessToken;
-  // Automatic assistant synchronization is handled by the application-wide\n  // five-minute scheduler, not by each 20-second status refresh.
+  // Automatic assistant synchronization is handled by the application-wide
+  // five-minute scheduler, not by each 20-second status refresh.
 
   const call = useCallback(async (action: string, extra: Record<string, unknown> = {}) => {
     const config = loadWorkroomConfig();
