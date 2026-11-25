@@ -204,6 +204,7 @@ pub fn list_runs(path: &Path, monitor_key: &str) -> Result<Vec<RunSummary>, Stri
             JOIN monitors m ON m.id = r.monitor_id
             WHERE m.monitor_key = ?1
             ORDER BY COALESCE(datetime(r.started_at), datetime(r.imported_at)) DESC, r.id DESC
+            LIMIT 120
             "#,
         )
         .map_err(|e| format!("Не удалось подготовить список запусков: {e}"))?;
@@ -669,17 +670,23 @@ pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i6
         "FROM monitor_items mi JOIN monitors m ON m.id=mi.monitor_id JOIN documents d ON d.id=mi.document_id LEFT JOIN sources s ON s.id=d.source_id LEFT JOIN event_items ei ON ei.monitor_item_id=mi.id AND ei.relation='primary' LEFT JOIN events e ON e.id=ei.event_id WHERE m.monitor_key=?1 AND {period} AND NOT EXISTS (SELECT 1 FROM moderation_flags mf WHERE mf.monitor_key=m.monitor_key AND mf.document_uid=d.document_uid) AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid)"
     );
 
-    let scalar = |expr: &str| -> Result<i64, String> {
-        conn.query_row(&format!("SELECT {expr} {base}"), params![monitor_key, period_days], |row| row.get(0))
-            .map_err(|e| format!("Не удалось рассчитать dashboard KPI: {e}"))
-    };
-
-    let publications = scalar("COUNT(DISTINCT mi.id)")?;
-    let active_sources = scalar("COUNT(DISTINCT d.source_id)")?;
     let geo_expr = if monitor_key == "lukashenko" { "s.configured_region" } else { "e.event_region" };
-    let regions = scalar(&format!("COUNT(DISTINCT NULLIF(TRIM({geo_expr}),''))"))?;
-    let categories = scalar("COUNT(DISTINCT NULLIF(TRIM(mi.category),''))")?;
-    let official_responses = scalar("COUNT(DISTINCT CASE WHEN mi.official_response=1 THEN mi.id END)")?;
+    // Count the five headline KPIs in ONE scan of the same filtered rows.
+    // Previously five separate SELECTs repeated the full joins and moderation
+    // exclusions while a background import might also be writing to SQLite.
+    let (publications, active_sources, regions, categories, official_responses) =
+        crate::perf::measure(path, "dashboard_kpi", monitor_key, || {
+            let sql = format!(
+                "SELECT COUNT(DISTINCT mi.id), COUNT(DISTINCT d.source_id), \
+                 COUNT(DISTINCT NULLIF(TRIM({geo_expr}),'')), \
+                 COUNT(DISTINCT NULLIF(TRIM(mi.category),'')), \
+                 COUNT(DISTINCT CASE WHEN mi.official_response=1 THEN mi.id END) {base}"
+            );
+            conn.query_row(&sql, params![monitor_key, period_days], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?, row.get::<_, i64>(3)?, row.get::<_, i64>(4)?))
+            }).map_err(|e| format!("Не удалось рассчитать dashboard KPI: {e}"))
+        })?;
 
     let trend_bucket = if period_days.is_none() || period_days.unwrap_or(0) > 90 {
         "substr(d.published_at,1,7)"
@@ -689,30 +696,30 @@ pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i6
     let trend_sql = format!(
         "SELECT {trend_bucket} AS label, COUNT(DISTINCT mi.id) AS count {base} AND d.published_at IS NOT NULL GROUP BY label ORDER BY label"
     );
-    let trend = count_points(&conn, &trend_sql, monitor_key, period_days)?;
+    let trend = crate::perf::measure(path, "dashboard_trend", monitor_key, || count_points(&conn, &trend_sql, monitor_key, period_days))?;
 
     let category_sql = format!(
         "SELECT COALESCE(NULLIF(TRIM(mi.category),''),'Без категории') AS label, COUNT(DISTINCT mi.id) AS count {base} GROUP BY label ORDER BY count DESC, label LIMIT 12"
     );
-    let category_breakdown = count_points(&conn, &category_sql, monitor_key, period_days)?;
+    let category_breakdown = crate::perf::measure(path, "dashboard_categories", monitor_key, || count_points(&conn, &category_sql, monitor_key, period_days))?;
     let topic_trend = crate::perf::measure(path, "dashboard_topics", monitor_key, || topic_trend_points(&conn, &base, monitor_key, period_days, trend_bucket, &category_breakdown))?;
 
     let source_sql = format!(
         "SELECT COALESCE(NULLIF(TRIM(s.canonical_name),''),'Неизвестный источник') AS label, COUNT(DISTINCT mi.id) AS count {base} GROUP BY label ORDER BY count DESC, label LIMIT 16"
     );
-    let source_breakdown = count_points(&conn, &source_sql, monitor_key, period_days)?;
+    let source_breakdown = crate::perf::measure(path, "dashboard_sources", monitor_key, || count_points(&conn, &source_sql, monitor_key, period_days))?;
 
     let region_sql = format!(
         "SELECT COALESCE(NULLIF(TRIM({geo_expr}),''),'Не определено') AS label, COUNT(DISTINCT mi.id) AS count {base} GROUP BY label ORDER BY count DESC, label LIMIT 12"
     );
-    let region_breakdown = count_points(&conn, &region_sql, monitor_key, period_days)?;
+    let region_breakdown = crate::perf::measure(path, "dashboard_regions", monitor_key, || count_points(&conn, &region_sql, monitor_key, period_days))?;
     let concept_expr = if monitor_key == "lukashenko" {
         "NULLIF(TRIM(mi.subcategory),'')"
     } else {
         "COALESCE(NULLIF(TRIM(e.event_object),''), NULLIF(TRIM(mi.subcategory),''))"
     };
     let concept_sql = format!("SELECT {concept_expr} AS label, COUNT(DISTINCT mi.id) AS count {base} AND {concept_expr} IS NOT NULL GROUP BY label ORDER BY count DESC, label LIMIT 12");
-    let concept_breakdown = count_points(&conn, &concept_sql, monitor_key, period_days)?;
+    let concept_breakdown = crate::perf::measure(path, "dashboard_concepts", monitor_key, || count_points(&conn, &concept_sql, monitor_key, period_days))?;
     let person_breakdown = crate::perf::measure(path, "dashboard_people", monitor_key, || person_breakdown(&conn, &base, monitor_key, period_days))?;
     let stories = crate::perf::measure(path, "dashboard_stories", monitor_key, || l_monitor_stories(&conn, monitor_key, period_days))?;
     let story_ids = stories.iter().flat_map(|story| story.publications.iter()

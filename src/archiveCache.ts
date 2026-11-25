@@ -2,7 +2,8 @@ import type { ArchiveFacets, ArchivePage, ArchiveQuery, PeriodDays, SourceSummar
 
 /** Small, stale-while-revalidate archive caches. SQLite remains the source of truth. */
 type Entry<T> = { at: number; value: T };
-const TTL_MS = 30 * 60_000;
+// Archive caches are explicitly invalidated on imported data and moderation.
+const TTL_MS = 2 * 60 * 60_000;
 const MAX_JSON = 450_000;
 const PREFIX = "monitor-archive-v2:";
 const facets = new Map<string, Entry<ArchiveFacets>>();

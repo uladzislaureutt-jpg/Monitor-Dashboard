@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useMonitorAccess } from "../access";
 import type { RunSummary } from "../types";
 import { loadWorkroomConfig } from "../workroom";
@@ -15,7 +15,7 @@ type Run = {
 };
 
 type Snapshot = {
-  settings: { enabled: boolean; lookback_hours: number };
+  settings: { enabled: boolean; lookback_hours: number; perigon_per_run?: number; newscatcher_per_run?: number };
   runs: Run[];
   providers: { provider: string; info: Record<string, any>; updated_at?: string }[];
   country_names?: Record<string, string>;
@@ -53,9 +53,8 @@ export function LNewsAssistant({
   const [notice, setNotice] = useState("");
   const [countries, setCountries] = useState<string[]>([]);
   const token = session.accessToken;
-  const onSyncRef = useRef(onSync);
-  onSyncRef.current = onSync;
-  const revisionRef = useRef("");
+  // Automatic assistant synchronization is handled by the application-wide
+  // five-minute scheduler, not by each 20-second status refresh.
 
   const call = useCallback(async (action: string, extra: Record<string, unknown> = {}) => {
     const config = loadWorkroomConfig();
@@ -74,9 +73,9 @@ export function LNewsAssistant({
     const snapshot: Snapshot = await call("status");
     setData(snapshot);
     setError("");
-    const signature = snapshot.runs.map(run => `${run.id}:${run.revision ?? run.counters.ready ?? 0}`).join("|");
-    if (revisionRef.current && signature !== revisionRef.current) onSyncRef.current();
-    revisionRef.current = signature;
+    // Status polling only updates the table. Do not trigger expensive GitHub +
+    // assistant imports every time a live run increments its revision.
+    // The manual "Получить карточки" action remains available.
   }, [call]);
 
   useEffect(() => {
@@ -142,7 +141,7 @@ export function LNewsAssistant({
         {newscatcher?.updated_at && newsBalance != null && <small>Проверено {new Date(newscatcher.updated_at).toLocaleString("ru-RU", { timeZone: "Europe/Minsk" })} по Минску</small>}
       </article>
     </div>
-    <p>Perigon: одна страница — один запрос, до {limits.maxPageSize ?? 100} результатов. Лимит пилота — до 4 поисковых запросов в день, резерв — 10 в месяц. Сброс: {limits.resetAt ? new Date(limits.resetAt).toLocaleString("ru-RU", { timeZone: "Europe/Minsk" }) : "—"}.</p>
+    <p>Perigon: одна страница — один запрос, до {limits.maxPageSize ?? 100} результатов. Лимит — до {data?.settings.perigon_per_run ?? 8} запросов на сбор и 16 в сутки по Минску, резерв — 10 в месяц. Сброс: {limits.resetAt ? new Date(limits.resetAt).toLocaleString("ru-RU", { timeZone: "Europe/Minsk" }) : "—"}.</p>
     <p>Perigon за последние {data?.runs.length ?? 0} сборов — {perigonTotal ?? 0} запросов.</p>
     {newsUsage && <p>Newscatcher за последние {newsUsage.days} дней — <strong>{newsUsage.credits} кр.</strong> · Помощник {newsUsage.assistant} кр. · Событие {newsUsage.event} кр.
       {newsUsage.diagnostic > 0 && <> · Диагностика {newsUsage.diagnostic} кр.</>}
