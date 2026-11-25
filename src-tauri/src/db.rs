@@ -696,30 +696,30 @@ pub fn dashboard_overview(path: &Path, monitor_key: &str, period_days: Option<i6
     let trend_sql = format!(
         "SELECT {trend_bucket} AS label, COUNT(DISTINCT mi.id) AS count {base} AND d.published_at IS NOT NULL GROUP BY label ORDER BY label"
     );
-    let trend = count_points(&conn, &trend_sql, monitor_key, period_days)?;
+    let trend = crate::perf::measure(path, "dashboard_trend", monitor_key, || count_points(&conn, &trend_sql, monitor_key, period_days))?;
 
     let category_sql = format!(
         "SELECT COALESCE(NULLIF(TRIM(mi.category),''),'Без категории') AS label, COUNT(DISTINCT mi.id) AS count {base} GROUP BY label ORDER BY count DESC, label LIMIT 12"
     );
-    let category_breakdown = count_points(&conn, &category_sql, monitor_key, period_days)?;
+    let category_breakdown = crate::perf::measure(path, "dashboard_categories", monitor_key, || count_points(&conn, &category_sql, monitor_key, period_days))?;
     let topic_trend = crate::perf::measure(path, "dashboard_topics", monitor_key, || topic_trend_points(&conn, &base, monitor_key, period_days, trend_bucket, &category_breakdown))?;
 
     let source_sql = format!(
         "SELECT COALESCE(NULLIF(TRIM(s.canonical_name),''),'Неизвестный источник') AS label, COUNT(DISTINCT mi.id) AS count {base} GROUP BY label ORDER BY count DESC, label LIMIT 16"
     );
-    let source_breakdown = count_points(&conn, &source_sql, monitor_key, period_days)?;
+    let source_breakdown = crate::perf::measure(path, "dashboard_sources", monitor_key, || count_points(&conn, &source_sql, monitor_key, period_days))?;
 
     let region_sql = format!(
         "SELECT COALESCE(NULLIF(TRIM({geo_expr}),''),'Не определено') AS label, COUNT(DISTINCT mi.id) AS count {base} GROUP BY label ORDER BY count DESC, label LIMIT 12"
     );
-    let region_breakdown = count_points(&conn, &region_sql, monitor_key, period_days)?;
+    let region_breakdown = crate::perf::measure(path, "dashboard_regions", monitor_key, || count_points(&conn, &region_sql, monitor_key, period_days))?;
     let concept_expr = if monitor_key == "lukashenko" {
         "NULLIF(TRIM(mi.subcategory),'')"
     } else {
         "COALESCE(NULLIF(TRIM(e.event_object),''), NULLIF(TRIM(mi.subcategory),''))"
     };
     let concept_sql = format!("SELECT {concept_expr} AS label, COUNT(DISTINCT mi.id) AS count {base} AND {concept_expr} IS NOT NULL GROUP BY label ORDER BY count DESC, label LIMIT 12");
-    let concept_breakdown = count_points(&conn, &concept_sql, monitor_key, period_days)?;
+    let concept_breakdown = crate::perf::measure(path, "dashboard_concepts", monitor_key, || count_points(&conn, &concept_sql, monitor_key, period_days))?;
     let person_breakdown = crate::perf::measure(path, "dashboard_people", monitor_key, || person_breakdown(&conn, &base, monitor_key, period_days))?;
     let stories = crate::perf::measure(path, "dashboard_stories", monitor_key, || l_monitor_stories(&conn, monitor_key, period_days))?;
     let story_ids = stories.iter().flat_map(|story| story.publications.iter()
