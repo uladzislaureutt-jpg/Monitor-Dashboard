@@ -4,6 +4,7 @@ import {enqueue,workOne} from './worker.ts';
 import {probe} from './probe.ts';
 import {probeGdelt} from './gdelt.ts';
 import {bundleForRun} from './bundle.ts';
+import {warningRu} from './warnings.ts';
 
 const cors={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization,apikey,content-type,x-client-info','Access-Control-Allow-Methods':'POST,OPTIONS'};
 const json=(value:unknown,status=200)=>new Response(JSON.stringify(value),{status,headers:{...cors,'content-type':'application/json'}});
@@ -53,7 +54,10 @@ async function status(){
   const category=row.endpoint==='event_articles'?'event':row.endpoint==='articles'?'assistant':'diagnostic';
   newscatcher_usage[category]+=credits;
  }
- return {version:VERSION,country_names:COUNTRY_NAMES,settings:must(settings),runs:must(runs),providers:must(providers),sources,usage,newscatcher_usage};
+ const localizedRuns=(must(runs) as any[]).map(run=>({
+   ...run,warnings:Array.isArray(run.warnings)?run.warnings.map(warningRu):[]
+  }));
+  return {version:VERSION,country_names:COUNTRY_NAMES,settings:must(settings),runs:localizedRuns,providers:must(providers),sources,usage,newscatcher_usage};
 }
 return async (req: Request): Promise<Response> => {try{
  if(req.method==='OPTIONS')return new Response(null,{status:204,headers:cors});if(req.method!=='POST')return json({error:'method_not_allowed'},405);

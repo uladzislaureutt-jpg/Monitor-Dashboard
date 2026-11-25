@@ -51,7 +51,14 @@ async function ingest(rt:Runtime,job:Job,run:Run,candidates:Candidate[],sources:
   let item=alias?must(await rt.db.from('l_news_items').select('*').eq('id',alias.item_id).maybeSingle()):must(await rt.db.from('l_news_items').select('*').eq('canonical_url',key).maybeSingle());
   if(!item){
    const known=must(await rt.db.from('l_news_known_urls').select('*').eq('canonical_url',key).maybeSingle());
-   if(known&&String(known.origin).startsWith('github')){must(await rt.db.from('l_news_observations').insert({...observation,disposition:'already_reported_github'}));counts.known++;continue;}
+   if(known&&String(known.origin).startsWith('github')){
+    const inserted=must(await rt.db.from('l_news_observations').upsert(
+     {...observation,disposition:'already_reported_github'},
+     {onConflict:'run_id,provider,provider_id',ignoreDuplicates:true}
+    ).select('id'));
+    if(!inserted.length){counts.duplicates++;continue;}
+    counts.known++;continue;
+   }
    if(accepted>=run.settings.candidate_limit){counts.capped=true;continue;}
    const uid=known?.document_uid||'lapi_'+(await sha(key)).slice(0,32);
    const result=await rt.db.from('l_news_items').insert({canonical_url:key,document_uid:uid,source_domain:source.domain,country:source.country,published_at:c.published_at,original:c,first_run_id:run.id}).select('*').single();
@@ -59,7 +66,13 @@ async function ingest(rt:Runtime,job:Job,run:Run,candidates:Candidate[],sources:
    must(await rt.db.rpc('l_news_claim_alias',{p_alias:key,p_item:item.id}));accepted++;
   }
   const state=item.state==='ready'?'already_ready':'candidate';
-  must(await rt.db.from('l_news_observations').insert({...observation,item_id:item.id,disposition:state}));
+  // Atomic uniqueness check: another search layer can ingest this provider ID
+  // between our preflight SELECT and INSERT. Ignore the conflicting row safely.
+  const inserted=must(await rt.db.from('l_news_observations').upsert(
+   {...observation,item_id:item.id,disposition:state},
+   {onConflict:'run_id,provider,provider_id',ignoreDuplicates:true}
+  ).select('id'));
+  if(!inserted.length){counts.duplicates++;continue;}
   must(await rt.db.from('l_news_items').update({last_seen_at:new Date().toISOString()}).eq('id',item.id));
   must(await rt.db.from('l_news_run_items').upsert({run_id:run.id,item_id:item.id,role:item.state==='ready'?'seen':'new'},{onConflict:'run_id,item_id',ignoreDuplicates:true}));
   if(item.state==='ready'){
