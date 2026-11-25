@@ -120,6 +120,28 @@ export default function App() {
   const coreSeq = useRef(0);
   activePeriodRef.current = period;
 
+  // Only anonymous duration and monitor key are recorded, and only when the
+  // WebView supports Chromium's Long Tasks API. Sampling is throttled to
+  // avoid causing additional UI work during heavy renders.
+  useEffect(() => {
+    if (typeof PerformanceObserver === "undefined") return;
+    let observer: PerformanceObserver | null = null;
+    let lastReported = 0;
+    try {
+      observer = new PerformanceObserver((list) => {
+        for (const task of list.getEntries()) {
+          const elapsedMs = Math.round(task.duration);
+          const now = performance.now();
+          if (elapsedMs < 150 || now - lastReported < 2000) continue;
+          lastReported = now;
+          void desktopApi.recordUiLongtask(activeMonitorRef.current, elapsedMs).catch(() => {});
+        }
+      });
+      observer.observe({ entryTypes: ["longtask"] });
+    } catch { observer?.disconnect(); return; }
+    return () => observer?.disconnect();
+  }, []);
+
   const refreshCore = useCallback(async (key: MonitorKey = activeMonitorRef.current, force = false) => {
     const request = ++coreSeq.current;
     const cached = peekCore(key);
