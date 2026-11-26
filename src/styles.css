@@ -1617,3 +1617,12 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 .assistant-terminal summary { cursor: pointer; color: #225c85; }
 .assistant-terminal pre { max-height: 300px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: #17364b; color: #e9f1f6; padding: 1rem; border-radius: 10px; font-size: 12px; line-height: 1.65; }
 @media (max-width: 760px) { .assistant-budget-grid { grid-template-columns: repeat(2, minmax(100px, 1fr)); } }
+.l-news-assistant .kpi small { display: block; margin-top: 5px; color: #81909b; font-size: 9px; line-height: 1.4; }
+.assistant-settings { color: #3f5261; font-size: 11px; line-height: 1.5; }
+.assistant-settings > summary { font-size: 12px; }
+.assistant-settings legend { color: #344b5f; font-size: 12px; font-weight: 600; }
+.assistant-settings .sync-form { grid-template-columns: repeat(3, minmax(130px, 1fr)); max-width: 880px; margin-top: 12px; }
+.assistant-settings details { margin: 7px 0; }
+.assistant-settings details summary { color: #225c85; cursor: pointer; }
+.assistant-budget-grid label { color: #65727b; font-size: 10px; }
+.assistant-budget-grid input { border: 1px solid #dcd6ce; border-radius: 9px; background: #fff; color: #3f5261; min-height: 38px; padding: 0 10px; font-size: 11px; outline: 0; }
