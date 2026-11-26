@@ -1,15 +1,52 @@
 import {cloroCandidates,cloroCountries,currentsPlans,pollCloro,submitCloro,validateAssistant2Settings} from './assistant2.ts';
+import {CLORO_DEFAULT_COUNTRIES,CLORO_PRIORITY,CLORO_ROTATION,CLORO_PROFILES,cloroRequest,cloroSearchMetadata} from './cloro-config.ts';
+import {containsName} from './core.ts';
 import {reserve} from './providers.ts';
 import type {Job,Run,Runtime} from './providers.ts';
 const equal=(actual:unknown,expected:unknown)=>{if(JSON.stringify(actual)!==JSON.stringify(expected))throw new Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);};
-const run={id:'r2',assistant_id:2,assistant_number:1,from_at:'2026-11-25T00:00:00Z',to_at:'2026-11-26T02:00:00Z',settings:{countries:['PL','UA','RU','DE','IT'],cloro_countries:['PL','UA','RU','DE','IT'],cloro_per_run:4,currents_languages:['de'],currents_per_run:4}} as Run;
+const run={id:'r2',assistant_id:2,assistant_number:1,from_at:'2026-11-25T00:00:00Z',to_at:'2026-11-26T02:00:00Z',settings:{countries:CLORO_DEFAULT_COUNTRIES,cloro_countries:CLORO_DEFAULT_COUNTRIES,cloro_per_run:4,currents_languages:['de'],currents_per_run:4}} as Run;
 const job={id:73,run_id:'r2',kind:'cloro',payload:{country:'DE'},attempts:1} as Job;
-Deno.test('Cloro rotates extra countries, Currents only searches selected languages and scope',()=>{
- equal(cloroCountries(run),['PL','UA','RU','DE']);
- equal(cloroCountries({...run,assistant_number:2}),['PL','UA','RU','IT']);
+Deno.test('Cloro fixes US/DE/PL and cycles all nine other countries within the four-query budget',()=>{
+ const actual=Array.from({length:18},(_,i)=>cloroCountries({...run,assistant_number:i+1}));
+ for(let i=0;i<actual.length;i++)equal(actual[i],[...CLORO_PRIORITY,CLORO_ROTATION[i%9]]);
  equal(cloroCountries({...run,settings:{...run.settings,countries:['IT','DE']}}),['DE','IT']);
+ equal(cloroCountries({...run,settings:{...run.settings,cloro_per_run:0}}),[]);
+ equal(cloroCountries({...run,settings:{...run.settings,cloro_per_run:2}}),['US','DE']);
  equal(currentsPlans(run),[{language:'de',page:1}]);
  equal(currentsPlans({...run,settings:{...run.settings,countries:['IT']}}),[]);
+});
+Deno.test('a changed rotation starts with France at the next assistant number',()=>{
+ const anchored={...run,settings:{...run.settings,cloro_rotation_start:3}};
+ equal(cloroCountries({...anchored,assistant_number:3}),['US','DE','PL','FR']);
+ equal(cloroCountries({...anchored,assistant_number:4}),['US','DE','PL','IT']);
+ equal(cloroCountries({...anchored,assistant_number:5}),['US','DE','PL','UA']);
+ equal(cloroCountries({...anchored,assistant_number:6}),['US','DE','PL','GB']);
+});
+Deno.test('only explicitly localized countries can be selected or scheduled',()=>{
+ const metadata=cloroSearchMetadata();equal(metadata.priority_countries,['US','DE','PL']);
+ for(const country of CLORO_DEFAULT_COUNTRIES)equal(metadata.countries.includes(country),true);
+ equal(metadata.countries.includes('MM'),false);
+ const scoped={...run,settings:{...run.settings,countries:['DE','MM'],cloro_countries:['DE','MM']}};
+ equal(cloroCountries(scoped),['DE']);
+ let error='';try{validateAssistant2Settings({cloro_countries:['MM']},['DE','MM']);}catch(e){error=String(e);}
+ equal(error.includes('invalid_cloro_countries'),true);
+ equal(validateAssistant2Settings({cloro_countries:['LT','LV','EE','ES','TR']},['LT','LV','EE','ES','TR']).cloro_countries,['LT','LV','EE','ES','TR']);
+});
+Deno.test('every advertised locale builds a local request with the same single-page charge',()=>{
+ for(const [country,profile] of Object.entries(CLORO_PROFILES)){
+  const payload=cloroRequest(country,run.from_at,run.to_at);
+  equal(payload.country,country);equal(payload.gl,country.toLowerCase());equal(payload.hl,profile.language);equal(payload.pages,1);
+  for(const term of profile.terms){equal(payload.query.includes(term),true);if(!containsName(term))throw new Error('Missing relevance alias: '+country+' '+term);}
+  equal(payload.query.endsWith('after:2026-11-24 before:2026-11-27'),true);
+ }
+ for(const [country,language,term] of [['LT','lt','Lukašenką'],['LV','lv','Lukašenko'],['EE','et','Lukašenka'],['CZ','cs','Lukašenko'],['SK','sk','Lukašenko'],['HU','hu','Lukasenka'],['RO','ro','Lukașenko'],['BG','bg','Лукашенко'],['RS','sr','Лукашенко'],['KZ','ru','Лукашенко'],['KG','ru','Лукашенко'],['QA','ar','لوكاشينكو']]){
+  const payload=cloroRequest(country,run.from_at,run.to_at);equal(payload.hl,language);equal(payload.query.includes(term),true);
+ }
+});
+Deno.test('unsupported locales cannot reserve credits or submit a request',async()=>{
+ let reservations=0;const rt={secret:()=> 'fixture',db:{rpc:()=>{reservations++;return {data:77};}}} as Runtime;
+ let error='';try{await submitCloro(rt,{...job,payload:{country:'MM'}},run);}catch(e){error=String(e);}
+ equal(error.includes('invalid_cloro_country'),true);equal(reservations,0);
 });
 Deno.test('Cloro relative dates never establish publication freshness',()=>{
  const rows=cloroCandidates({response:{newsResults:[{link:'https://www.quotidiano.net/news/example',title:'Lukashenko',date:'2 hours ago',snippet:'Interview'}]}},'IT');

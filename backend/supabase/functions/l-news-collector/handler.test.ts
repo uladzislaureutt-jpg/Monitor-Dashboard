@@ -191,3 +191,11 @@ Deno.test('a scoped collection exports the whole active catalog with explicit un
  const china=data.source_metrics.find((row:any)=>row.domain==='cn.example');
  equal(china.access_status,'api_outside_run_scope');equal(china.admission_status,'not_in_run_scope');equal(china.included,0);
 });
+
+Deno.test('status exposes the same localized Cloro countries used by server validation',async()=>{
+ const response=await fixture()(post('status','admin',{assistant_id:2}));const result=await response.json();
+ equal(result.cloro_search.priority_countries,['US','DE','PL']);
+ equal(result.cloro_search.default_countries,['US','DE','PL','FR','IT','UA','GB','ES','TR','LT','LV','EE']);
+ equal(result.cloro_search.countries.includes('MM'),false);
+ for(const code of ['LT','LV','EE','ES','TR','CZ','SK','HU','RO','BG','RS','KZ','KG','QA'])equal(result.cloro_search.countries.includes(code),true);
+});

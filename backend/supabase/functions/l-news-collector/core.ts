@@ -13,7 +13,7 @@ export const COUNTRY_NAMES: Record<string,string> = {
  AU:'Австралия',KR:'Южная Корея',TW:'Тайвань',LY:'Ливия',MM:'Мьянма',LB:'Ливан',CU:'Куба',
 };
 export const COUNTRIES = Object.keys(COUNTRY_NAMES);
-export const NAMES = ['Loekasjenko','Lukasenka','Lukasenko','Λουκασένκο','Lukaixenko','ลูกาเชนโก','루카셴코','लुकाशेंको','لوکاشینکو','Lukasjenko','Lukasjenka','Лукашенко','Лукашенка','Лукашэнка','Lukashenko','Lukashenka','Loukachenko','Lukaschenko','Łukaszenka','Łukaszenki','Łukaszenkę','Łukaszenką','Łukaszence','Lukaszenko','Lukašenka','Lukašenko','Lukaşenko','Lukašenko','Lukašenkos','Lukašenkas','Lukašenko','Lukashenkon','Lukașenko','卢卡申科','魯卡申柯','盧卡申科','ルカシェンコ','لوکاشنکو','لوكاشينكو','לוקשנקו','ლუკაშენკო','Լուկաշենկո'];
+export const NAMES = ['Loukachenka','Lukaschenka','Łukaszenko','لوكاشنكو','Loekasjenko','Lukasenka','Lukasenko','Λουκασένκο','Lukaixenko','ลูกาเชนโก','루카셴코','लुकाशेंको','لوکاشینکو','Lukasjenko','Lukasjenka','Лукашенко','Лукашенка','Лукашэнка','Lukashenko','Lukashenka','Loukachenko','Lukaschenko','Łukaszenka','Łukaszenki','Łukaszenkę','Łukaszenką','Łukaszence','Lukaszenko','Lukašenka','Lukašenko','Lukaşenko','Lukašenko','Lukašenkos','Lukašenkas','Lukašenko','Lukashenkon','Lukașenko','卢卡申科','魯卡申柯','盧卡申科','ルカシェンコ','لوکاشنکو','لوكاشينكو','לוקשנקו','ლუკაშენკო','Լուկաշենկո'];
 export const QUERY = [...new Set(NAMES)].map(x=>'"'+x+'"').join(' OR ');
 export const ROLE_QUERY = '"President of Belarus" OR "Belarusian president" OR "президент Беларуси" OR "президент Белоруссии" OR "prezydent Białorusi"';
 const tracking=/^(utm_.+|fbclid|gclid|yclid|dclid|mc_cid|mc_eid|ref_src|cmpid|ocid)$/i;
