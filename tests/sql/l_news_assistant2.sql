@@ -29,5 +29,13 @@ begin
  if (public.l_news_assistant2_usage()#>>'{cloro,today_units}')::integer<>day_used+3 then raise exception 'usage summary mismatch';end if;
  update public.l_news_runs set settings=settings||'{"currents_enabled":false}' where id=a;
  if public.l_news_reserve_assistant2_call(a,k,'currents','test',1) is not null then raise exception 'disabled provider spent quota';end if;
+ -- A service reset can occur after Minsk midnight; its old balance is still valid.
+ update public.l_news_runs set settings=settings||'{"currents_enabled":true,"currents_per_run":10,"currents_daily_requests":250,"currents_monthly_requests":7500,"currents_reserve":10}' where id=a;
+ insert into public.l_news_provider_state(provider,info,updated_at)
+ values('currents',jsonb_build_object('limits',jsonb_build_object('remaining',10,'resetAt',now()+interval '1 hour')),now()-interval '1 day')
+ on conflict(provider) do update set info=excluded.info,updated_at=excluded.updated_at;
+ if public.l_news_reserve_assistant2_call(a,k,'currents','test_future_reset',1) is not null then raise exception 'provider reserve expired at Minsk midnight';end if;
+ update public.l_news_provider_state set info=jsonb_set(info,'{limits,resetAt}',to_jsonb(now()-interval '1 second')) where provider='currents';
+ if public.l_news_reserve_assistant2_call(a,k,'currents','test_expired_reset',1) is null then raise exception 'expired provider quota prevented bounded refresh';end if;
 end$$;
 rollback;
