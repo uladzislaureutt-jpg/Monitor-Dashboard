@@ -1,9 +1,10 @@
-import {Candidate,Source,batches,buildCard,contentLevel,containsName,domainOf,publisherArticleKey,relevant,sha,sourceFor,urlKey,validDate} from './core.ts';
+import {Candidate,Source,batches,buildCard,contentLevel,containsName,domainOf,publisherArticleKey,relevant,samePublisherHeadlineKey,sha,sourceFor,urlKey,validDate} from './core.ts';
 import {Job,Run,Runtime,must,newscatcherSubscription,perigonLimits,readPages,searchNewscatcher,searchPerigon} from './providers.ts';
 import {searchGdelt} from './gdelt.ts';
 import {recoverArticle} from './extraction.ts';
 import {translateCard} from './translation.ts';
 import {indexGithub} from './github.ts';
+import {assistantId,cloroCountries,currentsPlans,probeAssistant2,submitCloro,pollCloro,searchCurrents} from './assistant2.ts';
 
 export async function enqueue(rt:Runtime,run:string|null,kind:string,payload:any,key:string,available?:string){
  const result=await rt.db.from('l_news_jobs').upsert({run_id:run,kind,payload,dedupe_key:key,...(available?{available_at:available}:{})},{onConflict:'dedupe_key',ignoreDuplicates:true});must(result);
@@ -13,22 +14,33 @@ async function sourcesFor(rt:Runtime):Promise<Source[]>{
 }
 async function setup(rt:Runtime,job:Job,run:Run){
  const warnings:string[]=[];
+ const second=assistantId(run)===2;
  const sources=(await sourcesFor(rt)).filter(source=>run.settings.countries.includes(source.country));
  const disabled=await readPages<{domain:string}>(rt.db.from('l_news_sources').select('domain').eq('enabled',false).order('domain'));
  const scope={source_domains:run.settings.country_scope?sources.map(source=>source.domain):[],
   excluded_domains:disabled.map(source=>source.domain)};
  try{warnings.push(...(await indexGithub(rt)).warnings);}catch{warnings.push('GitHub-индекс временно недоступен; повторы дополнительно объединяются в приложении');}
- if(rt.perigonKey){try{const quota=await perigonLimits(rt);await enqueue(rt,run.id,'perigon',{page:0,quota,layer:'name',...scope},run.id+':perigon:name:0');
+ const secondQuota=second?await probeAssistant2(rt):null;
+ if(secondQuota)warnings.push(...secondQuota.warnings);
+ if(!second&&rt.perigonKey){try{const quota=await perigonLimits(rt);await enqueue(rt,run.id,'perigon',{page:0,quota,layer:'name',...scope},run.id+':perigon:name:0');
   // The optional role query fits in the same four-request daily allowance.
   await enqueue(rt,run.id,'perigon',{page:0,quota,layer:'role',...scope},run.id+':perigon:role:0');}catch{warnings.push('Perigon: не удалось подтвердить доступную квоту');}}
- else warnings.push('Perigon: ключ отсутствует');
- if(rt.newscatcherKey){try{const account=await newscatcherSubscription(rt);
+ else if(!second)warnings.push('Perigon: ключ отсутствует');
+ if((!second||run.settings.newscatcher_enabled)&&rt.newscatcherKey){try{const account=secondQuota?.newscatcher||await newscatcherSubscription(rt);
   const pageSize=Math.min(100,Number((account.subscription as any).articles?.max_articles_per_page)||100);
   if(Number((account.subscription as any).credits_balance??1)<5)warnings.push('Newscatcher: недостаточно кредитов');
   else for(const [i,part] of batches(sources,100).entries())await enqueue(rt,run.id,'newscatcher',{page:1,page_size:pageSize,domains:part.map(s=>s.domain),family:account.family,group:i},run.id+':newscatcher:'+i+':1');
  }catch{warnings.push('Newscatcher: не удалось подтвердить подписку');}}
- else warnings.push('Newscatcher: ключ отсутствует');
- if(run.settings.gdelt_per_run>0)await enqueue(rt,run.id,'gdelt',{},run.id+':gdelt:root');
+ else if(!second||run.settings.newscatcher_enabled)warnings.push('Newscatcher: ключ отсутствует');
+ if(!second&&run.settings.gdelt_per_run>0)await enqueue(rt,run.id,'gdelt',{},run.id+':gdelt:root');
+ if(second&&run.settings.cloro_enabled){
+  if(rt.secret('CLORO_API_KEY'))for(const country of cloroCountries(run))await enqueue(rt,run.id,'cloro',{country},run.id+':cloro:'+country);
+  else warnings.push('Cloro: ключ отсутствует');
+ }
+ if(second&&run.settings.currents_enabled){
+  if(rt.secret('CURRENTSAPI_API_KEY'))for(const plan of currentsPlans(run))await enqueue(rt,run.id,'currents',plan,run.id+':currents:'+plan.language+':1');
+  else warnings.push('Currents: ключ отсутствует');
+ }
  return {catalog_sources:sources.length,warnings};
 }
 
@@ -51,7 +63,14 @@ async function ingest(rt:Runtime,job:Job,run:Run,candidates:Candidate[],sources:
   let item=alias?must(await rt.db.from('l_news_items').select('*').eq('id',alias.item_id).maybeSingle()):must(await rt.db.from('l_news_items').select('*').eq('canonical_url',key).maybeSingle());
   if(!item){
    const known=must(await rt.db.from('l_news_known_urls').select('*').eq('canonical_url',key).maybeSingle());
-   if(known&&String(known.origin).startsWith('github')){must(await rt.db.from('l_news_observations').insert({...observation,disposition:'already_reported_github'}));counts.known++;continue;}
+   if(known&&String(known.origin).startsWith('github')){
+    const inserted=must(await rt.db.from('l_news_observations').upsert(
+     {...observation,disposition:'already_reported_github'},
+     {onConflict:'run_id,provider,provider_id',ignoreDuplicates:true}
+    ).select('id'));
+    if(!inserted.length){counts.duplicates++;continue;}
+    counts.known++;continue;
+   }
    if(accepted>=run.settings.candidate_limit){counts.capped=true;continue;}
    const uid=known?.document_uid||'lapi_'+(await sha(key)).slice(0,32);
    const result=await rt.db.from('l_news_items').insert({canonical_url:key,document_uid:uid,source_domain:source.domain,country:source.country,published_at:c.published_at,original:c,first_run_id:run.id}).select('*').single();
@@ -59,7 +78,13 @@ async function ingest(rt:Runtime,job:Job,run:Run,candidates:Candidate[],sources:
    must(await rt.db.rpc('l_news_claim_alias',{p_alias:key,p_item:item.id}));accepted++;
   }
   const state=item.state==='ready'?'already_ready':'candidate';
-  must(await rt.db.from('l_news_observations').insert({...observation,item_id:item.id,disposition:state}));
+  // Atomic uniqueness check: another search layer can ingest this provider ID
+  // between our preflight SELECT and INSERT. Ignore the conflicting row safely.
+  const inserted=must(await rt.db.from('l_news_observations').upsert(
+   {...observation,item_id:item.id,disposition:state},
+   {onConflict:'run_id,provider,provider_id',ignoreDuplicates:true}
+  ).select('id'));
+  if(!inserted.length){counts.duplicates++;continue;}
   must(await rt.db.from('l_news_items').update({last_seen_at:new Date().toISOString()}).eq('id',item.id));
   must(await rt.db.from('l_news_run_items').upsert({run_id:run.id,item_id:item.id,role:item.state==='ready'?'seen':'new'},{onConflict:'run_id,item_id',ignoreDuplicates:true}));
   if(item.state==='ready'){
@@ -68,6 +93,9 @@ async function ingest(rt:Runtime,job:Job,run:Run,candidates:Candidate[],sources:
   }
   if(item.state==='rejected'){counts.excluded++;continue;}
   if(c.body.length>String(item.original?.body||'').length){must(await rt.db.from('l_news_items').update({original:c,state:'pending'}).eq('id',item.id));}
+  else if(!item.original?.published_at&&c.published_at){
+   must(await rt.db.from('l_news_items').update({original:{...item.original,published_at:c.published_at,lead:item.original?.lead||c.lead},published_at:c.published_at}).eq('id',item.id));
+  }
   await enqueue(rt,run.id,'article',{item_id:item.id},run.id+':article:'+item.id);counts.kept++;
  }
  return counts;
@@ -117,13 +145,14 @@ async function article(rt:Runtime,job:Job,run:Run,sources:Source[]){
   return {rejected:true,reason:translated.reason};
  }
  const uid=item.document_uid;
+ const publicationEdition=edition||await samePublisherHeadlineKey(source.domain,translated.title,published);
  const card=buildCard(c,source,uid,translated.title,translated.lead,level,translated.evidence??rel.evidence,run.id);
  (card.provenance as any).translation_provider=translated.route;(card.provenance as any).extraction_strategy=strategy;
  (card.provenance as any).relevance_reason=rel.review?'context_confirmed':rel.reason;
  const full=c.body.length>=350?{schema_version:'0.3',monitor_key:'lukashenko',document_id:uid,text:c.body,text_sha256:await sha(c.body),text_length:c.body.length,quality:level,extraction_strategy:strategy,transport:c.provider}:null;
- if(edition){
+ if(publicationEdition){
   const result=must(await rt.db.rpc('l_news_publish_edition',{
-   p_key:edition,p_item:item.id,p_run:run.id,p_canonical:canonical,
+   p_key:publicationEdition,p_item:item.id,p_run:run.id,p_canonical:canonical,
    p_aliases:[...new Set([canonical,item.canonical_url,...(c.aliases??[]).map(urlKey)])],
    p_card:card,p_full_text:full,p_level:level,p_published:published,
   }));
@@ -152,15 +181,21 @@ export async function workOne(rt:Runtime,job:Job){
  }
  if(job.kind==='setup')return setup(rt,job,run);
  const sources=await sourcesFor(rt);
+ if(job.kind==='cloro'){
+  const submitted=await submitCloro(rt,job,run);
+  if(submitted.capped)return {capped:true,provider:'cloro'};
+  await enqueue(rt,run.id,'cloro_poll',submitted,run.id+':cloro_poll:'+job.id,new Date(Date.now()+2000).toISOString());
+  return {submitted:true,country:job.payload.country};
+ }
  if(job.kind==='article')return article(rt,job,run,sources);
- if(job.kind==='perigon'||job.kind==='newscatcher'||job.kind==='gdelt'){
-  const found:any=job.kind==='perigon'?await searchPerigon(rt,job,run):job.kind==='newscatcher'?await searchNewscatcher(rt,job,run):await searchGdelt(rt,job,run);
+ if(['perigon','newscatcher','gdelt','currents','cloro_poll'].includes(job.kind)){
+  const found:any=job.kind==='cloro_poll'?await pollCloro(rt,job):job.kind==='currents'?await searchCurrents(rt,job,run):job.kind==='perigon'?await searchPerigon(rt,job,run):job.kind==='newscatcher'?await searchNewscatcher(rt,job,run):await searchGdelt(rt,job,run);
   if(found.capped)return {capped:true,provider:job.kind};
-  if(job.kind==='gdelt'&&(found.warnings||found.retry_at))return found;
+  if(found.retry_at||(job.kind==='gdelt'&&found.warnings))return found;
   const result=await ingest(rt,job,run,found.candidates,sources);
-  if(found.next){const next=Number(found.page)+1;await enqueue(rt,run.id,job.kind,{...job.payload,page:next,quota:found.quota||job.payload.quota},run.id+':'+job.kind+':'+(job.payload.layer||job.payload.group)+':'+next);}
+  if(found.next){const next=Number(found.page)+1;await enqueue(rt,run.id,job.kind,{...job.payload,page:next,quota:found.quota||job.payload.quota},run.id+':'+job.kind+':'+(job.payload.language||job.payload.layer||job.payload.group)+':'+next);}
   if(found.split){const middle=new Date(Math.floor((Date.parse(found.from)+Date.parse(found.to))/2)).toISOString();for(const [from,to] of [[found.from,middle],[middle,found.to]])await enqueue(rt,run.id,'gdelt',{from,to},run.id+':gdelt:'+from+':'+to);}
-  return result;
+  return found.warnings?.length?{...result,warnings:found.warnings}:result;
  }
  throw new Error('unknown_job_kind');
 }

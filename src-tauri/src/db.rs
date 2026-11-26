@@ -19,6 +19,8 @@ const MIGRATION_0006: &str = include_str!("../migrations/0006_persistent_setting
 const MIGRATION_0007: &str = include_str!("../migrations/0007_publication_identity.sql");
 const MIGRATION_0008: &str = include_str!("../migrations/0008_l_monitor_run_identity.sql");
 
+const MIGRATION_0009: &str = include_str!("../migrations/0009_l_monitor_two_assistants.sql");
+
 pub fn open_database(path: &Path) -> Result<Connection, String> {
     let conn = Connection::open(path).map_err(|e| format!("Не удалось открыть SQLite: {e}"))?;
     conn.execute_batch(
@@ -107,6 +109,12 @@ pub fn initialize_database(path: &Path) -> Result<(), String> {
         tx.execute_batch(MIGRATION_0008).map_err(|e| e.to_string())?;
         crate::identity::reconcile_l_monitor_identity(&tx)?;
         tx.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (8)", []).map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
+    }
+    if current < 9 {
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        tx.execute_batch(MIGRATION_0009).map_err(|e| e.to_string())?;
+        tx.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (9)", []).map_err(|e| e.to_string())?;
         tx.commit().map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -199,7 +207,9 @@ pub fn list_runs(path: &Path, monitor_key: &str) -> Result<Vec<RunSummary>, Stri
                    JOIN documents d ON d.id = mi.document_id
                   WHERE ri.run_id = r.id AND d.full_text IS NOT NULL
                     AND UPPER(COALESCE(d.full_text_quality, '')) IN ('FULL_TEXT', 'FULL')),
-                (SELECT COUNT(*) FROM suppressed_l_monitor_run_items WHERE run_id = r.id)
+                (SELECT COUNT(*) FROM suppressed_l_monitor_run_items WHERE run_id = r.id),
+                CASE WHEN json_extract(r.manifest_json,'$.run.collector') = 'api_assistant'
+                     THEN COALESCE(json_extract(r.manifest_json,'$.run.assistant_id'), 1) END
             FROM runs r
             JOIN monitors m ON m.id = r.monitor_id
             WHERE m.monitor_key = ?1
@@ -236,6 +246,7 @@ pub fn list_runs(path: &Path, monitor_key: &str) -> Result<Vec<RunSummary>, Stri
                 sources_in_coverage: row.get(12)?,
                 collector: row.get(13)?,
                 collector_number: row.get(14)?,
+                collector_assistant_id: row.get(19)?,
                 collector_countries,
                 collector_run_id: row.get(16)?,
                 full_text_publications: row.get(17)?,

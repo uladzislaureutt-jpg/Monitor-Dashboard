@@ -156,6 +156,7 @@ pub struct RunSummary {
     pub run_number: Option<i64>,
     pub collector: Option<String>,
     pub collector_number: Option<i64>,
+    pub collector_assistant_id: Option<i64>,
     pub external_run_id: Option<String>,
     pub collector_run_id: Option<String>,
     pub started_at: Option<String>,
