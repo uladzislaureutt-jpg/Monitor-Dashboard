@@ -22,9 +22,9 @@ function fixture(hasMonitorAccess = true, monitorEnabled = true, catalog: Record
       { id: 3, ready_run_id: null, state: 'rejected', document_uid: 'article-3', card: null },
     ],
     l_news_sources: catalog,
-    l_news_settings: [{ enabled: true, lookback_hours: 26 }],
+    l_news_settings: [{ id:true, enabled: true, lookback_hours: 26, local_time:'15:07' }],
     l_news_jobs: [],
-    l_news_assistant2_settings: [{ enabled: true, lookback_hours: 26, local_time: "03:07" }],
+    l_news_assistant2_settings: [{ id:true, enabled: true, lookback_hours: 26, local_time: "03:07" }],
     l_news_provider_state: [],
     l_news_usage: usage,
   };
@@ -37,9 +37,11 @@ function fixture(hasMonitorAccess = true, monitorEnabled = true, catalog: Record
     },
     from(table: string) {
       let rows = tables[table];
+      let patch:Record<string,unknown>|undefined;
       if (!rows) throw new Error('Unexpected table: ' + table);
       return {
         select() { return this; },
+        update(value:Record<string,unknown>) {patch=value;return this;},
         order() { return this; },
         eq(name: string, value: unknown) { rows = rows.filter(row => row[name] === value); return this; },
         gte() { return this; },
@@ -48,7 +50,7 @@ function fixture(hasMonitorAccess = true, monitorEnabled = true, catalog: Record
         range(from: number, to: number) { return Promise.resolve({ data: rows.slice(from, to + 1) }); },
         maybeSingle() { return Promise.resolve({ data: rows[0] ?? null }); },
         single() { return this.maybeSingle(); },
-        then(resolve: (result: { data: typeof rows }) => void) { resolve({ data: rows }); },
+        then(resolve: (result: { data: typeof rows }) => void) { if(patch)for(const row of rows)Object.assign(row,patch);resolve({ data: rows }); },
       };
     },
     async rpc(name: string, params?: Record<string, unknown>) {
@@ -161,7 +163,7 @@ Deno.test('five runs per assistant, independent settings, and old bundles defaul
   const response=await handle(post('status','operator',{assistant_id:id}));
   equal(response.status,200);const snapshot=await response.json();
   equal(snapshot.runs.length,5);equal(snapshot.runs.every((run:any)=>run.assistant_id===id),true);
-  equal(snapshot.settings.local_time,id===2?'03:07':undefined);
+  equal(snapshot.settings.local_time,id===2?'03:07':'15:07');
  }
  const manifest=await (await handle(post('manifest','operator'))).json();equal(manifest.runs.length,16);
  equal((await fixture()(post('start','admin',{assistant_id:2,countries:['IT']}))).status,200);
@@ -198,4 +200,25 @@ Deno.test('status exposes the same localized Cloro countries used by server vali
  equal(result.cloro_search.default_countries,['US','DE','PL','FR','IT','UA','GB','ES','TR','LT','LV','EE']);
  equal(result.cloro_search.countries.includes('MM'),false);
  for(const code of ['LT','LV','EE','ES','TR','CZ','SK','HU','RO','BG','RS','KZ','KG','QA'])equal(result.cloro_search.countries.includes(code),true);
+});
+
+Deno.test('helper 1 saves its Minsk schedule independently and only for an admin',async()=>{
+ const handle=fixture();
+ equal((await handle(post('settings','operator',{assistant_id:1,local_time:'07:35'}))).status,403);
+ equal((await handle(post('settings','admin',{assistant_id:1,local_time:'07:35'}))).status,200);
+ const first=await (await handle(post('status','admin',{assistant_id:1}))).json();
+ const second=await (await handle(post('status','admin',{assistant_id:2}))).json();
+ equal(first.settings.local_time,'07:35');equal(first.settings.lookback_hours,26);equal(second.settings.local_time,'03:07');
+ for(const time of ['00:00','23:59']){
+  equal((await handle(post('settings','admin',{assistant_id:1,local_time:time}))).status,200);
+  equal((await (await handle(post('status','admin',{assistant_id:1}))).json()).settings.local_time,time);
+ }
+});
+Deno.test('helper 1 rejects invalid schedule times without changing its previous time',async()=>{
+ const handle=fixture();
+ for(const time of ['', '3:07', '24:00', '12:60', '12:07:00', null, 123, true]){
+  const response=await handle(post('settings','admin',{assistant_id:1,local_time:time}));
+  equal(response.status,400);equal((await response.json()).error,'invalid_local_time');
+ }
+ equal((await (await handle(post('status','admin',{assistant_id:1}))).json()).settings.local_time,'15:07');
 });

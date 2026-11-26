@@ -174,6 +174,7 @@ function AssistantPanel({
       {newsUsage.unconfirmed > 0 && <> · Списание уточняется для {newsUsage.unconfirmed} зап.</>}</p>}
     {second && data?.diagnostic_usage && <p>Сравнительные проверки за {data.diagnostic_usage.days} дней: Cloro — <strong>{data.diagnostic_usage.cloro_credits} кр.</strong>, Currents — <strong>{data.diagnostic_usage.currents_requests} зап.</strong>, The News API — <strong>{data.diagnostic_usage.thenews_requests} зап.</strong> Проверочный сбор готового помощника учтён в его запусках.</p>}
     {second && <p className="sync-note">Currents: 250 запросов в сутки, сброс в 03:00 по Минску. Cloro Free: 500 кредитов на календарный месяц; точную дату пополнения аккаунта сервис пока не передал. The News API: на текущем ключе до 100 запросов в сутки, по 3 статьи за запрос; остаток обновляется по заголовкам поискового ответа.</p>}
+    {!second && data && <Assistant1Schedule key={data.settings.updated_at} settings={data.settings} disabled={busy || !admin} onSave={patch => void act("settings", patch)} />}
     {second && data && <Assistant2Settings key={data.settings.updated_at} settings={data.settings} usage={data.usage_limits} cloroSearch={data.cloro_search} countries={catalogCountries} disabled={busy || !admin} onSave={patch => void act("settings", patch)} />}
     <div className="sync-form">
       <label>Глубина, часов <input type="number" min={1} max={168} value={hours} onChange={event => setDraftHours(event.target.value)} /></label>
@@ -232,6 +233,21 @@ function AssistantPanel({
     </details>
     <p className="sync-note">Показаны последние 5 запусков этого помощника. Архив и ранее полученные карточки сохранены.</p>
   </section>;
+}
+
+function Assistant1Schedule({ settings, disabled, onSave }: {
+  settings: Snapshot["settings"]; disabled: boolean; onSave: (patch: Record<string, unknown>) => void;
+}) {
+  const saved = settings.local_time ?? "15:07";
+  const [time, setTime] = useState(saved);
+  const valid = /^([01]\d|2[0-3]):[0-5]\d$/.test(time);
+  return <details className="assistant-settings"><summary>Настройки расписания помощника 1</summary>
+    <div className="sync-form">
+      <label>Время по Минску<input type="time" disabled={disabled} value={time} onChange={event => setTime(event.target.value)} /></label>
+      <button className="secondary-button" disabled={disabled || !valid || time === saved} onClick={() => onSave({local_time:time})}>Сохранить время</button>
+    </div>
+    <p className="sync-note">Плановый сбор запускается ежедневно в выбранное время по Минску. Если сегодня плановый сбор уже запускался, новое время применяется со следующего дня. Для дополнительного сбора доступна кнопка «Собрать сейчас».</p>
+  </details>;
 }
 
 function Assistant2Settings({ settings, usage, cloroSearch, countries, disabled, onSave }: {
