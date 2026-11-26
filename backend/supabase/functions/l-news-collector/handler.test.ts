@@ -170,3 +170,24 @@ Deno.test('five runs per assistant, independent settings, and old bundles defaul
  const bundle=await (await fixture()(post('download','admin',{run_id:runId}))).json();
  equal(bundle.manifest.run.assistant_id,1);equal(bundle.manifest.run.collector_number,1);
 });
+
+Deno.test('diagnostics include async Cloro receipts and both comparison rounds',async()=>{
+ const now=new Date().toISOString();const rows=[
+  {provider:'cloro',endpoint:'assistant2_initial_20261126',billable:true,credits:25},
+  {provider:'cloro',endpoint:'assistant2_recheck_20261126',billable:false,credits:18},
+  ...Array.from({length:19},()=>({provider:'currents',endpoint:'assistant2_initial_20261126',billable:true,credits:0})),
+  {provider:'currents',endpoint:'search',billable:true,credits:1},
+ ].map(row=>({...row,created_at:now,status:200}));
+ const result=await (await fixture(true,true,[],rows)(post('status','admin',{assistant_id:2}))).json();
+ equal(result.diagnostic_usage,{days:30,cloro_credits:43,currents_requests:19,thenews_requests:0});
+});
+
+Deno.test('a scoped collection exports the whole active catalog with explicit unchecked status',async()=>{
+ const catalog=[{domain:'uk.example',name:'UK',country:'GB',enabled:true},{domain:'cn.example',name:'CN',country:'CN',enabled:true}];
+ const runs=[{id:runId,number:1,assistant_id:2,assistant_number:1,settings:{countries:['GB'],lookback_hours:26},counters:{}}];
+ const handle=fixture(true,true,catalog,[],runs);
+ const data=await (await handle(post('download','admin',{run_id:runId}))).json();
+ equal(data.source_metrics.length,2);
+ const china=data.source_metrics.find((row:any)=>row.domain==='cn.example');
+ equal(china.access_status,'api_outside_run_scope');equal(china.admission_status,'not_in_run_scope');equal(china.included,0);
+});

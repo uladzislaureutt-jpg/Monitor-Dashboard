@@ -5,7 +5,8 @@ type Entry<T> = { at: number; value: T };
 // Archive caches are explicitly invalidated on imported data and moderation.
 const TTL_MS = 2 * 60 * 60_000;
 const MAX_JSON = 450_000;
-const PREFIX = "monitor-archive-v2:";
+// Ignore old L-Monitor country/source snapshots after the geography fix.
+const prefix = (monitor: string) => monitor === "lukashenko" ? "monitor-archive-v3:" : "monitor-archive-v2:";
 const facets = new Map<string, Entry<ArchiveFacets>>();
 const pages = new Map<string, Entry<ArchivePage>>();
 const sources = new Map<string, Entry<SourceSummary[]>>();
@@ -58,9 +59,9 @@ function isDefaultPage(options: ArchiveQuery) {
     (options.periodDays ?? 30) === 30 && (!options.sort || options.sort === "newest") &&
     (options.limit ?? 30) === 30 && (options.offset ?? 0) === 0;
 }
-const facetsKey = (monitor: string) => PREFIX + "facets:" + monitor;
-const firstPageKey = (monitor: string) => PREFIX + "first:" + monitor;
-const sourcesKey = (monitor: string) => PREFIX + "sources:" + monitor;
+const facetsKey = (monitor: string) => prefix(monitor) + "facets:" + monitor;
+const firstPageKey = (monitor: string) => prefix(monitor) + "first:" + monitor;
+const sourcesKey = (monitor: string) => prefix(monitor) + "sources:" + monitor;
 
 export function cachedFacets(monitor: string) { return restore(facets, monitor, facetsKey(monitor)); }
 export function facetsFresh(monitor: string) { cachedFacets(monitor); return fresh(facets, monitor); }

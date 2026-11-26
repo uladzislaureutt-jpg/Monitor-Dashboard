@@ -335,8 +335,11 @@ fn publication_row(row: &Row<'_>) -> rusqlite::Result<PublicationSummary> {
     })
 }
 
-fn publication_select() -> &'static str {
-    r#"
+// L-Monitor geography is publisher geography; a shared story can span countries.
+const PUBLICATION_REGION: &str = "CASE WHEN m.monitor_key='lukashenko' THEN COALESCE(NULLIF(TRIM(s.configured_region),''), e.event_region) ELSE e.event_region END";
+
+fn publication_select() -> String {
+    format!(r#"
         SELECT
             mi.id,
             d.document_uid,
@@ -346,9 +349,7 @@ fn publication_select() -> &'static str {
             s.canonical_name,
             mi.category,
             mi.subcategory,
-            CASE WHEN m.monitor_key='lukashenko'
-                 THEN COALESCE(NULLIF(TRIM(s.configured_region),''), e.event_region)
-                 ELSE e.event_region END,
+            {PUBLICATION_REGION},
             e.event_locality,
             e.event_object,
             e.event_problem,
@@ -366,7 +367,7 @@ fn publication_select() -> &'static str {
         LEFT JOIN sources s ON s.id = d.source_id
         LEFT JOIN event_items ei ON ei.monitor_item_id = mi.id AND ei.relation = 'primary'
         LEFT JOIN events e ON e.id = ei.event_id
-    "#
+    "#)
 }
 
 fn count_points(
@@ -869,12 +870,12 @@ pub fn list_publications(
              COALESCE(mi.category,'') LIKE '%' || ?3 || '%' OR
              COALESCE(mi.subcategory,'') LIKE '%' || ?3 || '%' OR
              COALESCE(mi.matched_terms,'') LIKE '%' || ?3 || '%' OR
-             COALESCE(e.event_region,'') LIKE '%' || ?3 || '%' OR
+             COALESCE({PUBLICATION_REGION},'') LIKE '%' || ?3 || '%' OR
              COALESCE(e.event_locality,'') LIKE '%' || ?3 || '%' OR
              COALESCE(e.event_object,'') LIKE '%' || ?3 || '%' OR
              COALESCE(e.event_problem,'') LIKE '%' || ?3 || '%')
         AND (?4='' OR mi.category=?4)
-        AND (?5='' OR e.event_region=?5)
+        AND (?5='' OR {PUBLICATION_REGION}=?5)
         AND {source_filter}
         AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid)
         "#
@@ -977,7 +978,7 @@ pub fn archive_facets(path: &Path, monitor_key: &str) -> Result<ArchiveFacets, S
         "SELECT DISTINCT mi.category FROM monitor_items mi JOIN monitors m ON m.id=mi.monitor_id JOIN documents d ON d.id=mi.document_id WHERE m.monitor_key=?1 AND mi.category IS NOT NULL AND TRIM(mi.category)<>'' AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid) ORDER BY mi.category",
         monitor_key)?;
     let regions = string_list(&conn,
-        "SELECT DISTINCT e.event_region FROM events e JOIN monitors m ON m.id=e.monitor_id JOIN event_items ei ON ei.event_id=e.id JOIN monitor_items mi ON mi.id=ei.monitor_item_id JOIN documents d ON d.id=mi.document_id WHERE m.monitor_key=?1 AND e.event_region IS NOT NULL AND TRIM(e.event_region)<>'' AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid) ORDER BY e.event_region",
+        &format!("SELECT DISTINCT {PUBLICATION_REGION} FROM monitor_items mi JOIN monitors m ON m.id=mi.monitor_id JOIN documents d ON d.id=mi.document_id LEFT JOIN sources s ON s.id=d.source_id LEFT JOIN event_items ei ON ei.monitor_item_id=mi.id AND ei.relation='primary' LEFT JOIN events e ON e.id=ei.event_id WHERE m.monitor_key=?1 AND NULLIF(TRIM({PUBLICATION_REGION}),'') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid) ORDER BY 1"),
         monitor_key)?;
     let sources = string_list(&conn,
         "SELECT DISTINCT s.canonical_name FROM sources s WHERE EXISTS (SELECT 1 FROM documents d JOIN monitor_items mi ON mi.document_id=d.id JOIN monitors m ON m.id=mi.monitor_id WHERE d.source_id=s.id AND m.monitor_key=?1 AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid)) ORDER BY s.canonical_name",
@@ -988,6 +989,27 @@ pub fn archive_facets(path: &Path, monitor_key: &str) -> Result<ArchiveFacets, S
 pub fn list_sources(path: &Path, monitor_key: &str, period_days: Option<i64>) -> Result<Vec<SourceSummary>, String> {
     let conn = open_database(path)?;
     let sql = r#"
+        WITH latest_runs AS (
+            SELECT id FROM (
+                SELECT r.id, ROW_NUMBER() OVER (
+                    PARTITION BY CASE WHEN json_extract(r.manifest_json,'$.run.collector')='api_assistant'
+                        THEN 'api_assistant:' || COALESCE(json_extract(r.manifest_json,'$.run.assistant_id'),1)
+                        ELSE COALESCE(json_extract(r.manifest_json,'$.run.collector'),'github') END
+                    ORDER BY CASE WHEN r.dry_run=0 THEN 0 ELSE 1 END,
+                        COALESCE(r.started_at,r.imported_at) DESC,r.id DESC
+                ) AS position
+                FROM runs r JOIN monitors m ON m.id=r.monitor_id WHERE m.monitor_key=?1
+            ) WHERE position=1
+        ), visible_sources AS (
+            SELECT srm.source_id FROM source_run_metrics srm JOIN latest_runs lr ON lr.id=srm.run_id
+            UNION
+            -- A scoped or zero-result run must not erase publishers of archived cards.
+            SELECT d.source_id FROM documents d JOIN monitor_items mi ON mi.document_id=d.id
+            JOIN monitors m ON m.id=mi.monitor_id
+            WHERE m.monitor_key=?1 AND m.monitor_key='lukashenko' AND d.source_id IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM moderation_flags mf WHERE mf.monitor_key=m.monitor_key AND mf.document_uid=d.document_uid)
+              AND NOT EXISTS (SELECT 1 FROM moderation_exclusions mx WHERE mx.monitor_key=m.monitor_key AND mx.document_uid=d.document_uid)
+        )
         SELECT
             s.id,
             s.canonical_name,
@@ -1019,30 +1041,16 @@ pub fn list_sources(path: &Path, monitor_key: &str, period_days: Option<i64>) ->
                JOIN monitors m ON m.id=r.monitor_id
               WHERE srm.source_id=s.id AND m.monitor_key=?1
                 AND (?2 IS NULL OR datetime(COALESCE(r.started_at,r.imported_at)) >= datetime('now', '-' || ?2 || ' days'))
-              ORDER BY COALESCE(r.started_at,r.imported_at) DESC, r.id DESC LIMIT 1) AS access_status,
+              ORDER BY CASE WHEN srm.access_status='api_outside_run_scope' THEN 1 ELSE 0 END, COALESCE(r.started_at,r.imported_at) DESC, r.id DESC LIMIT 1) AS access_status,
             (SELECT srm.admission_status
                FROM source_run_metrics srm
                JOIN runs r ON r.id=srm.run_id
                JOIN monitors m ON m.id=r.monitor_id
               WHERE srm.source_id=s.id AND m.monitor_key=?1
                 AND (?2 IS NULL OR datetime(COALESCE(r.started_at,r.imported_at)) >= datetime('now', '-' || ?2 || ' days'))
-              ORDER BY COALESCE(r.started_at,r.imported_at) DESC, r.id DESC LIMIT 1) AS admission_status
+              ORDER BY CASE WHEN srm.access_status='api_outside_run_scope' THEN 1 ELSE 0 END, COALESCE(r.started_at,r.imported_at) DESC, r.id DESC LIMIT 1) AS admission_status
         FROM sources s
-        WHERE EXISTS (
-            SELECT 1
-            FROM source_run_metrics srm
-            WHERE srm.source_id=s.id
-              AND srm.run_id IN (
-                SELECT id FROM (
-                  SELECT r.id, ROW_NUMBER() OVER (
-                    PARTITION BY COALESCE(json_extract(r.manifest_json,'$.run.collector'),'github')
-                    ORDER BY CASE WHEN r.dry_run=0 THEN 0 ELSE 1 END,
-                      COALESCE(r.started_at,r.imported_at) DESC,r.id DESC
-                  ) AS position
-                  FROM runs r JOIN monitors m ON m.id=r.monitor_id WHERE m.monitor_key=?1
-                ) WHERE position=1
-              )
-        )
+        WHERE s.id IN (SELECT source_id FROM visible_sources)
         ORDER BY LOWER(s.canonical_name), s.id
     "#;
     let mut stmt = conn.prepare(sql).map_err(|e| format!("Не удалось подготовить каталог источников: {e}"))?;

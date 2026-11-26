@@ -17,13 +17,14 @@ export async function bundleForRun(rt:Runtime,id:string){
  const catalog=await readPages<{
   domain:string;enabled?:boolean;country:string;name:string;source_type:string;priority:string;coverage:unknown
  }>(rt.db.from('l_news_sources').select('*').order('domain'));
- const sources=catalog.filter(source=>observed.has(source.domain)||
-  (source.enabled!==false&&(!run.settings.countries||run.settings.countries.includes(source.country))));
+ // A manual country scope limits discovery, not the shared source catalogue.
+ const sources=catalog.filter(source=>observed.has(source.domain)||source.enabled!==false);
  const source_metrics=sources.map((s:any)=>{
   const candidates=rows.filter(r=>r.source_domain===s.domain),included=ready.filter(r=>r.source_domain===s.domain);
+  const inScope=!run.settings.countries||run.settings.countries.includes(s.country)||candidates.length>0;
   return {schema_version:'0.3',monitor_key:'lukashenko',source:s.name,domain:s.domain,source_type:s.source_type,source_region:COUNTRY_NAMES[s.country]||s.country,source_locality:null,priority:s.priority,
    selected_candidates:candidates.length,processed:candidates.filter(r=>r.state!=='pending').length,fetch_ok:null,relevance_passed:included.length,relevance_rejected:candidates.filter(r=>r.state==='rejected').length,included:included.length,results:included.length,
-   access_status:included.some(r=>r.content_level==='FULL_TEXT')?'api_full_text':included.length?'api_public_preview':'api_no_thematic_result',admission_status:included.length?'included':'no_result',pipeline_kind:'api_topic_only',provider_coverage:s.coverage};
+   access_status:!inScope?'api_outside_run_scope':included.some(r=>r.content_level==='FULL_TEXT')?'api_full_text':included.length?'api_public_preview':'api_no_thematic_result',admission_status:!inScope?'not_in_run_scope':included.length?'included':'no_result',pipeline_kind:'api_topic_only',provider_coverage:s.coverage};
  });
  return {manifest:{dashboard_contract_version:'0.3',monitor:{key:'lukashenko',display_name:'L-Monitor'},run:{run_number:null,github_run_id:null,github_sha:null,collector:'api_assistant',collector_run_id:id,assistant_id:run.assistant_id??1,collector_number:run.assistant_number??run.number,started_at:run.to_at,lookback_hours:run.settings.lookback_hours,dry_run:false},
    files:{publications:'publications.jsonl',source_metrics:'source_metrics.jsonl',run_metrics:'run_metrics.json',entities:null,full_texts:'full_texts.jsonl'},capabilities:{source_country_geography:true,full_text_integrity:true,collector:VERSION}},

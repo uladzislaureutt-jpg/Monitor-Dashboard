@@ -24,6 +24,7 @@ type Snapshot = {
   terminal_run_id?: string;
   terminal?: { id: number; label: string; state: string; at: string; error?: string; returned?: number; kept?: number; ready?: boolean; capped?: boolean }[];
   usage_limits?: Record<string, { today_units: number; period_units: number }>;
+  diagnostic_usage?: { days: number; cloro_credits: number; currents_requests: number; thenews_requests: number };
   newscatcher_usage?: { days: number; credits: number; assistant: number; event: number; diagnostic: number; unconfirmed: number };
 };
 
@@ -161,13 +162,15 @@ function AssistantPanel({
         {newscatcher?.updated_at && newsBalance != null && <small>Проверено {new Date(newscatcher.updated_at).toLocaleString("ru-RU", { timeZone: "Europe/Minsk" })} по Минску</small>}
       </article>
       {second && <><article className="kpi"><strong>{cloro?.info.balance?.remaining ?? "—"}</strong><span>Cloro: остаток кредитов</span><small>{cloro?.updated_at ? `Проверено ${new Date(cloro.updated_at).toLocaleString("ru-RU", { timeZone: "Europe/Minsk" })}` : "Остаток ещё не проверен"}</small></article>
-      <article className="kpi"><strong>{currents?.info.limits?.remaining ?? "—"} / {currents?.info.limits?.limit ?? 250}</strong><span>Currents: остаток из последнего поиска</span><small>{currents?.updated_at ? new Date(currents.updated_at).toLocaleString("ru-RU", { timeZone: "Europe/Minsk" }) : "Будет известен после первого запроса"}</small></article></>}
+      <article className="kpi"><strong>{currents?.info.limits?.remaining ?? "—"} / {currents?.info.limits?.limit ?? 250}</strong><span>Currents: остаток суточной квоты</span><small>{currents?.updated_at ? new Date(currents.updated_at).toLocaleString("ru-RU", { timeZone: "Europe/Minsk" }) : "Будет известен после первого запроса"}</small></article></>}
     </div>
     {!second && <><p>Perigon: одна страница — один запрос, до {limits.maxPageSize ?? 100} результатов. Лимит — до {data?.settings.perigon_per_run ?? 8} запросов на сбор и 16 в сутки по Минску, резерв — 10 в месяц. Сброс: {limits.resetAt ? new Date(limits.resetAt).toLocaleString("ru-RU", { timeZone: "Europe/Minsk" }) : "—"}.</p>
     <p>Perigon за последние {data?.runs.length ?? 0} сборов — {perigonTotal ?? 0} запросов.</p></>}
     {newsUsage && <p>Newscatcher за последние {newsUsage.days} дней — <strong>{newsUsage.credits} кр.</strong> · Оба помощника {newsUsage.assistant} кр. · Событие {newsUsage.event} кр.
       {newsUsage.diagnostic > 0 && <> · Диагностика {newsUsage.diagnostic} кр.</>}
       {newsUsage.unconfirmed > 0 && <> · Списание уточняется для {newsUsage.unconfirmed} зап.</>}</p>}
+    {second && data?.diagnostic_usage && <p>Сравнительные проверки за {data.diagnostic_usage.days} дней: Cloro — <strong>{data.diagnostic_usage.cloro_credits} кр.</strong>, Currents — <strong>{data.diagnostic_usage.currents_requests} зап.</strong> Проверочный сбор готового помощника учтён в его запусках.</p>}
+    {second && <p className="sync-note">Currents: 250 запросов в сутки, сброс в 03:00 по Минску. Cloro Free: 500 кредитов на календарный месяц; точную дату пополнения аккаунта сервис пока не передал.</p>}
     {second && data && <Assistant2Settings key={data.settings.updated_at} settings={data.settings} usage={data.usage_limits} countries={catalogCountries} disabled={busy || !admin} onSave={patch => void act("settings", patch)} />}
     <div className="sync-form">
       <label>Глубина, часов <input type="number" min={1} max={168} value={hours} onChange={event => setDraftHours(event.target.value)} /></label>

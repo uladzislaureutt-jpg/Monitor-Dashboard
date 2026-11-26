@@ -1129,6 +1129,22 @@ mod identity_integration_tests {
   assert_eq!(runs.iter().map(|r|r.publications).sum::<i64>(),1);
   drop(conn);let _=std::fs::remove_dir_all(dir);
  }
+ #[test]
+ fn archive_countries_follow_publishers_inside_a_shared_story() {
+  let dir=test_directory("monitor-archive-source-country");let path=dir.join("test.sqlite");crate::db::initialize_database(&path).unwrap();
+  for (uid,domain,country) in [("cn-card","guancha.cn","Китай"),("de-card","example.de","Германия")] {
+   let mut v=bundle(true,uid,&format!("https://{domain}/{uid}"),"Preview","SNIPPET");
+   v["publications"][0]["source"]["name"]=json!(domain);v["publications"][0]["source"]["configured_region"]=json!(country);
+   v["publications"][0]["event"]=json!({"signature":"one-cross-country-story","region":country});
+   v["source_metrics"][0]["source"]=json!(domain);v["source_metrics"][0]["domain"]=json!(domain);v["source_metrics"][0]["source_region"]=json!(country);
+   v["manifest"]["run"]["collector_run_id"]=json!(uid);import(&path,v);
+  }
+  let facets=crate::db::archive_facets(&path,"lukashenko").unwrap();assert!(facets.regions.contains(&"Китай".into()));assert!(facets.regions.contains(&"Германия".into()));
+  let page=crate::db::list_publications(&path,"lukashenko","",None,"","Китай","",&[],"newest",30,0).unwrap();assert_eq!(page.total,1);assert_eq!(page.items[0].source,"guancha.cn");
+  let search=crate::db::list_publications(&path,"lukashenko","Китай",None,"","","",&[],"newest",30,0).unwrap();assert_eq!(search.total,1);
+  let sources=crate::db::list_sources(&path,"lukashenko",None).unwrap();assert!(sources.iter().any(|s|s.name=="guancha.cn"&&s.publications==1));
+  drop(crate::db::open_database(&path).unwrap());let _=std::fs::remove_dir_all(dir);
+ }
  #[test] fn github_then_api_preserves_moderation_and_body(){check_order(false);}
  #[test] fn api_then_github_preserves_moderation_and_body(){check_order(true);}
 

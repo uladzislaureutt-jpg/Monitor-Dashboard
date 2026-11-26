@@ -42,7 +42,7 @@ async function status(assistant:number,terminalId?:string){
   db.from('l_news_runs').select('id,number,assistant_id,assistant_number,status,from_at,to_at,settings,counters,warnings,revision,created_at,completed_at').eq('assistant_id',assistant).order('created_at',{ascending:false}).limit(5),
   db.from('l_news_provider_state').select('*'),
   readPages(db.from('l_news_sources').select('country,baseline,coverage').eq('enabled',true).order('domain')),
-  readPages<{provider:string;endpoint:string;status:number|null;credits:number|string|null;created_at:string}>(
+  readPages<{provider:string;endpoint:string;status:number|null;credits:number|string|null;created_at:string;billable?:boolean}>(
    db.from('l_news_usage').select('provider,endpoint,billable,status,credits,created_at')
     .gte('created_at',new Date(now-32*dayMs).toISOString()).order('id'))
  ]);
@@ -55,13 +55,20 @@ async function status(assistant:number,terminalId?:string){
   const category=row.endpoint==='event_articles'?'event':row.endpoint==='articles'?'assistant':'diagnostic';
   newscatcher_usage[category]+=credits;
  }
+ const diagnostic_usage={days:30,cloro_credits:0,currents_requests:0,thenews_requests:0};
+ for(const row of usage){
+  if(Date.parse(row.created_at)<now-30*dayMs||!row.endpoint.startsWith('assistant2_'))continue;
+  if(row.provider==='cloro')diagnostic_usage.cloro_credits+=Number(row.credits??0);
+  if(row.billable!==false&&row.provider==='currents')diagnostic_usage.currents_requests++;
+  if(row.billable!==false&&row.provider==='thenews')diagnostic_usage.thenews_requests++;
+ }
  const localizedRuns=(must(runs) as any[]).map(run=>({
    ...run,warnings:Array.isArray(run.warnings)?run.warnings.map(warningRu):[]
   }));
  const selected=localizedRuns.find(run=>run.id===terminalId)||localizedRuns[0];
  const terminal=selected?must(await db.from('l_news_jobs').select('id,kind,state,attempts,updated_at,error,result').eq('run_id',selected.id).order('updated_at',{ascending:false}).limit(80)):[];
  const usage_limits=assistant===2?must(await db.rpc('l_news_assistant2_usage')):null;
- return {version:VERSION,assistant_id:assistant,country_names:COUNTRY_NAMES,settings:must(settings),runs:localizedRuns,providers:must(providers),sources,newscatcher_usage,usage_limits,
+ return {version:VERSION,assistant_id:assistant,country_names:COUNTRY_NAMES,settings:must(settings),runs:localizedRuns,providers:must(providers),sources,newscatcher_usage,diagnostic_usage,usage_limits,
   terminal_run_id:selected?.id??null,terminal:terminal.map((row:any)=>({id:row.id,kind:row.kind,label:providerJobLabel(row.kind),state:row.state,attempts:row.attempts,at:row.updated_at,error:row.error?warningRu(row.error):null,returned:row.result?.returned??row.result?.result_count??null,kept:row.result?.kept??null,ready:row.result?.ready??false,capped:row.result?.capped??false}))};
 }
 return async (req: Request): Promise<Response> => {try{
