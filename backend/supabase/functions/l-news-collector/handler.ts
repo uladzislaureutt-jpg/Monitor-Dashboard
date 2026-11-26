@@ -1,3 +1,4 @@
+import {cloroSearchMetadata} from './cloro-config.ts';
 import {COUNTRY_NAMES,VERSION} from './core.ts';
 import {Job,Runtime,must,readPages} from './providers.ts';
 import {enqueue,workOne} from './worker.ts';
@@ -68,7 +69,7 @@ async function status(assistant:number,terminalId?:string){
  const selected=localizedRuns.find(run=>run.id===terminalId)||localizedRuns[0];
  const terminal=selected?must(await db.from('l_news_jobs').select('id,kind,state,attempts,updated_at,error,result').eq('run_id',selected.id).order('updated_at',{ascending:false}).limit(80)):[];
  const usage_limits=assistant===2?must(await db.rpc('l_news_assistant2_usage')):null;
- return {version:VERSION,assistant_id:assistant,country_names:COUNTRY_NAMES,settings:must(settings),runs:localizedRuns,providers:must(providers),sources,newscatcher_usage,diagnostic_usage,usage_limits,
+ return {version:VERSION,assistant_id:assistant,cloro_search:cloroSearchMetadata(),country_names:COUNTRY_NAMES,settings:must(settings),runs:localizedRuns,providers:must(providers),sources,newscatcher_usage,diagnostic_usage,usage_limits,
   terminal_run_id:selected?.id??null,terminal:terminal.map((row:any)=>({id:row.id,kind:row.kind,label:providerJobLabel(row.kind),state:row.state,attempts:row.attempts,at:row.updated_at,error:row.error?warningRu(row.error):null,returned:row.result?.returned??row.result?.result_count??null,kept:row.result?.kept??null,new_to_index:row.result?.new_to_index??null,ready:row.result?.ready??false,capped:row.result?.capped??false}))};
 }
 return async (req: Request): Promise<Response> => {try{

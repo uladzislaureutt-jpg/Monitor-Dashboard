@@ -20,6 +20,7 @@ type Snapshot = {
   runs: Run[];
   providers: { provider: string; info: Record<string, any>; updated_at?: string }[];
   country_names?: Record<string, string>;
+  cloro_search?: {countries:string[];priority_countries:string[];default_countries:string[]};
   sources: { country: string; baseline: boolean; coverage: Record<string, unknown> }[];
   terminal_run_id?: string;
   terminal?: { id: number; label: string; state: string; at: string; error?: string; returned?: number; kept?: number; new_to_index?: number; ready?: boolean; capped?: boolean }[];
@@ -173,7 +174,7 @@ function AssistantPanel({
       {newsUsage.unconfirmed > 0 && <> · Списание уточняется для {newsUsage.unconfirmed} зап.</>}</p>}
     {second && data?.diagnostic_usage && <p>Сравнительные проверки за {data.diagnostic_usage.days} дней: Cloro — <strong>{data.diagnostic_usage.cloro_credits} кр.</strong>, Currents — <strong>{data.diagnostic_usage.currents_requests} зап.</strong>, The News API — <strong>{data.diagnostic_usage.thenews_requests} зап.</strong> Проверочный сбор готового помощника учтён в его запусках.</p>}
     {second && <p className="sync-note">Currents: 250 запросов в сутки, сброс в 03:00 по Минску. Cloro Free: 500 кредитов на календарный месяц; точную дату пополнения аккаунта сервис пока не передал. The News API: на текущем ключе до 100 запросов в сутки, по 3 статьи за запрос; остаток обновляется по заголовкам поискового ответа.</p>}
-    {second && data && <Assistant2Settings key={data.settings.updated_at} settings={data.settings} usage={data.usage_limits} countries={catalogCountries} disabled={busy || !admin} onSave={patch => void act("settings", patch)} />}
+    {second && data && <Assistant2Settings key={data.settings.updated_at} settings={data.settings} usage={data.usage_limits} cloroSearch={data.cloro_search} countries={catalogCountries} disabled={busy || !admin} onSave={patch => void act("settings", patch)} />}
     <div className="sync-form">
       <label>Глубина, часов <input type="number" min={1} max={168} value={hours} onChange={event => setDraftHours(event.target.value)} /></label>
       <button className="secondary-button" disabled={!admin || busy || !data || !validHours || Number(hours) === savedHours}
@@ -233,8 +234,8 @@ function AssistantPanel({
   </section>;
 }
 
-function Assistant2Settings({ settings, usage, countries, disabled, onSave }: {
-  settings: Snapshot["settings"]; usage?: Snapshot["usage_limits"];
+function Assistant2Settings({ settings, usage, cloroSearch, countries, disabled, onSave }: {
+  settings: Snapshot["settings"]; usage?: Snapshot["usage_limits"]; cloroSearch?: Snapshot["cloro_search"];
   countries: { code: string; label: string }[]; disabled: boolean;
   onSave: (patch: Record<string, unknown>) => void;
 }) {
@@ -243,6 +244,9 @@ function Assistant2Settings({ settings, usage, countries, disabled, onSave }: {
   const change = (key: string, value: unknown) => { setDirty(true); setDraft(previous => ({ ...previous, [key]: value })); };
   const numeric = (key: string, label: string, max: number) => <label key={key}>{label}<input type="number" min={0} max={max} disabled={disabled} value={draft[key] ?? 0} onChange={event => change(key, event.target.value === "" ? "" : Number(event.target.value))} /></label>;
   const pick = (key: string, options: { code: string; label: string }[]) => <div className="l-news-country-picker">{options.map(option => <label key={option.code}><input type="checkbox" disabled={disabled} checked={(draft[key] ?? []).includes(option.code)} onChange={event => change(key, event.target.checked ? [...(draft[key] ?? []), option.code] : (draft[key] ?? []).filter((code: string) => code !== option.code))} /> {option.label}</label>)}</div>;
+  const cloroCountries = countries.filter(country => cloroSearch?.countries.includes(country.code));
+  const priority = (cloroSearch?.priority_countries ?? []).map(code => countries.find(country => country.code === code)?.label ?? code);
+  const rotations = (draft.cloro_countries ?? []).filter((code:string) => cloroSearch?.countries.includes(code) && !cloroSearch.priority_countries.includes(code) && (draft.countries ?? []).includes(code));
   const valid = Object.entries(draft).every(([key, value]) => typeof settings[key] !== "number" || (typeof value === "number" && Number.isInteger(value) && value >= 0)) && /^([01]\d|2[0-3]):[0-5]\d$/.test(draft.local_time ?? "") && (draft.countries?.length ?? 0) > 0;
   return <details className="assistant-settings"><summary>Настройки поиска и расходов помощника 2</summary>
     <div className="sync-form"><label>Время по Минску<input type="time" disabled={disabled} value={draft.local_time} onChange={event => change("local_time", event.target.value)} /></label>
@@ -257,7 +261,12 @@ function Assistant2Settings({ settings, usage, countries, disabled, onSave }: {
     })}
     <p className="sync-note">Newscatcher — 5 кредитов за страницу, Cloro — 3 за поиск; ожидание результата Cloro повторно не оплачивается. Дневные лимиты считаются по Минску, период — скользящие 30 дней. Нулевой лимит отключает расход. Остаток Newscatcher общий с помощником 1 и другими инструментами.</p>
     <details><summary>Страны для планового поиска ({draft.countries?.length ?? 0})</summary>{pick("countries", countries)}</details>
-    <details><summary>Cloro: страны дополнительного поиска</summary><p className="sync-note">Приоритет — Польша, Украина, Россия. Остальные выбранные страны чередуются; учитываются только страны планового поиска и лимит запросов на сбор.</p>{pick("cloro_countries", countries)}</details>
+    <details className="cloro-country-settings"><summary>Cloro: страны дополнительного поиска ({cloroCountries.length})</summary>
+      <p className="sync-note">Постоянные направления — {priority.join(", ") || "загрузка настроек"}. Они выполняются, если отмечены ниже и входят в страны сбора. Остальные выбранные страны чередуются в пределах лимита запросов.</p>
+      <p className="sync-note">Показаны страны с явно настроенным языком и местными написаниями фамилии. Добавление флажка включает страну в очередь; общий лимит расходов сохраняется.</p>
+      {Number(draft.cloro_per_run) === 4 && cloroSearch?.priority_countries.every(code => (draft.cloro_countries ?? []).includes(code) && (draft.countries ?? []).includes(code)) && <p className="sync-note">Три постоянных направления и одно по очереди из {rotations.length} стран в каждом полном сборе.</p>}
+      {cloroCountries.length ? pick("cloro_countries", cloroCountries) : <p className="sync-note">Список настроенных стран Cloro ещё не загружен.</p>}
+    </details>
     <details><summary>Currents: выбранные языки</summary><p className="sync-note">Поиск запускается только на выбранных языках, если в сборе есть соответствующие страны. По умолчанию — 31 язык каталога. Если выдача пуста, проверяется другое написание фамилии; для китайского проверяются также традиционные иероглифы. Английский поиск охватывает также международные издания. Вторая полная страница проверяется всегда, более глубокие — пока появляются новые кандидаты. Общий предел определяется лимитами выше.</p>{pick("currents_languages", [{code:"en",label:"Английский"},{code:"ru",label:"Русский"},{code:"uk",label:"Украинский"},{code:"pl",label:"Польский"},{code:"de",label:"Немецкий"},{code:"fr",label:"Французский"},{code:"it",label:"Итальянский"},{code:"es",label:"Испанский"},{code:"pt",label:"Португальский"},{code:"tr",label:"Турецкий"},{code:"zh",label:"Китайский"},{code:"ja",label:"Японский"},{code:"ko",label:"Корейский"},{code:"ar",label:"Арабский"},{code:"he",label:"Иврит"},{code:"cs",label:"Чешский"},{code:"ro",label:"Румынский"},{code:"nl",label:"Нидерландский"},{code:"sv",label:"Шведский"},{code:"fi",label:"Финский"},{code:"hu",label:"Венгерский"},{code:"sr",label:"Сербский"},{code:"lt",label:"Литовский"},{code:"da",label:"Датский"},{code:"no",label:"Норвежский"},{code:"el",label:"Греческий"},{code:"hi",label:"Хинди"},{code:"ur",label:"Урду"},{code:"vi",label:"Вьетнамский"},{code:"ca",label:"Каталанский"},{code:"hr",label:"Хорватский"},{code:"id",label:"Индонезийский"},{code:"ms",label:"Малайский"},{code:"th",label:"Тайский"}])}</details>
     <p className="sync-note">The News API ищет отдельно в группах до 40 доменов каталога. При полной выдаче проверяет следующую страницу; после второй продолжает только направления с новыми находками. Если бюджет меньше числа групп, группы чередуются между запусками.</p>
     <button className="secondary-button" disabled={disabled || !dirty || !valid} onClick={() => { const { lookback_hours, enabled, ...patch } = draft; onSave(patch); }}>Сохранить настройки помощника 2</button>

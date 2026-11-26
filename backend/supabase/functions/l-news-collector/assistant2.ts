@@ -1,12 +1,11 @@
 import {Candidate,clean,domainOf} from './core.ts';
 import {Job,Run,Runtime,must,reserve,saveState,newscatcherSubscription} from './providers.ts';
+import {CLORO_PROFILES,CLORO_PRIORITY,cloroRequest} from './cloro-config.ts';
 import {DISCOVERY_LANGUAGES} from './discovery.ts';
 export {currentsPlans,searchCurrents} from './discovery.ts';
 
 export const assistantId=(run:Run)=>Number(run.assistant_id??run.settings.assistant_id??1);
 const ACTIVE_LANGUAGES=Object.keys(DISCOVERY_LANGUAGES);
-const COUNTRY_LANGUAGE:Record<string,string>={PL:'pl',UA:'uk',RU:'ru',DE:'de',AT:'de',CH:'de',FR:'fr',BE:'fr',US:'en',GB:'en',CA:'en',IT:'it',ES:'es',BR:'pt',PT:'pt',TR:'tr',JP:'ja',CN:'zh',TW:'zh',KR:'ko',IR:'fa',IL:'he',GE:'ka',AM:'hy'};
-const GOOGLE_QUERY:Record<string,string>={en:'(Lukashenko OR Lukashenka)',fr:'(Loukachenko OR Loukachenka)',de:'(Lukaschenko OR Lukaschenka)',pl:'(Łukaszenka OR Lukaszenka)',uk:'(Лукашенко OR Лукашенка)',ru:'(Лукашенко OR Лукашэнка)',it:'(Lukashenko OR Lukashenka)',es:'(Lukashenko OR Lukashenka)',pt:'(Lukashenko OR Lukashenka)',tr:'(Lukaşenko OR Lukashenko)',ja:'ルカシェンコ',zh:'(卢卡申科 OR 盧卡申科)',ko:'루카셴코',fa:'لوکاشنکو',he:'לוקשנקו',ka:'ლუკაშენკო',hy:'Լուկաշենկո'};
 
 export function validateAssistant2Settings(body:Record<string,unknown>,countries:string[]){
  const patch:Record<string,unknown>={updated_at:new Date().toISOString()};
@@ -15,7 +14,7 @@ export function validateAssistant2Settings(body:Record<string,unknown>,countries
  for(const [field,[min,max]] of Object.entries(ranges))if(body[field]!==undefined){const n=Number(body[field]);if(typeof body[field]==='boolean'||!Number.isInteger(n)||n<min||n>max)throw new Error('invalid_'+field);patch[field]=n;}
  if(body.local_time!==undefined){if(typeof body.local_time!=='string'||!/^([01]\d|2[0-3]):[0-5]\d$/.test(body.local_time))throw new Error('invalid_local_time');patch.local_time=body.local_time;}
  for(const field of ['countries','cloro_countries','currents_languages'])if(body[field]!==undefined){
-  const list=body[field];const allowed=field==='currents_languages'?ACTIVE_LANGUAGES:countries;
+  const list=body[field];const allowed=field==='currents_languages'?ACTIVE_LANGUAGES:field==='cloro_countries'?countries.filter(code=>!!CLORO_PROFILES[code]):countries;
   if(!Array.isArray(list)||list.length>100||list.some(x=>typeof x!=='string'||!allowed.includes(x))||(field==='countries'&&!list.length))throw new Error('invalid_'+field);
   patch[field]=[...new Set(list)];
  }
@@ -23,11 +22,11 @@ export function validateAssistant2Settings(body:Record<string,unknown>,countries
 }
 
 export function cloroCountries(run:Run):string[]{
- const eligible=(run.settings.cloro_countries as string[]).filter(c=>run.settings.countries.includes(c));
+ const eligible=(run.settings.cloro_countries as string[]).filter(c=>!!CLORO_PROFILES[c]&&run.settings.countries.includes(c));
  const limit=Math.max(0,Number(run.settings.cloro_per_run)||0);
- const priority=['PL','UA','RU'].filter(c=>eligible.includes(c));
+ const priority=CLORO_PRIORITY.filter(c=>eligible.includes(c));
  const rest=eligible.filter(c=>!priority.includes(c));
- const offset=Math.max(0,Number(run.assistant_number??run.number)-1)%Math.max(1,rest.length);
+ const offset=Math.max(0,Number(run.assistant_number??run.number)-Number(run.settings.cloro_rotation_start??1))%Math.max(1,rest.length);
  return [...priority,...rest.slice(offset),...rest.slice(0,offset)].slice(0,limit);
 }
 export async function probeAssistant2(rt:Runtime){
@@ -53,16 +52,14 @@ function cloroItems(body:any):any[]{for(const list of [body?.response?.result?.n
 export function cloroCandidates(body:any,country:string):Candidate[]{
  // Search-result relative dates are unreliable. Publication date is obtained
  // from the publisher by the shared extraction stage before admission.
- return cloroItems(body).map(a=>({url:String(a.link||a.url||''),title:clean(a.title),lead:clean(a.snippet||a.description),body:'',published_at:null,language:COUNTRY_LANGUAGE[country]||'en',country,domain:domainOf(a.link||a.url||''),provider:'cloro',provider_id:String(a.link||a.url||''),image:a.thumbnail}));
+ return cloroItems(body).map(a=>({url:String(a.link||a.url||''),title:clean(a.title),lead:clean(a.snippet||a.description),body:'',published_at:null,language:CLORO_PROFILES[country]?.language||'',country,domain:domainOf(a.link||a.url||''),provider:'cloro',provider_id:String(a.link||a.url||''),image:a.thumbnail}));
 }
 export async function submitCloro(rt:Runtime,job:Job,run:Run){
  const key=rt.secret('CLORO_API_KEY');if(!key)throw new Error('cloro_key_missing');
+ const country=String(job.payload.country),payload=cloroRequest(country,run.from_at,run.to_at);
  const usage=await reserve(rt,job,run,'cloro','google_news_async',1,run.settings.cloro_per_run,0);if(!usage)return {capped:true,candidates:[]};
- const country=String(job.payload.country),language=COUNTRY_LANGUAGE[country]||'en';
- const from=new Date(Date.parse(run.from_at)-86400000).toISOString().slice(0,10),to=new Date(Date.parse(run.to_at)+86400000).toISOString().slice(0,10);
- const query=(GOOGLE_QUERY[language]||GOOGLE_QUERY.en)+' after:'+from+' before:'+to;
  const start=Date.now();let status=0,body:any={};
- try{const response=await fetch('https://api.cloro.dev/v1/async/task',{method:'POST',headers:{Authorization:'Bearer '+key,'content-type':'application/json'},body:JSON.stringify({taskType:'GOOGLE_NEWS',idempotencyKey:'l-news-assistant2:'+job.id,payload:{query,country,gl:country.toLowerCase(),hl:language,pages:1,include:{html:false}}}),signal:AbortSignal.timeout(20000)});status=response.status;body=await response.json().catch(()=>({}));}
+ try{const response=await fetch('https://api.cloro.dev/v1/async/task',{method:'POST',headers:{Authorization:'Bearer '+key,'content-type':'application/json'},body:JSON.stringify({taskType:'GOOGLE_NEWS',idempotencyKey:'l-news-assistant2:'+job.id,payload}),signal:AbortSignal.timeout(20000)});status=response.status;body=await response.json().catch(()=>({}));}
  catch{/* Unknown outcome retains the 3-credit reservation and stable key. */}
  const taskId=body.task?.id||(status===409?body.error?.details?.taskId:null);
  // Retain the planned charge across retryable rejections: another job must
