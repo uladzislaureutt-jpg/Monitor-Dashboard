@@ -180,3 +180,11 @@ Deno.test('other Ukrainian publishers require an article and a same-host languag
  equal(ukrainianEdition(ru,[{language:'uk',url:'https://example.ua/uk'},alternatives[1]],true),null);
  equal(ukrainianEdition(ru,[{language:'uk',url:'https://other.ua/news/another-topic-article'},alternatives[1]],true),null);
 });
+
+Deno.test('Rzeczpospolita headline changes keep one publisher article ID',()=>{
+ const before='https://www.rp.pl/konflikty-zbrojne/art45542441-najwyzszy-czas-by-mongolia';
+ const after='https://rp.pl/konflikty-zbrojne/art45542441-lukaszenko-zadrwil-z-putina';
+ equal(publisherArticleKey(before),'edition:rp.pl:45542441');equal(publisherArticleKey(after),publisherArticleKey(before));
+ assert(publisherArticleKey('https://rp.pl/news/art45542442-other')!==publisherArticleKey(before));
+ equal(publisherArticleKey('https://rp.pl/temat/lukaszenko'),null);
+});

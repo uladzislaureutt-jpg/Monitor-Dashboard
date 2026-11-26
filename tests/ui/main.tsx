@@ -1,4 +1,10 @@
 import {createRoot} from 'react-dom/client';
 import {LNewsAssistant} from '../../src/components/LNewsAssistant';
+import {RunSourcePublications} from '../../src/components/RunSourcePublications';
+import {SourcesView} from '../../src/views/SourcesView';
+import {I18nProvider} from '../../src/i18n';
 import '../../src/styles.css';
-createRoot(document.getElementById('root')!).render(<main style={{padding:24,maxWidth:1700,margin:'auto'}}><LNewsAssistant importedRuns={[]} onSync={()=>{}} syncBusy={false}/></main>);
+const view=new URLSearchParams(location.search).get('view');
+const github={id:1,runNumber:166,importedAt:'2026-11-26T05:00:00Z'} as any;
+const assistants=[{id:2,collector:'api_assistant',collectorAssistantId:1,collectorNumber:10,importedAt:'2026-11-26T05:00:00Z'},{id:3,collector:'api_assistant',collectorAssistantId:2,collectorNumber:2,importedAt:'2026-11-26T08:00:00Z'}] as any;
+createRoot(document.getElementById('root')!).render(<I18nProvider><main style={{padding:24,maxWidth:1700,margin:'auto'}}>{view==='sources'?<SourcesView monitorKey="lukashenko"/>:view==='streams'?<RunSourcePublications github={github} assistants={assistants}/>:<LNewsAssistant importedRuns={[]} onSync={()=>{}} syncBusy={false}/>}</main></I18nProvider>);

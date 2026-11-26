@@ -3,24 +3,29 @@ import { desktopApi } from "../api";
 import { useI18n } from "../i18n";
 import type { RunPublication, RunSummary } from "../types";
 
-type Feed = "both" | "github" | "assistant";
+type Feed = "all" | "github" | "assistant1" | "assistant2";
 
 function publicationCountry(item: RunPublication) {
   return item.country?.trim() || null;
 }
 
-export function RunSourcePublications({ github, assistant }: { github?: RunSummary; assistant?: RunSummary }) {
+export function RunSourcePublications({ github, assistants = [] }: { github?: RunSummary; assistants?: (RunSummary | undefined)[] }) {
   const { locale } = useI18n();
   const be = locale === "be";
-  const [feed, setFeed] = useState<Feed>("both");
-  const hasBoth = Boolean(github && assistant);
-  const selected = hasBoth ? feed : "both";
-  const githubId = selected !== "assistant" ? github?.id : undefined;
-  const assistantId = selected !== "github" ? assistant?.id : undefined;
-  const githubRevision = selected !== "assistant" ? github?.importedAt : undefined;
-  const assistantRevision = selected !== "github" ? assistant?.importedAt : undefined;
+  const [feed, setFeed] = useState<Feed>("all");
+  const label = (run: RunSummary | undefined, id: number) => id > 0
+    ? `${be ? "Памочнік" : "Помощник"} ${id} №${run?.collectorNumber ?? "—"}`
+    : `GitHub №${run?.runNumber ?? "—"}`;
+  const streams = [
+    { key: "github", run: github, label: label(github, 0) },
+    { key: "assistant1", run: assistants[0], label: label(assistants[0], 1) },
+    { key: "assistant2", run: assistants[1], label: label(assistants[1], 2) },
+  ];
+  const selected = feed;
+  const chosen = streams.filter(stream => selected === "all" || selected === stream.key);
+  const signature = chosen.filter(stream => stream.run).map(stream => `${stream.run!.id}:${stream.run!.importedAt}`).join("|");
   const [items, setItems] = useState<RunPublication[]>([]);
-  const [loading, setLoading] = useState(Boolean(github || assistant));
+  const [loading, setLoading] = useState(Boolean(github || assistants.some(Boolean)));
   const [error, setError] = useState("");
   const [linkError, setLinkError] = useState("");
   const [selectedCountries, setSelectedCountries] = useState<(string | null)[]>([]);
@@ -30,7 +35,7 @@ export function RunSourcePublications({ github, assistant }: { github?: RunSumma
   const countryTrigger = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    const ids = [githubId, assistantId].filter((id): id is number => id !== undefined);
+    const ids = signature.split("|").filter(Boolean).map(entry => Number(entry.split(":")[0]));
     if (!ids.length) {
       setItems([]);
       setLoading(false);
@@ -55,7 +60,7 @@ export function RunSourcePublications({ github, assistant }: { github?: RunSumma
       revision += 1;
       window.removeEventListener("monitor:moderation-changed", reload);
     };
-  }, [githubId, assistantId, githubRevision, assistantRevision]);
+  }, [signature]);
 
   useEffect(() => {
     if (!countryMenuOpen) return;
@@ -95,28 +100,24 @@ export function RunSourcePublications({ github, assistant }: { github?: RunSumma
     return [...groups].sort(([, left], [, right]) =>
       right.publications.length - left.publications.length || left.source.localeCompare(right.source, locale));
   }, [items, selectedCountries, be, locale]);
-  const run = selected === "github" ? github : selected === "assistant" ? assistant : hasBoth ? undefined : github ?? assistant;
+  const run = selected === "all" ? undefined : chosen[0]?.run;
   const runDate = run ? new Date(run.startedAt ?? run.importedAt) : null;
   const dateLabel = runDate && Number.isFinite(runDate.valueOf()) ? runDate.toLocaleDateString(be ? "be-BY" : "ru-RU") : "";
-  const githubLabel = github?.runNumber == null ? "GitHub" : `GitHub №${github.runNumber}`;
-  const assistantLabel = [be ? "Памочнік" : "Помощник", String(assistant?.collectorAssistantId ?? 1),
-    assistant?.collectorNumber == null ? "" : `№${assistant.collectorNumber}`].filter(Boolean).join(" ");
-  const runLabel = run?.collector ? assistantLabel : githubLabel;
+  const runLabel = chosen[0]?.label;
 
   return <section className="panel run-source-panel" aria-labelledby="run-source-heading" aria-busy={loading}>
     <div className="panel-head">
       <div>
         <h3 id="run-source-heading">{be ? "Публікацыі ў крыніцах" : "Публикации в источниках"}</h3>
         {run && <p>{[runLabel, dateLabel].filter(Boolean).join(" · ")}</p>}
-        {hasBoth && selected === "both" && <p>{githubLabel} · {assistantLabel}</p>}
+        {selected === "all" && <p>{streams.filter(stream => stream.run).map(stream => stream.label).join(" · ")}</p>}
       </div>
       <div className="run-source-filters">
-        {hasBoth && <div className="run-source-feed-filter"><select className="run-source-filter-control"
+        {<div className="run-source-feed-filter"><select className="run-source-filter-control"
           aria-label={be ? "Паток публікацый" : "Поток публикаций"} value={selected}
           onChange={(event) => setFeed(event.target.value as Feed)}>
-          <option value="both">{be ? "Абодва патокі" : "Оба потока"}</option>
-          <option value="github">{githubLabel}</option>
-          <option value="assistant">{assistantLabel}</option>
+          <option value="all">{be ? "Агульны паток" : "Общий поток"}</option>
+          {streams.map(stream => <option key={stream.key} value={stream.key} disabled={!stream.run}>{stream.label}</option>)}
         </select></div>}
         {countryOptions.length > 0 && <div className="source-multiselect run-source-country-filter" ref={countryMenu}
           onKeyDown={event => {
@@ -165,7 +166,7 @@ export function RunSourcePublications({ github, assistant }: { github?: RunSumma
       : error ? <div className="notice error" role="alert">{error}</div>
         : !sources.length ? <div className="chart-empty" role="status">{selectedCountries.length
           ? (be ? "Няма публікацый з выбраных краін" : "Нет публикаций из выбранных стран")
-          : github || assistant ? (be ? "У гэтым запуску няма публікацый" : "В этом прогоне нет публикаций")
+          : github || assistants.some(Boolean) ? (be ? "У гэтым запуску няма публікацый" : "В этом прогоне нет публикаций")
             : (be ? "Запускаў пакуль няма" : "Прогоны ещё не загружены")}</div>
           : <div className="run-source-list">{sources.map(([key, { source, country, publications }]) => <details key={key}>
             <summary><span aria-hidden="true" className="run-source-chevron">›</span>

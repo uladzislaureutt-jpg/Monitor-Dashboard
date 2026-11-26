@@ -8,7 +8,7 @@ Deno.test('Cloro rotates extra countries, Currents only searches selected langua
  equal(cloroCountries(run),['PL','UA','RU','DE']);
  equal(cloroCountries({...run,assistant_number:2}),['PL','UA','RU','IT']);
  equal(cloroCountries({...run,settings:{...run.settings,countries:['IT','DE']}}),['DE','IT']);
- equal(currentsPlans(run),[{language:'de',query:'Lukaschenko',page:1}]);
+ equal(currentsPlans(run),[{language:'de',page:1}]);
  equal(currentsPlans({...run,settings:{...run.settings,countries:['IT']}}),[]);
 });
 Deno.test('Cloro relative dates never establish publication freshness',()=>{

@@ -95,7 +95,7 @@ export default function App() {
   const [stats, setStats] = useState<DatabaseStats | null>(() => peekCore("social_economic")?.stats ?? null);
   const [runs, setRuns] = useState<RunSummary[]>(() => peekCore("social_economic")?.runs ?? []);
   const latestLMonitorRun = runs.find((run) => run.monitorKey === "lukashenko" && !run.collector && run.dryRun !== true);
-  const latestAssistantRun = runs.find((run) => run.monitorKey === "lukashenko" && run.collector === "api_assistant" && run.publications > 0);
+  const latestAssistantRuns = [1, 2].map(id => runs.find(run => run.monitorKey === "lukashenko" && run.collector === "api_assistant" && (run.collectorAssistantId ?? 1) === id));
   const [dashboard, setDashboard] = useState<DashboardOverview | null>(() => peekOverview("social_economic", 30)?.data ?? null);
   const [period, setPeriod] = useState<PeriodDays>(30);
   const [dashboardLoading, setDashboardLoading] = useState(false);
@@ -469,7 +469,7 @@ export default function App() {
         <p>{locale === "be" ? "Маніторынг часова недаступны для аператараў." : "Мониторинг временно недоступен для операторов."}</p>
       </section>
     ) : <>
-      {view === "dashboard" && <DashboardView key={monitorKey} monitorKey={monitorKey} data={dashboard} period={period} onPeriodChange={setPeriod} loading={dashboardLoading} onOpenArchive={() => navigate("archive")} latestRun={latestLMonitorRun} latestAssistantRun={latestAssistantRun} />}
+      {view === "dashboard" && <DashboardView key={monitorKey} monitorKey={monitorKey} data={dashboard} period={period} onPeriodChange={setPeriod} loading={dashboardLoading} onOpenArchive={() => navigate("archive")} latestRun={latestLMonitorRun} latestAssistantRuns={latestAssistantRuns} />}
       {view === "archive" && <ArchiveView key={monitorKey} initialQuery={archiveSeed} monitorKey={monitorKey} />}
       {view === "report" && <ReportView key={monitorKey} />}
       {view === "analytics" && <AnalyticsView key={monitorKey} data={dashboard} period={period} onPeriodChange={setPeriod} />}
