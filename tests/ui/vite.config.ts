@@ -1,0 +1,3 @@
+import {defineConfig} from 'vite';
+import react from '@vitejs/plugin-react';
+export default defineConfig({plugins:[react(),{name:'assistant-preview-auth',enforce:'pre',resolveId(source,importer){if(importer?.endsWith('/src/components/LNewsAssistant.tsx')&&['../access','../workroom'].includes(source))return '\0qa:'+source;},load(id){if(id==='\0qa:../access')return `export const useMonitorAccess=()=>({session:{accessToken:'fixture-token'},profile:{isAdmin:true}});`;if(id==='\0qa:../workroom')return `export const loadWorkroomConfig=()=>({url:'https://qa.monitor.test',anonKey:'fixture-key'});`;}}],server:{port:1421,strictPort:true}});

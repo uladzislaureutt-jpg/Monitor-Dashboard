@@ -13,6 +13,11 @@ pub fn url_key(value: &str) -> String {
     if matches!(url.scheme(), "http" | "https") { let _ = url.set_scheme("https"); }
     if let Some(host) = url.host_str().map(str::to_owned) {
         if let Some(stripped) = host.strip_prefix("www.") { let _ = url.set_host(Some(stripped)); }
+        if host == "amp.dw.com" { let _ = url.set_host(Some("dw.com")); }
+    }
+    if matches!(url.host_str(), Some("bbc.com")) {
+        let path = url.path().trim_end_matches(".amp").trim_end_matches("/amp").to_owned();
+        url.set_path(&path);
     }
     let path = url.path().to_string();
     if path.len() > 1 { url.set_path(path.trim_end_matches('/')); }

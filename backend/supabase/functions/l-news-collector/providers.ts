@@ -1,6 +1,6 @@
 import {Candidate,QUERY,ROLE_QUERY,clean,domainOf,perigonBudget} from './core.ts';
 export type Runtime={db:any;secret:(...keys:string[])=>string;perigonKey:string;newscatcherKey:string};
-export type Run={id:string;from_at:string;to_at:string;settings:any;warnings:any[];counters:any;status:string;number:number};
+export type Run={id:string;from_at:string;to_at:string;settings:any;warnings:any[];counters:any;status:string;number:number;assistant_id?:number;assistant_number?:number};
 export type Job={id:number;run_id:string|null;kind:string;payload:any;attempts:number};
 export const must=(r:any)=>{if(r.error)throw new Error(r.error.message);return r.data;};
 
@@ -36,22 +36,36 @@ export async function newscatcherSubscription(rt:Runtime){
  await saveState(rt,'newscatcher',{configured:true,family:'v3',subscription:safe});return {family:'v3',subscription:safe};
 }
 export async function reserve(rt:Runtime,job:Job,run:Run|null,provider:string,endpoint:string,page:number,runLimit:number,monthLimit:number):Promise<number|null>{
+ if(Number(run?.assistant_id??run?.settings.assistant_id)===2&&['newscatcher','cloro','currents'].includes(provider))return must(await rt.db.rpc('l_news_reserve_assistant2_call',{p_run:run!.id,p_job:job.id,p_provider:provider,p_endpoint:endpoint,p_page:page}));
  return must(await rt.db.rpc('l_news_reserve_call',{p_run:run?.id||null,p_job:job.id,p_provider:provider,p_endpoint:endpoint,p_page:page,p_run_limit:runLimit,p_month_limit:monthLimit}));
 }
 export async function apiRequest(rt:Runtime,job:Job,run:Run,provider:string,url:string,options:RequestInit,page:number,limit:number,credits:number){
  const id=await reserve(rt,job,run,provider,provider==='newscatcher'?'articles':'articles_all',page,limit,provider==='perigon'?150:1800);
  if(!id)return {capped:true,data:null,status:0};
+ // All concurrent workers share a database-backed start-time slot. Provider
+ // permits one request/second; 1250 ms gives margin for clock jitter.
+ let rate_wait_ms=0;
+ if(provider==='newscatcher'){
+  rate_wait_ms=Number(must(await rt.db.rpc('l_news_newscatcher_rate_slot')))||0;
+  if(rate_wait_ms>0)await new Promise(resolve=>setTimeout(resolve,rate_wait_ms));
+ }
  const started=Date.now();let status=0,data:any=null;
  try{const response=await fetch(url,{...options,signal:AbortSignal.timeout(30000)});status=response.status;data=await response.json().catch(()=>({}));}
  catch{data={error:'transport_or_timeout'};}
  const returned=(data?.articles||data?.results||[]).length;
- must(await rt.db.from('l_news_usage').update({status,result_count:returned,credits:status===200?credits:0,elapsed_ms:Date.now()-started,details:{attempt:job.attempts,total_hits:data?.total_hits??data?.numResults??null}}).eq('id',id));
+ must(await rt.db.from('l_news_usage').update({status,result_count:returned,credits:status===200||(run.assistant_id===2&&status===0)?credits:0,elapsed_ms:Date.now()-started,details:{attempt:job.attempts,assistant_id:run.assistant_id??1,total_hits:data?.total_hits??data?.numResults??null,...(provider==='newscatcher'?{rate_wait_ms}:{})}}).eq('id',id));
  return {capped:false,data,status};
 }
 export async function searchPerigon(rt:Runtime,job:Job,run:Run){
  const info=job.payload.quota||await perigonLimits(rt);const page=Number(job.payload.page||0),size=Math.min(100,Number(info.maxPageSize)||100);
  const maxCalls=perigonBudget(info,run.settings.perigon_per_run,run.settings.perigon_reserve);
- if(maxCalls<1||page*size>=Number(info.paginationLimit||300))return {capped:true,candidates:[] as Candidate[],next:false};
+ if(maxCalls<1)return {capped:true,candidates:[] as Candidate[],next:false};
+ const providerPageCap=Math.max(1,Number(info.paginationLimit||300));
+ // Provider pagination is separate from per-run and daily request quotas.
+ if(page*size>=providerPageCap)return {
+  capped:false,candidates:[] as Candidate[],next:false,
+  warnings:['Perigon: достигнут предел выдачи — '+providerPageCap+' результатов на одно поисковое направление. Разовый лимит API не исчерпан.']
+ };
  const q=new URLSearchParams({q:job.payload.layer==='role'?ROLE_QUERY:QUERY,searchTranslation:'true',from:run.from_at,to:run.to_at,sortBy:'date',showReprints:'true',page:String(page),size:String(size)});
  const sources:string[]=job.payload.source_domains??[];
  const exclusions:string[]=job.payload.excluded_domains??[];
@@ -66,7 +80,11 @@ export async function searchPerigon(rt:Runtime,job:Job,run:Run){
  if(response.status!==200)throw new Error('perigon_search_'+response.status);
  const data=response.data;if(!Array.isArray(data.articles))throw new Error('perigon_invalid_response');const list=data.articles;
  return {capped:false,candidates:list.map((a:any):Candidate=>({url:a.url,title:clean(a.title),title_en:clean(a.translatedTitle),lead:clean(a.description||a.summary),body:String(a.content||''),language:a.language||'',published_at:a.pubDate||null,country:String(a.source?.location?.country||'').toUpperCase(),domain:domainOf(a.url),provider:'perigon',provider_id:a.articleId||a.url,image:a.imageUrl,paywall:a.source?.paywall===true,content_truncated:info.articleContentTruncation!=null&&String(a.content||'').length>=Number(info.articleContentTruncation)})),
-  next:(page+1)*size<Number(data.numResults||0),page,page_size:size,quota:info,total:Number(data.numResults||0)};
+  next:(page+1)*size<Number(data.numResults||0)&&(page+1)*size<providerPageCap,
+  warnings:((page+1)*size>=providerPageCap&&(page+1)*size<Number(data.numResults||0))
+   ?['Perigon: достигнут предел выдачи — '+providerPageCap+' результатов на одно поисковое направление. Разовый лимит API не исчерпан.']
+   :[],
+  page,page_size:size,quota:info,total:Number(data.numResults||0)};
 }
 export async function searchNewscatcher(rt:Runtime,job:Job,run:Run){
  const family=job.payload.family||'news-api',page=Number(job.payload.page||1),size=100;

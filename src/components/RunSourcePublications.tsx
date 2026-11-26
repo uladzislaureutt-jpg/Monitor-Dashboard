@@ -99,7 +99,7 @@ export function RunSourcePublications({ github, assistant }: { github?: RunSumma
   const runDate = run ? new Date(run.startedAt ?? run.importedAt) : null;
   const dateLabel = runDate && Number.isFinite(runDate.valueOf()) ? runDate.toLocaleDateString(be ? "be-BY" : "ru-RU") : "";
   const githubLabel = github?.runNumber == null ? "GitHub" : `GitHub №${github.runNumber}`;
-  const assistantLabel = [be ? "Памочнік" : "Помощник",
+  const assistantLabel = [be ? "Памочнік" : "Помощник", String(assistant?.collectorAssistantId ?? 1),
     assistant?.collectorNumber == null ? "" : `№${assistant.collectorNumber}`].filter(Boolean).join(" ");
   const runLabel = run?.collector ? assistantLabel : githubLabel;
 

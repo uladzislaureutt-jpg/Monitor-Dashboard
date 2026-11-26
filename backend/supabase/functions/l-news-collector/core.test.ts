@@ -84,7 +84,7 @@ Deno.test('context verdict rejects a passing reference and returns one translate
  const fetchOriginal=globalThis.fetch;
  const rt={secret:(key:string)=>key==='GEMINI_API_KEY'?'fixture-gemini':'',db:{
   rpc:()=>({data:1}),
-  from:()=>({update:()=>({eq:()=>({data:null})})}),
+  from:()=>({update:()=>({eq:()=>({data:null})}),select:()=>({eq:()=>({maybeSingle:()=>({data:null})})}),upsert:()=>({data:null})}),
  }} as Runtime;
  const job={id:1} as Job;
  const source={domain:'example.com',name:'Example',country:'GB'};

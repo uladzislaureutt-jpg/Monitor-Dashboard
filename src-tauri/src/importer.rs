@@ -1113,6 +1113,22 @@ mod identity_integration_tests {
   assert_eq!(conn.query_row("select count(*) from documents",[],|r|r.get::<_,i64>(0)).unwrap(),2);
   drop(conn);let _=std::fs::remove_dir_all(dir);
  }
+ #[test]
+ fn two_assistants_share_dedup_but_keep_independent_run_numbers() {
+  let dir=test_directory("monitor-two-assistants");let path=dir.join("test.sqlite");crate::db::initialize_database(&path).unwrap();
+  let first=bundle(true,"helper1-doc","https://example.com/shared","Full body. ","FULL_TEXT");
+  let mut second=bundle(true,"helper2-doc","https://example.com/shared?utm_source=cloro","Lead","SNIPPET");
+  second["manifest"]["run"]["assistant_id"]=json!(2);
+  second["manifest"]["run"]["collector_run_id"]=json!("helper2-distinct-uuid");
+  import(&path,first);import(&path,second.clone());import(&path,second);
+  let runs=crate::db::list_runs(&path,"lukashenko").unwrap();assert_eq!(runs.len(),2);
+  assert!(runs.iter().any(|r|r.collector_assistant_id==Some(1)&&r.collector_number==Some(1)));
+  assert!(runs.iter().any(|r|r.collector_assistant_id==Some(2)&&r.collector_number==Some(1)));
+  let conn=crate::db::open_database(&path).unwrap();
+  assert_eq!(conn.query_row("select count(*) from documents",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+  assert_eq!(runs.iter().map(|r|r.publications).sum::<i64>(),1);
+  drop(conn);let _=std::fs::remove_dir_all(dir);
+ }
  #[test] fn github_then_api_preserves_moderation_and_body(){check_order(false);}
  #[test] fn api_then_github_preserves_moderation_and_body(){check_order(true);}
 
@@ -1159,7 +1175,7 @@ mod identity_integration_tests {
      import(&path, bundle(true, "api-edition", "https://www.pravda.com.ua/news/2026/11/19/8063865/", &full_text, "FULL_TEXT"));
      conn.execute("INSERT INTO moderation_flags VALUES ('lukashenko','api-edition','u1','Editor','2026-11-19')", []).unwrap();
      assert_eq!(conn.query_row("SELECT COUNT(*) FROM monitor_items", [], |r| r.get::<_, i64>(0)).unwrap(), 2);
-     conn.execute("DELETE FROM schema_migrations WHERE version=8", []).unwrap();
+     conn.execute("DELETE FROM schema_migrations WHERE version>=8", []).unwrap();
      crate::db::initialize_database(&path).unwrap();
      assert_eq!(conn.query_row("SELECT COUNT(*) FROM monitor_items", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
      assert_eq!(conn.query_row("SELECT full_text FROM documents WHERE document_uid='gh-edition'", [], |r| r.get::<_, String>(0)).unwrap(), full_text);

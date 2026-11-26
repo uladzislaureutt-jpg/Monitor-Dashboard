@@ -6,13 +6,13 @@ const admin = { id: 'admin', is_admin: true, status: 'active' };
 const operator = { id: 'operator', is_admin: false, status: 'active' };
 const disabled = { id: 'disabled', is_admin: true, status: 'disabled' };
 
-function fixture(hasMonitorAccess = true, monitorEnabled = true, catalog: Record<string,unknown>[] = [], usage: Record<string,unknown>[] = []) {
+function fixture(hasMonitorAccess = true, monitorEnabled = true, catalog: Record<string,unknown>[] = [], usage: Record<string,unknown>[] = [], runs?: Record<string,unknown>[]) {
   const tables: Record<string, Record<string, unknown>[]> = {
     monitor_profiles: [admin, operator, disabled],
     monitor_access: [{ monitor_key: 'lukashenko', enabled: monitorEnabled }],
     user_monitor_access: [{ monitor_key: 'lukashenko', user_id: 'operator', enabled: hasMonitorAccess }],
-    l_news_runs: [{
-      id: runId, number: 1, revision: 7, to_at: '2026-11-20T12:07:00Z',
+    l_news_runs: runs ?? [{
+      id: runId, number: 1, assistant_id: 1, assistant_number: 1, revision: 7, to_at: '2026-11-20T12:07:00Z',
       settings: { lookback_hours: 26 }, status: 'completed', counters: {},
     }],
     l_news_run_items: [1, 2, 3].map(item_id => ({ run_id: runId, item_id, role: 'new' })),
@@ -23,6 +23,8 @@ function fixture(hasMonitorAccess = true, monitorEnabled = true, catalog: Record
     ],
     l_news_sources: catalog,
     l_news_settings: [{ enabled: true, lookback_hours: 26 }],
+    l_news_jobs: [],
+    l_news_assistant2_settings: [{ enabled: true, lookback_hours: 26, local_time: "03:07" }],
     l_news_provider_state: [],
     l_news_usage: usage,
   };
@@ -50,6 +52,8 @@ function fixture(hasMonitorAccess = true, monitorEnabled = true, catalog: Record
       };
     },
     async rpc(name: string, params?: Record<string, unknown>) {
+      if (name === 'l_news_assistant2_usage') return {data:{}};
+      if (name === 'l_news_enqueue_assistant2_run' && params?.p_trigger === 'manual') return {data:'assistant2-run'};
       if (name === 'l_news_wake') return { data: null };
       if (name === 'l_news_enqueue_scoped_run' && params?.p_trigger === 'manual') {
         equal(params.p_countries, ['KG','EG']);
@@ -111,7 +115,7 @@ Deno.test('admin and enabled operator both receive the manifest and bundle', asy
     equal(download.status, 200);
     const bundle = await download.json();
     equal(bundle.manifest.run.collector_run_id, runId);
-    equal(bundle.publications, [{ document_id: 'article-1' }]);
+    equal(bundle.publications, [{ document_id: 'article-1', event: {} }]);
     equal(bundle.run_metrics.withdrawn_document_ids, ['article-2']);
     equal(bundle.revision, 7);
   }
@@ -148,4 +152,21 @@ Deno.test('status and package return catalog rows beyond 1,000 and allow a new c
   equal(bundle.source_metrics.at(-1).source_region, 'Кыргызстан');
   equal((await handle(post('start','admin',{ countries: ['KG','EG','KG'] }))).status, 200);
   equal((await handle(post('start','admin',{ countries: ['Kyrgyzstan'] }))).status, 400);
+});
+
+Deno.test('five runs per assistant, independent settings, and old bundles default to helper 1', async () => {
+ const rows = [1,2].flatMap(assistant_id => Array.from({length:8}, (_,i) => ({id:`${assistant_id}-${8-i}`,number:40-i,assistant_id,assistant_number:8-i,counters:{},warnings:[]})));
+ const handle = fixture(true,true,[],[],rows);
+ for (const id of [1,2]) {
+  const response=await handle(post('status','operator',{assistant_id:id}));
+  equal(response.status,200);const snapshot=await response.json();
+  equal(snapshot.runs.length,5);equal(snapshot.runs.every((run:any)=>run.assistant_id===id),true);
+  equal(snapshot.settings.local_time,id===2?'03:07':undefined);
+ }
+ const manifest=await (await handle(post('manifest','operator'))).json();equal(manifest.runs.length,16);
+ equal((await fixture()(post('start','admin',{assistant_id:2,countries:['IT']}))).status,200);
+ for(const action of ['start','settings','quota','cancel','retry_failed'])equal((await handle(post(action,'operator',{assistant_id:2}))).status,403);
+ equal((await handle(post('status','admin',{assistant_id:3}))).status,400);
+ const bundle=await (await fixture()(post('download','admin',{run_id:runId}))).json();
+ equal(bundle.manifest.run.assistant_id,1);equal(bundle.manifest.run.collector_number,1);
 });

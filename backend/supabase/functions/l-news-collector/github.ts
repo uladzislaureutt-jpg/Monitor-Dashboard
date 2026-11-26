@@ -20,9 +20,27 @@ async function registerKnown(rt:Runtime,rows:any[]){
  // Preserve the identity first recorded centrally; all raw GitHub identities are
  // also mapped by canonical URL in the local importer.
  const unique=[...new Map(safe.map(r=>[r.canonical_url,r])).values()];
- const existing=must(await rt.db.from('l_news_known_urls').select('canonical_url,document_uid').in('canonical_url',unique.map(r=>r.canonical_url)));
- const map=new Map(existing.map((x:any)=>[x.canonical_url,x.document_uid]));
- must(await rt.db.from('l_news_known_urls').upsert(unique.map(r=>({...r,document_uid:map.get(r.canonical_url)||r.document_uid})),{onConflict:'canonical_url'}));return unique.length;
+ // Large URL-based IN queries can be rejected mid-transfer by the REST gateway.
+ // Keep every call small; retry only transient transport failures, preserving IDs.
+ for(let i=0;i<unique.length;i+=40){
+  const batch=unique.slice(i,i+40);
+  let ok=false;
+  for(let attempt=0;attempt<3&&!ok;attempt++){
+   try{
+    const existing=must(await rt.db.from('l_news_known_urls').select('canonical_url,document_uid').in('canonical_url',batch.map(r=>r.canonical_url)));
+    const map=new Map(existing.map((x:any)=>[x.canonical_url,x.document_uid]));
+    must(await rt.db.from('l_news_known_urls').upsert(batch.map(r=>({...r,document_uid:map.get(r.canonical_url)||r.document_uid})),{onConflict:'canonical_url'}));
+    // If GitHub was temporarily unreachable, the API assistant may already
+    // have published these exact URLs. Revoke its redundant cards on recovery.
+    must(await rt.db.rpc('l_news_reconcile_github_urls',{p_urls:batch.map(r=>r.canonical_url)}));
+    ok=true;
+   }catch(error){
+    if(attempt===2)throw error;
+    await new Promise(resolve=>setTimeout(resolve,350*(attempt+1)));
+   }
+  }
+ }
+ return unique.length;
 }
 export async function indexGithub(rt:Runtime){
  const token=rt.secret('GITHUB_L_MONITOR_TOKEN');if(!token)return {warnings:['GitHub-индекс: ключ недоступен'],indexed:0};
