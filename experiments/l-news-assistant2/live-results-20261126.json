@@ -1,0 +1,1095 @@
+{
+  "note": "Public-provider search results from limited no-import shadow test. Provider keys not recorded. Exact URL novelty is not editorial novelty.",
+  "window_utc": [
+    "2026-11-24T12:00:00Z",
+    "2026-11-26T03:30:00Z"
+  ],
+  "executed_utc": [
+    "2026-11-26T04:10:12.989Z",
+    "2026-11-26T04:12:17.586Z"
+  ],
+  "baseline": "baseline-20261126.json",
+  "attempts": [
+    {
+      "provider": "currents",
+      "tag": "ru",
+      "status": 200,
+      "error": null,
+      "count": 0,
+      "elapsed_ms": 170,
+      "credits": {
+        "charged": null,
+        "remaining": null
+      },
+      "provider_total": null
+    },
+    {
+      "provider": "currents",
+      "tag": "uk",
+      "status": 200,
+      "error": null,
+      "count": 0,
+      "elapsed_ms": 192,
+      "credits": {
+        "charged": null,
+        "remaining": null
+      },
+      "provider_total": null
+    },
+    {
+      "provider": "currents",
+      "tag": "pl",
+      "status": 200,
+      "error": null,
+      "count": 0,
+      "elapsed_ms": 87,
+      "credits": {
+        "charged": null,
+        "remaining": null
+      },
+      "provider_total": null
+    },
+    {
+      "provider": "currents",
+      "tag": "fr",
+      "status": 200,
+      "error": null,
+      "count": 3,
+      "elapsed_ms": 92,
+      "credits": {
+        "charged": null,
+        "remaining": null
+      },
+      "provider_total": null
+    },
+    {
+      "provider": "currents",
+      "tag": "de",
+      "status": 200,
+      "error": null,
+      "count": 11,
+      "elapsed_ms": 103,
+      "credits": {
+        "charged": null,
+        "remaining": null
+      },
+      "provider_total": null
+    },
+    {
+      "provider": "currents",
+      "tag": "en",
+      "status": 200,
+      "error": null,
+      "count": 20,
+      "elapsed_ms": 91,
+      "credits": {
+        "charged": null,
+        "remaining": null
+      },
+      "provider_total": null
+    },
+    {
+      "provider": "currents",
+      "tag": "en-interview",
+      "status": 200,
+      "error": null,
+      "count": 3,
+      "elapsed_ms": 92,
+      "credits": {
+        "charged": null,
+        "remaining": null
+      },
+      "provider_total": null
+    },
+    {
+      "provider": "currents",
+      "tag": "ru-zelensky",
+      "status": 200,
+      "error": null,
+      "count": 0,
+      "elapsed_ms": 84,
+      "credits": {
+        "charged": null,
+        "remaining": null
+      },
+      "provider_total": null
+    },
+    {
+      "provider": "cloro",
+      "tag": "US",
+      "status": 200,
+      "error": null,
+      "count": 10,
+      "elapsed_ms": 1281,
+      "credits": {
+        "charged": "5",
+        "remaining": "495"
+      },
+      "provider_total": null
+    },
+    {
+      "provider": "cloro",
+      "tag": "PL",
+      "status": 0,
+      "error": "timeout",
+      "count": 0,
+      "elapsed_ms": 14002,
+      "credits": null,
+      "provider_total": null
+    },
+    {
+      "provider": "cloro",
+      "tag": "FR",
+      "status": 200,
+      "error": null,
+      "count": 10,
+      "elapsed_ms": 1294,
+      "credits": {
+        "charged": "5",
+        "remaining": "490"
+      },
+      "provider_total": null
+    },
+    {
+      "provider": "cloro",
+      "tag": "UA",
+      "status": 200,
+      "error": null,
+      "count": 10,
+      "elapsed_ms": 1713,
+      "credits": {
+        "charged": "5",
+        "remaining": "485"
+      },
+      "provider_total": null
+    },
+    {
+      "provider": "currents",
+      "tag": "en-page2",
+      "status": 200,
+      "error": null,
+      "count": 20,
+      "elapsed_ms": 208,
+      "credits": {
+        "charged": null,
+        "remaining": null
+      },
+      "provider_total": null
+    },
+    {
+      "provider": "currents",
+      "tag": "ru-translit",
+      "status": 200,
+      "error": null,
+      "count": 0,
+      "elapsed_ms": 78,
+      "credits": {
+        "charged": null,
+        "remaining": null
+      },
+      "provider_total": null
+    },
+    {
+      "provider": "currents",
+      "tag": "pl-translit",
+      "status": 200,
+      "error": null,
+      "count": 0,
+      "elapsed_ms": 82,
+      "credits": {
+        "charged": null,
+        "remaining": null
+      },
+      "provider_total": null
+    },
+    {
+      "provider": "cloro",
+      "tag": "PL",
+      "status": 200,
+      "error": null,
+      "count": 10,
+      "elapsed_ms": 2110,
+      "credits": {
+        "charged": "5",
+        "remaining": "480"
+      },
+      "provider_total": null
+    },
+    {
+      "provider": "cloro",
+      "tag": "DE",
+      "status": 200,
+      "error": null,
+      "count": 10,
+      "elapsed_ms": 512,
+      "credits": {
+        "charged": "5",
+        "remaining": "475"
+      },
+      "provider_total": null
+    }
+  ],
+  "articles": [
+    {
+      "provider": "currents",
+      "query": "fr",
+      "title": "Asile et migration - Baisse du nombre d'entrée illégale dans l'Union européenne depuis le Bélarus",
+      "description": "Le nombre de tentatives d'entrée illégale dans l'Union européenne depuis le Bélarus a fortement diminué, ont annoncé mercredi les gardes-frontières...",
+      "url": "https://www.dhnet.be/dernieres-depeches/2026/11/25/asile-et-migration-baisse-du-nombre-dentree-illegale-dans-lunion-europeenne-depuis-le-belarus-AIGAH3VHJRBYHHKAMLAK65JPDE/",
+      "published": "2026-11-25 12:05:29 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "fr",
+      "title": "La Cour européenne des droits de l’homme juge que les Etats peuvent refouler les migrants en cas d’instrumentalisation par un Etat tiers",
+      "description": "Dans un triple jugement consacré aux refoulements de demandeurs d’asile aux frontières de l’Europe avec la Biélorussie, les magistrats ont limité, mardi, la protection desdits demandeurs aux seules personnes « vulnérable",
+      "url": "https://www.lemonde.fr/international/article/2026/11/24/la-cour-europeenne-des-droits-de-l-homme-juge-que-les-etats-peuvent-refouler-les-migrants-en-cas-d-instrumentalisation-par-un-etat-tiers_6814838_3210.html",
+      "published": "2026-11-24 18:26:48 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "fr",
+      "title": "La CEDH autorise le refoulement des migrants arrivés d’un pays « instrumentalisant » les flux migratoires",
+      "description": "La Cour de Strasbourg était saisie par des groupes de migrants qui accusaient les Etats les ayant refoulés d’avoir porté atteinte à leurs droits fondamentaux en les renvoyant à la Biélorussie, lors de la crise migratoire",
+      "url": "https://www.lemonde.fr/international/article/2026/11/24/la-cedh-autorise-le-refoulement-des-migrants-arrives-d-un-pays-instrumentalisant-les-flux-migratoires_6814777_3210.html",
+      "published": "2026-11-24 14:14:16 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "de",
+      "title": "Ukraine-Krieg: Selensky weist Lukaschenkos Vorschlag zu Friedensgesprächen mit Russland zurück - Video - WELT",
+      "description": "Aus Belarus kommt ein überraschender Vorschlag für den ukrainischen Präsidenten. Dessen Antwort fällt unmissverständlich aus.",
+      "url": "https://www.welt.de/politik/ausland/video6b068301c687f8191a9073e5/ukraine-krieg-selensky-weist-lukaschenkos-vorschlag-zu-friedensgespraechen-mit-russland-zurueck.html",
+      "published": "2026-11-25 06:58:42 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "de",
+      "title": "Ukraine-Krieg: Lukaschenko macht Selenskyj ungewöhnliches Angebot – ukrainischer Präsident reagiert - WELT",
+      "description": "Der belarussische Machthaber Alexander Lukaschenko erklärt sich bereit, dem ukrainischen Präsidenten Wolodymyr Selenskyj Begleitschutz nach Moskau zu geben. Der Ukrainer kontert direkt.",
+      "url": "https://www.welt.de/politik/ausland/article6b067391cd4642ba2eb17bd2/ukraine-krieg-lukaschenko-macht-selenskyj-ungewoehnliches-angebot-ukrainischer-praesident-reagiert.html",
+      "published": "2026-11-25 05:55:50 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "de",
+      "title": "Lukaschenko schlägt Selenskyj gemeinsamen Flug nach Moskau vor",
+      "description": "",
+      "url": "https://orf.at/stories/3449202/",
+      "published": "2026-11-25 05:49:25 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "de",
+      "title": "Lukaschenko will mit Selenskyj nach Moskau fliegen: Ukraine lehnt ab und pocht auf neutralen Ort",
+      "description": "Lukaschenko bietet Selenskyj Geleitschutz für Friedensgespräche in Moskau an. Der ukrainische Präsident lehnt ab und schlägt sarkastisch Kiew vor.",
+      "url": "https://www.hna.de/politik/lukaschenko-bietet-moskau-flug-an-selenskyj-erteilt-absage-zr-94606707.html",
+      "published": "2026-11-25 05:33:28 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "de",
+      "title": "Lukaschenko will mit Selenskyj nach Moskau fliegen: Ukraine lehnt ab und pocht auf neutralen Ort",
+      "description": "Lukaschenko bietet Selenskyj Geleitschutz für Friedensgespräche in Moskau an. Der ukrainische Präsident lehnt ab und schlägt sarkastisch Kiew vor.",
+      "url": "https://www.merkur.de/politik/lukaschenko-bietet-moskau-flug-an-selenskyj-erteilt-absage-zr-94606707.html",
+      "published": "2026-11-25 05:33:28 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "de",
+      "title": "Angebot von Lukaschenko: „Selenskyj und ich könnten nach Moskau fliegen“",
+      "description": "Belarussischer Machthaber schlägt gemeinsamen Flug zu Friedensgesprächen vor. Für Selenskij ist Lukaschenkos Begleitschutz-Angebot unseriös.",
+      "url": "https://kurier.at/politik/ausland/ukraine-russland-lukaschenko-selenskyj-putin-moskau/403208095",
+      "published": "2026-11-25 05:03:00 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "de",
+      "title": "Selenskyj: Lukaschenkos Begleitschutz-Angebot ist unseriös",
+      "description": "Will der ukrainische Präsident den russischen sprechen, soll er eben nach Moskau kommen, heißt es aus dem Kreml. Für Selenskyj völlig indiskutabel - trotz eines fragwürdigen Angebots aus Belarus.",
+      "url": "https://www.focus.de/panorama/welt/selenskyj-lukaschenkos-begleitschutz-angebot-ist-unserioes_97246ad6-7594-4aee-98df-92ad7551e638.html",
+      "published": "2026-11-25 02:49:00 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "de",
+      "title": "Lukaschenko: Selenskyj und ich könnten nach Moskau fliegen",
+      "description": "Der belarussische Präsident Alexander Lukaschenko hat dem ukrainischen Staatschef Wolodymyr Selenskyj einen gemeinsamen Flug zu Friedensgesprächen nach...",
+      "url": "https://www.kleinezeitung.at/artikel/41489400/lukaschenko-selenskyj-und-ich-koennten-nach-moskau-fliegen",
+      "published": "2026-11-25 01:46:56 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "de",
+      "title": "Ukraine: USA ändert wohl Strategie zu Geschäftsabschlüssen mit Russland",
+      "description": "Ukraine verteidigt Angriffe auf russische Schiffe in Libyen +++ Russische Flieger lösen Evakuierungswarnung in Südkorea aus +++ Luftalarm in Polen – Anwohner sollen in Schutzräume +++ Der Newsblog.",
+      "url": "https://www.handelsblatt.com/politik/international/ukraine-usa-aendert-wohl-strategie-zu-geschaeftsabschluessen-mit-russland/27982126.html",
+      "published": "2026-11-25 07:05:42 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "de",
+      "title": "Ukraine News: Magyar will Ungarn wieder der Ukraine annähern",
+      "description": "Erstmals als Ungarns Regierungschef trifft Peter Magyar Präsident Selenskij – anders als Vorgänger Viktor Orban bezeichnet er Russland als Aggressor des Kriegs.",
+      "url": "https://www.sueddeutsche.de/politik/ukraine-krieg-newsblog-friedensschluss-russland-lukaschenko-ungarn-li.3585810",
+      "published": "2026-11-25 03:47:24 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "de",
+      "title": "Urteil zu Pushbacks: Weniger Rechte für Flüchtlinge",
+      "description": "Polen hat mit der Ausweisung von Flüchtlingen laut EGMR richtig gehandelt. Belarus habe sie als Teil hybrider Kriegsführung instrumentalisiert.",
+      "url": "https://taz.de/Urteil-zu-Pushbacks/!6232747/",
+      "published": "2026-11-24 17:04:00 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en",
+      "title": "Lukashenko extends visa-free entry to Belarus for citizens of 38 countries through 2027",
+      "description": "Stays are limited to 30 days from the date of entry, except for citizens of Poland, Lithuania and Latvia and holders of non-citizen legal status in Latvia, who can stay for up to 90 days",
+      "url": "https://tass.com/world/2224871",
+      "published": "2026-11-25 17:14:29 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en",
+      "title": "‘The war must be stopped!’ Lukashenko’s Le Point interview draws global attention",
+      "description": "What journalists are writing, from Berlin and London to Ankara and Hanoi, is covered in our review.",
+      "url": "https://eng.belta.by/politics/view/the-war-must-be-stopped-lukashenkos-le-point-interview-draws-global-attention-189464-2026",
+      "published": "2026-11-25 15:51:01 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en",
+      "title": "Irrefutable facts, insider details, bold proposals in Lukashenko’s Le Point magazine interview",
+      "description": "Belarusian President Aleksandr Lukashenko gave a 90-minute interview to the French magazine Le Point on 17 November. The interviewer was the TV host, magazine correspondent and writer Anne Nivat.",
+      "url": "https://eng.belta.by/president/view/irrefutable-facts-insider-details-bold-proposals-in-lukashenkos-le-point-magazine-interview-189469-2026",
+      "published": "2026-11-25 15:51:01 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en",
+      "title": "How is boiled condensed milk made? The treat that Lukashenko praised",
+      "description": "They say Belarusians fall into two types: some choose condensed milk from Rogachev, others prefer the Glubokoye product. But in the new episode of BelTA’s project After the Fact: A Special Report, we nonetheless went to ",
+      "url": "https://eng.belta.by/society/view/how-is-boiled-condensed-milk-made-the-treat-that-lukashenko-praised-189465-2026",
+      "published": "2026-11-25 15:51:01 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en",
+      "title": "Kremlin spokesman addresses Lukashenko’s offer to Zelensky, Europe’s contradictory stance",
+      "description": "According to Dmitry Peskov, there is no concrete information at the moment about a possible visit by a European delegation to Moscow",
+      "url": "https://tass.com/politics/2224699",
+      "published": "2026-11-25 13:41:07 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en",
+      "title": "Russian missiles in Belarus, Trump’s policies: statements by Lukashenko",
+      "description": "There can be no security architecture in Europe without Russia, the Belarusian president noted",
+      "url": "https://tass.com/world/2224655",
+      "published": "2026-11-25 13:08:23 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en",
+      "title": "Lukashenko said he advocated for Europe's participation in negotiations on Ukraine",
+      "description": "The Belarusian leader emphasized that the future of Europe could not be discussed without Europeans",
+      "url": "https://tass.com/world/2224653",
+      "published": "2026-11-25 13:03:41 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en",
+      "title": "Lukashenko suggests UK be included in making new Europe security architecture",
+      "description": "The Belarusian president said it in an interview with the French magazine Le Point",
+      "url": "https://tass.com/world/2224637",
+      "published": "2026-11-25 12:49:14 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en",
+      "title": "‘Could play a greater role’: Lukashenko on France’s potential in European security",
+      "description": "In an interview with the French magazine Le Point, Belarusian President Aleksandr Lukashenko spoke about the formation of a new security system in Europe and the role of various countries in this process.",
+      "url": "https://eng.belta.by/president/view/could-play-a-greater-role-lukashenko-on-frances-potential-in-european-security-189451-2026",
+      "published": "2026-11-25 11:31:19 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en",
+      "title": "Lukashenko explains how and to what extent he influences Putin",
+      "description": "In an interview with the French magazine Le Point, Belarusian President Aleksandr Lukashenko spoke about the principles underlying his communication with Russian President Vladimir Putin.",
+      "url": "https://eng.belta.by/president/view/lukashenko-explains-how-and-to-what-extent-he-influences-putin-189449-2026",
+      "published": "2026-11-25 11:31:19 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en",
+      "title": "Lukashenko comments on who will be next Belarus president",
+      "description": "“Whoever the people elect will be the one. I promise you that. If you are very concerned about a change of our government, then whoever the people elect, as in the 1990s. You cannot say that I falsified something when I ",
+      "url": "https://eng.belta.by/president/view/lukashenko-comments-on-who-will-be-next-belarus-president-189453-2026",
+      "published": "2026-11-25 11:31:19 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en",
+      "title": "Lukashenko comments on Belarusian fugitive opposition, draws parallels with France",
+      "description": "“What do you mean there is no opposition? We have an opposition today that has its own opinion. There were five presidential candidates in the last election,” Aleksandr Lukashenko said.",
+      "url": "https://eng.belta.by/president/view/lukashenko-comments-on-belarusian-fugitive-opposition-draws-parallels-with-france-189450-2026",
+      "published": "2026-11-25 11:31:19 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en",
+      "title": "Lukashenko says Ukraine should not have banned Russian, burned people alive in Odessa",
+      "description": "The Belarusian president said the confrontation had multiple underlying causes, but was largely fueled by the tragic events in Odessa in 2014",
+      "url": "https://tass.com/world/2224571",
+      "published": "2026-11-25 11:26:08 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en",
+      "title": "Lukashenko says Ukraine needs enduring peace, not ceasefire",
+      "description": "There should be no truce, peace must last for centuries, the Belarusian leader stressed",
+      "url": "https://tass.com/world/2224539",
+      "published": "2026-11-25 11:03:26 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en",
+      "title": "‘He made many mistakes’: Lukashenko on Zelensky and ‘democracy’ that led to war",
+      "description": "Belarusian President Aleksandr Lukashenko believes that Vladimir Zelensky alone cannot be blamed for everything happening in Ukraine. The Belarusian head of state spoke about his attitude toward the Ukrainian leader in a",
+      "url": "https://eng.belta.by/president/view/he-made-many-mistakes-lukashenko-on-zelensky-and-democracy-that-led-to-war-189443-2026",
+      "published": "2026-11-25 11:03:14 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en",
+      "title": "Why ‘wake the bear’? Lukashenko reflects on roots of Ukrainian conflict",
+      "description": "In an interview with the French magazine Le Point, Belarusian President Aleksandr Lukashenko spoke about the events and processes that triggered the conflict in Ukraine.",
+      "url": "https://eng.belta.by/president/view/why-wake-the-bear-lukashenko-reflects-on-roots-of-ukrainian-conflict-189446-2026",
+      "published": "2026-11-25 11:03:14 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en",
+      "title": "Lukashenko sees nothing good about EU sanctions, says Belarus can manage",
+      "description": "“Sanctions? There is nothing good about them. If there were no sanctions, we would be more successful. Well, you know, we did not perish,” the head of state stated.",
+      "url": "https://eng.belta.by/president/view/lukashenko-sees-nothing-good-about-eu-sanctions-says-belarus-can-manage-189448-2026",
+      "published": "2026-11-25 11:03:14 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en",
+      "title": "Lukashenko points to French double standards on protests, democracy",
+      "description": "“You have plenty of problems [in France and in the European Union as a whole], and they appear more and more. From your so-called democracy. There is no democracy [in reality there],” the president said.",
+      "url": "https://eng.belta.by/president/view/lukashenko-points-to-french-double-standards-on-protests-democracy-189447-2026",
+      "published": "2026-11-25 11:03:14 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en",
+      "title": "Lukashenko accuses West of insincerity over attempts to cast Belarus as aggressor",
+      "description": "“The fact that we have nothing to do with this war is well-known – everybody knows that. And we do not want war, we do not need it,” the head of state noted.",
+      "url": "https://eng.belta.by/president/view/lukashenko-accuses-west-of-insincerity-over-attempts-to-cast-belarus-as-aggressor-189444-2026",
+      "published": "2026-11-25 11:03:14 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en",
+      "title": "Lukashenko comments on speculations about Russia willing to seize entire Ukraine",
+      "description": "“President Putin is nevertheless winning on the front. Well, however it may be, he is winning,” the head of state said. However, Aleksandr Lukashenko disagreed with the opinion that no substantial changes had recently ha",
+      "url": "https://eng.belta.by/president/view/lukashenko-comments-on-speculations-about-russia-willing-to-seize-entire-ukraine-189445-2026",
+      "published": "2026-11-25 11:03:14 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en-interview",
+      "title": "Lukashenko sees Macron as peace-seeking pragmatist with contradictory stance",
+      "description": "In an interview with the French magazine Le Point, Belarusian President Aleksandr Lukashenko pointed to contradictions between French President Emmanuel Macron’s public statements and personal stance, while noting the Fr",
+      "url": "https://eng.belta.by/president/view/lukashenko-sees-macron-as-peace-seeking-pragmatist-with-contradictory-stance-189428-2026",
+      "published": "2026-11-25 09:39:24 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en-interview",
+      "title": "Lukashenko comments on Macron’s potential role in Ukraine peace process",
+      "description": "The head of state noted that in a conversation with Emmanuel Macron about two years ago, he called the French leader the most experienced politician in Europe since Chancellor of Germany Angela Merkel left office.",
+      "url": "https://eng.belta.by/president/view/lukashenko-comments-on-macrons-potential-role-in-ukraine-peace-process-189436-2026",
+      "published": "2026-11-25 10:07:20 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en-interview",
+      "title": "Lukashenko comments on Belarusian fugitive opposition, draws parallels with France",
+      "description": "“What do you mean there is no opposition? We have an opposition today that has its own opinion. There were five presidential candidates in the last election,” Aleksandr Lukashenko said.",
+      "url": "https://eng.belta.by/president/view/lukashenko-comments-on-belarusian-fugitive-opposition-draws-parallels-with-france-189450-2026",
+      "published": "2026-11-25 11:31:19 +0000"
+    },
+    {
+      "provider": "cloro",
+      "query": "US",
+      "title": "\"This Could Lead to Third World War\" – Lukashenko Warns of Dangers to Refuse Dialogue with Russia",
+      "description": "French President Emmanuel Macron is a pragmatist; he understands what is happening and is committed to establishing peace in the Ukrainian...",
+      "url": "https://news.by/eng/news/prezident/this-could-lead-to-third-world-war-lukashenko-warns-of-dangers-to-refuse-dialogue-with-russia",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "US",
+      "title": "Lukashenko Was Asked Why There Is No Opposition in Belarus",
+      "description": "In an interview with the French magazine Le Point, Lukashenko said regarding his political opponents abroad that they had \"fled\" on their...",
+      "url": "https://nashaniva.com/en/410077",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "US",
+      "title": "Lukashenko opines on France’s weight in Europe’s security architecture",
+      "description": "In the interview to the French magazine Le Point he gave on November 17th, President of Belarus Aleksandr Lukashenko spoke on France's role.",
+      "url": "https://www.sb.by/en/lukashenko-opines-on-france-s-weight-in-europe-s-security-architecture.html",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "US",
+      "title": "Irrefutable facts, insider details, bold proposals in Lukashenko’s Le Point magazine interview",
+      "description": "Belarusian President Aleksandr Lukashenko gave a 90-minute interview to the French magazine Le Point on 17 November.",
+      "url": "https://eng.belta.by/president/view/irrefutable-facts-insider-details-bold-proposals-in-lukashenkos-le-point-magazine-interview-189469-2026/",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "US",
+      "title": "Lukashenko speaks about Belarus’ role in European security architecture",
+      "description": "In an interview with the French magazine Le Point on 17 November, Belarusian President Aleksandr Lukashenko spoke about Belarus' role in the...",
+      "url": "https://eng.belta.by/president/view/lukashenko-speaks-about-belarus-role-in-european-security-architecture-189435-2026/",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "US",
+      "title": "Lukashenko: no structure, no security in Europe whatsoever that excludes Russia, Belarus",
+      "description": "Shaping a new security architecture in Europe is impossible without involving Russia and Belarus — as stated by President of Belarus...",
+      "url": "https://www.sb.by/en/lukashenko-no-structure-no-security-in-europe-whatsoever-that-excludes-russia-belarus.html",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "US",
+      "title": "Lukashenko dismisses talk of Belarus’ warlike plans as complete nonsense",
+      "description": "MINSK, 25 November (BelTA) - EU countries, following Ukraine, Poland and the Baltic states, have taken an aggressive stance toward Belarus,...",
+      "url": "https://eng.belta.by/president/view/lukashenko-dismisses-talk-of-belarus-warlike-plans-as-complete-nonsense-189440-2026/",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "US",
+      "title": "Lukashenko explains why Ukraine talks regressed to square one and who is to blame",
+      "description": "The recent three-way meeting between delegates from Russia, the US and Ukraine in Abu Dhabi is just the beginning of the peace talks, and...",
+      "url": "https://www.sb.by/en/lukashenko-explains-why-ukraine-talks-regressed-to-square-one-and-who-is-to-blame.html",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "US",
+      "title": "\"You Control Zelensky\": Lukashenko Accuses Europe of Blocking Peace in Ukraine",
+      "description": "Belarusian President Alexander Lukashenko has told the French magazine \"Le Point\" that ending the war in Ukraine and preventing further...",
+      "url": "https://news.by/eng/news/prezident/you-control-zelensky-lukashenko-accuses-europe-of-blocking-peace-in-ukraine",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "US",
+      "title": "‘He made many mistakes’: Lukashenko on Zelensky and ‘democracy’ that led to war",
+      "description": "Belarusian President Aleksandr Lukashenko believes that Vladimir Zelensky alone cannot be blamed for everything happening in Ukraine.",
+      "url": "https://eng.belta.by/president/view/he-made-many-mistakes-lukashenko-on-zelensky-and-democracy-that-led-to-war-189443-2026/",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "FR",
+      "title": "Alexandre Loukachenko : « J’emmène Zelensky à Moscou, on s’assoit et on discute »",
+      "description": "Influence sur Poutine, proximité avec Trump, coups de fil à Macron… Dans un entretien au « Point », l'autocrate biélorusse s'explique sur...",
+      "url": "https://www.lepoint.fr/monde/alexandre-loukachenko-si-zelensky-le-veut-quil-vienne-a-moscou-avec-moi-5PNUPJYASZD7VHBT2767RGP7PU/",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "FR",
+      "title": "Entretien de Loukachenko au « Point » : comment Moscou et Minsk surfent sur la proposition biélorusse",
+      "description": "Dès mercredi à la mi-journée, la proposition du leader biélorusse Alexandre Loukachenko « d'emmener » avec lui Volodymyr Zelensky à Moscou...",
+      "url": "https://www.lepoint.fr/monde/loukachenko-comment-minsk-a-fait-de-son-entretien-au-point-une-operation-de-com-7TA3WBVII5FRLF2FPJ6APSXZAU/",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "FR",
+      "title": "« Je suis quoi pour lui, une valise ? » : Zelensky répond à l’entretien de Loukachenko au « Point »",
+      "description": "Le premier extrait du grand entretien réalisé par Anne Nivat avec le président biélorusse a déjà fait réagir son homologue ukrainien.",
+      "url": "https://www.lepoint.fr/monde/je-suis-quoi-pour-lui-une-valise-zelensky-repond-a-lentretien-de-loukachenko-au-point-M67MNIUT4RH65DY5LFWA3W35VM/",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "FR",
+      "title": "Alexandre Loukachenko : « Si Zelensky le veut, qu’il vienne à Moscou »",
+      "description": "Alexandre Loukachenko a accordé un entretien exclusif au « Point ». Face à la grand reporter Anne Nivat, le président biélorusse s'est dit...",
+      "url": "https://www.lepoint.fr/video/c/alexandre-loukachenko-si-zelensky-le-veut-quil-vienne-a-moscou-WCFFV7GPJZB2NCJUTA73CSFBK4/",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "FR",
+      "title": "CARTE. Guerre en Ukraine. Violents combats, accusations de Loukachenko… Le point au 129e jour",
+      "description": "Dernière grande ville de la région de Lougansk contrôlée par l'armée ukrainienne, Lyssytchansk est le théâtre depuis plusieurs jours de...",
+      "url": "https://www.ouest-france.fr/europe/ukraine/carte-guerre-en-ukraine-violents-combats-accusations-de-loukachenko-le-point-au-129e-jour-f1dc6848-fa1f-11ec-a7ca-214c8c56deac",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "FR",
+      "title": "Le président Loukachenko a proposé de se rendre à Moscou avec le président Zelensky pour des négociations.",
+      "description": "Le président biélorusse Alexandre Loukachenko souhaite accompagner son homologue ukrainien Volodymyr Zelensky à Moscou en tant que « garant...",
+      "url": "https://www.vietnam.vn/fr/tong-thong-lukashenko-de-nghi-cung-tong-thong-zelensky-bay-toi-matxcova-dam-phan",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "FR",
+      "title": "Ukraine, Lukashenko: « Prêt à accompagner Zelensky à Moscou »",
+      "description": "Rome, le 24 nov. (LaPresse) – « Zelensky et moi pourrions monter dans un avion et nous envoler pour Moscou. Juste nous deux.",
+      "url": "https://fr.lapresse.it/etranger-fr/2026/11/24/ukraine-lukashenko-pret-a-accompagner-zelensky-a-moscou/",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "FR",
+      "title": "Loukachenko propose d'emmener Zelensky à Moscou, celui-ci l'invite à conduire Poutine à Kiev",
+      "description": "Dans un entretien accordé au Point, le président biélorusse Alexandre Loukachenko propose d'accompagner personnellement Volodymyr Zelensky à...",
+      "url": "https://www.21news.be/loukachenko-propose-demmener-zelensky-a-moscou-celui-ci-linvite-a-conduire-poutine-a-kiev/",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "FR",
+      "title": "CARTE. Guerre en Ukraine : Odessa défigurée, rencontre Poutine – Loukachenko… Le point du jour",
+      "description": "CARTE. Guerre en Ukraine : Odessa défigurée, rencontre Poutine – Loukachenko… Le point du jour · Une attaque ukrainienne repoussée vers Rabotino.",
+      "url": "https://www.ouest-france.fr/europe/ukraine/carte-guerre-en-ukraine-odessa-defiguree-rencontre-poutine-loukachenko-le-point-du-jour-e6fa08b0-2974-11ee-83d0-503e2adf063b",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "FR",
+      "title": "Alexandre Loukachenko se dit prêt à emmener Volodymyr Zelensky à Moscou",
+      "description": "Le président biélorusse Alexandre Loukachenko, dans une interview accordée au prestigieux magazine français Le Point a déclaré qu'il…",
+      "url": "https://zamin.uz/fr/monde/228028-alexandre-loukachenko-se-dit-pret-a-emmener-volodymyr-zelensky-a-moscou.html",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "UA",
+      "title": "Лукашенко запропонував Зеленському разом полетіти до Путіна в Москву",
+      "description": "Самопроголошений президент Білорусі Олександр Лукашенко заявив, що міг би полетіти до Москви разом із президентом України Володимиром...",
+      "url": "https://www.rbc.ua/rus/news/lukashenko-zaproponuvav-zelenskomu-razom-1795543335.html",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "UA",
+      "title": "«Гарантуємо безпечний прийом»: Зеленський запропонував Лукашенку привезти Путіна до Києва",
+      "description": "Президент відкинув ідею спільної поїздки до Москви та запропонував білоруському лідеру інший маршрут для переговорів.",
+      "url": "https://glavcom.ua/world/world-politics/harantujemo-bezpechnij-prijom-zelenskij-zaproponuvav-lukashenku-privezti-putina-do-kijeva-1157810.html",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "UA",
+      "title": "Зеленський \"запросив\" Путіна з Лукашенком до Києва",
+      "description": "Президент України Володимир Зеленський \"запросив\" Олександра Лукашенко, який називає себе президентом Білорусі разом із...",
+      "url": "https://gordonua.com/ukr/section-war/newsamp-zelenskyy-zaprosyv-putina-z-lukashenkom-do-kyyeva-25-11-2026.html",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "UA",
+      "title": "«Несерйозні речі». Зеленський відреагував на пропозицію Лукашенка разом полетіти в Москву",
+      "description": "Лукашенко пропонує несерйозні речі. Ми перебуваємо у війні, ми не можемо зустрічатися у Москві, не можемо зустрічатися в Києві,...",
+      "url": "https://www.radiosvoboda.org/a/news-lukashenko-zelenskyi-moskva/33905198.html",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "UA",
+      "title": "Зеленський зреагував на пропозицію Лукашенка разом полетіти до Москви",
+      "description": "Володимир Зеленський відреагував на пропозицію білоруського диктатора Олександра Лукашенка полетіти з ним на переговори до Москви.",
+      "url": "https://www.ukrinform.ua/rubric-polytics/4188269-zelenskij-zreaguvav-na-propoziciu-lukasenka-poletiti-do-moskvi.html",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "UA",
+      "title": "«Розуміє, що довго так не вийде». Путін шукає варіанти, щоб якось домовлятися: які сигнали він подає через Лукашенка — Огризко",
+      "description": "Огризко вважає, що ініціатива Лукашенка щодо поїздки в Москву із Зеленським свідчать про, те що Путіна потрібні переговори — відео NV.",
+      "url": "https://nv.ua/ukr/world/geopolitics/putin-shukaye-varianti-dlya-peregovoriv-do-chogo-tut-lukashenko-ogrizko-novini-ukrajini-50662423.html",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "UA",
+      "title": "Лукашенко пропонує супроводити Зеленського до Москви",
+      "description": "Олександр Лукашенко заявив про готовність летіти із Володимиром Зеленським до Москви на переговори з Путіним і гарантувати безпеку...",
+      "url": "https://tribune.com.ua/lukashenko-zayavyv-shho-gotovyj-suprovodyty/",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "UA",
+      "title": "Лукашенко заявив, що Путін \"перемагає\" на фронті в Україні",
+      "description": "Самопроголошений президент Білорусі Олександр Лукашенко вважає, що на фронті в Україні нібито \"перемагає\" нелегітимний...",
+      "url": "https://gordonua.com/ukr/section-war/news-lukashenko-zayavyv-shcho-putin-peremahaye-na-fronti-v-ukrayini-25-11-2026.html",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "UA",
+      "title": "Зеленський відкинув ідею переговорів із Путіним у Москві",
+      "description": "Володимир Зеленський назвав пропозицію Лукашенка вирушити до Москви на переговори з Путіним несерйозною та пояснив, чому такі зустрічі не...",
+      "url": "https://tribune.com.ua/zelenskyj-nazvav-propozytsiyu-lukashenka-letity/",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "UA",
+      "title": "Лукашенко заявив про готовність летіти із Зеленським у Москву до Путіна і бути його гарантом безпеки",
+      "description": "Олександр Лукашенко, який називає себе президентом Білорусі, під час інтерв'ю французькому журналу Le Point висловився...",
+      "url": "https://gordonua.com/ukr/section-war/news-lukashenko-zayavyv-pro-hotovnist-letity-iz-zelenskym-v-moskvu-do-putina-i-buty-yoho-harantom-bezpeky-24-11-2026.html",
+      "published": null
+    },
+    {
+      "provider": "currents",
+      "query": "en-page2",
+      "title": "Lukashenko cautions against shift in Ukraine situation, calls for making peace today",
+      "description": "The Belarusian president did not rule out a scenario \"of potential escalation\" where NATO troops could join the Ukraine conflict",
+      "url": "https://tass.com/world/2224535",
+      "published": "2026-11-25 10:57:51 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en-page2",
+      "title": "Attack on Putin’s residence derailed plan for demilitarized zone in Ukraine — Lukashenko",
+      "description": "According to the Belarusian president, Zelensky would not have dared to strike Putin’s residence had it not been approved in Europe",
+      "url": "https://tass.com/world/2224503",
+      "published": "2026-11-25 10:44:48 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en-page2",
+      "title": "Lukashenko comments on Slavonic approach to ending conflict in Ukraine",
+      "description": "“To put it crudely, they punched each other in the face. Someone made a mistake. There were plenty of mistakes on one side and on the other. I will not analyze that for you. The time will come, and we will analyze it. Bu",
+      "url": "https://eng.belta.by/president/view/lukashenko-comments-on-slavonic-approach-to-ending-conflict-in-ukraine-189442-2026",
+      "published": "2026-11-25 10:35:18 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en-page2",
+      "title": "Anything is possible in war.’ Lukashenko warns against escalation of conflict in Ukraine",
+      "description": "In an interview with the French magazine Le Point, Belarusian President Aleksandr Lukashenko warned against a possible escalation of the conflict in Ukraine.",
+      "url": "https://eng.belta.by/president/view/anything-is-possible-in-war-lukashenko-warns-against-escalation-of-conflict-in-ukraine-189439-2026",
+      "published": "2026-11-25 10:35:18 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en-page2",
+      "title": "Lukashenko comments on external influence on Zelensky that prevents end of war",
+      "description": "The president is convinced it is necessary to resume negotiations in order to resolve the conflict in Ukraine as soon as possible. Minsk’s potential for organizing the negotiation process could once again be used for thi",
+      "url": "https://eng.belta.by/president/view/lukashenko-comments-on-external-influence-on-zelensky-that-prevents-end-of-war-189441-2026",
+      "published": "2026-11-25 10:35:18 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en-page2",
+      "title": "Lukashenko dismisses talk of Belarus’ warlike plans as complete nonsense",
+      "description": "“We are not going to get drawn into the war. I am not even talking about some internal consequences, that would be even worse,” the head of state stressed. “We cannot get drawn into the war, because that would be fatal.”",
+      "url": "https://eng.belta.by/president/view/lukashenko-dismisses-talk-of-belarus-warlike-plans-as-complete-nonsense-189440-2026",
+      "published": "2026-11-25 10:35:18 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en-page2",
+      "title": "Lukashenko does not rule out possibility of Russian weapons withdrawing from Belarus",
+      "description": "\"The main thing is that there be peace,\" the Belarusian leader stressed",
+      "url": "https://tass.com/world/2224477",
+      "published": "2026-11-25 10:16:40 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en-page2",
+      "title": "Lukashenko comments on fairness of Belarusian elections, his style of government in interview",
+      "description": "When asked whether it matters to the Belarus president that the West sees him as an autocrat or a dictator, Aleksandr Lukashenko said: “It is true that there are notes of authoritarianism in my policy. This is the kind o",
+      "url": "https://eng.belta.by/president/view/lukashenko-comments-on-fairness-of-belarusian-elections-his-style-of-government-in-interview-189434-2026",
+      "published": "2026-11-25 10:07:20 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en-page2",
+      "title": "Lukashenko speaks about Belarus’ role in European security architecture",
+      "description": "In an interview with the French magazine Le Point on 17 November, Belarusian President Aleksandr Lukashenko spoke about Belarus’ role in the architecture of European security that may be formed in the future.",
+      "url": "https://eng.belta.by/president/view/lukashenko-speaks-about-belarus-role-in-european-security-architecture-189435-2026",
+      "published": "2026-11-25 10:07:20 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en-page2",
+      "title": "Lukashenko stresses ancient historical ties of Slavic peoples",
+      "description": "Belarusian President Aleksandr Lukashenko, in an interview with the French magazine Le Point, drew attention to the ancient historical ties between the peoples and lands of Belarus, Russia and Ukraine.",
+      "url": "https://eng.belta.by/president/view/lukashenko-stresses-ancient-historical-ties-of-slavic-peoples-189437-2026",
+      "published": "2026-11-25 10:07:20 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en-page2",
+      "title": "‘Donald, don’t pressure Putin’: Lukashenko reveals details of private talks with Trump",
+      "description": "In an interview with the French magazine Le Point, Belarusian President Aleksandr Lukashenko shared details of a phone conversation with U.S. President Donald Trump.",
+      "url": "https://eng.belta.by/president/view/donald-dont-pressure-putin-lukashenko-reveals-details-of-private-talks-with-trump-189432-2026",
+      "published": "2026-11-25 10:07:20 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en-page2",
+      "title": "Lukashenko predicts USA’s actions if Ukraine talks stall",
+      "description": "Belarusian President Aleksandr Lukashenko, in an interview with the French magazine Le Point, predicted the USA’s actions if negotiations on settling the conflict in Ukraine stall.",
+      "url": "https://eng.belta.by/president/view/lukashenko-predicts-usas-actions-if-ukraine-talks-stall-189431-2026",
+      "published": "2026-11-25 10:07:20 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en-page2",
+      "title": "Lukashenko comments on Macron’s potential role in Ukraine peace process",
+      "description": "The head of state noted that in a conversation with Emmanuel Macron about two years ago, he called the French leader the most experienced politician in Europe since Chancellor of Germany Angela Merkel left office.",
+      "url": "https://eng.belta.by/president/view/lukashenko-comments-on-macrons-potential-role-in-ukraine-peace-process-189436-2026",
+      "published": "2026-11-25 10:07:20 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en-page2",
+      "title": "Lukashenko agrees Ukraine needs not truce but peace for centuries",
+      "description": "Earlier, press secretary of the Russian President Dmitry Peskov said that Moscow wants peace with Kiev for centuries, not a truce.",
+      "url": "https://eng.belta.by/president/view/lukashenko-agrees-ukraine-needs-not-truce-but-peace-for-centuries-189433-2026",
+      "published": "2026-11-25 10:07:20 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en-page2",
+      "title": "Lukashenko on maximalist opening demands in Ukraine talks",
+      "description": "The parties to the negotiation process on Ukraine are putting forward maximum demands to each other, since this is only the beginning of the negotiations, Belarusian President Aleksandr Lukashenko said in an interview wi",
+      "url": "https://eng.belta.by/president/view/lukashenko-on-maximalist-opening-demands-in-ukraine-talks-189430-2026",
+      "published": "2026-11-25 10:07:20 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en-page2",
+      "title": "Lukashenko reveals what he told Putin about Europe's role in the Ukraine negotiations",
+      "description": "The future of Europe cannot be discussed without the participation of Europeans themselves, Belarusian President Aleksandr Lukashenko said in an interview with the French magazine Le Point on 17 November.",
+      "url": "https://eng.belta.by/president/view/lukashenko-reveals-what-he-told-putin-about-europes-role-in-the-ukraine-negotiations-189424-2026",
+      "published": "2026-11-25 09:39:24 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en-page2",
+      "title": "Lukashenko on possible pullout of nuclear-capable missiles from Belarus",
+      "description": "12:22 Lukashenko on possible pullout of nuclear-capable missiles from Belarus President",
+      "url": "https://eng.belta.by/president/view/lukashenko-on-possible-pullout-of-nuclear-capable-missiles-from-belarus-189425-2026",
+      "published": "2026-11-25 09:39:24 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en-page2",
+      "title": "‘All of this has been broken.’ Lukashenko on Budapest Memorandum, NATO’s eastward expansion",
+      "description": "12:32 ‘All of this has been broken.’ Lukashenko on Budapest Memorandum, NATO’s eastward expansion President",
+      "url": "https://eng.belta.by/president/view/all-of-this-has-been-broken-lukashenko-on-budapest-memorandum-natos-eastward-expansion-189429-2026",
+      "published": "2026-11-25 09:39:24 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en-page2",
+      "title": "Lukashenko describes Europe’s refusal to dialogue with Moscow as delusion that could lead to World War III",
+      "description": "12:29 Lukashenko describes Europe’s refusal to dialogue with Moscow as delusion that could lead to World War III President",
+      "url": "https://eng.belta.by/president/view/lukashenko-describes-europes-refusal-to-dialogue-with-moscow-as-delusion-that-could-lead-to-world-war-189426-2026",
+      "published": "2026-11-25 09:39:24 +0000"
+    },
+    {
+      "provider": "currents",
+      "query": "en-page2",
+      "title": "Lukashenko sees Macron as peace-seeking pragmatist with contradictory stance",
+      "description": "In an interview with the French magazine Le Point, Belarusian President Aleksandr Lukashenko pointed to contradictions between French President Emmanuel Macron’s public statements and personal stance, while noting the Fr",
+      "url": "https://eng.belta.by/president/view/lukashenko-sees-macron-as-peace-seeking-pragmatist-with-contradictory-stance-189428-2026",
+      "published": "2026-11-25 09:39:24 +0000"
+    },
+    {
+      "provider": "cloro",
+      "query": "PL",
+      "title": "„Trwa wojna – trzeba ją zakończyć!”. Wypowiedzi Łukaszenki w wywiadzie dla Le Point wywołały szeroki oddźwięk na świecie",
+      "description": "Francuski tygodnik Le Point opublikował dziś ekskluzywny wywiad z Prezydentem Białorusi Aleksandrem Łukaszenką, który błyskawicznie obiega...",
+      "url": "https://pol.belta.by/society/view/trwa-wojna-trzeba-ja-zakonczyc-wypowiedzi-lukaszenki-w-wywiadzie-dla-le-point-wywolaly-szeroki-oddzwiek-30182-2026/",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "PL",
+      "title": "Łukaszenka odcina się od wojny. Ujawnił, jakiej rady udzielił Trumpowi",
+      "description": "Aleksander Łukaszenka udzielił obszernego wywiadu francuskiemu tygodnikowi \"Le Point\", w którym odniósł się do wojny w Ukrainie,...",
+      "url": "https://www.fakt.pl/polityka/aleksander-lukaszenka-o-wojnie-w-ukrainie-putinie-i-donaldzie-trumpie/dn67q4n",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "PL",
+      "title": "\"A ja co, walizką jestem?\". Zełenski odpowiedział na propozycję Łukaszenki",
+      "description": "Aleksander Łukaszenka zaproponował Wołodymyrowi Zełenskiemu wspólny lot do Moskwy. Ukraiński prezydent nie potraktował tej propozycji...",
+      "url": "https://polskieradio24.pl/swiat/a-ja-co-walizka-jestem-zelenski-odpowiedzial-na-propozycje-lukaszenki",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "PL",
+      "title": "\"A ja walizką jestem?\". Zełenski odpowiada Łukaszence",
+      "description": "On (Alaksandr Łukaszenka - red.) proponuje, że mnie zabierze. A ja co, walizką jestem, czy jak? Zabrać mnie do samolotu i polecieć (.",
+      "url": "https://www.polsatnews.pl/wiadomosc/2026-11-25/lukaszenka-zlozyl-propozycje-zelenskiemu-to-niepowazne/",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "PL",
+      "title": "Łukaszenka ironizuje: trzeba będzie przyłączyć całą Rosję do Mongolii",
+      "description": "Dyktator Białorusi tak odniósł się do żądań terytorialnych Moskwy wobec Kijowa. Aleksander Łukaszenka stwierdził w rozmowie z francuskim...",
+      "url": "https://www.onet.pl/informacje/centrum-europy/lukaszenka-o-zadaniach-rosji-podwaza-argument-historyczny-putina/0zylyct,0666d3f1",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "PL",
+      "title": "Alaksandr Łukaszenka z propozycją dla Wołodymyra Zełenskiego. Zapewnia \"gwarancje bezpieczeństwa\"",
+      "description": "Alaksandr Łukaszenka proponuje Wołodymyrowi Zełenskiemu lot do Moskwy na rozmowy z Władimirem Putinem, deklarując gwarancje bezpieczeństwa.",
+      "url": "https://wydarzenia.interia.pl/ukraina-rosja/news-lukaszenka-z-propozycja-dla-zelenskiego-tylko-we-dwoch,nId,23578577",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "PL",
+      "title": "Łukaszenka zabrałby Zełenskiego. Zaprasza \"Wołodię\" do Moskwy",
+      "description": "Wołodia Zełenski i ja moglibyśmy wsiąść do samolotu i polecieć do Moskwy - stwierdził Alaksandr Łukaszenka, oferując się jako \"gwarant...",
+      "url": "https://wiadomosci.wp.pl/lukaszenka-zabralby-zelenskiego-zaprasza-wolodie-do-moskwy-7354657797503008a",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "PL",
+      "title": "Wojna w Ukrainie. Łukaszenka nie zgodził się z Putinem. „Te ziemie należały do Mongołów”",
+      "description": "Wygląda na to, że białoruski dyktator wystąpił przeciwko przywódcy Rosji – a przynajmniej tak można by interpretować jego słowa. Łukaszenka...",
+      "url": "https://www.wprost.pl/kraj/12513499/wojna-w-ukrainie-lukaszenka-nie-zgodzil-sie-z-putinem-te-ziemie-nalezaly-do-mongolow.html",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "PL",
+      "title": "Łukaszenka zaproponował Wołodymyrowi Zełenskiemu wspólną podróż do Moskwy",
+      "description": "Prezydent Białorusi Aleksander Łukaszenka oświadczył, że jest gotów polecieć do Moskwy razem z przywódcą Ukrainy Wołodym...",
+      "url": "https://www.lrt.lt/pl/wiadomosci/1261/3125042/lukaszenka-zaproponowal-wolodymyrowi-zelenskiemu-wspolna-podroz-do-moskwy",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "PL",
+      "title": "Łukaszenka w wywiadzie dla Le Point wypowiedział się o swoim stylu rządzenia i uczciwości białoruskich wyborów",
+      "description": "25 listopada, Mińsk /Kor. BELTA/. Prezydent Białorusi Aleksander Łukaszenka nie uważa się za dyktatora. Oświadczył to w wywiadzie dla...",
+      "url": "https://pol.belta.by/president/view/lukaszenka-w-wywiadzie-dla-le-point-wypowiedzial-sie-o-swoim-stylu-rzadzenia-i-uczciwosci-bialoruskich-30154-2026/",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "DE",
+      "title": "Ukraine-Krieg: Selenskyj weist Lukaschenkos Moskau-Vorschlag zurück",
+      "description": "Mit einer aberwitzigen Idee hatte sich der belarussische Diktator Lukaschenko zuletzt an die Ukraine gewandt: Präsident Selenskyj könne doch...",
+      "url": "https://www.spiegel.de/ausland/ukraine-krieg-selenskyj-weist-lukaschenkos-moskau-vorschlag-zurueck-a-93d67249-3b6c-427e-8281-f5b38c909950",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "DE",
+      "title": "Belarussischer Machthaber Lukaschenko: Könnte Selenskyj nach Moskau begleiten",
+      "description": "Der belarussische Machthaber Alexander Lukaschenko hat sich bereit erklärt, den ukrainischen Präsidenten Wolodymyr Selenskyj nach Moskau für...",
+      "url": "https://www.stern.de/news/belarussischer-machthaber-lukaschenko--koennte-selenskyj-nach-moskau-begleiten-38603478.html",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "DE",
+      "title": "Ukraine-Krieg: Selenskyj kontert Lukaschenkos Moskau-Angebot",
+      "description": "Lukaschenko bietet Selenskyj persönlichen Geleitschutz für Gespräche mit Putin in Moskau an. Der ukrainische Präsident weist den Vorschlag...",
+      "url": "https://www.berliner-zeitung.de/article/ukraine-krieg-selenskyj-lukaschenko-putin-moskau-kiew-10633063",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "DE",
+      "title": "\"Was bin ich denn, ein Koffer?\": Selenskyj lehnt Lukaschenkos Flug-Angebot nach Moskau ab",
+      "description": "Putins engster Verbündeter im Ausland, der belarussische Machthaber Lukaschenko, bietet dem ukrainischen Präsidenten Begleitschutz für eine...",
+      "url": "https://www.n-tv.de/politik/Selenskyj-lehnt-Lukaschenkos-Flug-Angebot-nach-Moskau-ab-id31573980.html",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "DE",
+      "title": "Ukraine-Krieg: Lukaschenko macht Selenskyj ungewöhnliches Angebot – ukrainischer Präsident reagiert",
+      "description": "Der belarussische Machthaber Alexander Lukaschenko erklärt sich bereit, dem ukrainischen Präsidenten Wolodymyr Selenskyj Begleitschutz nach...",
+      "url": "https://www.welt.de/politik/ausland/article6b067391cd4642ba2eb17bd2/ukraine-krieg-lukaschenko-macht-selenskyj-ungewoehnliches-angebot-ukrainischer-praesident-reagiert.html",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "DE",
+      "title": "Alexander Lukaschenko macht \"unseriöse Dinge\": Wolodymyr Selenskyj lehnt kurioses Flugangebot ab",
+      "description": "Der belarussische Machthaber bietet sich als Sicherheitsgarant für Selenskyj an. Das sagt der Ukraine-Präsident jetzt zum Flugangebot nach...",
+      "url": "https://newstime.joyn.de/themen/ukraine-krieg/alexander-lukaschenko-belarus-selenskyj-ukraine-russland-krieg-222176",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "DE",
+      "title": "Lukaschenko macht Selenskyj Angebot – der kontert",
+      "description": "Will der ukrainische Präsident den russischen sprechen, soll er eben nach Moskau kommen, heißt es aus dem Kreml.",
+      "url": "https://home.1und1.de/magazine/politik/russland-krieg-ukraine/lukaschenko-selenskyj-angebot-kontert-42981008",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "DE",
+      "title": "Lukaschenko will mit Selenskyj nach Moskau fliegen: Ukraine lehnt ab und pocht auf neutralen Ort",
+      "description": "Lukaschenko bietet Selenskyj Geleitschutz für Friedensgespräche in Moskau an. Der ukrainische Präsident lehnt ab und schlägt sarkastisch...",
+      "url": "https://www.merkur.de/politik/lukaschenko-bietet-moskau-flug-an-selenskyj-erteilt-absage-zr-94606707.html",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "DE",
+      "title": "Lukaschenko: Selenskyj und ich könnten nach Moskau fliegen",
+      "description": "Der belarussische Präsident Alexander Lukaschenko hat dem ukrainischen Staatschef Wolodymyr Selenskyj einen gemeinsamen Flug zu...",
+      "url": "https://www.stol.it/artikel/politik/lukaschenko-selenskyj-und-ich-koennten-nach-moskau-fliegen",
+      "published": null
+    },
+    {
+      "provider": "cloro",
+      "query": "DE",
+      "title": "Lukaschenkos erstaunliches Angebot: \"Wolodja und ich könnten einfach nach Moskau fliegen\"",
+      "description": "Der belarussische Diktator Lukaschenko macht Selenskyj ein vermeintlich verlockendes Angebot. Zugleich singt er ein Loblied auf Russlands...",
+      "url": "https://www.t-online.de/nachrichten/ukraine/id_101544938/ukraine-krieg-lukaschenko-macht-selenskyj-ein-erstaunliches-angebot.html",
+      "published": null
+    }
+  ],
+  "providers_with_secret_in_supabase": {
+    "currents": true,
+    "cloro": true,
+    "thenews": false
+  }
+}
