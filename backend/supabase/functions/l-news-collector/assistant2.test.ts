@@ -12,7 +12,7 @@ Deno.test('Cloro fixes US/DE/PL and cycles all nine other countries within the f
  equal(cloroCountries({...run,settings:{...run.settings,countries:['IT','DE']}}),['DE','IT']);
  equal(cloroCountries({...run,settings:{...run.settings,cloro_per_run:0}}),[]);
  equal(cloroCountries({...run,settings:{...run.settings,cloro_per_run:2}}),['US','DE']);
- equal(currentsPlans(run),[{language:'de',page:1}]);
+ equal(currentsPlans(run),[{language:'de',page:1,variant:0,type:1},{language:'de',page:1,variant:0,type:2},{language:'de',page:1,variant:1,type:1},{language:'de',page:1,variant:1,type:2}]);
  equal(currentsPlans({...run,settings:{...run.settings,countries:['IT']}}),[]);
 });
 Deno.test('a changed rotation starts with France at the next assistant number',()=>{
