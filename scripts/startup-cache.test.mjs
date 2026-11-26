@@ -53,3 +53,12 @@ test("expired first page remains visible and is marked for background refresh", 
   assert.deepEqual(freshModule.cachedPage("social_economic", options), sample);
   assert.equal(freshModule.pageFresh("social_economic", options), false);
 });
+
+test("L-Monitor ignores outdated country facets without discarding other monitor snapshots", async () => {
+ const old = { at: Date.now(), value: { categories: [], regions: ["wrong story country"], sources: [] } };
+ storage.set("monitor-archive-v2:facets:lukashenko", JSON.stringify(old));
+ storage.set("monitor-archive-v2:facets:social_economic", JSON.stringify(old));
+ const module = await import("../src/archiveCache.ts?country-fix=1");
+ assert.equal(module.cachedFacets("lukashenko"), null);
+ assert.deepEqual(module.cachedFacets("social_economic"), old.value);
+});
