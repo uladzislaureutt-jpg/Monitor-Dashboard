@@ -2,7 +2,7 @@ const {chromium}=require('playwright');
 const assert=require('node:assert/strict');
 (async()=>{
  const browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH || chromium.executablePath(),args:['--no-sandbox']});
- const page=await browser.newPage({viewport:{width:1676,height:1050}});const errors=[];page.on('pageerror',e=>errors.push(e.message));const calls=[];
+ const page=await browser.newPage({viewport:{width:1676,height:1050}});const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error('Browser error:',e.message)});const calls=[];
  const settings={enabled:true,lookback_hours:26,local_time:'03:07',countries:['DE','IT','PL','UA','RU','FR','US'],newscatcher_enabled:true,newscatcher_per_run:32,newscatcher_daily_credits:200,newscatcher_monthly_credits:3500,newscatcher_reserve:500,cloro_enabled:true,cloro_per_run:4,cloro_daily_credits:12,cloro_monthly_credits:360,cloro_reserve:20,cloro_countries:['DE','IT','PL','UA','RU','FR','US'],currents_enabled:true,currents_languages:['de'],currents_per_run:4,currents_daily_requests:20,currents_monthly_requests:600,currents_reserve:10,candidate_limit:1200,paid_extractions_per_run:4,updated_at:'2026-11-26T05:20:00Z'};
  await page.route('https://qa.monitor.test/**',async route=>{
   const request=route.request();if(request.method()==='OPTIONS')return route.fulfill({status:204,headers:{'access-control-allow-origin':'*','access-control-allow-headers':'authorization,apikey,content-type','access-control-allow-methods':'POST'}});
