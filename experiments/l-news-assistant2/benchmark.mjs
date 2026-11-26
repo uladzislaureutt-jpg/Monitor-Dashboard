@@ -11,7 +11,11 @@ const baseline=JSON.parse(await readFile(new URL('./baseline-20261126.json',root
 const baselineKnown=new Map(baseline.items.map(([hash,domain,state])=>[hash,{domain,state}]));
 const registered=new Set(baseline.domains);
 const from='2026-11-24T12:00:00Z',to='2026-11-26T03:30:00Z';
-const creds={currents:process.env.CURRENTSAPI_API_KEY||'',cloro:process.env.CLORO_API_KEY||'',thenews:process.env.THENEWSAPI_API_KEY||process.env.THE_NEWS_API_KEY||''};
+function secret(...names){
+ for(const name of names){const key=Object.keys(process.env).find(k=>k.toLowerCase()===name.toLowerCase());if(key&&process.env[key])return process.env[key];}
+ return '';
+}
+const creds={currents:secret('CURRENTSAPI_API_KEY'),cloro:secret('CLORO_API_KEY'),thenews:secret('THENEWSAPI_API_KEY','THE_NEWS_API_KEY')};
 const planned={currents:10,cloro:4,thenews:4};
 const results={version:1,created_at:started,window_utc:[from,to],baseline:{observations:baseline.items.length,registered_domains:registered.size,notes:'Canonical URL overlap only; thematic/editorial relevance requires article review.'},key_present:Object.fromEntries(Object.entries(creds).map(([k,v])=>[k,Boolean(v)])),limit:planned,attempts:[],articles:[],comparison:{},warnings:[]};
 const sleep=(ms)=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -117,7 +121,7 @@ async function thenews(){
  const cases=[['en','Lukashenko'],['ru','Лукашенко'],['pl','Łukaszenka'],['fr','Loukachenko']];
  for(const [language,search] of cases){
   const url=new URL('https://api.thenewsapi.com/v1/news/all');
-  for(const [k,v] of Object.entries({api_token:creds.thenews,search,language,limit:'3',published_after:from,published_before:to,sort:'published_at'}))url.searchParams.set(k,v);
+  for(const [k,v] of Object.entries({api_token:creds.thenews,search,language,limit:'3',published_after:from.replace(/Z$/,''),published_before:to.replace(/Z$/,''),sort:'published_at'}))url.searchParams.set(k,v);
   const {a,body}=await request('thenews',language,url);
   const entries=unwrap(body,[['data'],['articles'],['results']]);a.count=entries.length;
   a.meta.found=Number(body?.meta?.found??0)||null;
@@ -154,3 +158,4 @@ const readable={created_at:results.created_at,summary:results.provider_summary,c
 console.log('=== Assistant 2 limited shadow benchmark: sanitized aggregates only ===');
 console.log(JSON.stringify(readable,null,2));
 console.log('No public application data was written. Full sanitized output: assistant2-benchmark-output/results.json');
+
