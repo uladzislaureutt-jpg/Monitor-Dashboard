@@ -1,11 +1,5 @@
 name: Assistant 2 / limited comparative shadow benchmark
 on:
-  push:
-    branches:
-      - experiment/l-news-assistant2-benchmark-20261126
-    paths:
-      - '.github/workflows/l-news-assistant2-benchmark.yml'
-      - 'experiments/l-news-assistant2/**'
   workflow_dispatch:
 permissions:
   contents: read
