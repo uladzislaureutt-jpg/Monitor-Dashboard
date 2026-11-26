@@ -46,7 +46,7 @@ export function DashboardView({
   loading,
   onOpenArchive,
   latestRun,
-  latestAssistantRun,
+  latestAssistantRuns,
 }: {
   monitorKey: MonitorKey;
   data: DashboardOverview | null;
@@ -55,7 +55,7 @@ export function DashboardView({
   loading: boolean;
   onOpenArchive: () => void;
   latestRun?: RunSummary;
-  latestAssistantRun?: RunSummary;
+  latestAssistantRuns?: (RunSummary | undefined)[];
 }) {
   const { t, locale } = useI18n();
   const isLMonitor = monitorKey === "lukashenko";
@@ -153,7 +153,7 @@ export function DashboardView({
         <ResonancePanel title={locale === "be" ? "Сюжэты" : "Сюжеты"} subtitle={locale === "be" ? "Асноўная публікацыя і спіс іншых крыніц, якія асвятлялі той жа сюжэт." : "Основная публикация и список других источников, освещавших тот же сюжет."} items={[]} stories={resonanceData?.stories ?? []} fallback={false} period={resonancePeriod} onPeriodChange={setResonancePeriod} />
         <div className="l-monitor-country-column">
           <BreakdownPanel title={locale === "be" ? "Краіны паходжання крыніц" : "Страны происхождения источников"} subtitle={locale === "be" ? "Странавая прыналежнасць выданняў, якія апублікавалі матэрыялы. Схема паказвае маштаб кожнай краіны." : "Страновая принадлежность изданий, опубликовавших материалы. Схема показывает масштаб каждой страны."} data={geoData?.regionBreakdown ?? []} scheme="source_countries" initialMode="bars" controlsClassName="source-country-controls" period={geoPeriod} onPeriodChange={setGeoPeriod} />
-          <RunSourcePublications github={latestRun} assistant={latestAssistantRun} />
+          <RunSourcePublications github={latestRun} assistants={latestAssistantRuns} />
         </div>
         <BreakdownPanel className="span-two" title={t("dashboard.sources")} subtitle={t("dashboard.sourcesHelp")} data={sourcesData?.sourceBreakdown ?? []} period={sourcesPeriod} onPeriodChange={setSourcesPeriod} sourceIcons />
       </> : <>

@@ -5,6 +5,7 @@ import {recoverArticle} from './extraction.ts';
 import {translateCard} from './translation.ts';
 import {indexGithub} from './github.ts';
 import {assistantId,cloroCountries,currentsPlans,probeAssistant2,submitCloro,pollCloro,searchCurrents} from './assistant2.ts';
+import {thenewsPlans,searchTheNews,continueDiscovery} from './discovery.ts';
 
 export async function enqueue(rt:Runtime,run:string|null,kind:string,payload:any,key:string,available?:string){
  const result=await rt.db.from('l_news_jobs').upsert({run_id:run,kind,payload,dedupe_key:key,...(available?{available_at:available}:{})},{onConflict:'dedupe_key',ignoreDuplicates:true});must(result);
@@ -41,11 +42,15 @@ async function setup(rt:Runtime,job:Job,run:Run){
   if(rt.secret('CURRENTSAPI_API_KEY'))for(const plan of currentsPlans(run))await enqueue(rt,run.id,'currents',plan,run.id+':currents:'+plan.language+':1');
   else warnings.push('Currents: ключ отсутствует');
  }
+ if(second&&run.settings.thenews_enabled){
+  if(rt.secret('THENEWSAPI_API_KEY','THE_NEWS_API_KEY'))for(const plan of thenewsPlans(run,sources))await enqueue(rt,run.id,'thenews',plan,run.id+':thenews:'+plan.group+':1');
+  else warnings.push('The News API: ключ отсутствует');
+ }
  return {catalog_sources:sources.length,warnings};
 }
 
 async function ingest(rt:Runtime,job:Job,run:Run,candidates:Candidate[],sources:Source[]){
- const counts={returned:candidates.length,kept:0,duplicates:0,known:0,excluded:0,wrong_date:0,capped:false};
+ const counts={returned:candidates.length,new_to_index:0,kept:0,duplicates:0,known:0,excluded:0,wrong_date:0,capped:false};
  const countResult=await rt.db.from('l_news_run_items').select('item_id',{count:'exact',head:true}).eq('run_id',run.id);if(countResult.error)throw countResult.error;
  let accepted=countResult.count||0;
  for(const c of candidates){
@@ -74,7 +79,7 @@ async function ingest(rt:Runtime,job:Job,run:Run,candidates:Candidate[],sources:
    if(accepted>=run.settings.candidate_limit){counts.capped=true;continue;}
    const uid=known?.document_uid||'lapi_'+(await sha(key)).slice(0,32);
    const result=await rt.db.from('l_news_items').insert({canonical_url:key,document_uid:uid,source_domain:source.domain,country:source.country,published_at:c.published_at,original:c,first_run_id:run.id}).select('*').single();
-   if(result.error?.code==='23505')item=must(await rt.db.from('l_news_items').select('*').eq('canonical_url',key).single());else item=must(result);
+   if(result.error?.code==='23505')item=must(await rt.db.from('l_news_items').select('*').eq('canonical_url',key).single());else {item=must(result);counts.new_to_index++;}
    must(await rt.db.rpc('l_news_claim_alias',{p_alias:key,p_item:item.id}));accepted++;
   }
   const state=item.state==='ready'?'already_ready':'candidate';
@@ -188,12 +193,27 @@ export async function workOne(rt:Runtime,job:Job){
   return {submitted:true,country:job.payload.country};
  }
  if(job.kind==='article')return article(rt,job,run,sources);
- if(['perigon','newscatcher','gdelt','currents','cloro_poll'].includes(job.kind)){
-  const found:any=job.kind==='cloro_poll'?await pollCloro(rt,job):job.kind==='currents'?await searchCurrents(rt,job,run):job.kind==='perigon'?await searchPerigon(rt,job,run):job.kind==='newscatcher'?await searchNewscatcher(rt,job,run):await searchGdelt(rt,job,run);
+ if(['perigon','newscatcher','gdelt','currents','thenews','cloro_poll'].includes(job.kind)){
+  if(['currents','thenews'].includes(job.kind)){const cap=await rt.db.from('l_news_run_items').select('item_id',{count:'exact',head:true}).eq('run_id',run.id);if(cap.error)throw cap.error;if((cap.count||0)>=run.settings.candidate_limit)return {warnings:['Достигнут лимит кандидатов на сбор; дальнейшие поисковые обращения остановлены.']};}
+  const found:any=job.kind==='cloro_poll'?await pollCloro(rt,job):job.kind==='thenews'?await searchTheNews(rt,job,run):job.kind==='currents'?await searchCurrents(rt,job,run):job.kind==='perigon'?await searchPerigon(rt,job,run):job.kind==='newscatcher'?await searchNewscatcher(rt,job,run):await searchGdelt(rt,job,run);
   if(found.capped)return {capped:true,provider:job.kind};
   if(found.retry_at||(job.kind==='gdelt'&&found.warnings))return found;
   const result=await ingest(rt,job,run,found.candidates,sources);
-  if(found.next){const next=Number(found.page)+1;await enqueue(rt,run.id,job.kind,{...job.payload,page:next,quota:found.quota||job.payload.quota},run.id+':'+job.kind+':'+(job.payload.language||job.payload.layer||job.payload.group)+':'+next);}
+  let extend=found.next&&!result.capped;
+  let room=true;
+  if(['currents','thenews'].includes(job.kind)){
+   const planned=await rt.db.from('l_news_jobs').select('id',{count:'exact',head:true}).eq('run_id',run.id).eq('kind',job.kind);
+   if(planned.error)throw planned.error;
+   room=(planned.count||0)<Number(run.settings[job.kind+'_per_run']);
+   extend=extend&&room&&continueDiscovery(Number(found.page),Number(found.max_pages),true,result.new_to_index+result.kept);
+  }
+  if(extend){const next=Number(found.page)+1;await enqueue(rt,run.id,job.kind,{...job.payload,page:next,quota:found.quota||job.payload.quota},run.id+':'+job.kind+':'+(job.payload.language?job.payload.language+':'+(found.variant??0):job.payload.layer??job.payload.group)+':'+next);room=false;}
+  // Try alternate spellings after an empty language search. Chinese scripts
+  // are distinct, so simplified and traditional variants are both checked.
+  if(job.kind==='currents'&&room&&!result.capped&&found.next_variant!=null){
+   const variant=Number(found.next_variant);
+   await enqueue(rt,run.id,'currents',{...job.payload,page:1,variant},run.id+':currents:'+job.payload.language+':'+variant+':1');
+  }
   if(found.split){const middle=new Date(Math.floor((Date.parse(found.from)+Date.parse(found.to))/2)).toISOString();for(const [from,to] of [[found.from,middle],[middle,found.to]])await enqueue(rt,run.id,'gdelt',{from,to},run.id+':gdelt:'+from+':'+to);}
   return found.warnings?.length?{...result,warnings:found.warnings}:result;
  }

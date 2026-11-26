@@ -1626,3 +1626,17 @@ body { background: linear-gradient(180deg, #f7f1e7 0%, #eee5d7 100%); }
 .assistant-settings details summary { color: #225c85; cursor: pointer; }
 .assistant-budget-grid label { color: #65727b; font-size: 10px; }
 .assistant-budget-grid input { border: 1px solid #dcd6ce; border-radius: 9px; background: #fff; color: #3f5261; min-height: 38px; padding: 0 10px; font-size: 11px; outline: 0; }
+
+/* Catalog filters share a baseline and the same surface treatment. */
+.sources-toolbar{display:grid;grid-template-columns:minmax(300px,1.4fr) minmax(200px,1fr);gap:18px;align-items:end;padding:18px 20px;background:#faf8f4;border:1px solid #ded7ce;border-radius:16px}
+.sources-toolbar.with-sort{grid-template-columns:minmax(350px,1.5fr) minmax(175px,.7fr) minmax(200px,1fr)}
+.sources-toolbar-field{display:grid;gap:8px;min-width:0}
+.sources-control-label{color:#647b8b;font-size:10px;font-weight:600}
+.sources-toolbar .period-selector,.sources-toolbar select,.sources-toolbar .compact-search{height:42px;min-height:42px;width:100%;max-width:none;margin:0;border:1px solid #d6d0c7;border-radius:10px;background:#fff;box-shadow:none;box-sizing:border-box}
+.sources-toolbar .period-selector{display:flex;padding:4px;gap:3px}
+.sources-toolbar .period-selector button{flex:1;min-width:0;padding:0 8px;border-radius:7px;white-space:nowrap;font-size:11px}
+.sources-toolbar select{padding:0 12px;color:#294656;font-size:11px}
+.sources-toolbar .compact-search input{font-size:11px}
+.sources-toolbar :is(select,.compact-search,.period-selector):focus-within{outline:2px solid #76acca;outline-offset:2px}
+@media(max-width:1100px){.sources-toolbar.with-sort{grid-template-columns:1fr 1fr}.sources-toolbar.with-sort>.sources-toolbar-field:first-child{grid-column:1/-1}}
+@media(max-width:620px){.sources-toolbar,.sources-toolbar.with-sort{grid-template-columns:1fr;padding:14px}.sources-toolbar.with-sort>.sources-toolbar-field:first-child{grid-column:auto}.sources-toolbar .period-selector button{padding:0 4px;font-size:10px}}

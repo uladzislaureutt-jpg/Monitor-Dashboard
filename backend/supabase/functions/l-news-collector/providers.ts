@@ -36,7 +36,7 @@ export async function newscatcherSubscription(rt:Runtime){
  await saveState(rt,'newscatcher',{configured:true,family:'v3',subscription:safe});return {family:'v3',subscription:safe};
 }
 export async function reserve(rt:Runtime,job:Job,run:Run|null,provider:string,endpoint:string,page:number,runLimit:number,monthLimit:number):Promise<number|null>{
- if(Number(run?.assistant_id??run?.settings.assistant_id)===2&&['newscatcher','cloro','currents'].includes(provider))return must(await rt.db.rpc('l_news_reserve_assistant2_call',{p_run:run!.id,p_job:job.id,p_provider:provider,p_endpoint:endpoint,p_page:page}));
+ if(Number(run?.assistant_id??run?.settings.assistant_id)===2&&['newscatcher','cloro','currents','thenews'].includes(provider))return must(await rt.db.rpc('l_news_reserve_assistant2_call',{p_run:run!.id,p_job:job.id,p_provider:provider,p_endpoint:endpoint,p_page:page}));
  return must(await rt.db.rpc('l_news_reserve_call',{p_run:run?.id||null,p_job:job.id,p_provider:provider,p_endpoint:endpoint,p_page:page,p_run_limit:runLimit,p_month_limit:monthLimit}));
 }
 export async function apiRequest(rt:Runtime,job:Job,run:Run,provider:string,url:string,options:RequestInit,page:number,limit:number,credits:number){
