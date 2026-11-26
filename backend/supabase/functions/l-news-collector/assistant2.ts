@@ -67,7 +67,9 @@ export async function submitCloro(rt:Runtime,job:Job,run:Run){
  try{const response=await fetch('https://api.cloro.dev/v1/async/task',{method:'POST',headers:{Authorization:'Bearer '+key,'content-type':'application/json'},body:JSON.stringify({taskType:'GOOGLE_NEWS',idempotencyKey:'l-news-assistant2:'+job.id,payload:{query,country,gl:country.toLowerCase(),hl:language,pages:1,include:{html:false}}}),signal:AbortSignal.timeout(20000)});status=response.status;body=await response.json().catch(()=>({}));}
  catch{/* Unknown outcome retains the 3-credit reservation and stable key. */}
  const taskId=body.task?.id||(status===409?body.error?.details?.taskId:null);
- const charge=taskId||status===0?3:0;
+ // Retain the planned charge across retryable rejections: another job must
+ // not spend this reservation while the same idempotent task is retried.
+ const charge=taskId||status===0||[500,502,503,504].includes(status)||(status===429&&job.attempts<4)?3:0;
  must(await rt.db.from('l_news_usage').update({status,credits:charge,elapsed_ms:Date.now()-start,details:{assistant_id:2,country,task_id:taskId??null,reserved_units:charge}}).eq('id',usage));
  if(!taskId)throw new Error('cloro_search_'+status);
  return {task_id:taskId,usage_id:usage,country,started_at:new Date().toISOString(),warnings:[]};

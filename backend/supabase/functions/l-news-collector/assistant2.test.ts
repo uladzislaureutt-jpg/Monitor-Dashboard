@@ -44,3 +44,13 @@ Deno.test('Cloro timeout retry reuses its idempotency key; polling does not rese
   await pollCloro(rt,{...job,payload});equal(reservations,2);equal(updates.at(-1).credits,3);
  }finally{globalThis.fetch=original;}
 });
+
+Deno.test('Cloro keeps its budget reservation across 429 retries and settles a final rejection',async()=>{
+ const original=globalThis.fetch;const updates:any[]=[];
+ const rt={secret:()=> 'fixture',db:{rpc:()=>({data:77}),from:()=>({update:(patch:any)=>({eq:()=>{updates.push(patch);return {data:null};}})})}} as Runtime;
+ globalThis.fetch=async ()=>Response.json({error:'rate_limit'},{status:429});
+ try{
+  for(const attempts of [1,4])try{await submitCloro(rt,{...job,attempts},run);}catch{/* Expected provider rejection. */}
+  equal(updates.map(row=>row.credits),[3,0]);
+ }finally{globalThis.fetch=original;}
+});
