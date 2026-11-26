@@ -103,6 +103,7 @@ return async (req: Request): Promise<Response> => {try{
    must(await db.from('l_news_assistant2_settings').update(patch).eq('id',true));return json({ok:true});
   }
   const patch:any={updated_at:new Date().toISOString()};
+  if(body.local_time!==undefined){if(typeof body.local_time!=='string'||!/^([01]\d|2[0-3]):[0-5]\d$/.test(body.local_time))return json({error:'invalid_local_time'},400);patch.local_time=body.local_time;}
   if(typeof body.enabled==='boolean')patch.enabled=body.enabled;
   if(body.lookback_hours!==undefined){const hours=Number(body.lookback_hours);if(!Number.isInteger(hours)||hours<1||hours>168)return json({error:'invalid_lookback'},400);patch.lookback_hours=hours;}
   must(await db.from('l_news_settings').update(patch).eq('id',true));return json({ok:true});
