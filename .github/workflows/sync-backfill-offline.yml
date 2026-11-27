@@ -1,0 +1,22 @@
+name: Rust sync gap backfill regression
+
+on:
+  pull_request:
+    paths:
+      - 'src-tauri/src/sync.rs'
+      - 'scripts/test-sync-backfill-rust.py'
+      - '.github/workflows/sync-backfill-offline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  historical-gaps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Validate actual Rust reconciliation logic
+        run: python3 scripts/test-sync-backfill-rust.py
