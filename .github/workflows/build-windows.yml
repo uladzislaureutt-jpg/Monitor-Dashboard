@@ -49,6 +49,9 @@ jobs:
       - name: Test startup and archive caches
         run: npm run test:startup-cache
 
+      - name: Test desktop zoom and translation-preserving Exact
+        run: npm run test:zoom-language
+
       - name: Prepare pinned yt-dlp
         shell: pwsh
         run: |
