@@ -6,6 +6,9 @@ import { ModerationProvider } from "./moderation";
 import { ReportProvider } from "./reportWorkspace";
 import { MonitorAccessProvider } from "./access";
 import "./styles.css";
+import { installAppZoom } from "./appZoom";
+
+installAppZoom();
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

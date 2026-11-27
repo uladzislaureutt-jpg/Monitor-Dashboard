@@ -5,7 +5,7 @@ import {recoverArticle} from './extraction.ts';
 import {translateCard} from './translation.ts';
 import {indexGithub} from './github.ts';
 import {assistantId,cloroCountries,currentsPlans,probeAssistant2,submitCloro,pollCloro,searchCurrents} from './assistant2.ts';
-import {thenewsPlans,searchTheNews,continueDiscovery} from './discovery.ts';
+import {thenewsPlans,searchTheNews,continueDiscovery,discoveryJobKey,thenewsSplitPlans} from './discovery.ts';
 
 export async function enqueue(rt:Runtime,run:string|null,kind:string,payload:any,key:string,available?:string){
  const result=await rt.db.from('l_news_jobs').upsert({run_id:run,kind,payload,dedupe_key:key,...(available?{available_at:available}:{})},{onConflict:'dedupe_key',ignoreDuplicates:true});must(result);
@@ -39,11 +39,11 @@ async function setup(rt:Runtime,job:Job,run:Run){
   else warnings.push('Cloro: ключ отсутствует');
  }
  if(second&&run.settings.currents_enabled){
-  if(rt.secret('CURRENTSAPI_API_KEY'))for(const plan of currentsPlans(run))await enqueue(rt,run.id,'currents',plan,run.id+':currents:'+plan.language+':1');
+  if(rt.secret('CURRENTSAPI_API_KEY'))for(const plan of currentsPlans(run))await enqueue(rt,run.id,'currents',plan,discoveryJobKey(run.id,'currents',plan));
   else warnings.push('Currents: ключ отсутствует');
  }
  if(second&&run.settings.thenews_enabled){
-  if(rt.secret('THENEWSAPI_API_KEY','THE_NEWS_API_KEY'))for(const plan of thenewsPlans(run,sources))await enqueue(rt,run.id,'thenews',plan,run.id+':thenews:'+plan.group+':1');
+  if(rt.secret('THENEWSAPI_API_KEY','THE_NEWS_API_KEY'))for(const plan of thenewsPlans(run,sources))await enqueue(rt,run.id,'thenews',plan,discoveryJobKey(run.id,'thenews',plan));
   else warnings.push('The News API: ключ отсутствует');
  }
  return {catalog_sources:sources.length,warnings};
@@ -201,21 +201,28 @@ export async function workOne(rt:Runtime,job:Job){
   const result=await ingest(rt,job,run,found.candidates,sources);
   let extend=found.next&&!result.capped;
   let room=true;
+  let split=false;
   if(['currents','thenews'].includes(job.kind)){
    const planned=await rt.db.from('l_news_jobs').select('id',{count:'exact',head:true}).eq('run_id',run.id).eq('kind',job.kind);
    if(planned.error)throw planned.error;
    room=(planned.count||0)<Number(run.settings[job.kind+'_per_run']);
-   extend=extend&&room&&continueDiscovery(Number(found.page),Number(found.max_pages),true,result.new_to_index+result.kept);
+   if(job.kind==='thenews'&&extend&&room){
+    const parts=thenewsSplitPlans(run,job.payload,found,sources);
+    // Split only when all child directions fit; otherwise retain parent paging.
+    if(parts.length&&parts.length<=Number(run.settings.thenews_per_run)-(planned.count||0)){
+     for(const plan of parts)await enqueue(rt,run.id,'thenews',plan,discoveryJobKey(run.id,'thenews',plan));
+     split=true;
+    }
+   }
+   extend=extend&&room&&!split&&continueDiscovery(job.kind,Number(found.page),Number(found.max_pages),true,result.new_to_index+result.kept);
   }
-  if(extend){const next=Number(found.page)+1;await enqueue(rt,run.id,job.kind,{...job.payload,page:next,quota:found.quota||job.payload.quota},run.id+':'+job.kind+':'+(job.payload.language?job.payload.language+':'+(found.variant??0):job.payload.layer??job.payload.group)+':'+next);room=false;}
-  // Try alternate spellings after an empty language search. Chinese scripts
-  // are distinct, so simplified and traditional variants are both checked.
-  if(job.kind==='currents'&&room&&!result.capped&&found.next_variant!=null){
-   const variant=Number(found.next_variant);
-   await enqueue(rt,run.id,'currents',{...job.payload,page:1,variant},run.id+':currents:'+job.payload.language+':'+variant+':1');
+  if(extend){const next=Number(found.page)+1,plan={...job.payload,page:next,quota:found.quota||job.payload.quota};
+   const key=job.kind==='currents'||job.kind==='thenews'?discoveryJobKey(run.id,job.kind,plan):run.id+':'+job.kind+':'+(job.payload.layer??job.payload.group)+':'+next;
+   await enqueue(rt,run.id,job.kind,plan,key);
   }
   if(found.split){const middle=new Date(Math.floor((Date.parse(found.from)+Date.parse(found.to))/2)).toISOString();for(const [from,to] of [[found.from,middle],[middle,found.to]])await enqueue(rt,run.id,'gdelt',{from,to},run.id+':gdelt:'+from+':'+to);}
-  return found.warnings?.length?{...result,warnings:found.warnings}:result;
+  const discovery=['currents','thenews'].includes(job.kind)?{page:found.page,...(job.kind==='currents'?{language:job.payload.language,type:found.type,variant:found.variant}:{total_hits:found.total_hits,partition:job.payload.partition??null,split})}:{};
+  return found.warnings?.length?{...result,...discovery,warnings:found.warnings}:{...result,...discovery};
  }
  throw new Error('unknown_job_kind');
 }
