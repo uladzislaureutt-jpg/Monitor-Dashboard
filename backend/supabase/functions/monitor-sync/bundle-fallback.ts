@@ -41,7 +41,18 @@ export function validateFallbackZip(bytes: Uint8Array, monitorKey: string): { ru
     throw new Error("INVALID_BUNDLE_ZIP");
   }
   let archive: Record<string, Uint8Array>;
-  try { archive = unzipSync(bytes); } catch { throw new Error("INVALID_BUNDLE_ZIP"); }
+  let entries = 0;
+  let uncompressed = 0;
+  try {
+    archive = unzipSync(bytes, { filter: (entry) => {
+      entries++;
+      uncompressed += Number(entry.originalSize ?? 0);
+      if (entries > 20 || uncompressed > 64 * 1024 * 1024) {
+        throw new Error("BUNDLE_UNCOMPRESSED_LIMIT");
+      }
+      return true;
+    } });
+  } catch { throw new Error("INVALID_BUNDLE_ZIP"); }
   const names = Object.keys(archive);
   const required = ["manifest.json", "publications.jsonl", "source_metrics.jsonl", "run_metrics.json"];
   if (names.length > 20 || required.some((n) => !archive[n]) ||
