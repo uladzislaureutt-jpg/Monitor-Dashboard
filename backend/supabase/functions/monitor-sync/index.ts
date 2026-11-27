@@ -226,7 +226,7 @@ Deno.serve(async (req: Request) => {
     // No Storage URL, signing key or raw object path is returned to clients.
     if (monitorKey === "social_economic") {
       const { data: stored, error } = await admin.storage.from(FALLBACK_BUCKET)
-        .list(monitorKey, { limit: 1000, sortBy: { column: "name", order: "desc" } });
+        .list(monitorKey, { limit: 1000, sortBy: { column: "created_at", order: "desc" } });
       if (error) storageError = String(error.message || "storage list failed");
       else for (const item of stored ?? []) {
         const run = isValidFallbackName(String(item.name || ""), cfg.prefix);
