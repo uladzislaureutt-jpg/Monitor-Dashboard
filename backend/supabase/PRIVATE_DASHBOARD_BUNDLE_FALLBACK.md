@@ -63,7 +63,10 @@ The desktop app calls `monitor-sync` with `action:"list"` and `action:"download"
 not direct Storage endpoints. On the next normal sync it receives missing
 runs, imports them with its existing ZIP importer, and preserves the
 original run number. No duplicate import is expected for an already
-present identical run.
+present identical run. In new builds, a late-published Supabase fallback is
+also imported when the client already has a later run (e.g. run #223 arrived
+after #224). Older installed builds can ingest a fallback that is newer
+than their most recently imported run but do not backfill historical gaps.
 
 Verify the new upload is present by listing Storage objects in the private
 bucket; app's next sync should show it as a new run. The existing
