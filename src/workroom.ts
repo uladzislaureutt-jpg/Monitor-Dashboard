@@ -563,6 +563,33 @@ async function edgeRequest(config: WorkroomConfig, slug: string, body: unknown, 
   return { payload, session: active };
 }
 
+export async function publishDashboardFallback(
+  config: WorkroomConfig,
+  session: WorkroomSession,
+  file: File,
+): Promise<{ runNumber: number; publications: number; status: string }> {
+  const maxBytes = 8 * 1024 * 1024;
+  if (!file.name.toLowerCase().endsWith(".zip") || file.size > maxBytes || file.size < 100) {
+    throw new Error("Выберите ZIP-бандл размером до 8 МБ.");
+  }
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  const { payload } = await edgeRequest(config, "monitor-sync", {
+    action: "publish",
+    monitor_key: "social_economic",
+    zip_base64: btoa(binary),
+  }, session);
+  if (payload.ok !== true) throw new Error("Не удалось опубликовать резервный бандл.");
+  return {
+    runNumber: Number(payload.run_number),
+    publications: Number(payload.publications),
+    status: String(payload.status || "published"),
+  };
+}
+
 export async function getRuntimeConfig(config: WorkroomConfig, session: WorkroomSession) {
   const { payload, session: active } = await edgeRequest(config, "monitor-access", { action: "runtime" }, session);
   return {
