@@ -512,6 +512,27 @@ mod tests {
     }
 
     #[test]
+    fn only_missing_late_supabase_runs_bypass_historical_skip() {
+        let existing = HashSet::from([222_i64, 224_i64]);
+        // A missing run #223 was published only after this device saw #224.
+        assert!(!skip_historical_server_artifact(
+            223, STORAGE_FALLBACK_ID_BASE + 223, Some(224), &existing,
+        ));
+        // Original GitHub artifacts are still skipped to avoid massive replay.
+        assert!(skip_historical_server_artifact(
+            223, 15_100_000_000, Some(224), &existing,
+        ));
+        // Never re-download a fallback run that is already in local history.
+        assert!(skip_historical_server_artifact(
+            222, STORAGE_FALLBACK_ID_BASE + 222, Some(224), &existing,
+        ));
+        // The current latest run remains eligible for recheck.
+        assert!(!skip_historical_server_artifact(
+            224, 15_100_000_000, Some(224), &existing,
+        ));
+    }
+
+    #[test]
     fn duplicate_run_prefers_newest_artifact() {
         let mut artifacts = vec![
             (137, artifact(11272837363, "dashboard-bundle-l-monitor-137")),
