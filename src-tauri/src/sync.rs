@@ -12,6 +12,25 @@ const SOCIAL_MONITOR_KEY: &str = "social_economic";
 const L_MONITOR_KEY: &str = "lukashenko";
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+// Private Supabase fallback IDs occupy this reserved, positive u64 range.
+// Unlike historical GitHub artifacts, late-published missing fallback runs
+// must be imported even if this device has already imported newer runs.
+const STORAGE_FALLBACK_ID_BASE: u64 = 1_000_000_000_000;
+
+fn skip_historical_server_artifact(
+    run_number: i64,
+    artifact_id: u64,
+    latest_imported: Option<i64>,
+    existing_runs: &HashSet<i64>,
+) -> bool {
+    if !latest_imported.is_some_and(|latest| run_number < latest) {
+        return false;
+    }
+    // Only backfill genuinely missing Supabase runs. Keep the original
+    // cheap history skip for GitHub artifacts and already imported runs.
+    artifact_id < STORAGE_FALLBACK_ID_BASE || existing_runs.contains(&run_number)
+}
+
 fn artifact_prefix(monitor_key: &str) -> Result<&'static str, String> {
     match monitor_key {
         SOCIAL_MONITOR_KEY => Ok("dashboard-bundle-social-"),
@@ -370,7 +389,9 @@ pub fn sync_server(
     let mut errors = Vec::new();
 
     for (run_number, artifact) in artifacts {
-        if latest_imported_run.is_some_and(|latest| run_number < latest) {
+        if skip_historical_server_artifact(
+            run_number, artifact.id, latest_imported_run, &existing_runs,
+        ) {
             continue;
         }
         if known_dry_artifacts.get(&run_number) == Some(&artifact.id) {
