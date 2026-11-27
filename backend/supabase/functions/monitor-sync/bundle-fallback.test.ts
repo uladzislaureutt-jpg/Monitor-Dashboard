@@ -1,4 +1,4 @@
-import { strToU8, zipSync } from "npm:fflate@0.8.2";
+import { strToU8, unzipSync, zipSync } from "npm:fflate@0.8.2";
 import {
   fallbackArtifactId, fallbackRunFromId, fallbackPath, isValidFallbackName,
   decodeFallbackZipBase64, validateFallbackZip, sha256Hex,
@@ -71,7 +71,9 @@ Deno.test("traversal paths and wrong monitor key are rejected", () => {
   let rejected = false;
   try { validateFallbackZip(archive, "lukashenko"); } catch { rejected = true; }
   if (!rejected) throw new Error("cross-monitor substitution allowed");
-  const evil = zipSync({ "manifest.json": strToU8("{}"), "../secret.txt": strToU8("a") });
+  const entries = unzipSync(makeBundle());
+  entries["../secret.txt"] = strToU8("unexpected");
+  const evil = zipSync(entries);
   rejected = false;
   try { validateFallbackZip(evil, key); } catch { rejected = true; }
   if (!rejected) throw new Error("traversal ZIP allowed");
