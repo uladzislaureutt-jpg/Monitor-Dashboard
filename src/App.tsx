@@ -349,7 +349,7 @@ export default function App() {
       {view === "report" && <ReportView key={monitorKey} />}
       {view === "analytics" && <AnalyticsView key={monitorKey} data={dashboard} period={period} onPeriodChange={setPeriod} />}
       {view === "sources" && access.profile.isAdmin && <SourcesView key={monitorKey} />}
-      {view === "data" && access.profile.isAdmin && <DataView key={monitorKey} stats={stats} runs={runs.filter((run) => run.monitorKey === monitorKey)} busy={busy} onImport={importBundle} syncSettings={syncSettings} onSaveSyncSettings={saveSyncSettings} onSyncNow={(value) => performSync(value)} syncBusy={syncBusy} syncStatus={syncStatusText} />}
+      {view === "data" && access.profile.isAdmin && <DataView key={monitorKey} monitorKey={monitorKey} stats={stats} runs={runs.filter((run) => run.monitorKey === monitorKey)} busy={busy} onImport={importBundle} syncSettings={syncSettings} onSaveSyncSettings={saveSyncSettings} onSyncNow={(value) => performSync(value)} syncBusy={syncBusy} syncStatus={syncStatusText} />}
     </>}
   </>;
 
