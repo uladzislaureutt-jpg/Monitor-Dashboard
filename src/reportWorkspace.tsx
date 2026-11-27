@@ -20,6 +20,8 @@ type ReportContextValue = ReportState & {
   remove: (documentUid: string) => void;
   move: (documentUid: string, direction: -1 | 1) => void;
   updateText: (documentUid: string, text: string) => void;
+  setTranslatedText: (documentUid: string, translatedText: string) => void;
+  applyExactText: (documentUid: string, text: string, baselineText: string) => void;
   resetText: (documentUid: string) => void;
   useExcerpt: (documentUid: string) => void;
   setManualFullText: (documentUid: string, text: string) => void;
@@ -69,6 +71,10 @@ function normalize(raw: unknown, monitorKey: string): ReportState {
           sourceQuality: normalizeQuality(item),
           sourceOrigin: item.sourceOrigin ?? (normalizeQuality(item) === "full" ? "contract" : "excerpt"),
           editorialText: cleanEditorialText(item.editorialText ?? item.sourceText ?? ""),
+          translatedText: typeof item.translatedText === "string" && item.translatedText.trim()
+            ? cleanEditorialText(item.translatedText) : undefined,
+          compressionBaseText: typeof item.compressionBaseText === "string" && item.compressionBaseText.trim()
+            ? cleanEditorialText(item.compressionBaseText) : undefined,
         }))
     : [];
   const revision = Number.isFinite(Number(value.revision)) ? Math.max(0, Number(value.revision)) : (items.length ? 1 : 0);
@@ -177,12 +183,30 @@ export function ReportProvider({ children }: { children: ReactNode }) {
     persist({ ...state, items: state.items.map((item) => item.documentUid === documentUid ? { ...item, editorialText: stripOmissionMarkers(text) } : item) });
   }, [persist, state]);
 
+  const setTranslatedText = useCallback((documentUid: string, translatedText: string) => {
+    const translated = cleanEditorialText(translatedText);
+    if (!translated) return;
+    persist({ ...state, items: state.items.map((item) =>
+      item.documentUid === documentUid ? { ...item, translatedText: translated, compressionBaseText: undefined, editorialText: translated } : item
+    ) });
+  }, [persist, state]);
+
+  const applyExactText = useCallback((documentUid: string, text: string, baselineText: string) => {
+    persist({ ...state, items: state.items.map((item) =>
+      item.documentUid === documentUid ? {
+        ...item,
+        editorialText: cleanEditorialText(text),
+        compressionBaseText: item.translatedText ? undefined : cleanEditorialText(baselineText),
+      } : item
+    ) });
+  }, [persist, state]);
+
   const resetText = useCallback((documentUid: string) => {
-    persist({ ...state, items: state.items.map((item) => item.documentUid === documentUid ? { ...item, editorialText: cleanEditorialText(item.sourceText) } : item) });
+    persist({ ...state, items: state.items.map((item) => item.documentUid === documentUid ? { ...item, editorialText: cleanEditorialText(item.sourceText), translatedText: undefined, compressionBaseText: undefined } : item) });
   }, [persist, state]);
 
   const useExcerpt = useCallback((documentUid: string) => {
-    persist({ ...state, items: state.items.map((item) => item.documentUid === documentUid ? { ...item, editorialText: cleanEditorialText(item.excerpt?.trim() || item.sourceText) } : item) });
+    persist({ ...state, items: state.items.map((item) => item.documentUid === documentUid ? { ...item, editorialText: cleanEditorialText(item.excerpt?.trim() || item.sourceText), translatedText: undefined, compressionBaseText: undefined } : item) });
   }, [persist, state]);
 
   const setManualFullText = useCallback((documentUid: string, text: string) => {
@@ -202,6 +226,9 @@ export function ReportProvider({ children }: { children: ReactNode }) {
           sourceQuality: "full" as const,
           sourceOrigin: "manual" as const,
           editorialText: untouched ? fullText : item.editorialText,
+          // Replacing the publisher's text invalidates an earlier translation of that source.
+          translatedText: undefined,
+          compressionBaseText: undefined,
         };
       }),
     });
@@ -255,6 +282,8 @@ export function ReportProvider({ children }: { children: ReactNode }) {
     remove,
     move,
     updateText,
+    setTranslatedText,
+    applyExactText,
     resetText,
     useExcerpt,
     setManualFullText,
@@ -262,7 +291,7 @@ export function ReportProvider({ children }: { children: ReactNode }) {
     setDate,
     clear,
     markExported,
-  }), [state, ready, busyDocumentUid, fullTextCount, partialTextCount, missingFullTextCount, pendingCount, contains, toggle, remove, move, updateText, resetText, useExcerpt, setManualFullText, addManualItem, setDate, clear, markExported, monitorKey]);
+  }), [state, ready, busyDocumentUid, fullTextCount, partialTextCount, missingFullTextCount, pendingCount, contains, toggle, remove, move, updateText, setTranslatedText, applyExactText, resetText, useExcerpt, setManualFullText, addManualItem, setDate, clear, markExported, monitorKey]);
   return <ReportContext.Provider value={value}>{children}</ReportContext.Provider>;
 }
 

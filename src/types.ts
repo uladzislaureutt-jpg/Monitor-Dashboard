@@ -328,6 +328,10 @@ export type ReportDraftItem = {
   sourceQuality: "full" | "partial" | "missing";
   sourceOrigin?: "contract" | "manual" | "excerpt";
   editorialText: string;
+  /** Original Russian translation as a stable Exact compression base. Not the publisher's original. */
+  translatedText?: string;
+  /** Stable editing baseline for legacy drafts that predate translatedText. */
+  compressionBaseText?: string;
 };
 
 export type ReportExportItem = {
