@@ -12,6 +12,39 @@ const SOCIAL_MONITOR_KEY: &str = "social_economic";
 const L_MONITOR_KEY: &str = "lukashenko";
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+// Private Supabase fallback IDs occupy this reserved, positive u64 range.
+// Unlike historical GitHub artifacts, late-published missing fallback runs
+// must be imported even if this device has already imported newer runs.
+const STORAGE_FALLBACK_ID_BASE: u64 = 1_000_000_000_000;
+const RECENT_MISSING_GITHUB_RUN_WINDOW: i64 = 8;
+
+/// Reconcile a bounded number of missed GitHub runs even if the operator has
+/// already imported a later run (e.g. #223 while #221–222 are still missing).
+/// Avoid downloading the entire historical archive on every synchronization.
+fn skip_historical_server_artifact(
+    run_number: i64,
+    artifact_id: u64,
+    latest_imported: Option<i64>,
+    latest_remote: Option<i64>,
+    existing_runs: &HashSet<i64>,
+) -> bool {
+    let Some(latest) = latest_imported else { return false };
+    if run_number >= latest {
+        // The current newest run can have an updated artifact under the same
+        // number, so leave its hash check to the importer.
+        return false;
+    }
+    if existing_runs.contains(&run_number) {
+        return true;
+    }
+    if artifact_id >= STORAGE_FALLBACK_ID_BASE {
+        // Preserve previous late-published private Supabase backfill support.
+        return false;
+    }
+    let remote_head = latest_remote.unwrap_or(latest);
+    run_number < remote_head.saturating_sub(RECENT_MISSING_GITHUB_RUN_WINDOW)
+}
+
 fn artifact_prefix(monitor_key: &str) -> Result<&'static str, String> {
     match monitor_key {
         SOCIAL_MONITOR_KEY => Ok("dashboard-bundle-social-"),
@@ -164,12 +197,12 @@ pub fn sync_github(db_path: &Path, repository: &str, token: &str, monitor_key: &
     let mut errors = Vec::new();
 
     for (run_number, artifact) in artifacts {
-        // Older imported runs are immutable history and can be skipped cheaply.
-        // The latest imported run is intentionally rechecked: a production
-        // dashboard bundle may be rebuilt under the same run number, and the
-        // importer can then decide by external run key + bundle hash whether it
-        // is identical or must replace the stored snapshot.
-        if latest_imported_run.is_some_and(|latest| run_number < latest) {
+        // Fill missed GitHub runs from the recent window even when a newer
+        // snapshot was imported first. The older full archive stays cheap.
+        if skip_historical_server_artifact(
+            run_number, artifact.id, latest_imported_run, latest_remote_run,
+            &existing_runs,
+        ) {
             continue;
         }
         if known_dry_artifacts.get(&run_number) == Some(&artifact.id) {
@@ -370,7 +403,10 @@ fn sync_server_github(
     let mut errors = Vec::new();
 
     for (run_number, artifact) in artifacts {
-        if latest_imported_run.is_some_and(|latest| run_number < latest) {
+        if skip_historical_server_artifact(
+            run_number, artifact.id, latest_imported_run, latest_remote_run,
+            &existing_runs,
+        ) {
             continue;
         }
         if known_dry_artifacts.get(&run_number) == Some(&artifact.id) {
@@ -489,6 +525,47 @@ mod tests {
             expired: false,
             archive_download_url: format!("https://example.test/{id}.zip"),
         }
+    }
+
+    #[test]
+    fn run_221_222_missing_after_223_are_backfilled_from_github() {
+        let existing = HashSet::from([220_i64, 223_i64, 224_i64]);
+        for run in [221, 222] {
+            assert!(!skip_historical_server_artifact(
+                run, 15_000_000_000 + run as u64, Some(224), Some(224),
+                &existing,
+            ));
+        }
+        // Downloading all earlier history would make startup expensive.
+        assert!(skip_historical_server_artifact(
+            210, 15_000_000_210, Some(224), Some(224), &existing,
+        ));
+        // Known runs are not re-downloaded unless they are the latest.
+        assert!(skip_historical_server_artifact(
+            220, 15_000_000_220, Some(224), Some(224), &existing,
+        ));
+        assert!(!skip_historical_server_artifact(
+            224, 15_000_000_224, Some(224), Some(224), &existing,
+        ));
+    }
+
+    #[test]
+    fn private_supabase_late_publish_remains_backfillable() {
+        let existing = HashSet::from([222_i64, 224_i64]);
+        assert!(!skip_historical_server_artifact(
+            223, STORAGE_FALLBACK_ID_BASE + 223, Some(224), Some(224),
+            &existing,
+        ));
+        assert!(skip_historical_server_artifact(
+            222, STORAGE_FALLBACK_ID_BASE + 222, Some(224), Some(224),
+            &existing,
+        ));
+        // Much older missing GitHub runs remain excluded; Supabase objects
+        // preserve the special late-publication behaviour.
+        assert!(!skip_historical_server_artifact(
+            180, STORAGE_FALLBACK_ID_BASE + 180, Some(224), Some(224),
+            &existing,
+        ));
     }
 
     #[test]

@@ -1205,6 +1205,58 @@ mod identity_integration_tests {
  }
 
  #[test]
+ fn reconciliation_rebinds_aliases_after_an_older_client_already_withdrew_the_duplicate() {
+  let dir=test_directory("monitor-orphan-alias");let path=dir.join("test.sqlite");crate::db::initialize_database(&path).unwrap();
+  let mut winner=bundle(true,"lapi_primary","https://example.com/primary","Preview","SNIPPET");
+  winner["manifest"]["run"]["collector_run_id"]=json!("primary-delivery");import(&path,winner.clone());
+  let mut old=bundle(true,"lapi_old_copy","https://example.com/old-copy","A full text retained from the old delivery. ".repeat(100).as_str(),"FULL_TEXT");
+  old["manifest"]["run"]["collector_run_id"]=json!("old-delivery");import(&path,old.clone());
+  old["publications"]=json!([]);old["full_texts"]=json!([]);old["run_metrics"]["final_publications"]=json!(0);old["run_metrics"]["withdrawn_document_ids"]=json!(["lapi_old_copy"]);import(&path,old);
+  let conn=crate::db::open_database(&path).unwrap();assert_eq!(conn.query_row("SELECT count(*) FROM monitor_items",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+  conn.execute("INSERT INTO moderation_flags VALUES('lukashenko','lapi_old_copy','editor','Editor','2026-11-25')",[]).unwrap();
+  winner["manifest"]["run"]["collector_run_id"]=json!("primary-delivery");winner["publications"][0]["provenance"]["url_aliases"]=json!(["https://example.com/old-copy"]);winner["publications"][0]["provenance"]["superseded_document_ids"]=json!(["lapi_old_copy"]);
+  import(&path,winner.clone());import(&path,winner);
+  assert_eq!(crate::identity::stable_uid(&conn,"lapi_old_copy").unwrap(),"lapi_primary");
+  assert_eq!(conn.query_row("SELECT count(*) FROM monitor_items",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+  assert_eq!(conn.query_row("SELECT count(*) FROM moderation_flags WHERE document_uid='lapi_primary'",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+  let mut again=bundle(true,"lapi_later_revision","https://example.com/old-copy","Preview","SNIPPET");again["manifest"]["run"]["collector_run_id"]=json!("later-delivery");import(&path,again);
+  assert_eq!(conn.query_row("SELECT count(*) FROM monitor_items",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+  drop(conn);let _=std::fs::remove_dir_all(dir);
+ }
+
+ #[test]
+ fn tagesspiegel_migration_merges_repeated_helper_runs_and_keeps_liveblog_moderation_and_review_lookup() {
+  let dir=test_directory("monitor-tagesspiegel-identity");let path=dir.join("test.sqlite");crate::db::initialize_database(&path).unwrap();
+  let conn=crate::db::open_database(&path).unwrap();
+  let body="The full article must survive consolidation. ".repeat(100);
+  for (i,slug) in ["dpa-selenskyj-spottet","bin-ich-ein-koffer","selenskyj-flug-einladung"].iter().enumerate(){
+   conn.execute("DELETE FROM document_url_aliases WHERE url_key LIKE 'edition:tagesspiegel.de:%'",[]).unwrap();
+   let uid=format!("lapi_tag_{i}");let mut v=bundle(true,&uid,&format!("https://tagesspiegel.de/internationales/{slug}-16322662.html"),if i==2{&body}else{"Preview"},if i==2{"FULL_TEXT"}else{"SNIPPET"});
+   v["manifest"]["run"]["collector_run_id"]=json!(format!("tag-run-{i}"));v["manifest"]["run"]["collector_number"]=json!(7+i);import(&path,v);
+  }
+  assert_eq!(conn.query_row("SELECT count(*) FROM monitor_items",[],|r|r.get::<_,i64>(0)).unwrap(),3);
+  conn.execute("INSERT INTO moderation_flags VALUES('lukashenko','lapi_tag_1','editor','Editor','2026-11-25')",[]).unwrap();
+  conn.execute("INSERT INTO moderation_exclusions VALUES('lukashenko','lapi_tag_2','Editor','2026-11-25')",[]).unwrap();
+  let mut blog=bundle(false,"gh-liveblog","https://tagesspiegel.de/internationales/liveblog/selenskyj-16206302.html","A separate live news chronology","SNIPPET");blog["manifest"]["run"]["run_number"]=json!(166);import(&path,blog);
+  conn.execute("DELETE FROM schema_migrations WHERE version=10",[]).unwrap();
+  for _ in 0..2{crate::db::initialize_database(&path).unwrap();}
+  assert_eq!(conn.query_row("SELECT count(*) FROM monitor_items",[],|r|r.get::<_,i64>(0)).unwrap(),2);
+  assert_eq!(crate::identity::stable_uid(&conn,"lapi_tag_2").unwrap(),"lapi_tag_0");
+  assert_eq!(conn.query_row("SELECT full_text FROM documents WHERE document_uid='lapi_tag_0'",[],|r|r.get::<_,String>(0)).unwrap(),body);
+  assert_eq!(conn.query_row("SELECT count(*) FROM moderation_flags WHERE document_uid='lapi_tag_0'",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+  assert_eq!(conn.query_row("SELECT count(*) FROM moderation_exclusions WHERE document_uid='lapi_tag_0'",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+  conn.execute("DELETE FROM moderation_exclusions",[]).unwrap();
+  let selected=crate::db::editorial_source(&path,"lukashenko","lapi_tag_2").unwrap().unwrap();assert_eq!(selected.document_uid,"lapi_tag_0");
+  assert_eq!(conn.query_row("SELECT count(*) FROM runs",[],|r|r.get::<_,i64>(0)).unwrap(),4);
+  let mut refreshed=bundle(true,"lapi_new_slug","https://www.tagesspiegel.de/politik/updated-headline-16322662.html","Shorter preview","SNIPPET");
+  refreshed["manifest"]["run"]["collector_run_id"]=json!("second-helper");refreshed["manifest"]["run"]["assistant_id"]=json!(2);import(&path,refreshed);
+  assert_eq!(conn.query_row("SELECT count(*) FROM monitor_items",[],|r|r.get::<_,i64>(0)).unwrap(),2);
+  assert_eq!(crate::identity::stable_uid(&conn,"lapi_new_slug").unwrap(),"lapi_tag_0");
+  assert_eq!(conn.query_row("SELECT full_text FROM documents WHERE document_uid='lapi_tag_0'",[],|r|r.get::<_,String>(0)).unwrap(),body);
+  drop(conn);let _=std::fs::remove_dir_all(dir);
+ }
+
+ #[test]
  fn assistant_story_collapses_overview_cards_and_keeps_archive_links() {
      let dir = test_directory("monitor-assistant-story");
      let path = dir.join("dashboard.sqlite");

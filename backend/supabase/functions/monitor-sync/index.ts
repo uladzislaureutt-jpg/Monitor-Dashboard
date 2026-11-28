@@ -1,6 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { filterLMonitorBundle } from "./l-monitor-bundle.ts";
+import {
+  FALLBACK_BUCKET, FALLBACK_MAX_BYTES, FALLBACK_ID_BASE, fallbackArtifactId,
+  fallbackRunFromId, fallbackPath, isValidFallbackName,
+  decodeFallbackZipBase64, validateFallbackZip, sha256Hex,
+} from "./bundle-fallback.ts";
 
 const headers = {
   "Access-Control-Allow-Origin": "*",
@@ -137,47 +142,113 @@ Deno.serve(async (req: Request) => {
   }
 
   const token = Deno.env.get(cfg.secret) ?? "";
-  if (!token) return json({ error: "SYNC_TOKEN_NOT_CONFIGURED", monitor_key: monitorKey }, 503);
-
   const action = String(payload?.action ?? "list");
+
+  // An administrator can publish an already-built production ZIP when
+  // GitHub Actions billing blocks the usual dashboard export. The bucket
+  // remains private: only this authenticated Edge Function uses service-role.
+  if (action === "publish") {
+    if (!profile.is_admin || monitorKey !== "social_economic") {
+      return json({ error: "PUBLISH_FORBIDDEN" }, 403);
+    }
+    let bytes: Uint8Array;
+    let checked: { run: number; publications: number };
+    try {
+      bytes = decodeFallbackZipBase64(payload?.zip_base64);
+      checked = validateFallbackZip(bytes, monitorKey);
+    } catch (error) {
+      return json({ error: "INVALID_PUBLISHED_BUNDLE", detail: String(error) }, 400);
+    }
+    const run = checked.run;
+    const expectedRun = Number(payload?.run_number ?? run);
+    if (expectedRun !== run) return json({ error: "PUBLISH_RUN_MISMATCH" }, 400);
+    const objectPath = fallbackPath(monitorKey, cfg.prefix, run);
+    const digest = await sha256Hex(bytes);
+    const bucket = admin.storage.from(FALLBACK_BUCKET);
+    const { data: existing, error: existingError } = await bucket.download(objectPath);
+    if (existing) {
+      const existingBytes = new Uint8Array(await existing.arrayBuffer());
+      return (await sha256Hex(existingBytes)) === digest
+        ? json({ ok: true, status: "already_published", run_number: run, publications: checked.publications, sha256: digest })
+        : json({ error: "RUN_ALREADY_PUBLISHED", run_number: run }, 409);
+    }
+    if (existingError && !["404", "NoSuchKey", "not_found"].includes(String((existingError as any).statusCode || "")) &&
+        !/not found|does not exist|object not found/i.test(String(existingError.message || ""))) {
+      return json({ error: "FALLBACK_STORAGE_UNAVAILABLE" }, 502);
+    }
+    const { error: uploadError } = await bucket.upload(objectPath, bytes, {
+      contentType: "application/zip", upsert: false, cacheControl: "300",
+    });
+    if (uploadError) {
+      const status = Number((uploadError as any).statusCode || 0);
+      return json({ error: status === 409 ? "RUN_ALREADY_PUBLISHED" : "FALLBACK_UPLOAD_FAILED" },
+        status === 409 ? 409 : 502);
+    }
+    return json({ ok: true, status: "published", run_number: run,
+      publications: checked.publications, sha256: digest, size_in_bytes: bytes.byteLength });
+  }
 
   if (action === "list") {
     const byRun = new Map<number, any>();
-    for (let page = 1; page <= 10; page += 1) {
-      const response = await fetch(
-        `https://api.github.com/repos/${cfg.repo}/actions/artifacts?per_page=100&page=${page}`,
-        { headers: githubHeaders(token) },
-      );
-      if (!response.ok) {
-        const body = (await response.text()).slice(0, 400);
-        return json({ error: "GITHUB_LIST_FAILED", status: response.status, detail: body }, 502);
-      }
-      const body = await response.json();
-      const pageArtifacts = Array.isArray(body?.artifacts) ? body.artifacts : [];
-      for (const artifact of pageArtifacts) {
-        if (artifact?.expired) continue;
-        const run = parseRun(String(artifact?.name ?? ""), cfg.prefix);
-        if (run == null) continue;
-        const id = Number(artifact?.id ?? 0);
-        const existing = byRun.get(run);
-        if (!existing || id > Number(existing.id ?? 0)) {
-          byRun.set(run, {
-            id,
-            name: String(artifact.name),
-            run_number: run,
-            size_in_bytes: Number(artifact?.size_in_bytes ?? 0),
-          });
+    let githubError = "";
+    let storageError = "";
+    if (token) {
+      try {
+        for (let page = 1; page <= 10; page += 1) {
+          const response = await fetch(
+            `https://api.github.com/repos/${cfg.repo}/actions/artifacts?per_page=100&page=${page}`,
+            { headers: githubHeaders(token) },
+          );
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const body = await response.json();
+          const pageArtifacts = Array.isArray(body?.artifacts) ? body.artifacts : [];
+          for (const artifact of pageArtifacts) {
+            if (artifact?.expired) continue;
+            const run = parseRun(String(artifact?.name ?? ""), cfg.prefix);
+            if (run == null) continue;
+            const id = Number(artifact?.id ?? 0);
+            if (!Number.isSafeInteger(id) || id <= 0 || id >= FALLBACK_ID_BASE) continue;
+            const existing = byRun.get(run);
+            if (!existing || (existing.origin === "github" && id > existing.id)) {
+              byRun.set(run, {
+                id, name: String(artifact.name), run_number: run,
+                size_in_bytes: Number(artifact?.size_in_bytes ?? 0),
+                origin: "github",
+              });
+            }
+          }
+          if (pageArtifacts.length < 100) break;
         }
+      } catch (error) { githubError = String(error); }
+    } else githubError = "GITHUB_SYNC_TOKEN_NOT_CONFIGURED";
+
+    // The fallback is visible to all already-authorized Monitor users.
+    // No Storage URL, signing key or raw object path is returned to clients.
+    if (monitorKey === "social_economic") {
+      const { data: stored, error } = await admin.storage.from(FALLBACK_BUCKET)
+        .list(monitorKey, { limit: 1000, sortBy: { column: "created_at", order: "desc" } });
+      if (error) storageError = String(error.message || "storage list failed");
+      else for (const item of stored ?? []) {
+        const run = isValidFallbackName(String(item.name || ""), cfg.prefix);
+        if (run == null || byRun.has(run)) continue; // original GitHub bundle wins
+        byRun.set(run, {
+          id: fallbackArtifactId(run),
+          name: cfg.prefix + run, run_number: run,
+          size_in_bytes: Number(item.metadata?.size ?? 0),
+          origin: "supabase",
+        });
       }
-      if (pageArtifacts.length < 100) break;
     }
+
+    if (!byRun.size && githubError) {
+      return json({ error: "BUNDLE_LIST_UNAVAILABLE", github: githubError.slice(0, 160),
+        storage: storageError.slice(0, 160) }, 502);
+    }
+    if (!byRun.size && storageError) return json({ error: "FALLBACK_LIST_FAILED" }, 502);
     const artifacts = [...byRun.values()].sort((a, b) => a.run_number - b.run_number);
-    return json({
-      ok: true,
-      monitor_key: monitorKey,
-      artifacts,
+    return json({ ok: true, monitor_key: monitorKey, artifacts,
       latest_remote_run: artifacts.length ? artifacts[artifacts.length - 1].run_number : null,
-    });
+      github_degraded: Boolean(githubError), supabase_degraded: Boolean(storageError) });
   }
 
   if (action === "download") {
@@ -185,6 +256,27 @@ Deno.serve(async (req: Request) => {
     if (!Number.isSafeInteger(artifactId) || artifactId <= 0) {
       return json({ error: "INVALID_ARTIFACT_ID" }, 400);
     }
+    if (artifactId >= FALLBACK_ID_BASE) {
+      const run = fallbackRunFromId(artifactId);
+      if (monitorKey !== "social_economic" || run == null) {
+        return json({ error: "INVALID_FALLBACK_ARTIFACT" }, 400);
+      }
+      const path = fallbackPath(monitorKey, cfg.prefix, run);
+      const { data, error } = await admin.storage.from(FALLBACK_BUCKET).download(path);
+      if (error || !data) return json({ error: "FALLBACK_DOWNLOAD_FAILED" }, 502);
+      const bytes = new Uint8Array(await data.arrayBuffer());
+      if (bytes.byteLength > FALLBACK_MAX_BYTES) return json({ error: "ARTIFACT_TOO_LARGE" }, 413);
+      try {
+        const verified = validateFallbackZip(bytes, monitorKey);
+        if (verified.run !== run) return json({ error: "FALLBACK_RUN_MISMATCH" }, 409);
+      } catch {
+        return json({ error: "FALLBACK_BUNDLE_INVALID" }, 502);
+      }
+      return json({ ok: true, monitor_key: monitorKey, artifact_id: artifactId,
+        run_number: run, name: cfg.prefix + run,
+        zip_base64: bytesToBase64(bytes), size_in_bytes: bytes.byteLength });
+    }
+    if (!token) return json({ error: "SYNC_TOKEN_NOT_CONFIGURED" }, 503);
 
     const metaResponse = await fetch(
       `https://api.github.com/repos/${cfg.repo}/actions/artifacts/${artifactId}`,

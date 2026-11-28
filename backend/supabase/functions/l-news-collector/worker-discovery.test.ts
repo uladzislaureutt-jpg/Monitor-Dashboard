@@ -3,6 +3,21 @@ import {discoveryJobKey} from './discovery.ts';
 import type {Job,Run,Runtime} from './providers.ts';
 const equal=(a:unknown,b:unknown)=>{if(JSON.stringify(a)!==JSON.stringify(b))throw new Error(`Expected ${JSON.stringify(b)}, got ${JSON.stringify(a)}`);};
 const base={id:'r',assistant_id:2,status:'processing',from_at:'2026-11-25T00:00:00Z',to_at:'2026-11-26T02:00:00Z',settings:{countries:['DE','PL','RU'],candidate_limit:1200,thenews_per_run:70,thenews_pages_per_query:8}} as Run;
+Deno.test('an article already delivered by GitHub stays known when the API discovers a renamed Tagesspiegel URL',async()=>{
+ const original=globalThis.fetch;let editionLookups=0,inserted=0;
+ const rt={secret:()=> 'fixture',db:{rpc:(name:string)=>({data:name.includes('rate_slot')?0:17}),from:(table:string)=>{
+  let edition=false;
+  const q:any={select:()=>q,eq:()=>q,order:()=>q,limit:()=>q,contains:(_key:string,values:string[])=>{equal(values,['edition:tagesspiegel.de:16322662']);edition=true;editionLookups++;return q;},
+   range:()=>({data:[{domain:'tagesspiegel.de',country:'DE'}]}),single:()=>({data:{...base,settings:{...base.settings,currents_per_run:4}}}),
+   maybeSingle:()=>({data:table==='l_news_known_urls'&&edition?{document_uid:'github-original',origin:'github_bundle'}:null}),
+   update:()=>q,upsert:()=>q,insert:()=>{inserted++;throw new Error('Known article must not create a new item');},
+   then:(resolve:any)=>resolve({data:table==='l_news_observations'?[{id:1}]:[],count:0}),
+  };return q;
+ }}} as Runtime;
+ globalThis.fetch=async()=>Response.json({news:[{id:'provider-revision',title:'Lukaschenko',url:'https://tagesspiegel.de/politik/renamed-headline-16322662.html',published:'2026-11-25T12:00:00Z'}]});
+ try{const result=await workOne(rt,{id:1,run_id:'r',kind:'currents',payload:{language:'de',page:1}} as Job);equal(result.known,1);equal(result.new_to_index,0);equal(editionLookups,1);equal(inserted,0);}
+ finally{globalThis.fetch=original;}
+});
 
 function fixture(run:Run,sources:any[]=[],initialJobs=1){
  const scheduled:any[]=[],records:any[]=[];

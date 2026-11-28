@@ -13,7 +13,7 @@ const pending = new Map<string, Promise<DashboardOverview>>();
 const generations = new Map<string, number>();
 
 const keyFor = (monitor: string, period: PeriodDays) => `${monitor}:${period ?? "all"}`;
-const storageKey = (key: string) => PREFIX + key;
+const storageKey = (key: string) => (key.startsWith("lukashenko:") ? "monitor-dashboard-overview-v2:" : PREFIX) + key;
 
 export function peekOverview(monitor: string, period: PeriodDays): Snapshot | null {
   const key = keyFor(monitor, period);
@@ -51,7 +51,7 @@ export function invalidateOverview(monitor: string) {
   generations.set(monitor, (generations.get(monitor) || 0) + 1);
   for (const key of [...memory.keys()]) if (key.startsWith(monitor + ":")) memory.delete(key);
   try {
-    for (const key of Object.keys(localStorage)) if (key.startsWith(PREFIX + monitor + ":")) localStorage.removeItem(key);
+    for (const key of Object.keys(localStorage)) if (key.startsWith(storageKey(monitor + ":"))) localStorage.removeItem(key);
   } catch { /* local cache is optional */ }
 }
 

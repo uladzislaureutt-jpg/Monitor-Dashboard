@@ -1,5 +1,5 @@
 import {unzipSync,strFromU8} from 'npm:fflate@0.8.2';
-import {urlKey} from './core.ts';
+import {urlKey,publisherArticleKey} from './core.ts';
 import {Runtime,must,saveState} from './providers.ts';
 
 export function githubPublications(bytes:Uint8Array){
@@ -14,7 +14,8 @@ async function registerKnown(rt:Runtime,rows:any[]){
  const safe=[];for(const row of rows.slice(0,1000)){try{
   const url=urlKey(String(row.url||row.canonical_url||''));const uid=String(row.document_uid||row.document_id||'');
   if(!uid||uid.length>160)continue;
-  safe.push({canonical_url:url,document_uid:uid,origin:'github_bundle',content_level:String(row.content_level||'METADATA').slice(0,24),aliases:[],observed_at:new Date().toISOString()});
+  const edition=publisherArticleKey(url);
+  safe.push({canonical_url:url,document_uid:uid,origin:'github_bundle',content_level:String(row.content_level||'METADATA').slice(0,24),aliases:edition?[edition]:[],observed_at:new Date().toISOString()});
  }catch{/* skip malformed URL */}}
  if(!safe.length)return 0;
  // Preserve the identity first recorded centrally; all raw GitHub identities are

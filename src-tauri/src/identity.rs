@@ -38,11 +38,13 @@ pub fn l_monitor_aliases(urls: &[String]) -> Vec<String> {
     static PRAVDA: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^/(?:(?:rus|eng|ukr)/)?(?:news|articles|columns|interview)/[0-9]{4}/[0-9]{2}/[0-9]{2}/([0-9]{6,10})$").unwrap());
     static RBC: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^/(?:(?:rus|ukr|eng)/)?(news/[^/]+-[0-9]{10}\.html)(?:/amp)?$").unwrap());
     static FONTANKA: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^/\d{4}/\d{2}/\d{2}/\d+/comments$").unwrap());
+    static TAGESSPIEGEL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)-([0-9]{6,12})\.html$").unwrap());
     let mut aliases = Vec::new();
     for value in urls {
         let Ok(mut url) = Url::parse(&url_key(value)) else { continue };
         let path = url.path();
         let edition = match url.host_str() {
+            Some("tagesspiegel.de") if !path.to_lowercase().contains("/liveblog/") => TAGESSPIEGEL.captures(path).map(|m| format!("edition:tagesspiegel.de:{}", &m[1])),
             Some("tsn.ua") => TSN.captures(path).map(|m| format!("edition:tsn.ua:{}", &m[1])),
             Some("pravda.com.ua") => PRAVDA.captures(path).map(|m| format!("edition:pravda.com.ua:{}", &m[1])),
             Some("rbc.ua") => RBC.captures(path).map(|m| format!("edition:https://rbc.ua/{}", &m[1])),
@@ -108,7 +110,8 @@ pub fn reconcile_l_monitor_identity(conn: &Connection) -> Result<(), String> {
         let eligible = members.iter().all(|index| rows[*index].8);
         let both_feeds = indexes.iter().any(|index| !rows[*index].5) && indexes.iter().any(|index| rows[*index].6);
         let winner = members[0];
-        if eligible && both_feeds {
+        let verified_article = key.starts_with("edition:tagesspiegel.de:");
+        if eligible && (both_feeds || verified_article) {
             for &index in &members[1..] {
                 let (old_item, old_document, old_uid, old_url, ..) = &rows[index];
                 merge_document(conn, rows[winner].0, rows[winner].1, *old_item, *old_document, old_uid, old_url)?;
@@ -190,8 +193,9 @@ pub fn merge_collector_duplicates(
             continue;
         }
         let row: Option<(i64, i64, String, String)> = conn.query_row(
-            r#"SELECT mi.id,d.id,d.url,d.document_uid FROM monitor_items mi JOIN documents d ON mi.document_id=d.id
-               WHERE mi.monitor_id=?1 AND d.id<>?2 AND
+            r#"SELECT COALESCE(mi.id,0),d.id,d.url,d.document_uid FROM documents d
+               LEFT JOIN monitor_items mi ON mi.document_id=d.id AND mi.monitor_id=?1
+               WHERE d.id<>?2 AND
                  (d.document_uid=?3 OR EXISTS(SELECT 1 FROM document_uid_aliases a WHERE a.alias_uid=?3 AND a.document_id=d.id))
                  AND NOT EXISTS (SELECT 1 FROM monitor_items other WHERE other.document_id=d.id AND other.monitor_id<>?1)"#,
             params![monitor_id, document_id, uid],

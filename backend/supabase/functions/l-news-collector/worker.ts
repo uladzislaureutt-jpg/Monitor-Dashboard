@@ -1,4 +1,4 @@
-import {Candidate,Source,batches,buildCard,contentLevel,containsName,domainOf,publisherArticleKey,relevant,samePublisherHeadlineKey,sha,sourceFor,urlKey,validDate} from './core.ts';
+import {Candidate,Source,batches,buildCard,contentLevel,containsName,domainOf,publisherArticleKey,publisherCopyKey,relevant,samePublisherHeadlineKey,sha,sourceFor,urlKey,validDate} from './core.ts';
 import {Job,Run,Runtime,must,newscatcherSubscription,perigonLimits,readPages,searchNewscatcher,searchPerigon} from './providers.ts';
 import {searchGdelt} from './gdelt.ts';
 import {recoverArticle} from './extraction.ts';
@@ -67,7 +67,8 @@ async function ingest(rt:Runtime,job:Job,run:Run,candidates:Candidate[],sources:
   if(!alias&&edition)alias=must(await rt.db.from('l_news_url_aliases').select('item_id').eq('alias',edition).maybeSingle());
   let item=alias?must(await rt.db.from('l_news_items').select('*').eq('id',alias.item_id).maybeSingle()):must(await rt.db.from('l_news_items').select('*').eq('canonical_url',key).maybeSingle());
   if(!item){
-   const known=must(await rt.db.from('l_news_known_urls').select('*').eq('canonical_url',key).maybeSingle());
+   let known=must(await rt.db.from('l_news_known_urls').select('*').eq('canonical_url',key).maybeSingle());
+   if(!known&&edition)known=must(await rt.db.from('l_news_known_urls').select('*').eq('origin','github_bundle').contains('aliases',[edition]).order('observed_at').limit(1).maybeSingle());
    if(known&&String(known.origin).startsWith('github')){
     const inserted=must(await rt.db.from('l_news_observations').upsert(
      {...observation,disposition:'already_reported_github'},
@@ -120,7 +121,8 @@ async function article(rt:Runtime,job:Job,run:Run,sources:Source[]){
  if(!published||!rel.pass){const reason=!published?'unconfirmed_or_outside_publication_window':rel.reason;must(await rt.db.from('l_news_items').update({state:'rejected',reason,updated_at:new Date().toISOString()}).eq('id',item.id));return {rejected:true,reason};}
  c.published_at=published;
  const canonical=urlKey(c.identity_url||c.canonical||c.url);
- const edition=publisherArticleKey(c.url)??(c.identity_url?`edition:${canonical}`:null);
+ const articleEdition=publisherArticleKey(c.url);
+ const edition=await publisherCopyKey(source.domain,c.body,published,level)??articleEdition??(c.identity_url?`edition:${canonical}`:null);
  const owner=edition?item.id:must(await rt.db.rpc('l_news_claim_alias',{p_alias:canonical,p_item:item.id}));
  if(owner!==item.id){
   must(await rt.db.from('l_news_url_aliases').update({item_id:owner}).eq('item_id',item.id));
@@ -158,7 +160,7 @@ async function article(rt:Runtime,job:Job,run:Run,sources:Source[]){
  if(publicationEdition){
   const result=must(await rt.db.rpc('l_news_publish_edition',{
    p_key:publicationEdition,p_item:item.id,p_run:run.id,p_canonical:canonical,
-   p_aliases:[...new Set([canonical,item.canonical_url,...(c.aliases??[]).map(urlKey)])],
+   p_aliases:[...new Set([canonical,item.canonical_url,...(c.aliases??[]).map(urlKey),...(articleEdition&&articleEdition!==publicationEdition?[articleEdition]:[])])],
    p_card:card,p_full_text:full,p_level:level,p_published:published,
   }));
   return result?{ready:true,level,translation:translated.route,extraction:strategy}:{duplicate:true};

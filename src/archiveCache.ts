@@ -5,8 +5,8 @@ type Entry<T> = { at: number; value: T };
 // Archive caches are explicitly invalidated on imported data and moderation.
 const TTL_MS = 2 * 60 * 60_000;
 const MAX_JSON = 450_000;
-// Ignore old L-Monitor country/source snapshots after the geography fix.
-const prefix = (monitor: string) => monitor === "lukashenko" ? "monitor-archive-v3:" : "monitor-archive-v2:";
+// Ignore snapshots created before publisher-identity reconciliation.
+const prefix = (monitor: string) => monitor === "lukashenko" ? "monitor-archive-v4:" : "monitor-archive-v2:";
 const facets = new Map<string, Entry<ArchiveFacets>>();
 const pages = new Map<string, Entry<ArchivePage>>();
 const sources = new Map<string, Entry<SourceSummary[]>>();
