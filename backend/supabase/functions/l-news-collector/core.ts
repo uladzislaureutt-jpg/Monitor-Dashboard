@@ -42,10 +42,16 @@ export function domainOf(value:string):string {try{return new URL(value).hostnam
 export function publisherArticleKey(value: string): string | null {
  const domain = domainOf(value);
  const host=(site:string)=>domain===site||domain.endsWith('.'+site);
- const exact=['tsn.ua','pravda.com.ua','rbc.ua','iz.ru','politika.rs','rp.pl'];
+ const exact=['tsn.ua','pravda.com.ua','rbc.ua','iz.ru','politika.rs','rp.pl','tagesspiegel.de'];
  const multiHost=['fakti.bg','novosti.rs','censor.net','diena.lt','reuters.com','yahoo.com','obozrevatel.com'];
  if(!exact.includes(domain)&&!multiHost.some(host))return null;
  const path = new URL(value).pathname.replace(/\/+$/, '');
+ if(domain==='tagesspiegel.de'){
+  // Article slugs change when headlines are edited. Liveblogs contain multiple
+  // dated entries and must not be collapsed using the container's article ID.
+  const id=!/\/liveblog\//i.test(path)?path.match(/-([0-9]{6,12})\.html$/i)?.[1]:null;
+  return id?'edition:tagesspiegel.de:'+id:null;
+ }
  if(domain==='rp.pl'){
   const id=path.match(/\/art([0-9]{6,12})(?:-|$)/i)?.[1];
   return id?'edition:rp.pl:'+id:null;

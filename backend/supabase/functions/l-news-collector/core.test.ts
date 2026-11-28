@@ -6,6 +6,14 @@ import {githubPublications} from './github.ts';
 import {zipSync,strToU8} from 'npm:fflate@0.8.2';
 function assert(x:unknown):asserts x{if(!x)throw new Error('assertion failed');}
 function equal(a:unknown,b:unknown){assert(JSON.stringify(a)===JSON.stringify(b));}
+Deno.test('Tagesspiegel headline and section changes preserve article identity without merging liveblogs or other media',()=>{
+ const urls=['https://www.tagesspiegel.de/internationales/dpa-selenskyj-spottet-uber-lukaschenkos-begleitschutz-angebot-16322662.html','https://tagesspiegel.de/politik/bin-ich-ein-koffer-oder-was-16322662.html?utm_source=feed'];
+ for(const url of urls)equal(publisherArticleKey(url),'edition:tagesspiegel.de:16322662');
+ assert(publisherArticleKey('https://tagesspiegel.de/internationales/anderer-artikel-16333991.html')!==publisherArticleKey(urls[0]));
+ equal(publisherArticleKey('https://tagesspiegel.de/internationales/liveblog/selenskyj-16322662.html'),null);
+ equal(publisherArticleKey('https://n-tv.de/politik/selenskyj-16322662.html'),null);
+ equal(publisherArticleKey('https://tagesspiegel.de.evil.example/a-16322662.html'),null);
+});
 const c={url:'https://example.com/article',title:'Analysis of regional diplomacy',lead:'',body:'',published_at:'2026-11-19T10:00:00Z',language:'en',country:'GB',domain:'example.com',provider:'test',provider_id:'1'};
 Deno.test('requested geography and multilingual query',()=>{
  equal(new Set(COUNTRIES).size,72);

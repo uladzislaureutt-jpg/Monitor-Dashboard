@@ -67,7 +67,8 @@ async function ingest(rt:Runtime,job:Job,run:Run,candidates:Candidate[],sources:
   if(!alias&&edition)alias=must(await rt.db.from('l_news_url_aliases').select('item_id').eq('alias',edition).maybeSingle());
   let item=alias?must(await rt.db.from('l_news_items').select('*').eq('id',alias.item_id).maybeSingle()):must(await rt.db.from('l_news_items').select('*').eq('canonical_url',key).maybeSingle());
   if(!item){
-   const known=must(await rt.db.from('l_news_known_urls').select('*').eq('canonical_url',key).maybeSingle());
+   let known=must(await rt.db.from('l_news_known_urls').select('*').eq('canonical_url',key).maybeSingle());
+   if(!known&&edition)known=must(await rt.db.from('l_news_known_urls').select('*').eq('origin','github_bundle').contains('aliases',[edition]).order('observed_at').limit(1).maybeSingle());
    if(known&&String(known.origin).startsWith('github')){
     const inserted=must(await rt.db.from('l_news_observations').upsert(
      {...observation,disposition:'already_reported_github'},

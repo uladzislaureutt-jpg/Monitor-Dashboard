@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AdminSnapshot, DatabaseStats, RunSummary, SyncSettings } from "../types";
 import { useI18n } from "../i18n";
 import { useMonitorAccess } from "../access";
 import { LNewsAssistant } from "../components/LNewsAssistant";
 import { desktopApi } from "../api";
 import { AdminNotebook } from "../components/AdminNotebook";
-import { adminAccessAction, getAdminSnapshot, loadWorkroomConfig } from "../workroom";
+import { adminAccessAction, getAdminSnapshot, loadWorkroomConfig, publishDashboardFallback } from "../workroom";
 
 export function DataView({
   monitorKey,
@@ -34,6 +34,10 @@ export function DataView({
   const access = useMonitorAccess();
   const [adminSnapshot, setAdminSnapshot] = useState<AdminSnapshot | null>(null);
   const [adminBusy, setAdminBusy] = useState(false);
+  const [publishBusy, setPublishBusy] = useState(false);
+  const [publishMessage, setPublishMessage] = useState("");
+  const [publishError, setPublishError] = useState("");
+  const publishFileRef = useRef<HTMLInputElement | null>(null);
   const [adminError, setAdminError] = useState("");
   const [performanceText, setPerformanceText] = useState<string | null>(null);
   const [performanceError, setPerformanceError] = useState("");
@@ -102,6 +106,23 @@ export function DataView({
       await refreshAdmin();
     } catch (reason) { setAdminError(String(reason)); setAdminBusy(false); }
   }
+  async function publishSelectedBundle(file: File) {
+    setPublishBusy(true);
+    setPublishMessage("");
+    setPublishError("");
+    try {
+      const result = await publishDashboardFallback(loadWorkroomConfig(), access.session, file);
+      setPublishMessage(result.status === "already_published"
+        ? (be ? `Запуск №${result.runNumber} ужо апублікаваны ў Supabase.`
+            : `Запуск №${result.runNumber} уже опубликован в Supabase.`)
+        : (be ? `Запуск №${result.runNumber} апублікаваны для ўсіх аператараў. Публікацый: ${result.publications}.`
+            : `Запуск №${result.runNumber} опубликован для всех операторов. Публикаций: ${result.publications}.`));
+    } catch (reason) {
+      setPublishError(String(reason));
+    } finally {
+      setPublishBusy(false);
+    }
+  }
   return <div className="view-stack">
     {access.profile.isAdmin && <section className="panel admin-access-panel">
       <div className="panel-head"><div><h3>{atx.title}</h3><p>{be ? "Одобрение новых операторов, роли и режим технических работ." : "Одобрение новых операторов, роли и режим технических работ."}</p></div><button className="secondary-button" disabled={adminBusy} onClick={refreshAdmin}>{adminBusy ? "…" : atx.refresh}</button></div>
@@ -138,6 +159,23 @@ export function DataView({
       })}</div>
     </section>}
     <section className="hero data-hero"><div><div className="eyebrow">{t("data.eyebrow")}</div><h2>{t("data.title")}</h2><p>{t("data.subtitle")}</p></div><button className="import-button" onClick={onImport} disabled={busy}>{busy ? t("data.importing") : t("data.import")}</button></section>
+    {monitorKey === "social_economic" && access.profile.isAdmin && <section className="panel">
+      <div className="panel-head"><div><h3>{be ? "Рэзервовая дастаўка праз Supabase" : "Резервная доставка через Supabase"}</h3>
+        <p>{be ? "Калі GitHub Actions не сабраў бандл, апублікуйце правераны ZIP у прыватнае сховішча для аўтаматычнай сінхранізацыі карыстальнікаў."
+              : "Если GitHub Actions не собрал бандл, опубликуйте готовый ZIP в приватное хранилище для автоматической синхронизации пользователей."}</p></div>
+        <button className="secondary-button" disabled={publishBusy} onClick={() => publishFileRef.current?.click()}>
+          {publishBusy ? "…" : (be ? "Апублікаваць ZIP" : "Опубликовать ZIP")}
+        </button>
+      </div>
+      <input ref={publishFileRef} type="file" accept=".zip,application/zip" style={{ display: "none" }}
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0];
+          event.currentTarget.value = "";
+          if (file) void publishSelectedBundle(file);
+        }} />
+      {publishError && <div className="notice error">{publishError}</div>}
+      {publishMessage && <div className="notice success">{publishMessage}</div>}
+    </section>}
     <section className="panel sync-panel">
       <div className="panel-head"><div><h3>{t("data.syncTitle")}</h3><p>{t("data.syncHelp")}</p></div><span className={`sync-state ${syncBusy ? "working" : ""}`}>{syncBusy ? t("data.syncing") : syncStatus || t("status.notConfigured")}</span></div>
       <div className="sync-form">

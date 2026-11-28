@@ -117,6 +117,12 @@ pub fn initialize_database(path: &Path) -> Result<(), String> {
         tx.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (9)", []).map_err(|e| e.to_string())?;
         tx.commit().map_err(|e| e.to_string())?;
     }
+    if current < 10 {
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        crate::identity::reconcile_l_monitor_identity(&tx)?;
+        tx.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (10)", []).map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
@@ -1075,6 +1081,7 @@ pub fn list_sources(path: &Path, monitor_key: &str, period_days: Option<i64>) ->
 
 pub fn editorial_source(path: &Path, monitor_key: &str, document_uid: &str) -> Result<Option<EditorialSource>, String> {
     let conn = open_database(path)?;
+    let document_uid = crate::identity::stable_uid(&conn, document_uid)?;
     let document = conn.query_row(
         r#"
         SELECT d.id, d.document_uid, d.title, d.url, COALESCE(s.canonical_name,''),
