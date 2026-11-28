@@ -1130,6 +1130,55 @@ mod identity_integration_tests {
   drop(conn);let _=std::fs::remove_dir_all(dir);
  }
  #[test]
+ fn existing_desktop_database_gets_cnn_aliases_before_the_next_feed_arrives() {
+  let dir=test_directory("monitor-cnn-upgrade");let path=dir.join("test.sqlite");crate::db::initialize_database(&path).unwrap();
+  let route="/2026/11/27/world/putin-lukashenko-ukraine-russia-mongolia-intl";
+  let mut nd=bundle(true,"old-client-cnn",&format!("https://cnn.com{route}"),"Full body. ","FULL_TEXT");nd["manifest"]["run"]["assistant_id"]=json!(3);import(&path,nd);
+  let conn=crate::db::open_database(&path).unwrap();conn.execute("DELETE FROM document_url_aliases WHERE url_key LIKE 'edition:cnn.com:%'",[]).unwrap();conn.execute("DELETE FROM schema_migrations WHERE version=11",[]).unwrap();drop(conn);
+  crate::db::initialize_database(&path).unwrap();import(&path,bundle(false,"later-github-cnn",&format!("https://lite.cnn.com{route}"),"Lead","SNIPPET"));
+  let conn=crate::db::open_database(&path).unwrap();assert_eq!(conn.query_row("select count(*) from documents",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+  drop(conn);let _=std::fs::remove_dir_all(dir);
+ }
+ #[test]
+ fn cnn_newsdata_and_github_lite_urls_are_one_article_in_both_import_orders() {
+  for newsdata_first in [true,false] {
+   let dir=test_directory("monitor-cnn-newsdata");let path=dir.join("test.sqlite");crate::db::initialize_database(&path).unwrap();
+   let route="/2026/11/27/world/putin-lukashenko-ukraine-russia-mongolia-intl";
+   let mut nd=bundle(true,"newsdata-cnn",&format!("https://cnn.com{route}"),"Full body. ","FULL_TEXT");nd["manifest"]["run"]["assistant_id"]=json!(3);
+   let gh=bundle(false,"github-cnn",&format!("https://lite.cnn.com{route}"),"Lead","SNIPPET");
+   if newsdata_first{import(&path,nd);import(&path,gh);}else{import(&path,gh);import(&path,nd);}
+   let conn=crate::db::open_database(&path).unwrap();assert_eq!(conn.query_row("select count(*) from documents",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+   drop(conn);let _=std::fs::remove_dir_all(dir);
+  }
+ }
+ #[test]
+ fn newsdata_shares_all_existing_feed_identities_and_preserves_yesterday_publication_time() {
+  for newsdata_first in [false,true] {
+   let dir=test_directory("monitor-newsdata");let path=dir.join("test.sqlite");crate::db::initialize_database(&path).unwrap();
+   let mut feeds=vec![bundle(false,"gh-shared","https://example.com/shared","Original full body. ","FULL_TEXT")];
+   for id in [1,2,3] {
+    let mut b=bundle(true,&format!("feed-{id}-shared"),"https://example.com/shared?utm_source=newsdata","Preview","SNIPPET");
+    b["manifest"]["run"]["assistant_id"]=json!(id);b["manifest"]["run"]["collector_run_id"]=json!(format!("collector-{id}"));feeds.push(b);
+   }
+   if newsdata_first {feeds.reverse();}
+   for b in feeds {import(&path,b);}
+   let mut unique=bundle(true,"newsdata-yesterday","https://example.com/yesterday","Publication body. ","FULL_TEXT");
+   unique["manifest"]["run"]["assistant_id"]=json!(3);unique["manifest"]["run"]["collector_number"]=json!(2);
+   unique["manifest"]["run"]["collector_run_id"]=json!("newsdata-yesterday-run");
+   unique["manifest"]["run"]["started_at"]=json!("2026-11-28T09:17:00Z");
+   unique["publications"][0]["publication"]["published_at"]=json!("2026-11-27T10:29:41Z");
+   import(&path,unique.clone());import(&path,unique);
+   let runs=crate::db::list_runs(&path,"lukashenko").unwrap();assert_eq!(runs.len(),5);
+   assert_eq!(runs.iter().filter(|r|r.collector_assistant_id==Some(3)).count(),2);
+   let conn=crate::db::open_database(&path).unwrap();
+   assert_eq!(conn.query_row("select count(*) from documents",[],|r|r.get::<_,i64>(0)).unwrap(),2);
+   let date:String=conn.query_row("select published_at from documents where document_uid='newsdata-yesterday'",[],|r|r.get(0)).unwrap();
+   assert_eq!(date,"2026-11-27T10:29:41Z");
+   assert_eq!(runs.iter().map(|r|r.publications).sum::<i64>(),2);
+   drop(conn);let _=std::fs::remove_dir_all(dir);
+  }
+ }
+ #[test]
  fn archive_countries_follow_publishers_inside_a_shared_story() {
   let dir=test_directory("monitor-archive-source-country");let path=dir.join("test.sqlite");crate::db::initialize_database(&path).unwrap();
   for (uid,domain,country) in [("cn-card","guancha.cn","Китай"),("de-card","example.de","Германия")] {
@@ -1238,7 +1287,7 @@ mod identity_integration_tests {
   conn.execute("INSERT INTO moderation_flags VALUES('lukashenko','lapi_tag_1','editor','Editor','2026-11-25')",[]).unwrap();
   conn.execute("INSERT INTO moderation_exclusions VALUES('lukashenko','lapi_tag_2','Editor','2026-11-25')",[]).unwrap();
   let mut blog=bundle(false,"gh-liveblog","https://tagesspiegel.de/internationales/liveblog/selenskyj-16206302.html","A separate live news chronology","SNIPPET");blog["manifest"]["run"]["run_number"]=json!(166);import(&path,blog);
-  conn.execute("DELETE FROM schema_migrations WHERE version=10",[]).unwrap();
+  conn.execute("DELETE FROM schema_migrations WHERE version>=10",[]).unwrap();
   for _ in 0..2{crate::db::initialize_database(&path).unwrap();}
   assert_eq!(conn.query_row("SELECT count(*) FROM monitor_items",[],|r|r.get::<_,i64>(0)).unwrap(),2);
   assert_eq!(crate::identity::stable_uid(&conn,"lapi_tag_2").unwrap(),"lapi_tag_0");

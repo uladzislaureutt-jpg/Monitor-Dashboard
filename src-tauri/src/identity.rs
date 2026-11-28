@@ -39,11 +39,17 @@ pub fn l_monitor_aliases(urls: &[String]) -> Vec<String> {
     static RBC: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^/(?:(?:rus|ukr|eng)/)?(news/[^/]+-[0-9]{10}\.html)(?:/amp)?$").unwrap());
     static FONTANKA: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^/\d{4}/\d{2}/\d{2}/\d+/comments$").unwrap());
     static TAGESSPIEGEL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)-([0-9]{6,12})\.html$").unwrap());
+    static CNN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^/20[0-9]{2}/[0-9]{2}/[0-9]{2}/(?:world|politics|europe)/[a-z0-9-]+$").unwrap());
+    static DIGI24: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"-([0-9]{6,12})$").unwrap());
+    static TERAZ: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"/([0-9]{5,12})-clanok\.html$").unwrap());
     let mut aliases = Vec::new();
     for value in urls {
         let Ok(mut url) = Url::parse(&url_key(value)) else { continue };
         let path = url.path();
         let edition = match url.host_str() {
+            Some("digi24.ro" | "m.digi24.ro") => DIGI24.captures(path).map(|m| format!("edition:digi24.ro:{}", &m[1])),
+            Some("teraz.sk") => TERAZ.captures(path).map(|m| format!("edition:teraz.sk:{}", &m[1])),
+            Some("cnn.com" | "edition.cnn.com" | "lite.cnn.com") if CNN.is_match(path) => Some(format!("edition:cnn.com:{path}")),
             Some("tagesspiegel.de") if !path.to_lowercase().contains("/liveblog/") => TAGESSPIEGEL.captures(path).map(|m| format!("edition:tagesspiegel.de:{}", &m[1])),
             Some("tsn.ua") => TSN.captures(path).map(|m| format!("edition:tsn.ua:{}", &m[1])),
             Some("pravda.com.ua") => PRAVDA.captures(path).map(|m| format!("edition:pravda.com.ua:{}", &m[1])),
@@ -110,7 +116,7 @@ pub fn reconcile_l_monitor_identity(conn: &Connection) -> Result<(), String> {
         let eligible = members.iter().all(|index| rows[*index].8);
         let both_feeds = indexes.iter().any(|index| !rows[*index].5) && indexes.iter().any(|index| rows[*index].6);
         let winner = members[0];
-        let verified_article = key.starts_with("edition:tagesspiegel.de:");
+        let verified_article = key.starts_with("edition:tagesspiegel.de:") || key.starts_with("edition:cnn.com:") || key.starts_with("edition:digi24.ro:") || key.starts_with("edition:teraz.sk:");
         if eligible && (both_feeds || verified_article) {
             for &index in &members[1..] {
                 let (old_item, old_document, old_uid, old_url, ..) = &rows[index];

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useId } from "react";
 import { desktopApi } from "../api";
 import { useI18n } from "../i18n";
 import type { RunPublication, RunSummary } from "../types";
@@ -9,14 +9,16 @@ function publicationCountry(item: RunPublication) {
   return item.country?.trim() || null;
 }
 
-export function RunSourcePublications({ github, assistants = [] }: { github?: RunSummary; assistants?: (RunSummary | undefined)[] }) {
+export function RunSourcePublications({ github, assistants = [], express = false }: { github?: RunSummary; assistants?: (RunSummary | undefined)[]; express?: boolean }) {
   const { locale } = useI18n();
   const be = locale === "be";
+  const idPrefix=useId();
+  const headingId=idPrefix+"-heading",countriesId=idPrefix+"-countries";
   const [feed, setFeed] = useState<Feed>("all");
   const label = (run: RunSummary | undefined, id: number) => id > 0
     ? `${be ? "Памочнік" : "Помощник"} ${id} №${run?.collectorNumber ?? "—"}`
     : `GitHub №${run?.runNumber ?? "—"}`;
-  const streams = [
+  const streams = express ? [{key:"newsdata",run:assistants[2],label:`Yesterday's Express №${assistants[2]?.collectorNumber??"—"}`}]:[
     { key: "github", run: github, label: label(github, 0) },
     { key: "assistant1", run: assistants[0], label: label(assistants[0], 1) },
     { key: "assistant2", run: assistants[1], label: label(assistants[1], 2) },
@@ -105,15 +107,15 @@ export function RunSourcePublications({ github, assistants = [] }: { github?: Ru
   const dateLabel = runDate && Number.isFinite(runDate.valueOf()) ? runDate.toLocaleDateString(be ? "be-BY" : "ru-RU") : "";
   const runLabel = chosen[0]?.label;
 
-  return <section className="panel run-source-panel" aria-labelledby="run-source-heading" aria-busy={loading}>
+  return <section className="panel run-source-panel" aria-labelledby={headingId} aria-busy={loading}>
     <div className="panel-head">
       <div>
-        <h3 id="run-source-heading">{be ? "Публікацыі ў крыніцах" : "Публикации в источниках"}</h3>
+        <h3 id={headingId}>{express ? "Yesterday's Express" : be ? "Публікацыі ў крыніцах" : "Публикации в источниках"}</h3>
         {run && <p>{[runLabel, dateLabel].filter(Boolean).join(" · ")}</p>}
-        {selected === "all" && <p>{streams.filter(stream => stream.run).map(stream => stream.label).join(" · ")}</p>}
+        {selected === "all" && <p>{streams.filter(stream => stream.run).map(stream => stream.label).join(" · ") || (express ? "NewsData · запусков пока нет" : "")}{express && assistants[2] && <> · последний поиск {new Date(assistants[2].startedAt??assistants[2].importedAt).toLocaleString("ru-RU",{timeZone:"Europe/Minsk"})}</>}</p>}
       </div>
       <div className="run-source-filters">
-        {<div className="run-source-feed-filter"><select className="run-source-filter-control"
+        {!express && <div className="run-source-feed-filter"><select className="run-source-filter-control"
           aria-label={be ? "Паток публікацый" : "Поток публикаций"} value={selected}
           onChange={(event) => setFeed(event.target.value as Feed)}>
           <option value="all">{be ? "Агульны паток" : "Общий поток"}</option>
@@ -130,14 +132,14 @@ export function RunSourcePublications({ github, assistants = [] }: { github?: Ru
             className="run-source-filter-control run-source-country-trigger"
             aria-label={`${countryFilterLabel} · ${countrySelectionLabel}`}
             title={countrySelectionLabel}
-            aria-expanded={countryMenuOpen} aria-controls="run-source-countries"
+            aria-expanded={countryMenuOpen} aria-controls={countriesId}
             onClick={() => {
               if (!countryMenuOpen) setCountryQuery("");
               setCountryMenuOpen(!countryMenuOpen);
             }}>
             <span>{countrySelectionLabel}</span>
           </button>
-          {countryMenuOpen && <div id="run-source-countries" className="source-multiselect-menu" role="group"
+          {countryMenuOpen && <div id={countriesId} className="source-multiselect-menu" role="group"
             aria-label={countryFilterLabel}>
             <div className="source-multiselect-actions">
               <button type="button" onClick={() => { setSelectedCountries([]); setCountryQuery(""); }}>{allCountries}</button>
@@ -166,7 +168,7 @@ export function RunSourcePublications({ github, assistants = [] }: { github?: Ru
       : error ? <div className="notice error" role="alert">{error}</div>
         : !sources.length ? <div className="chart-empty" role="status">{selectedCountries.length
           ? (be ? "Няма публікацый з выбраных краін" : "Нет публикаций из выбранных стран")
-          : github || assistants.some(Boolean) ? (be ? "У гэтым запуску няма публікацый" : "В этом прогоне нет публикаций")
+          : chosen.some(stream=>stream.run) ? (be ? "У гэтым запуску няма публікацый" : "В этом прогоне нет публикаций")
             : (be ? "Запускаў пакуль няма" : "Прогоны ещё не загружены")}</div>
           : <div className="run-source-list">{sources.map(([key, { source, country, publications }]) => <details key={key}>
             <summary><span aria-hidden="true" className="run-source-chevron">›</span>

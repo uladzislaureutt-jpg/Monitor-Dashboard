@@ -1,3 +1,48 @@
+# Yesterday's Express / NewsData — Monitor 0.9.50
+
+The independent third stream uses `NEWSDATA_API_KEY` only on the server. Its
+admin panel and schedule are separate from helpers 1 and 2; the catalog,
+publication index, aliases, moderation identity and importer remain shared.
+
+Defaults: daily **12:17 Europe/Minsk**, **26 hours**; the publication window
+ends **12 hours and one minute before collection**, allowing the free-tier
+indexing delay plus a small clock margin. At 12:17 this includes all of the
+previous calendar day. Collection time is exported as run.started_at;
+publication time is always retained separately in each archive document.
+
+Independent controls: enabled/time/lookback/countries, 80 requests per run,
+80 credits/day by Minsk time, 2400 credits/rolling 30 days, reserve 40,
+1200 candidates and up to 20 strong previously rejected signals for recheck.
+Paid HTML extraction is disabled for this stream. Account remaining is read
+from API headers; refreshing the panel or quota display spends no search credit.
+Unknown request outcomes remain reserved conservatively and labelled unconfirmed.
+
+All multilingual query groups get a first page; cursor pagination continues
+within the shared run budget. Rate-limit headers defer jobs rather than spin.
+Worker retries preserve the frozen publication window. API full-content notices
+are never treated as article bodies; discovery timestamps are never substituted
+for missing publication timestamps. The source matching and publication checks
+are the same as for the other assistants.
+
+The dashboard has a separate Yesterday's Express panel, with the latest run
+and independent country selection. Data offers a third control panel, the last
+five runs and a terminal. New cards arrive through the existing authenticated
+manifest/download API; old clients require the 0.9.50 update for the new UI.
+
+First production verification on 28 November: completed, 105 distinct catalog
+observations, 46 already known, two cards (CNN full text and TASS metadata),
+52 confirmed NewsData credits, account 145 -> 93. Two timed-out attempts were
+reconciled to zero against the measured account delta. No calls to the four
+other news-search providers or paid extraction were made by this stream.
+
+Verification includes three-feed identity/date imports, both arrival orders
+of CNN main/lite across GitHub and NewsData, short article extraction beside
+large recommendation blocks, authenticated read/admin-write separation,
+quota/time validation, free quota refresh and browser checks of all three
+panels and independent country filters.
+
+The original pilot history follows below and describes earlier defaults.
+
 # Independent L-Monitor API pilot
 
 Server deployed and enabled in Supabase. Daily search: **15:07 Europe/Minsk**,

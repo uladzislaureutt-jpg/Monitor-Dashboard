@@ -9,6 +9,8 @@ type Run = {
   assistant_number?: number;
   status: string;
   to_at: string;
+  from_at?: string;
+  created_at?: string;
   revision?: number;
   settings?: { country_scope?: string[] };
   counters: Record<string, number>;
@@ -25,6 +27,7 @@ type Snapshot = {
   terminal_run_id?: string;
   terminal?: { id: number; label: string; state: string; at: string; error?: string; returned?: number; kept?: number; new_to_index?: number; ready?: boolean; capped?: boolean }[];
   usage_limits?: Record<string, { today_units: number; period_units: number }>;
+  newsdata_usage?: {unconfirmed:number};
   diagnostic_usage?: { days: number; cloro_credits: number; currents_requests: number; thenews_requests: number };
   newscatcher_usage?: { days: number; credits: number; assistant: number; event: number; diagnostic: number; unconfirmed: number };
 };
@@ -46,7 +49,7 @@ type Props = { importedRuns: RunSummary[]; onSync: () => void; syncBusy: boolean
 
 export function LNewsAssistant(props: Props) {
   const [selected, setSelected] = useState(1);
-  return <><div className="assistant-tabs" role="tablist" aria-label="Помощники L-Monitor">{[1, 2].map(id => <button key={id} role="tab" aria-selected={selected === id} className={selected === id ? "primary-button" : "secondary-button"} onClick={() => setSelected(id)}>Помощник {id}</button>)}</div><AssistantPanel key={selected} {...props} assistantId={selected} /></>;
+  return <><div className="assistant-tabs" role="tablist" aria-label="Помощники L-Monitor">{[1, 2, 3].map(id => <button key={id} role="tab" aria-selected={selected === id} className={selected === id ? "primary-button" : "secondary-button"} onClick={() => setSelected(id)}>{id === 3 ? "NewsDATA / Yesterday's Express" : `Помощник ${id}`}</button>)}</div><AssistantPanel key={selected} {...props} assistantId={selected} /></>;
 }
 
 function AssistantPanel({
@@ -63,6 +66,8 @@ function AssistantPanel({
   const { session, profile } = useMonitorAccess();
   const admin = profile.isAdmin;
   const second = assistantId === 2;
+  const express = assistantId === 3;
+  const collectorLabel = express ? "Yesterday's Express" : `Помощник ${assistantId}`;
   const [terminalId, setTerminalId] = useState<string | undefined>();
   const [data, setData] = useState<Snapshot | null>(null);
   const [error, setError] = useState("");
@@ -113,7 +118,7 @@ function AssistantPanel({
       const result = await call(action, extra);
       await refresh();
       if (action === "settings" && "lookback_hours" in extra) setDraftHours(null);
-      setNotice(action === "quota" ? "Проверка остатка поставлена в очередь; поисковые запросы не расходуются."
+      setNotice(action === "quota" ? assistantId === 3 ? "Показан остаток из последнего ответа NewsData; поисковый кредит не потрачен." : "Проверка остатка поставлена в очередь; поисковые запросы не расходуются."
         : action === "start" ? "Сбор поставлен в очередь."
         : action === "retry_failed" ? `Возвращено в очередь: ${result.retried}.`
         : action === "cancel" ? "Сбор остановлен; уже начатая обработка может завершиться."
@@ -125,6 +130,7 @@ function AssistantPanel({
     }
   }
 
+  const newsdata = data?.providers.find(provider => provider.provider === "newsdata");
   const perigon = data?.providers.find(provider => provider.provider === "perigon")?.info;
   const newscatcher = data?.providers.find(provider => provider.provider === "newscatcher");
   const newsBalance = newscatcher?.info.subscription?.credits_balance ?? newscatcher?.info.balance;
@@ -142,7 +148,7 @@ function AssistantPanel({
   const savedHours = data?.settings.lookback_hours ?? 26;
   const hours = draftHours ?? String(savedHours);
   const validHours = Number.isInteger(Number(hours)) && Number(hours) >= 1 && Number(hours) <= 168;
-  const coverage = data?.sources.filter(source => Object.values(source.coverage || {}).some(value =>
+  const coverage = data?.sources.filter(source => (express ? [source.coverage?.newsdata] : Object.values(source.coverage || {})).some(value =>
     typeof value === "object" && value !== null && "status" in value && value.status === "indexed_article_seen",
   )).length ?? 0;
   const perigonTotal = data?.runs.reduce((sum, run) => sum + (run.counters.perigon_requests || 0), 0);
@@ -151,7 +157,7 @@ function AssistantPanel({
 
   return <section className="panel l-news-assistant">
     <div className="panel-head">
-      <div><h3>Помощник {assistantId} · L-Monitor</h3><p>{second ? "Newscatcher + Cloro · Currents + The News API" : "Newscatcher + Perigon"} · ежедневно в {data?.settings.local_time ?? "15:07"} по Минску · окно {savedHours} часов</p></div>
+      <div><h3>{collectorLabel} · L-Monitor</h3><p>{express ? "NewsData · досбор с задержкой 12 часов" : second ? "Newscatcher + Cloro · Currents + The News API" : "Newscatcher + Perigon"} · ежедневно в {data?.settings.local_time ?? "15:07"} по Минску · окно {savedHours} часов</p></div>
       {data && <span className="badge">{data.settings.enabled ? "Расписание включено" : "Расписание выключено"}</span>}
     </div>
     {error && <p role="alert" className="error-text">{error}</p>}
@@ -159,23 +165,27 @@ function AssistantPanel({
     <div className="kpi-grid">
       <article className="kpi"><strong>{data?.sources.length ?? "—"}</strong><span>Каталог · {new Set(data?.sources.map(source => source.country)).size} стран</span></article>
       <article className="kpi"><strong>{coverage}</strong><span>Источники с фактической выдачей API</span></article>
-      {!second && <article className="kpi"><strong>{limits.requestsUsed ?? "—"} / {limits.requestLimit ?? 150}</strong><span>Perigon: использовано за расчётный месяц</span></article>}
-      <article className="kpi"><strong>{newsBalance ?? "—"}</strong><span>Newscatcher: общий остаток аккаунта</span>
+      {!second && !express && <article className="kpi"><strong>{limits.requestsUsed ?? "—"} / {limits.requestLimit ?? 150}</strong><span>Perigon: использовано за расчётный месяц</span></article>}
+      {!express && <article className="kpi"><strong>{newsBalance ?? "—"}</strong><span>Newscatcher: общий остаток аккаунта</span>
         {newscatcher?.updated_at && newsBalance != null && <small>Проверено {new Date(newscatcher.updated_at).toLocaleString("ru-RU", { timeZone: "Europe/Minsk" })} по Минску</small>}
-      </article>
+      </article>}
+      {express && <article className="kpi"><strong>{newsdata?.info.limits?.remaining ?? "—"} / {newsdata?.info.limits?.limit ?? 200}</strong><span>NewsData: остаток суточной квоты аккаунта</span><small>{newsdata?.updated_at ? `Последний ответ ${new Date(newsdata.updated_at).toLocaleString("ru-RU", {timeZone:"Europe/Minsk"})}` : "Будет известен после первого запроса"}</small></article>}
       {second && <><article className="kpi"><strong>{cloro?.info.balance?.remaining ?? "—"}</strong><span>Cloro: остаток кредитов</span><small>{cloro?.updated_at ? `Проверено ${new Date(cloro.updated_at).toLocaleString("ru-RU", { timeZone: "Europe/Minsk" })}` : "Остаток ещё не проверен"}</small></article>
       <article className="kpi"><strong>{currents?.info.limits?.remaining ?? "—"} / {currents?.info.limits?.limit ?? 250}</strong><span>Currents: остаток суточной квоты</span><small>{currents?.updated_at ? new Date(currents.updated_at).toLocaleString("ru-RU", { timeZone: "Europe/Minsk" }) : "Будет известен после первого запроса"}</small></article>
       <article className="kpi"><strong>{thenews?.info.limits?.remaining ?? "—"} / {thenews?.info.limits?.limit ?? 100}</strong><span>The News API: остаток суточной квоты</span><small>{thenews?.updated_at ? new Date(thenews.updated_at).toLocaleString("ru-RU", { timeZone: "Europe/Minsk" }) : "Будет известен после первого запроса"}</small></article></>}
     </div>
-    {!second && <><p>Perigon: одна страница — один запрос, до {limits.maxPageSize ?? 100} результатов. Лимит — до {data?.settings.perigon_per_run ?? 8} запросов на сбор и 16 в сутки по Минску, резерв — 10 в месяц. Сброс: {limits.resetAt ? new Date(limits.resetAt).toLocaleString("ru-RU", { timeZone: "Europe/Minsk" }) : "—"}.</p>
+    {!second && !express && <><p>Perigon: одна страница — один запрос, до {limits.maxPageSize ?? 100} результатов. Лимит — до {data?.settings.perigon_per_run ?? 8} запросов на сбор и 16 в сутки по Минску, резерв — 10 в месяц. Сброс: {limits.resetAt ? new Date(limits.resetAt).toLocaleString("ru-RU", { timeZone: "Europe/Minsk" }) : "—"}.</p>
     <p>Perigon за последние {data?.runs.length ?? 0} сборов — {perigonTotal ?? 0} запросов.</p></>}
-    {newsUsage && <p>Newscatcher за последние {newsUsage.days} дней — <strong>{newsUsage.credits} кр.</strong> · Оба помощника {newsUsage.assistant} кр. · Событие {newsUsage.event} кр.
+    {!express && newsUsage && <p>Newscatcher за последние {newsUsage.days} дней — <strong>{newsUsage.credits} кр.</strong> · Оба помощника {newsUsage.assistant} кр. · Событие {newsUsage.event} кр.
       {newsUsage.diagnostic > 0 && <> · Диагностика {newsUsage.diagnostic} кр.</>}
       {newsUsage.unconfirmed > 0 && <> · Списание уточняется для {newsUsage.unconfirmed} зап.</>}</p>}
     {second && data?.diagnostic_usage && <p>Сравнительные проверки за {data.diagnostic_usage.days} дней: Cloro — <strong>{data.diagnostic_usage.cloro_credits} кр.</strong>, Currents — <strong>{data.diagnostic_usage.currents_requests} зап.</strong>, The News API — <strong>{data.diagnostic_usage.thenews_requests} зап.</strong> Проверочный сбор готового помощника учтён в его запусках.</p>}
     {second && <p className="sync-note">Currents: 250 запросов в сутки, сброс в 03:00 по Минску. Cloro Free: 500 кредитов на календарный месяц; точную дату пополнения аккаунта сервис пока не передал. The News API: на текущем ключе до 100 запросов в сутки, по 3 статьи за запрос; остаток обновляется по заголовкам поискового ответа.</p>}
-    {!second && data && <Assistant1Schedule key={data.settings.updated_at} settings={data.settings} disabled={busy || !admin} onSave={patch => void act("settings", patch)} />}
+    {!second && !express && data && <Assistant1Schedule key={data.settings.updated_at} settings={data.settings} disabled={busy || !admin} onSave={patch => void act("settings", patch)} />}
     {second && data && <Assistant2Settings key={data.settings.updated_at} settings={data.settings} usage={data.usage_limits} cloroSearch={data.cloro_search} countries={catalogCountries} disabled={busy || !admin} onSave={patch => void act("settings", patch)} />}
+    {express && data && <NewsdataSettings key={data.settings.updated_at} settings={data.settings} usage={data.usage_limits} countries={catalogCountries} disabled={busy || !admin} onSave={patch => void act("settings", patch)} />}
+    {express && !!data?.newsdata_usage?.unconfirmed && <p className="sync-note">Списание уточняется для {data.newsdata_usage.unconfirmed} запросов. В лимитах они консервативно учтены как один кредит каждый.</p>}
+    {express && <p className="sync-note">NewsData выдаёт до 10 статей за кредит с задержкой 12 часов. Окно отсчитывается от доступной границы; в Архиве используется дата выхода публикации. Остаток берётся из последнего ответа сервиса, его обновление не запускает платный поиск.</p>}
     <div className="sync-form">
       <label>Глубина, часов <input type="number" min={1} max={168} value={hours} onChange={event => setDraftHours(event.target.value)} /></label>
       <button className="secondary-button" disabled={!admin || busy || !data || !validHours || Number(hours) === savedHours}
@@ -184,7 +194,7 @@ function AssistantPanel({
         onClick={() => void act("settings", { enabled: !data?.settings.enabled })}>{data?.settings.enabled ? "Приостановить расписание" : "Включить расписание"}</button>
       <button className="primary-button" disabled={!admin || busy || !data || Boolean(latest && active(latest))}
         onClick={() => void act("start", selectedCountries.length ? { countries: selectedCountries } : {})}>Собрать сейчас</button>
-      <button className="secondary-button" disabled={!admin || busy} onClick={() => void act("quota")}>Проверить остатки</button>
+      <button className="secondary-button" disabled={!admin || busy} onClick={() => void act("quota")}>{express ? "Обновить данные об остатке" : "Проверить остатки"}</button>
       <button className="secondary-button" disabled={!admin || busy} onClick={() => void act("retry_failed")}>Повторить ошибки обработки</button>
       {latest && active(latest) && <button className="secondary-button" disabled={!admin || busy} onClick={() => void act("cancel", { run_id: latest.id })}>Остановить сбор</button>}
       <button className="secondary-button" disabled={syncBusy} onClick={onSync}>Получить карточки</button>
@@ -209,7 +219,7 @@ function AssistantPanel({
         const countries = localRun?.collectorCountries ?? [];
         const countryLabels = countries.map(item => `${item.country} — ${item.sources}`);
         return <tr key={run.id}>
-          <td><button className="assistant-run-link" onClick={() => setTerminalId(run.id)}>Помощник {assistantId} #{run.assistant_number ?? run.number}</button><small>{new Date(run.to_at).toLocaleString("ru-RU", { timeZone: "Europe/Minsk" })}</small>{run.settings?.country_scope && <small>{run.settings.country_scope.map(code => data?.country_names?.[code] ?? code).join(", ")}</small>}</td>
+          <td><button className="assistant-run-link" onClick={() => setTerminalId(run.id)}>{collectorLabel} #{run.assistant_number ?? run.number}</button><small>{new Date(express ? run.created_at ?? run.to_at : run.to_at).toLocaleString("ru-RU", { timeZone: "Europe/Minsk" })}</small>{express && run.from_at && <small>Публикации: {new Date(run.from_at).toLocaleString("ru-RU", {timeZone:"Europe/Minsk"})} — {new Date(run.to_at).toLocaleString("ru-RU", {timeZone:"Europe/Minsk"})}</small>}{run.settings?.country_scope && <small>{run.settings.country_scope.map(code => data?.country_names?.[code] ?? code).join(", ")}</small>}</td>
           <td>{labels[run.status] || run.status}
             {active(run) && <small>В очереди: {run.counters.jobs_pending || 0}</small>}
             {!!run.warnings?.length && <details><summary>Показать замечания ({run.warnings.length})</summary>
@@ -224,14 +234,14 @@ function AssistantPanel({
             </details>}
           </td>
           <td>{(run.counters.already_known ?? 0) + (localRun?.crossCollectorDuplicates ?? 0)}</td>
-          <td>{second ? <>Cloro {run.counters.cloro_credits || 0} кр.<small>Currents {run.counters.currents_requests || 0} зап.</small><small>The News API {run.counters.thenews_requests || 0} зап.</small></> : <>Perigon {run.counters.perigon_requests || 0}</>}<small>Newscatcher {run.counters.newscatcher_credits || 0} кр.</small></td>
+          <td>{express ? <>NewsData {run.counters.newsdata_credits || 0} кр.</> : second ? <>Cloro {run.counters.cloro_credits || 0} кр.<small>Currents {run.counters.currents_requests || 0} зап.</small><small>The News API {run.counters.thenews_requests || 0} зап.</small></> : <>Perigon {run.counters.perigon_requests || 0}</>}{!express && <small>Newscatcher {run.counters.newscatcher_credits || 0} кр.</small>}</td>
         </tr>;
       })}{data?.runs.length === 0 && <tr><td colSpan={6}>Запусков пока нет. Можно начать ручной сбор.</td></tr>}</tbody>
     </table></div>
-    <details className="assistant-terminal" open><summary>Терминал · Помощник {assistantId}{data?.runs.find(run => run.id === data.terminal_run_id) ? ` #${data.runs.find(run => run.id === data.terminal_run_id)?.assistant_number ?? data.runs.find(run => run.id === data.terminal_run_id)?.number}` : ""}</summary>
-      <pre role="log" aria-label={`Терминал помощника ${assistantId}`}>{data?.terminal?.length ? [...data.terminal].reverse().map(event => `${new Date(event.at).toLocaleTimeString("ru-RU", { timeZone: "Europe/Minsk" })}  ${event.label} · ${{waiting:"в очереди", leased:"выполняется", done:"готово", failed:"ошибка"}[event.state] ?? event.state}${event.returned != null ? ` · найдено ${event.returned}` : ""}${event.new_to_index != null ? ` · новых ссылок ${event.new_to_index}` : ""}${event.kept != null ? ` · на обработку ${event.kept}` : ""}${event.ready ? " · карточка готова" : ""}${event.capped ? " · достигнут лимит" : ""}${event.error ? ` · ${event.error}` : ""}`).join("\n") : "Ожидание запуска."}</pre>
+    <details className="assistant-terminal" open><summary>Терминал · {collectorLabel}{data?.runs.find(run => run.id === data.terminal_run_id) ? ` #${data.runs.find(run => run.id === data.terminal_run_id)?.assistant_number ?? data.runs.find(run => run.id === data.terminal_run_id)?.number}` : ""}</summary>
+      <pre role="log" aria-label={`Терминал · ${collectorLabel}`}>{data?.terminal?.length ? [...data.terminal].reverse().map(event => `${new Date(event.at).toLocaleTimeString("ru-RU", { timeZone: "Europe/Minsk" })}  ${event.label} · ${{waiting:"в очереди", leased:"выполняется", done:"готово", failed:"ошибка"}[event.state] ?? event.state}${event.returned != null ? ` · найдено ${event.returned}` : ""}${event.new_to_index != null ? ` · новых ссылок ${event.new_to_index}` : ""}${event.kept != null ? ` · на обработку ${event.kept}` : ""}${event.ready ? " · карточка готова" : ""}${event.capped ? " · достигнут лимит" : ""}${event.error ? ` · ${event.error}` : ""}`).join("\n") : "Ожидание запуска."}</pre>
     </details>
-    <p className="sync-note">Показаны последние 5 запусков этого помощника. Архив и ранее полученные карточки сохранены.</p>
+    <p className="sync-note">Показаны последние 5 запусков этого потока. Архив и ранее полученные карточки сохранены.</p>
   </section>;
 }
 
@@ -287,4 +297,19 @@ function Assistant2Settings({ settings, usage, cloroSearch, countries, disabled,
     <p className="sync-note">The News API ищет отдельно в группах до 40 доменов каталога. При полной выдаче проверяет следующую страницу; после второй продолжает только направления с новыми находками. Если бюджет меньше числа групп, группы чередуются между запусками.</p>
     <button className="secondary-button" disabled={disabled || !dirty || !valid} onClick={() => { const { lookback_hours, enabled, ...patch } = draft; onSave(patch); }}>Сохранить настройки помощника 2</button>
   </details>;
+}
+
+function NewsdataSettings({settings,usage,countries,disabled,onSave}:{settings:Snapshot["settings"];usage?:Snapshot["usage_limits"];countries:{code:string;label:string}[];disabled:boolean;onSave:(patch:Record<string,unknown>)=>void}){
+ const [draft,setDraft]=useState({...settings});
+ const change=(key:string,value:unknown)=>setDraft(previous=>({...previous,[key]:value}));
+ const ranges=[['newsdata_per_run','Кредитов на сбор',180],['newsdata_daily_credits','Кредитов в сутки',200],['newsdata_monthly_credits','Кредитов за 30 дней',6000],['newsdata_reserve','Неприкосновенный остаток',199],['candidate_limit','Кандидатов на сбор',3000],['rechecks_per_run','Повторных проверок отклонённых',50]] as const;
+ const valid=/^([01]\d|2[0-3]):[0-5]\d$/.test(draft.local_time??'')&&ranges.every(([key,,max])=>Number.isInteger(draft[key])&&draft[key]>=0&&draft[key]<=max)&&(draft.countries?.length??0)>0;
+ return <details className="assistant-settings"><summary>Настройки Yesterday's Express</summary>
+  <div className="sync-form"><label>Время по Минску<input type="time" disabled={disabled} value={draft.local_time??'12:17'} onChange={e=>change('local_time',e.target.value)}/></label></div>
+  <p className="sync-note">Расход Yesterday's Express: сегодня {usage?.newsdata?.today_units??0} / {settings.newsdata_daily_credits} кр.; за 30 дней {usage?.newsdata?.period_units??0} / {settings.newsdata_monthly_credits} кр. Общая квота NewsData — 200 кредитов в сутки. Диагностика учитывается в общем остатке аккаунта.</p>
+  <div className="assistant-budget-grid">{ranges.map(([key,label,max])=><label key={key}>{label}<input type="number" min={key==='candidate_limit'?10:0} max={max} disabled={disabled} value={draft[key]??0} onChange={e=>change(key,Number(e.target.value))}/></label>)}</div>
+  <details><summary>Страны для планового поиска ({draft.countries?.length??0})</summary><div className="l-news-country-picker">{countries.map(c=><label key={c.code}><input type="checkbox" disabled={disabled} checked={(draft.countries??[]).includes(c.code)} onChange={e=>change('countries',e.target.checked?[...(draft.countries??[]),c.code]:(draft.countries??[]).filter((x:string)=>x!==c.code))}/>{c.label}</label>)}</div></details>
+  <p className="sync-note">В 12:17 проверяются предыдущие сутки с перекрытием. При ручном запуске окно также заканчивается 12 часов назад. Лимиты общие для ручных и плановых запусков; платные извлечения отключены. Известные публикации объединяются с общим индексом, выборочно перепроверяются только подходящие отклонённые записи.</p>
+  <button className="secondary-button" disabled={disabled||!valid||JSON.stringify(draft)===JSON.stringify(settings)} onClick={()=>{const {lookback_hours,enabled,...patch}=draft;onSave(patch);}}>Сохранить настройки Yesterday's Express</button>
+ </details>;
 }

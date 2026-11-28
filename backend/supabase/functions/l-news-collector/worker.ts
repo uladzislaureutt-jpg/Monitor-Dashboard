@@ -1,3 +1,4 @@
+import {newsdataQueries,probeNewsdata,searchNewsdata} from './newsdata.ts';
 import {Candidate,Source,batches,buildCard,contentLevel,containsName,domainOf,publisherArticleKey,publisherCopyKey,relevant,samePublisherHeadlineKey,sha,sourceFor,urlKey,validDate} from './core.ts';
 import {Job,Run,Runtime,must,newscatcherSubscription,perigonLimits,readPages,searchNewscatcher,searchPerigon} from './providers.ts';
 import {searchGdelt} from './gdelt.ts';
@@ -21,6 +22,10 @@ async function setup(rt:Runtime,job:Job,run:Run){
  const scope={source_domains:run.settings.country_scope?sources.map(source=>source.domain):[],
   excluded_domains:disabled.map(source=>source.domain)};
  try{warnings.push(...(await indexGithub(rt)).warnings);}catch{warnings.push('GitHub-индекс временно недоступен; повторы дополнительно объединяются в приложении');}
+ if(assistantId(run)===3){
+  if(rt.secret('NEWSDATA_API_KEY'))for(const [query_index] of newsdataQueries().entries())await enqueue(rt,run.id,'newsdata',{query_index,page:1},run.id+':newsdata:'+query_index+':root');else warnings.push('NewsData: ключ отсутствует');
+  return {catalog_sources:sources.length,warnings};
+ }
  const secondQuota=second?await probeAssistant2(rt):null;
  if(secondQuota)warnings.push(...secondQuota.warnings);
  if(!second&&rt.perigonKey){try{const quota=await perigonLimits(rt);await enqueue(rt,run.id,'perigon',{page:0,quota,layer:'name',...scope},run.id+':perigon:name:0');
@@ -97,7 +102,22 @@ async function ingest(rt:Runtime,job:Job,run:Run,candidates:Candidate[],sources:
    if(edition)must(await rt.db.rpc('l_news_claim_alias',{p_alias:key,p_item:item.id}));
    counts.duplicates++;continue;
   }
-  if(item.state==='rejected'){counts.excluded++;continue;}
+  if(item.state==='rejected'){
+   const strong=containsName(c.title+' '+c.lead+' '+c.url)||/belarusian president|president of belarus/i.test(c.title+' '+c.lead);
+   const recoverable=['no_substantive_lukashenko_mention','passing_lukashenko_mention','insufficient_lukashenko_context','unconfirmed_or_outside_publication_window'].includes(item.reason);
+   if(assistantId(run)!==3||!strong||!recoverable){counts.excluded++;continue;}
+   const checked=await rt.db.from('l_news_jobs').select('id',{count:'exact',head:true}).eq('run_id',run.id).eq('kind','article').contains('payload',{recheck:true});if(checked.error)throw checked.error;
+   if(assistantId(run)!==3||!strong||!recoverable||(checked.count||0)>=Number(run.settings.rechecks_per_run??0)){counts.excluded++;continue;}
+   let body=containsName(String(item.original?.body||''))?String(item.original.body):'';
+   if(/^(?:www\.|edition\.|lite\.)?cnn\.com$/.test(new URL(c.url).hostname)){
+    const path=new URL(c.url).pathname,variants=['cnn.com','edition.cnn.com','lite.cnn.com'].map(host=>'https://'+host+path);
+    const copies=must(await rt.db.from('l_news_items').select('original').in('canonical_url',variants));for(const copy of copies)if(containsName(copy.original?.body||'')&&String(copy.original.body).length>body.length)body=copy.original.body;
+   }
+   const original={...c,lead:c.lead||item.original?.lead||'',body,content_truncated:!body,extraction_done:false};
+   const changed=must(await rt.db.from('l_news_items').update({state:'pending',reason:null,original}).eq('id',item.id).eq('state','rejected').select('id'));
+   if(!changed.length){counts.duplicates++;continue;}
+   await enqueue(rt,run.id,'article',{item_id:item.id,recheck:true},run.id+':article:'+item.id);counts.kept++;continue;
+  }
   if(c.body.length>String(item.original?.body||'').length){must(await rt.db.from('l_news_items').update({original:c,state:'pending'}).eq('id',item.id));}
   else if(!item.original?.published_at&&c.published_at){
    must(await rt.db.from('l_news_items').update({original:{...item.original,published_at:c.published_at,lead:item.original?.lead||c.lead},published_at:c.published_at}).eq('id',item.id));
@@ -125,6 +145,11 @@ async function article(rt:Runtime,job:Job,run:Run,sources:Source[]){
  const edition=await publisherCopyKey(source.domain,c.body,published,level)??articleEdition??(c.identity_url?`edition:${canonical}`:null);
  const owner=edition?item.id:must(await rt.db.rpc('l_news_claim_alias',{p_alias:canonical,p_item:item.id}));
  if(owner!==item.id){
+  const target=must(await rt.db.from('l_news_items').select('state,reason,original').eq('id',owner).single());
+  if(target.state!=='ready'&&c.body.length>String(target.original?.body||'').length&&containsName(c.body)&&(!target.reason||['no_substantive_lukashenko_mention','passing_lukashenko_mention','insufficient_lukashenko_context'].includes(target.reason))){
+   must(await rt.db.from('l_news_items').update({state:'pending',reason:null,original:{...c,extraction_done:true,extraction_strategy:strategy},content_level:level,published_at:published}).eq('id',owner).neq('state','ready'));
+   await enqueue(rt,run.id,'article',{item_id:owner},run.id+':article:'+owner+':richer:'+item.id);
+  }
   must(await rt.db.from('l_news_url_aliases').update({item_id:owner}).eq('item_id',item.id));
   must(await rt.db.from('l_news_observations').update({item_id:owner,disposition:'canonical_duplicate'}).eq('item_id',item.id));
   must(await rt.db.from('l_news_run_items').upsert({run_id:run.id,item_id:owner,role:'seen'},{onConflict:'run_id,item_id',ignoreDuplicates:true}));
@@ -195,9 +220,9 @@ export async function workOne(rt:Runtime,job:Job){
   return {submitted:true,country:job.payload.country};
  }
  if(job.kind==='article')return article(rt,job,run,sources);
- if(['perigon','newscatcher','gdelt','currents','thenews','cloro_poll'].includes(job.kind)){
-  if(['currents','thenews'].includes(job.kind)){const cap=await rt.db.from('l_news_run_items').select('item_id',{count:'exact',head:true}).eq('run_id',run.id);if(cap.error)throw cap.error;if((cap.count||0)>=run.settings.candidate_limit)return {warnings:['Достигнут лимит кандидатов на сбор; дальнейшие поисковые обращения остановлены.']};}
-  const found:any=job.kind==='cloro_poll'?await pollCloro(rt,job):job.kind==='thenews'?await searchTheNews(rt,job,run):job.kind==='currents'?await searchCurrents(rt,job,run):job.kind==='perigon'?await searchPerigon(rt,job,run):job.kind==='newscatcher'?await searchNewscatcher(rt,job,run):await searchGdelt(rt,job,run);
+ if(['perigon','newscatcher','gdelt','currents','thenews','cloro_poll','newsdata'].includes(job.kind)){
+  if(['currents','thenews','newsdata'].includes(job.kind)){const cap=await rt.db.from('l_news_run_items').select('item_id',{count:'exact',head:true}).eq('run_id',run.id);if(cap.error)throw cap.error;if((cap.count||0)>=run.settings.candidate_limit)return {warnings:['Достигнут лимит кандидатов на сбор; дальнейшие поисковые обращения остановлены.']};}
+  const found:any=job.kind==='newsdata'?await searchNewsdata(rt,job,run):job.kind==='cloro_poll'?await pollCloro(rt,job):job.kind==='thenews'?await searchTheNews(rt,job,run):job.kind==='currents'?await searchCurrents(rt,job,run):job.kind==='perigon'?await searchPerigon(rt,job,run):job.kind==='newscatcher'?await searchNewscatcher(rt,job,run):await searchGdelt(rt,job,run);
   if(found.capped)return {capped:true,provider:job.kind};
   if(found.retry_at||(job.kind==='gdelt'&&found.warnings))return found;
   const result=await ingest(rt,job,run,found.candidates,sources);
@@ -218,6 +243,7 @@ export async function workOne(rt:Runtime,job:Job){
    }
    extend=extend&&room&&!split&&continueDiscovery(job.kind,Number(found.page),Number(found.max_pages),true,result.new_to_index+result.kept);
   }
+  if(extend&&job.kind==='newsdata'){const cursor=found.next_cursor;await enqueue(rt,run.id,'newsdata',{...job.payload,cursor,page:Number(found.page)+1},run.id+':newsdata:'+job.payload.query_index+':'+cursor);extend=false;}
   if(extend){const next=Number(found.page)+1,plan={...job.payload,page:next,quota:found.quota||job.payload.quota};
    const key=job.kind==='currents'||job.kind==='thenews'?discoveryJobKey(run.id,job.kind,plan):run.id+':'+job.kind+':'+(job.payload.layer??job.payload.group)+':'+next;
    await enqueue(rt,run.id,job.kind,plan,key);

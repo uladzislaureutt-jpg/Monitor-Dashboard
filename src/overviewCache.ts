@@ -13,7 +13,7 @@ const pending = new Map<string, Promise<DashboardOverview>>();
 const generations = new Map<string, number>();
 
 const keyFor = (monitor: string, period: PeriodDays) => `${monitor}:${period ?? "all"}`;
-const storageKey = (key: string) => (key.startsWith("lukashenko:") ? "monitor-dashboard-overview-v2:" : PREFIX) + key;
+const storageKey = (key: string) => (key.startsWith("lukashenko:") ? "monitor-dashboard-overview-v3:" : PREFIX) + key;
 
 export function peekOverview(monitor: string, period: PeriodDays): Snapshot | null {
   const key = keyFor(monitor, period);

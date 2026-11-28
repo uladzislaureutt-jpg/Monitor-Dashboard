@@ -43,9 +43,12 @@ export function publisherArticleKey(value: string): string | null {
  const domain = domainOf(value);
  const host=(site:string)=>domain===site||domain.endsWith('.'+site);
  const exact=['tsn.ua','pravda.com.ua','rbc.ua','iz.ru','politika.rs','rp.pl','tagesspiegel.de'];
- const multiHost=['fakti.bg','novosti.rs','censor.net','diena.lt','reuters.com','yahoo.com','obozrevatel.com'];
+ const multiHost=['fakti.bg','novosti.rs','censor.net','diena.lt','reuters.com','yahoo.com','obozrevatel.com','cnn.com','digi24.ro','teraz.sk'];
  if(!exact.includes(domain)&&!multiHost.some(host))return null;
  const path = new URL(value).pathname.replace(/\/+$/, '');
+ if(host('digi24.ro')){const id=path.match(/-([0-9]{6,12})$/)?.[1];return id?'edition:digi24.ro:'+id:null;}
+ if(host('teraz.sk')){const id=path.match(/\/([0-9]{5,12})-clanok\.html$/)?.[1];return id?'edition:teraz.sk:'+id:null;}
+ if(['cnn.com','edition.cnn.com','lite.cnn.com'].includes(domain)&&/^\/20[0-9]{2}\/[0-9]{2}\/[0-9]{2}\/(?:world|politics|europe)\/[a-z0-9-]+$/i.test(path))return 'edition:cnn.com:'+path;
  if(domain==='tagesspiegel.de'){
   // Article slugs change when headlines are edited. Liveblogs contain multiple
   // dated entries and must not be collapsed using the container's article ID.

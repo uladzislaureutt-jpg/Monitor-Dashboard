@@ -25,6 +25,7 @@ function fixture(hasMonitorAccess = true, monitorEnabled = true, catalog: Record
     l_news_settings: [{ id:true, enabled: true, lookback_hours: 26, local_time:'15:07' }],
     l_news_jobs: [],
     l_news_assistant2_settings: [{ id:true, enabled: true, lookback_hours: 26, local_time: "03:07" }],
+    l_news_newsdata_settings:[{id:true,enabled:true,lookback_hours:26,local_time:'12:17'}],
     l_news_provider_state: [],
     l_news_usage: usage,
   };
@@ -54,6 +55,8 @@ function fixture(hasMonitorAccess = true, monitorEnabled = true, catalog: Record
       };
     },
     async rpc(name: string, params?: Record<string, unknown>) {
+      if (name === 'l_news_newsdata_usage')return {data:{newsdata:{today_units:0,period_units:0}}};
+      if(name==='l_news_enqueue_newsdata_run'&&params?.p_trigger==='manual')return {data:'newsdata-run'};
       if (name === 'l_news_assistant2_usage') return {data:{}};
       if (name === 'l_news_enqueue_assistant2_run' && params?.p_trigger === 'manual') return {data:'assistant2-run'};
       if (name === 'l_news_wake') return { data: null };
@@ -157,18 +160,18 @@ Deno.test('status and package return catalog rows beyond 1,000 and allow a new c
 });
 
 Deno.test('five runs per assistant, independent settings, and old bundles default to helper 1', async () => {
- const rows = [1,2].flatMap(assistant_id => Array.from({length:8}, (_,i) => ({id:`${assistant_id}-${8-i}`,number:40-i,assistant_id,assistant_number:8-i,counters:{},warnings:[]})));
+ const rows = [1,2,3].flatMap(assistant_id => Array.from({length:8}, (_,i) => ({id:`${assistant_id}-${8-i}`,number:40-i,assistant_id,assistant_number:8-i,counters:{},warnings:[]})));
  const handle = fixture(true,true,[],[],rows);
- for (const id of [1,2]) {
+ for (const id of [1,2,3]) {
   const response=await handle(post('status','operator',{assistant_id:id}));
   equal(response.status,200);const snapshot=await response.json();
   equal(snapshot.runs.length,5);equal(snapshot.runs.every((run:any)=>run.assistant_id===id),true);
-  equal(snapshot.settings.local_time,id===2?'03:07':'15:07');
+  equal(snapshot.settings.local_time,id===3?'12:17':id===2?'03:07':'15:07');
  }
- const manifest=await (await handle(post('manifest','operator'))).json();equal(manifest.runs.length,16);
+ const manifest=await (await handle(post('manifest','operator'))).json();equal(manifest.runs.length,24);
  equal((await fixture()(post('start','admin',{assistant_id:2,countries:['IT']}))).status,200);
  for(const action of ['start','settings','quota','cancel','retry_failed'])equal((await handle(post(action,'operator',{assistant_id:2}))).status,403);
- equal((await handle(post('status','admin',{assistant_id:3}))).status,400);
+ equal((await handle(post('status','admin',{assistant_id:4}))).status,400);
  const bundle=await (await fixture()(post('download','admin',{run_id:runId}))).json();
  equal(bundle.manifest.run.assistant_id,1);equal(bundle.manifest.run.collector_number,1);
 });
@@ -222,3 +225,5 @@ Deno.test('helper 1 rejects invalid schedule times without changing its previous
  }
  equal((await (await handle(post('status','admin',{assistant_id:1}))).json()).settings.local_time,'15:07');
 });
+
+Deno.test('NewsData manual control is independent, operator reads only and quota refresh is free',async()=>{const h=fixture();equal((await h(post('start','admin',{assistant_id:3}))).status,200);equal((await h(post('settings','operator',{assistant_id:3,enabled:false}))).status,403);equal((await h(post('settings','admin',{assistant_id:3,local_time:'12:17',newsdata_per_run:60}))).status,200);equal((await h(post('quota','admin',{assistant_id:3}))).status,200);const s=await(await h(post('status','operator',{assistant_id:3}))).json();equal(s.settings.local_time,'12:17');equal(s.settings.newsdata_per_run,60);});

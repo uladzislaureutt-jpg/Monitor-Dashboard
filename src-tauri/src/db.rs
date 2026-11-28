@@ -123,6 +123,12 @@ pub fn initialize_database(path: &Path) -> Result<(), String> {
         tx.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (10)", []).map_err(|e| e.to_string())?;
         tx.commit().map_err(|e| e.to_string())?;
     }
+    if current < 11 {
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        crate::identity::reconcile_l_monitor_identity(&tx)?;
+        tx.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES (11)", []).map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 

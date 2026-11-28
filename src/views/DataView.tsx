@@ -188,7 +188,7 @@ export function DataView({
       <div className="sync-note">{t("data.syncNote")}</div>
     </section>
     {monitorKey === "lukashenko" && <LNewsAssistant importedRuns={runs} onSync={() => onSyncNow(form)} syncBusy={syncBusy} />}
-    <section className="kpi-grid"><article className="kpi"><strong>{stats?.runs ?? "—"}</strong><span>{t("data.importedRuns")}</span></article><article className="kpi"><strong>{stats?.documents ?? "—"}</strong><span>{t("data.uniquePublications")}</span></article><article className="kpi"><strong>{stats?.sources ?? "—"}</strong><span>{t("data.sources")}</span></article><article className="kpi"><strong>{productionRuns}</strong><span>{t("data.productionRuns")}</span></article><article className="kpi"><strong>{latest?.collector ? `П${latest.collectorAssistantId ?? 1} · #${latest.collectorNumber}` : latest?.runNumber ?? "—"}</strong><span>{t("data.latestRun")}</span></article></section>
+    <section className="kpi-grid"><article className="kpi"><strong>{stats?.runs ?? "—"}</strong><span>{t("data.importedRuns")}</span></article><article className="kpi"><strong>{stats?.documents ?? "—"}</strong><span>{t("data.uniquePublications")}</span></article><article className="kpi"><strong>{stats?.sources ?? "—"}</strong><span>{t("data.sources")}</span></article><article className="kpi"><strong>{productionRuns}</strong><span>{t("data.productionRuns")}</span></article><article className="kpi"><strong>{latest?.collector ? (latest.collectorAssistantId===3?`YE · #${latest.collectorNumber}`:`П${latest.collectorAssistantId ?? 1} · #${latest.collectorNumber}`) : latest?.runNumber ?? "—"}</strong><span>{t("data.latestRun")}</span></article></section>
     <section className="panel">
       <div className="panel-head">
         <div>
@@ -200,7 +200,7 @@ export function DataView({
       <div className="table-wrap"><table>
         <thead><tr><th>{t("data.run")}</th><th>{t("data.mode")}</th><th>{t("data.start")}</th><th>{t("data.publications")}</th><th>{t("data.sourcesCol")}</th><th>{t("data.imported")}</th></tr></thead>
         <tbody>{recentRuns.length === 0 ? <tr><td colSpan={6} className="empty">{t("data.noBundles")}</td></tr> : recentRuns.map((run) => <tr key={run.id}>
-          <td><b>{run.collector ? `Помощник ${run.collectorAssistantId ?? 1} #${run.collectorNumber ?? "—"}` : `GitHub #${run.runNumber ?? "—"}`}</b><small>{run.monitorKey === "social_economic" ? t("data.monitorSocial") : run.monitorName}</small></td>
+          <td><b>{run.collector ? `${run.collectorAssistantId===3?"Yesterday's Express":`Помощник ${run.collectorAssistantId ?? 1}`} #${run.collectorNumber ?? "—"}` : `GitHub #${run.runNumber ?? "—"}`}</b><small>{run.monitorKey === "social_economic" ? t("data.monitorSocial") : run.monitorName}</small></td>
           <td><span className={`mode mode-${run.dryRun === true ? "dry" : run.dryRun === false ? "prod" : "unknown"}`}>{formatMode(run.dryRun)}</span></td>
           <td>{formatDate(run.startedAt)}</td><td>{run.publications}</td><td>{run.sourcesInCoverage}</td><td>{formatDate(run.importedAt)}</td>
         </tr>)}</tbody>
