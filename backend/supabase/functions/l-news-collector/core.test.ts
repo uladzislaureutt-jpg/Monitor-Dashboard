@@ -1,4 +1,4 @@
-import {COUNTRIES,QUERY,urlKey,validDate,relevant,contentLevel,perigonBudget,publicUrl,publisherArticleKey,sourceFor} from './core.ts';
+import {COUNTRIES,QUERY,urlKey,validDate,relevant,contentLevel,perigonBudget,publicUrl,publisherArticleKey,publisherCopyKey,sourceFor} from './core.ts';
 import {extractPage,ukrainianEdition} from './extraction.ts';
 import {translateCard,validRussianCard} from './translation.ts';
 import type {Job,Runtime} from './providers.ts';
@@ -6,6 +6,19 @@ import {githubPublications} from './github.ts';
 import {zipSync,strToU8} from 'npm:fflate@0.8.2';
 function assert(x:unknown):asserts x{if(!x)throw new Error('assertion failed');}
 function equal(a:unknown,b:unknown){assert(JSON.stringify(a)===JSON.stringify(b));}
+Deno.test('sibling copies require substantial identical full text, the same publisher and publication minute',async()=>{
+ const body='Лукашенко рассказал об интервью и переговорах. '.repeat(80),date='2026-11-27T15:38:05Z';
+ const key=await publisherCopyKey('news.yahoo.com',body,date,'FULL_TEXT');assert(key);
+ equal(await publisherCopyKey('news.yahoo.com',body.replaceAll(' ','  '),'2026-11-27T15:38:45Z','FULL_TEXT'),key);
+ assert(await publisherCopyKey('novosti.rs',body,date,'FULL_TEXT')!==key);
+ assert(await publisherCopyKey('news.yahoo.com',body+' Новый существенный факт.',date,'FULL_TEXT')!==key);
+ assert(await publisherCopyKey('news.yahoo.com',body,'2026-11-28T15:38:05Z','FULL_TEXT')!==key);
+ equal(await publisherCopyKey('news.yahoo.com',body,date,'SUFFICIENT_PREVIEW'),null);
+ equal(await publisherCopyKey('news.yahoo.com','Short description',date,'FULL_TEXT'),null);
+ equal(await publisherCopyKey('other.example',body,date,'FULL_TEXT'),null);
+ equal(publisherArticleKey('https://nportal.novosti.rs/vesti/141661/komentari'),'edition:novosti.rs:141661');
+ equal(publisherArticleKey('https://nportal.novosti.rs/vest/141661/vesti/planeta/title'),'edition:novosti.rs:141661');
+});
 Deno.test('Tagesspiegel headline and section changes preserve article identity without merging liveblogs or other media',()=>{
  const urls=['https://www.tagesspiegel.de/internationales/dpa-selenskyj-spottet-uber-lukaschenkos-begleitschutz-angebot-16322662.html','https://tagesspiegel.de/politik/bin-ich-ein-koffer-oder-was-16322662.html?utm_source=feed'];
  for(const url of urls)equal(publisherArticleKey(url),'edition:tagesspiegel.de:16322662');

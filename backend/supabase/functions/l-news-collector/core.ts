@@ -61,6 +61,8 @@ export function publisherArticleKey(value: string): string | null {
   return id?'edition:fakti.bg:'+id:null;
  }
  if(host('novosti.rs')){
+  const portal=domain==='nportal.novosti.rs'?path.match(/^\/(?:vest|vesti)\/([0-9]{5,12})(?:\/|$)/i)?.[1]:null;
+  if(portal)return 'edition:novosti.rs:'+portal;
   const id=path.match(/^\/(?:c\/)?[^/]+\/[^/]+\/([0-9]{5,12})(?:\/|$)/i)?.[1];
   return id?'edition:novosti.rs:'+id:null;
  }
@@ -191,6 +193,15 @@ export async function samePublisherHeadlineKey(source:string,title:string,publis
  const words=normalized.split(/\s+/).filter(w=>w.length>=2&&!stop.has(w)).sort();
  if(words.length<6)return null;
  return 'edition:headline:'+source+':'+published.slice(0,10)+':'+(await sha(words.join('|'))).slice(0,30);
+}
+
+// Confirmed regional/sibling editions use different article IDs for the same
+// copy. Require a full substantial text and the same UTC publication minute.
+export async function publisherCopyKey(source:string,body:string,published:string,level:string):Promise<string|null>{
+ if(!['news.yahoo.com','novosti.rs'].includes(source)||level!=='FULL_TEXT'||!Number.isFinite(Date.parse(published)))return null;
+ const normalized=body.normalize('NFKC').replace(/\s+/gu,' ').trim();
+ if(normalized.length<1500)return null;
+ return 'edition:copy:'+source+':'+new Date(published).toISOString().slice(0,16)+':'+await sha(normalized);
 }
 
 export function perigonBudget(info:Record<string,unknown>,max=4,reserve=10):number {

@@ -193,8 +193,9 @@ pub fn merge_collector_duplicates(
             continue;
         }
         let row: Option<(i64, i64, String, String)> = conn.query_row(
-            r#"SELECT mi.id,d.id,d.url,d.document_uid FROM monitor_items mi JOIN documents d ON mi.document_id=d.id
-               WHERE mi.monitor_id=?1 AND d.id<>?2 AND
+            r#"SELECT COALESCE(mi.id,0),d.id,d.url,d.document_uid FROM documents d
+               LEFT JOIN monitor_items mi ON mi.document_id=d.id AND mi.monitor_id=?1
+               WHERE d.id<>?2 AND
                  (d.document_uid=?3 OR EXISTS(SELECT 1 FROM document_uid_aliases a WHERE a.alias_uid=?3 AND a.document_id=d.id))
                  AND NOT EXISTS (SELECT 1 FROM monitor_items other WHERE other.document_id=d.id AND other.monitor_id<>?1)"#,
             params![monitor_id, document_id, uid],

@@ -1205,6 +1205,26 @@ mod identity_integration_tests {
  }
 
  #[test]
+ fn reconciliation_rebinds_aliases_after_an_older_client_already_withdrew_the_duplicate() {
+  let dir=test_directory("monitor-orphan-alias");let path=dir.join("test.sqlite");crate::db::initialize_database(&path).unwrap();
+  let mut winner=bundle(true,"lapi_primary","https://example.com/primary","Preview","SNIPPET");
+  winner["manifest"]["run"]["collector_run_id"]=json!("primary-delivery");import(&path,winner.clone());
+  let mut old=bundle(true,"lapi_old_copy","https://example.com/old-copy","A full text retained from the old delivery. ".repeat(100).as_str(),"FULL_TEXT");
+  old["manifest"]["run"]["collector_run_id"]=json!("old-delivery");import(&path,old.clone());
+  old["publications"]=json!([]);old["full_texts"]=json!([]);old["run_metrics"]["final_publications"]=json!(0);old["run_metrics"]["withdrawn_document_ids"]=json!(["lapi_old_copy"]);import(&path,old);
+  let conn=crate::db::open_database(&path).unwrap();assert_eq!(conn.query_row("SELECT count(*) FROM monitor_items",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+  conn.execute("INSERT INTO moderation_flags VALUES('lukashenko','lapi_old_copy','editor','Editor','2026-11-25')",[]).unwrap();
+  winner["manifest"]["run"]["collector_run_id"]=json!("primary-delivery");winner["publications"][0]["provenance"]["url_aliases"]=json!(["https://example.com/old-copy"]);winner["publications"][0]["provenance"]["superseded_document_ids"]=json!(["lapi_old_copy"]);
+  import(&path,winner.clone());import(&path,winner);
+  assert_eq!(crate::identity::stable_uid(&conn,"lapi_old_copy").unwrap(),"lapi_primary");
+  assert_eq!(conn.query_row("SELECT count(*) FROM monitor_items",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+  assert_eq!(conn.query_row("SELECT count(*) FROM moderation_flags WHERE document_uid='lapi_primary'",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+  let mut again=bundle(true,"lapi_later_revision","https://example.com/old-copy","Preview","SNIPPET");again["manifest"]["run"]["collector_run_id"]=json!("later-delivery");import(&path,again);
+  assert_eq!(conn.query_row("SELECT count(*) FROM monitor_items",[],|r|r.get::<_,i64>(0)).unwrap(),1);
+  drop(conn);let _=std::fs::remove_dir_all(dir);
+ }
+
+ #[test]
  fn tagesspiegel_migration_merges_repeated_helper_runs_and_keeps_liveblog_moderation_and_review_lookup() {
   let dir=test_directory("monitor-tagesspiegel-identity");let path=dir.join("test.sqlite");crate::db::initialize_database(&path).unwrap();
   let conn=crate::db::open_database(&path).unwrap();
