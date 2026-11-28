@@ -1,0 +1,16 @@
+﻿index,query,pages,rows,total,terminal_cursor
+0,Lukashenko OR Lukashenka OR Лукашенко OR Лукашенка OR Лукашэнка OR Loukachenka OR Lukaschenka,18,177,177,True
+1,Łukaszenko OR لوكاشنكو OR Loekasjenko OR Lukasenka OR Lukasenko OR Λουκασένκο OR Lukaixenko,1,7,7,True
+2,ลูกาเชนโก OR 루카셴코 OR लुकाशेंको OR لوکاشینکو OR Lukasjenko OR Lukasjenka OR Loukachenko,1,2,2,True
+3,Lukaschenko OR Łukaszenka OR Łukaszenki OR Łukaszenkę OR Łukaszenką OR Łukaszence OR Lukaszenko,2,11,11,True
+4,Lukašenka OR Lukašenko OR Lukaşenko OR Lukašenkos OR Lukašenkas OR Lukashenkon OR Lukașenko OR 卢卡申科,10,91,91,True
+5,魯卡申柯 OR 盧卡申科 OR ルカシェンコ OR لوکاشنکو OR لوكاشينكو OR לוקשנקו OR ლუკაშენკო OR Լուկաշենկո OR Lukaszenka,2,11,11,True
+6,Lukašenką,1,0,0,True
+7,"""President of Belarus"" OR ""Belarusian president""",3,23,23,True
+8,"""президент Беларуси"" OR ""президент Белоруссии""",3,21,21,True
+9,"""prezydent Białorusi"" OR ""білоруський президент""",1,0,0,True
+10,"""Präsident von Belarus"" OR ""belarussische Präsident""",1,1,1,True
+11,"""président biélorusse"" OR ""président du Bélarus""",1,2,2,True
+12,"""presidente bielorusso"" OR ""presidente bielorruso"" OR ""presidente da Bielorrússia""",2,12,12,True
+13,"""Beyaz Rusya Cumhurbaşkanı"" OR ""Belarus Cumhurbaşkanı""",1,0,0,True
+14,"白俄罗斯总统 OR 白俄羅斯總統 OR ベラルーシ大統領 OR ""الرئيس البيلاروسي""",7,68,68,True

@@ -1,0 +1,190 @@
+{
+  "windows": {
+    "at": "2026-11-28T08:25:00.000Z",
+    "requested": {
+      "from": "2026-11-27T06:25:00.000Z",
+      "to": "2026-11-28T08:25:00.000Z"
+    },
+    "mature": {
+      "from": "2026-11-26T18:25:00.000Z",
+      "to": "2026-11-27T20:25:00.000Z"
+    },
+    "union": {
+      "from": "2026-11-26T18:25:00.000Z",
+      "to": "2026-11-28T08:25:00.000Z"
+    }
+  },
+  "cutoff": "2026-11-27T16:07:00Z",
+  "catalog_size": 1062,
+  "catalog_countries": 72,
+  "raw": 426,
+  "unique": 352,
+  "outside_catalog": 247,
+  "outside_windows": 0,
+  "catalog": 105,
+  "domains": 58,
+  "countries": {
+    "BE": 1,
+    "BG": 1,
+    "BR": 2,
+    "CH": 1,
+    "CN": 6,
+    "CU": 1,
+    "CZ": 3,
+    "DE": 3,
+    "FR": 4,
+    "GR": 1,
+    "IN": 1,
+    "LT": 4,
+    "LV": 2,
+    "PL": 5,
+    "PT": 1,
+    "RO": 5,
+    "RS": 10,
+    "RU": 7,
+    "SI": 1,
+    "SK": 1,
+    "TW": 1,
+    "UA": 12,
+    "US": 2,
+    "VN": 30
+  },
+  "classification": {
+    "known": 37,
+    "seen_unpublished": 17,
+    "unseen": 51
+  },
+  "requested": {
+    "known": 25,
+    "seen_unpublished": 13,
+    "unseen": 40
+  },
+  "mature": {
+    "known": 37,
+    "seen_unpublished": 17,
+    "unseen": 51
+  },
+  "before_helpers": {
+    "known": 37,
+    "seen_unpublished": 17,
+    "unseen": 33
+  },
+  "after_helpers": {
+    "unseen": 18
+  },
+  "by_query": {
+    "0": {
+      "query": "Lukashenko OR Lukashenka OR Лукашенко OR Лукашенка OR Лукашэнка OR Loukachenka OR Lukaschenka",
+      "pages": 18,
+      "rows": 177,
+      "total": 177
+    },
+    "1": {
+      "query": "Łukaszenko OR لوكاشنكو OR Loekasjenko OR Lukasenka OR Lukasenko OR Λουκασένκο OR Lukaixenko",
+      "pages": 1,
+      "rows": 7,
+      "total": 7
+    },
+    "2": {
+      "query": "ลูกาเชนโก OR 루카셴코 OR लुकाशेंको OR لوکاشینکو OR Lukasjenko OR Lukasjenka OR Loukachenko",
+      "pages": 1,
+      "rows": 2,
+      "total": 2
+    },
+    "3": {
+      "query": "Lukaschenko OR Łukaszenka OR Łukaszenki OR Łukaszenkę OR Łukaszenką OR Łukaszence OR Lukaszenko",
+      "pages": 2,
+      "rows": 11,
+      "total": 11
+    },
+    "4": {
+      "query": "Lukašenka OR Lukašenko OR Lukaşenko OR Lukašenkos OR Lukašenkas OR Lukashenkon OR Lukașenko OR 卢卡申科",
+      "pages": 10,
+      "rows": 91,
+      "total": 91
+    },
+    "5": {
+      "query": "魯卡申柯 OR 盧卡申科 OR ルカシェンコ OR لوکاشنکو OR لوكاشينكو OR לוקשנקו OR ლუკაშენკო OR Լուկաշենկո OR Lukaszenka",
+      "pages": 2,
+      "rows": 11,
+      "total": 11
+    },
+    "6": {
+      "query": "Lukašenką",
+      "pages": 1,
+      "rows": 0,
+      "total": 0
+    },
+    "7": {
+      "query": "\"President of Belarus\" OR \"Belarusian president\"",
+      "pages": 3,
+      "rows": 23,
+      "total": 23
+    },
+    "8": {
+      "query": "\"президент Беларуси\" OR \"президент Белоруссии\"",
+      "pages": 3,
+      "rows": 21,
+      "total": 21
+    },
+    "9": {
+      "query": "\"prezydent Białorusi\" OR \"білоруський президент\"",
+      "pages": 1,
+      "rows": 0,
+      "total": 0
+    },
+    "10": {
+      "query": "\"Präsident von Belarus\" OR \"belarussische Präsident\"",
+      "pages": 1,
+      "rows": 1,
+      "total": 1
+    },
+    "11": {
+      "query": "\"président biélorusse\" OR \"président du Bélarus\"",
+      "pages": 1,
+      "rows": 2,
+      "total": 2
+    },
+    "12": {
+      "query": "\"presidente bielorusso\" OR \"presidente bielorruso\" OR \"presidente da Bielorrússia\"",
+      "pages": 2,
+      "rows": 12,
+      "total": 12
+    },
+    "13": {
+      "query": "\"Beyaz Rusya Cumhurbaşkanı\" OR \"Belarus Cumhurbaşkanı\"",
+      "pages": 1,
+      "rows": 0,
+      "total": 0
+    },
+    "14": {
+      "query": "白俄罗斯总统 OR 白俄羅斯總統 OR ベラルーシ大統領 OR \"الرئيس البيلاروسي\"",
+      "pages": 7,
+      "rows": 68,
+      "total": 68
+    }
+  },
+  "api_attempts": 57,
+  "successful_api_requests": 55,
+  "credits_used": 55,
+  "credits_remaining": 145,
+  "daily_limit": 200,
+  "publisher_attempts": 69,
+  "publisher_urls": 68,
+  "review_counts": {
+    "late_relevant": 9,
+    "noise_or_background": 37,
+    "known_index": 37,
+    "editorial_review": 2,
+    "seen_rejection_retained": 13,
+    "processing_loss": 1,
+    "language_copy_seen": 1,
+    "extraction_error_language_copy": 1,
+    "unverified": 1,
+    "alternate_url_seen": 2,
+    "new_metadata_signal": 1
+  },
+  "closed_at": "2026-11-28T08:47:40.319953Z",
+  "cards_imported": 0,
+  "scheduled_jobs_created": 0
+}
