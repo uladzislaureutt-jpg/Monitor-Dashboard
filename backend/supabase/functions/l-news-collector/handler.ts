@@ -1,3 +1,4 @@
+import {probeNewsdata,validateNewsdataSettings} from './newsdata.ts';
 import {cloroSearchMetadata} from './cloro-config.ts';
 import {COUNTRY_NAMES,VERSION} from './core.ts';
 import {Job,Runtime,must,readPages} from './providers.ts';
@@ -16,11 +17,11 @@ export function createCollectorHandler(rt: Runtime) {
 async function worker(){
  const jobs=must(await db.rpc('l_news_claim_jobs',{p_limit:1})) as Job[];const results=[];
  for(const job of jobs){try{
-  const result=job.kind==='assistant2_probe'?await probeAssistant2(rt):job.kind==='probe'?await probe(rt,job):job.kind==='gdelt_probe'?await probeGdelt(rt,job):await workOne(rt,job);
+  const result=job.kind==='newsdata_probe'?await probeNewsdata(rt):job.kind==='assistant2_probe'?await probeAssistant2(rt):job.kind==='probe'?await probe(rt,job):job.kind==='gdelt_probe'?await probeGdelt(rt,job):await workOne(rt,job);
   const retryAt=result.retry_at;
   const patch=retryAt
    ?{state:'waiting',available_at:retryAt,attempts:job.attempts-1}
-   :{state:'done',result};
+   :{state:'done',result,error:null};
   must(await db.from('l_news_jobs').update({...patch,lease_until:null,updated_at:new Date().toISOString()}).eq('id',job.id));
   results.push({id:job.id,state:patch.state});
  }catch(error){
@@ -30,7 +31,7 @@ async function worker(){
   if(!retry&&job.kind==='article')must(await db.from('l_news_items').update({state:'failed',reason:message.slice(0,250)}).eq('id',job.payload.item_id).neq('state','ready'));
   results.push({id:job.id,state:retry?'retry':'failed',error:message});
  }
- if(job.run_id){const counts=must(await db.rpc('l_news_refresh_run',{p_run:job.run_id}));if(counts.jobs_pending===0){const run=must(await db.from('l_news_runs').select('assistant_id').eq('id',job.run_id).single());await enqueue(rt,null,run.assistant_id===2?'assistant2_probe':'probe',{pages:[]},job.run_id+':quota-final');}}
+ if(job.run_id){const counts=must(await db.rpc('l_news_refresh_run',{p_run:job.run_id}));if(counts.jobs_pending===0){const run=must(await db.from('l_news_runs').select('assistant_id').eq('id',job.run_id).single());await enqueue(rt,null,run.assistant_id===3?'newsdata_probe':run.assistant_id===2?'assistant2_probe':'probe',{pages:[]},job.run_id+':quota-final');}}
  }
  if(jobs.length)must(await db.rpc('l_news_wake'));
  return results;
@@ -39,7 +40,7 @@ async function worker(){
 async function status(assistant:number,terminalId?:string){
  const now=Date.now(), dayMs=86400000;
  const [settings,runs,providers,sources,usage]=await Promise.all([
-  db.from(assistant===2?'l_news_assistant2_settings':'l_news_settings').select('*').single(),
+  db.from(assistant===3?'l_news_newsdata_settings':assistant===2?'l_news_assistant2_settings':'l_news_settings').select('*').single(),
   db.from('l_news_runs').select('id,number,assistant_id,assistant_number,status,from_at,to_at,settings,counters,warnings,revision,created_at,completed_at').eq('assistant_id',assistant).order('created_at',{ascending:false}).limit(5),
   db.from('l_news_provider_state').select('*'),
   readPages(db.from('l_news_sources').select('country,baseline,coverage').eq('enabled',true).order('domain')),
@@ -56,6 +57,7 @@ async function status(assistant:number,terminalId?:string){
   const category=row.endpoint==='event_articles'?'event':row.endpoint==='articles'?'assistant':'diagnostic';
   newscatcher_usage[category]+=credits;
  }
+ const newsdata_usage={unconfirmed:usage.filter(row=>row.provider==='newsdata'&&row.credits===null).length};
  const diagnostic_usage={days:30,cloro_credits:0,currents_requests:0,thenews_requests:0};
  for(const row of usage){
   if(Date.parse(row.created_at)<now-30*dayMs||!row.endpoint.startsWith('assistant2_'))continue;
@@ -68,15 +70,15 @@ async function status(assistant:number,terminalId?:string){
   }));
  const selected=localizedRuns.find(run=>run.id===terminalId)||localizedRuns[0];
  const terminal=selected?must(await db.from('l_news_jobs').select('id,kind,state,attempts,updated_at,error,result').eq('run_id',selected.id).order('updated_at',{ascending:false}).limit(80)):[];
- const usage_limits=assistant===2?must(await db.rpc('l_news_assistant2_usage')):null;
- return {version:VERSION,assistant_id:assistant,cloro_search:cloroSearchMetadata(),country_names:COUNTRY_NAMES,settings:must(settings),runs:localizedRuns,providers:must(providers),sources,newscatcher_usage,diagnostic_usage,usage_limits,
+ const usage_limits=assistant===3?must(await db.rpc('l_news_newsdata_usage')):assistant===2?must(await db.rpc('l_news_assistant2_usage')):null;
+ return {version:VERSION,assistant_id:assistant,cloro_search:cloroSearchMetadata(),country_names:COUNTRY_NAMES,settings:must(settings),runs:localizedRuns,providers:must(providers),sources,newscatcher_usage,diagnostic_usage,newsdata_usage,usage_limits,
   terminal_run_id:selected?.id??null,terminal:terminal.map((row:any)=>({id:row.id,kind:row.kind,label:providerJobLabel(row.kind),state:row.state,attempts:row.attempts,at:row.updated_at,error:row.error?warningRu(row.error):null,returned:row.result?.returned??row.result?.result_count??null,kept:row.result?.kept??null,new_to_index:row.result?.new_to_index??null,ready:row.result?.ready??false,capped:row.result?.capped??false}))};
 }
 return async (req: Request): Promise<Response> => {try{
  if(req.method==='OPTIONS')return new Response(null,{status:204,headers:cors});if(req.method!=='POST')return json({error:'method_not_allowed'},405);
  const text=await req.text();if(text.length>2000000)return json({error:'request_too_large'},413);let body:any;try{body=JSON.parse(text||'{}');}catch{return json({error:'invalid_json'},400);}
  const action=String(body.action||'status'),workerToken=req.headers.get('x-l-news-worker');
- const assistant=body.assistant_id===undefined?1:Number(body.assistant_id);if(![1,2].includes(assistant))return json({error:'invalid_assistant'},400);
+ const assistant=body.assistant_id===undefined?1:Number(body.assistant_id);if(![1,2,3].includes(assistant))return json({error:'invalid_assistant'},400);
  if(workerToken){const verified=must(await db.rpc('l_news_verify_worker',{p_token:workerToken}));if(!verified)return json({error:'unauthorized'},401);if(action!=='worker')return json({error:'worker_only'},403);return json({results:await worker()});}
  const token=(req.headers.get('authorization')||'').replace(/^Bearer\s+/i,'');if(!token)return json({error:'unauthorized'},401);
  const user=await db.auth.getUser(token);if(user.error||!user.data.user)return json({error:'unauthorized'},401);
@@ -90,7 +92,7 @@ return async (req: Request): Promise<Response> => {try{
   const requested=body.countries;
   if(requested!==undefined&&(!Array.isArray(requested)||requested.length===0||requested.some(code=>typeof code!=='string'||!/^[A-Z]{2}$/.test(code))))return json({error:'invalid_countries'},400);
   const countries=requested===undefined?null:[...new Set(requested)];
-  const result=assistant===2?await db.rpc('l_news_enqueue_assistant2_run',{p_trigger:'manual',p_countries:countries}):countries===null?await db.rpc('l_news_enqueue_run',{p_trigger:'manual'}):
+  const result=assistant===3?await db.rpc('l_news_enqueue_newsdata_run',{p_trigger:'manual',p_countries:countries}):assistant===2?await db.rpc('l_news_enqueue_assistant2_run',{p_trigger:'manual',p_countries:countries}):countries===null?await db.rpc('l_news_enqueue_run',{p_trigger:'manual'}):
    await db.rpc('l_news_enqueue_scoped_run',{p_trigger:'manual',p_countries:countries});
   if(result.error?.code==='PGRST202')return json({error:'Выбор стран пока не подключён на сервере'},503);
   if(result.error?.code==='22023')return json({error:'invalid_countries'},400);
@@ -98,6 +100,9 @@ return async (req: Request): Promise<Response> => {try{
   must(await db.rpc('l_news_wake'));return json({run_id:id});
  }
  if(action==='settings'){
+  if(assistant===3){let patch;try{const catalog=await readPages<{country:string}>(db.from('l_news_sources').select('country').eq('enabled',true).order('domain'));patch=validateNewsdataSettings(body,[...new Set(catalog.map(x=>x.country))]);}catch(error){return json({error:error instanceof Error?error.message:'invalid_settings'},400);}
+   must(await db.from('l_news_newsdata_settings').update(patch).eq('id',true));return json({ok:true});
+  }
   if(assistant===2){
    let patch;try{const catalog=await readPages<{country:string}>(db.from('l_news_sources').select('country').eq('enabled',true).order('domain'));patch=validateAssistant2Settings(body,[...new Set(catalog.map(x=>x.country))]);}catch(error){return json({error:error instanceof Error?error.message:'invalid_settings'},400);}
    must(await db.from('l_news_assistant2_settings').update(patch).eq('id',true));return json({ok:true});
@@ -108,7 +113,7 @@ return async (req: Request): Promise<Response> => {try{
   if(body.lookback_hours!==undefined){const hours=Number(body.lookback_hours);if(!Number.isInteger(hours)||hours<1||hours>168)return json({error:'invalid_lookback'},400);patch.lookback_hours=hours;}
   must(await db.from('l_news_settings').update(patch).eq('id',true));return json({ok:true});
  }
- if(action==='quota'){await enqueue(rt,null,assistant===2?'assistant2_probe':'probe',{pages:[]},'quota-refresh:'+assistant+':'+crypto.randomUUID());must(await db.rpc('l_news_wake'));return json({queued:true});}
+ if(action==='quota'){if(assistant===3)return json(await probeNewsdata(rt));await enqueue(rt,null,assistant===2?'assistant2_probe':'probe',{pages:[]},'quota-refresh:'+assistant+':'+crypto.randomUUID());must(await db.rpc('l_news_wake'));return json({queued:true});}
  if(action==='cancel'){
   const run=must(await db.from('l_news_runs').select('id,assistant_id').eq('id',String(body.run_id||'')).maybeSingle());
   if(!run||run.assistant_id!==assistant)return json({error:'invalid_run'},400);

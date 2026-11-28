@@ -95,7 +95,7 @@ export default function App() {
   const [stats, setStats] = useState<DatabaseStats | null>(() => peekCore("social_economic")?.stats ?? null);
   const [runs, setRuns] = useState<RunSummary[]>(() => peekCore("social_economic")?.runs ?? []);
   const latestLMonitorRun = runs.find((run) => run.monitorKey === "lukashenko" && !run.collector && run.dryRun !== true);
-  const latestAssistantRuns = [1, 2].map(id => runs.find(run => run.monitorKey === "lukashenko" && run.collector === "api_assistant" && (run.collectorAssistantId ?? 1) === id));
+  const latestAssistantRuns = [1, 2, 3].map(id => runs.find(run => run.monitorKey === "lukashenko" && run.collector === "api_assistant" && (run.collectorAssistantId ?? 1) === id));
   const [dashboard, setDashboard] = useState<DashboardOverview | null>(() => peekOverview("social_economic", 30)?.data ?? null);
   const [period, setPeriod] = useState<PeriodDays>(30);
   const [dashboardLoading, setDashboardLoading] = useState(false);

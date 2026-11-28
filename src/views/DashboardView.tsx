@@ -154,6 +154,7 @@ export function DashboardView({
         <div className="l-monitor-country-column">
           <BreakdownPanel title={locale === "be" ? "Краіны паходжання крыніц" : "Страны происхождения источников"} subtitle={locale === "be" ? "Странавая прыналежнасць выданняў, якія апублікавалі матэрыялы. Схема паказвае маштаб кожнай краіны." : "Страновая принадлежность изданий, опубликовавших материалы. Схема показывает масштаб каждой страны."} data={geoData?.regionBreakdown ?? []} scheme="source_countries" initialMode="bars" controlsClassName="source-country-controls" period={geoPeriod} onPeriodChange={setGeoPeriod} />
           <RunSourcePublications github={latestRun} assistants={latestAssistantRuns} />
+          <RunSourcePublications assistants={latestAssistantRuns} express />
         </div>
         <BreakdownPanel className="span-two" title={t("dashboard.sources")} subtitle={t("dashboard.sourcesHelp")} data={sourcesData?.sourceBreakdown ?? []} period={sourcesPeriod} onPeriodChange={setSourcesPeriod} sourceIcons />
       </> : <>

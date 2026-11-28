@@ -42,8 +42,12 @@ export function extractPage(html:string,url:string){
   language:$(e).attr('hreflang')?.toLowerCase(),url:$(e).attr('href'),
  }));
  const canonical=$('link[rel="canonical"]').attr('href');const amp=$('link[rel="amphtml"]').attr('href');
- if(body.length<700){try{const document=(parseHTML(html) as any).document;const article=new Readability(document).parse();const text=article?.textContent?.trim()||'';if(text.length>body.length)body=text;}catch{/* DOM fallback below */}}
- if(body.length<350){$('script,style,nav,header,footer,aside,[class*="related"],[class*="recommend"]').remove();const nodes=$('article p,[itemprop="articleBody"] p,main p').toArray().map(e=>clean($(e).text())).filter(t=>t.length>40);if(nodes.join('\n\n').length>body.length)body=nodes.join('\n\n');}
+ // Keep short publisher article bodies; feeds/recommendations can be much longer.
+ const hadStructuredBody=body.length>0;
+ $('script,style,nav,header,footer,aside,[class*="related"],[class*="recommend"],.article__suggest,.box-category').remove();
+ if(!body){for(const selector of ['[itemprop="articleBody"]','.article__body','.article-body','.story-body','.detail-content']){const node=$(selector).first();if(node.length){const text=clean(node.text());if(text.length>=80){body=text;break;}}}}
+ if(!body&&!hadStructuredBody){try{const document=(parseHTML(html) as any).document;const article=new Readability(document).parse();const text=article?.textContent?.trim()||'';if(text.length>body.length)body=text;}catch{/* DOM fallback below */}}
+ if(!body){$('script,style,nav,header,footer,aside,[class*="related"],[class*="recommend"]').remove();const nodes=$('article p,[itemprop="articleBody"] p,main p').toArray().map(e=>clean($(e).text())).filter(t=>t.length>40);if(nodes.join('\n\n').length>body.length)body=nodes.join('\n\n');}
  body=body.split(/\n+/).map(clean).filter(Boolean).join('\n\n').slice(0,150000);
  if(/subscribe to (?:continue|read)|подпишитесь.{0,25}читать|доступно.{0,15}подписчик|abonnez.vous pour lire|subscription required/i.test(body))paywall=true;
  return {body,title,lead,published,paywall,articlePage,alternatives,canonical:canonical?new URL(canonical,url).href:null,amp:amp?new URL(amp,url).href:null};
@@ -82,7 +86,7 @@ export async function recoverArticle(rt:Runtime,job:Job,run:Run,c:Candidate,sour
   if(editions){best.identity_url=editions.primary;best.aliases=editions.aliases;}
   if(page.body.length>best.body.length){best.body=page.body;best.paywall=page.paywall;best.content_truncated=false;strategy=route;}
   if(!best.lead&&page.lead)best.lead=page.lead;
-  if(!best.published_at&&page.published)best.published_at=page.published;
+  if(page.published&&(!best.published_at||run.assistant_id===3&&/(?:Z|[+-]\d{2}:?\d{2})$/i.test(page.published)))best.published_at=page.published;
   if(page.canonical&&sourceFor(page.canonical,sources)?.domain===source.domain&&new URL(page.canonical).pathname.length>1)best.canonical=page.canonical;
   level=contentLevel(best.body,!!best.paywall,!!best.content_truncated);return page;
  }

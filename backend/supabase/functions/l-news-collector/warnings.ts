@@ -13,6 +13,8 @@ export function warningRu(value:unknown):string{
  if(t.includes('github-индекс')&&(/typeerror|error sending request|timeout|transport|connect|failed|supabase|network/i.test(t)))
   return 'GitHub-индекс: не удалось загрузить или записать часть архива из-за временной сетевой ошибки.';
  if(t.includes('github-индекс'))return 'GitHub-индекс: не удалось обработать один из архивов. Подробности сохранены в техническом журнале.';
+ if(t.includes('достигнут лимит запросов: newsdata'))return 'Достигнут установленный лимит расходов NewsData; остаток выдачи будет проверен в следующем сборе.';
+ if(t.includes('newsdata_search_'))return 'NewsData: временная ошибка или ограничение сервиса. Подробности сохранены в терминале.';
  if(t.includes('достигнут лимит запросов: newscatcher'))return 'Достигнут разовый лимит запросов Newscatcher.';
  if(t.includes('достигнут лимит запросов: perigon'))return 'Достигнут разовый лимит запросов Perigon.';
  if(t.includes('достигнут лимит запросов: gdelt'))return 'Достигнут разовый лимит запросов GDELT.';

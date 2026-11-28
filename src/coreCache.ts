@@ -2,7 +2,7 @@ import type { DatabaseStats, RunSummary } from "./types";
 
 type Snapshot = { savedAt: number; stats: DatabaseStats; runs: RunSummary[] };
 const PREFIX = "monitor-core-v1:";
-const storageKey = (monitor: string) => (monitor === "lukashenko" ? "monitor-core-v2:" : PREFIX) + monitor;
+const storageKey = (monitor: string) => (monitor === "lukashenko" ? "monitor-core-v3:" : PREFIX) + monitor;
 const MAX_JSON = 700_000;
 // Imports and moderation invalidate this snapshot, so an idle application
 // should not rescan run history every hour without new local data.
