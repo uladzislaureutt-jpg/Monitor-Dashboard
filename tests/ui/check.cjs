@@ -49,6 +49,7 @@ const assert=require('node:assert/strict');
  assert.equal(await page.locator('body').evaluate(el=>el.scrollWidth>window.innerWidth),false);
  await page.getByRole('tab',{name:"NewsDATA / Yesterday's Express",exact:true}).click();
  await page.getByRole('heading',{name:"Yesterday's Express · L-Monitor",exact:true}).waitFor();
+ await page.locator('tbody tr').first().waitFor();
  assert.equal(await page.locator('tbody tr').count(),5);assert.equal(await page.getByText('Newscatcher: общий остаток аккаунта',{exact:true}).count(),0);
  await page.getByText("Настройки Yesterday's Express",{exact:true}).click();assert.equal(await page.getByLabel('Время по Минску',{exact:true}).inputValue(),'12:17');
  await page.getByLabel('Кредитов на сбор',{exact:true}).fill('60');await page.getByRole('button',{name:"Сохранить настройки Yesterday's Express",exact:true}).click();await page.getByText('Настройки сохранены.',{exact:true}).waitFor();
